@@ -1,0 +1,6 @@
+{
+  "name": "Spot The Aurora - CME Modeler",
+  "description": "An intutive way to visualize Coronal Mass Ejections (CMEs) from NASA, displaying their trajectory and potential impact on Earth in a 3D solar system model.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

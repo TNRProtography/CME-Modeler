@@ -1,8 +1,10 @@
+
 import React from 'react';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
 import NextIcon from './icons/NextIcon';
 import PrevIcon from './icons/PrevIcon';
+import { PRIMARY_COLOR, TEXT_COLOR, HOVER_BG_COLOR } from '../constants';
 
 interface TimelineControlsProps {
   isVisible: boolean;
@@ -21,7 +23,7 @@ const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode;
   <button
     onClick={onClick}
     title={title}
-    className={`p-2 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors focus:outline-none focus:ring-1 focus:ring-neutral-400`}
+    className={`p-2 rounded-md bg-[${PRIMARY_COLOR}]/30 text-[${TEXT_COLOR}] hover:bg-[${HOVER_BG_COLOR}] border border-[${PRIMARY_COLOR}]/50 transition-colors focus:outline-none focus:ring-1 focus:ring-[${PRIMARY_COLOR}]`}
   >
     {children}
   </button>
@@ -32,8 +34,8 @@ const SpeedButton: React.FC<{ onClick: () => void; isActive: boolean; children: 
     onClick={onClick}
     className={`px-3 py-1 text-xs rounded border transition-colors ${
       isActive
-        ? `bg-neutral-200 text-neutral-900 border-neutral-200 font-semibold`
-        : `bg-transparent border-neutral-600 text-neutral-300 hover:bg-neutral-800`
+        ? `bg-[${PRIMARY_COLOR}] text-[#02041b] border-[${PRIMARY_COLOR}] font-semibold`
+        : `bg-[${PRIMARY_COLOR}]/20 border-[${PRIMARY_COLOR}]/50 text-[${TEXT_COLOR}] hover:bg-[${HOVER_BG_COLOR}]`
     }`}
   >
     {children}
@@ -64,7 +66,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
 
   return (
-    <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
+    <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-[#14193c]/80 backdrop-blur-md border border-sky-500/30 rounded-lg p-3 shadow-xl text-[${TEXT_COLOR}] space-y-2`}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
         <PlaybackButton onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
@@ -81,7 +83,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             max="1000"
             value={scrubberValue}
             onChange={(e) => onScrub(parseInt(e.target.value, 10))}
-            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
+            className="w-full h-2 bg-sky-700/50 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-sky-400 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-sky-400"
             />
             {nowPositionPercent >= 0 && (
             <>
@@ -100,7 +102,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             )}
         </div>
 
-        <div className="hidden sm:block text-xs tabular-nums whitespace-nowrap min-w-[150px] text-right text-neutral-400">
+        <div className="hidden sm:block text-xs tabular-nums whitespace-nowrap min-w-[150px] text-right text-gray-400">
           {getCurrentTimelineDate()}
         </div>
       </div>

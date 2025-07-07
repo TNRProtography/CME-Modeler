@@ -8,7 +8,7 @@ export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day
 export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 1.2, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
   VENUS: { name: 'Venus', radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 3.5, labelElementId: 'venus-label', orbitalPeriodDays: 225 },
-  EARTH: { name: 'Earth', radius: 1.0 * SCENE_SCALE, size: 0.02 * SCENE_SCALE, color: 0xd4d4d8, angle: 0, labelElementId: 'earth-label', orbitalPeriodDays: 365.25 },
+  EARTH: { name: 'Earth', radius: 1.0 * SCENE_SCALE, size: 0.02 * SCENE_SCALE, color: 0x4da6ff, angle: 0, labelElementId: 'earth-label', orbitalPeriodDays: 365.25 },
   MOON: { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
   MARS: { name: 'Mars', radius: 1.52 * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 5.1, labelElementId: 'mars-label', orbitalPeriodDays: 687 },
   SUN: { name: 'Sun', radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' } // Sun data for consistency
@@ -95,7 +95,7 @@ void main() {
         impactGlow *= smoothstep(2.5, 0.0, timeSinceImpact); // fade out over 2.5s
     }
     
-    vec3 atmosphereColor = vec3(0.8, 0.85, 0.9);
+    vec3 atmosphereColor = vec3(0.3, 0.6, 1.0);
     // Add the base glow and the impact glow, making the impact glow bright
     vec3 finalColor = atmosphereColor * (baseIntensity + impactGlow * 2.0);
     
@@ -199,7 +199,7 @@ void main() {
 }
 `;
 
-export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
-export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
-export const TEXT_COLOR = "#e5e5e5"; // neutral-200
-export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)"; // neutral-800
+export const PRIMARY_COLOR = "#0fb8ff";
+export const PANEL_BG_COLOR = "rgba(20, 25, 60, 0.8)"; // --panel-bg (renamed from BG_COLOR_ панели)
+export const TEXT_COLOR = "#e0e0e0";
+export const HOVER_BG_COLOR = "rgba(15, 184, 255, 0.2)";

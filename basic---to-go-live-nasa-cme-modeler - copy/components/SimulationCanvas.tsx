@@ -368,7 +368,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
       }
       const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
-      const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x404040, transparent: true, opacity: 0.4 });
+      const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x003366, transparent: true, opacity: 0.3 });
       const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
       scene.add(orbitLine);
       orbitsRef.current[name] = orbitLine;
@@ -401,7 +401,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
         }
         const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
-        const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x525252, transparent: true, opacity: 0.5 });
+        const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x004488, transparent: true, opacity: 0.4 });
         const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
         orbitLine.name = 'moon-orbit'; // Name for easy selection
         parentBody.mesh.add(orbitLine); // Add orbit line to parent
@@ -894,8 +894,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (!orbitsRef.current.EARTH || !celestialBodiesRef.current.EARTH) return;
     
     // Update orbit color
-    orbitsRef.current.EARTH.material.color.set(maxImpactSpeed > 0 ? 0xff4444 : 0x404040);
-    orbitsRef.current.EARTH.material.opacity = maxImpactSpeed > 0 ? 0.9 : 0.4;
+    orbitsRef.current.EARTH.material.color.set(maxImpactSpeed > 0 ? 0xff4444 : 0x003366);
+    orbitsRef.current.EARTH.material.opacity = maxImpactSpeed > 0 ? 0.9 : 0.3;
 
     const earthMesh = celestialBodiesRef.current.EARTH.mesh;
     const atmosphereMesh = earthMesh.children.find(c => c.name === 'atmosphere') as any;

@@ -1,5 +1,7 @@
+
 import React from 'react';
 import CloseIcon from './icons/CloseIcon';
+import { PRIMARY_COLOR } from '../constants';
 import MoveIcon from './icons/MoveIcon';
 import SelectIcon from './icons/SelectIcon';
 
@@ -13,16 +15,16 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
       onClick={onClose}
     >
       <div 
-        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-neutral-300 flex flex-col"
+        className="relative bg-[#14193c]/95 border border-sky-500/40 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-gray-300 flex flex-col"
         onClick={e => e.stopPropagation()} // Prevent click from closing modal
       >
-        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h2 className={`text-2xl font-bold text-neutral-200`}>App Guide & Glossary</h2>
-          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
+        <div className="flex justify-between items-center p-4 border-b border-sky-500/30">
+          <h2 className={`text-2xl font-bold text-[${PRIMARY_COLOR}]`}>App Guide & Glossary</h2>
+          <button onClick={onClose} className="p-1 rounded-full text-gray-400 hover:text-white hover:bg-sky-500/20 transition-colors">
             <CloseIcon className="w-6 h-6" />
           </button>
         </div>
@@ -41,7 +43,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
                 <li><strong>Focus:</strong> Lock the camera's focus on either the Sun or the Earth.</li>
               </ul>
               
-              <h5 className="font-semibold text-neutral-300 mt-4">Display Options</h5>
+              <h5 className="font-semibold text-sky-400 mt-4">Display Options</h5>
               <p>Use these toggles to reduce clutter in the 3D view.</p>
                <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
                 <li><strong>Show Labels:</strong> Turn the text labels for planets on or off.</li>
@@ -49,7 +51,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
                 <li><strong>Show Moon & L1:</strong> Show or hide Earth's moon and the L1 satellite point.</li>
               </ul>
 
-              <h5 className="font-semibold text-neutral-300 mt-4">Filter CMEs</h5>
+              <h5 className="font-semibold text-sky-400 mt-4">Filter CMEs</h5>
               <p>Refine the list of CMEs shown in the simulation and in the list panel.</p>
                <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
                 <li><strong>All:</strong> Shows all available CMEs.</li>
@@ -68,7 +70,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
 
             <SubSection title="3. Timeline Controls (Bottom)">
               <p>When viewing "Show All", these controls appear, allowing you to manipulate time.</p>
-              <p className="mt-2 p-2 bg-neutral-800/50 border-l-4 border-neutral-600 rounded text-neutral-300">
+              <p className="mt-2 p-2 bg-sky-900/40 border-l-4 border-sky-500 rounded text-sky-200">
                 <strong>Forecast Period:</strong> The timeline extends 3 days into the future. A <span className="text-red-400 font-semibold">red marker</span> on the slider indicates the current time, separating past events from the future forecast.
               </p>
               <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
@@ -114,8 +116,8 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
 
 const Section: React.FC<{title: string, children: React.ReactNode}> = ({title, children}) => (
   <section>
-    <h3 className="text-xl font-semibold text-neutral-300 mb-2">{title}</h3>
-    <div className="space-y-3 text-sm text-neutral-300 leading-relaxed">
+    <h3 className="text-xl font-semibold text-sky-300 mb-2">{title}</h3>
+    <div className="space-y-3 text-sm text-gray-300 leading-relaxed">
       {children}
     </div>
   </section>
@@ -123,7 +125,7 @@ const Section: React.FC<{title: string, children: React.ReactNode}> = ({title, c
 
 const SubSection: React.FC<{title: string, children: React.ReactNode}> = ({title, children}) => (
    <div className="mt-4">
-      <h4 className="font-semibold text-neutral-400">{title}</h4>
+      <h4 className="font-semibold text-sky-400">{title}</h4>
       {children}
    </div>
 );

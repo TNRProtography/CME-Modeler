@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
@@ -236,7 +237,7 @@ const App: React.FC = () => {
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
   return (
-    <div className="relative w-screen h-screen bg-black text-neutral-300 overflow-hidden">
+    <div className="relative w-screen h-screen bg-[#02041b] text-gray-200 overflow-hidden">
       <SimulationCanvas
         ref={canvasRef}
         cmeData={filteredCmes}
@@ -291,10 +292,10 @@ const App: React.FC = () => {
 
       {/* Top-left menu toggle (mobile only) */}
        <div className="lg:hidden fixed top-4 left-4 z-30 flex items-center space-x-2">
-        <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
+        <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-[#14193c]/90 backdrop-blur-sm border border-sky-500/30 rounded-full text-sky-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
             <SettingsIcon className="w-6 h-6" />
         </button>
-        <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
+        <button onClick={handleResetView} className="p-2 bg-[#14193c]/90 backdrop-blur-sm border border-sky-500/30 rounded-full text-sky-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
             <HomeIcon className="w-6 h-6" />
         </button>
       </div>
@@ -303,12 +304,12 @@ const App: React.FC = () => {
       <div className="fixed top-4 right-4 z-30 flex items-center space-x-2">
         <button 
             onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
-            className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
+            className="p-2 bg-[#14193c]/90 backdrop-blur-sm border border-sky-500/30 rounded-full text-sky-300 shadow-lg active:scale-95 transition-transform"
             title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
         >
             {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
         </button>
-        <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
+        <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-[#14193c]/90 backdrop-blur-sm border border-sky-500/30 rounded-full text-sky-300 shadow-lg active:scale-95 transition-transform">
             <ListIcon className="w-6 h-6" />
         </button>
       </div>
@@ -320,7 +321,7 @@ const App: React.FC = () => {
         <div className={`
           flex flex-col justify-between h-full pointer-events-auto
           lg:h-[calc(100vh-40px)] lg:relative lg:w-auto lg:max-w-xs lg:bg-transparent lg:translate-x-0 lg:z-auto
-          fixed top-0 left-0 w-4/5 max-w-[320px] bg-neutral-950 shadow-2xl z-50
+          fixed top-0 left-0 w-4/5 max-w-[320px] bg-[#14193c] shadow-2xl z-50
           transition-transform duration-300 ease-in-out
           ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}
         `}>
@@ -349,7 +350,7 @@ const App: React.FC = () => {
         <div className={`
           pointer-events-auto
           lg:block lg:h-[calc(100vh-40px)] lg:max-h-[calc(100vh-40px)] lg:relative lg:w-auto lg:max-w-md lg:bg-transparent lg:translate-x-0 lg:z-auto
-          fixed top-0 right-0 h-full w-4/5 max-w-[320px] bg-neutral-950 shadow-2xl z-50
+          fixed top-0 right-0 h-full w-4/5 max-w-[320px] bg-[#14193c] shadow-2xl z-50
           transition-transform duration-300 ease-in-out
           ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}
         `}>
