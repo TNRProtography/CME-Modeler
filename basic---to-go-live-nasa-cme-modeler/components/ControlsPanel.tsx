@@ -38,6 +38,17 @@ const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React
   </button>
 );
 
+// === NEW DISCLAIMER COMPONENT ===
+// A small, styled component for the disclaimer text.
+const Disclaimer = () => (
+  <div className="mt-6 pt-4 border-t border-neutral-700/80 text-xs text-neutral-500 space-y-2">
+    <p className="font-semibold text-neutral-400">Disclaimer</p>
+    <p>
+      All data comes from NASA and this simulation is not to scale of the solar system. There is also no guarantee for the accuracy of CME data.
+    </p>
+  </div>
+);
+
 const ControlsPanel: React.FC<ControlsPanelProps> = ({
   activeTimeRange,
   onTimeRangeChange,
@@ -121,10 +132,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           </div>
         </div>
 
-
         {isLoading && (
           <div className={`mt-3 text-sm text-neutral-400 italic`}>Fetching Data... Please Wait.</div>
         )}
+
+        {/* === DISCLAIMER ADDED HERE === */}
+        {/* The new disclaimer component is placed at the end of the scrollable content area. */}
+        <Disclaimer />
+
       </div>
 
       <div className="mt-auto pt-4">
