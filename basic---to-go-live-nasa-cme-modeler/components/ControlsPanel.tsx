@@ -38,13 +38,12 @@ const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React
   </button>
 );
 
-// === NEW DISCLAIMER COMPONENT ===
-// A small, styled component for the disclaimer text.
+// === UPDATED DISCLAIMER COMPONENT ===
 const Disclaimer = () => (
-  <div className="mt-6 pt-4 border-t border-neutral-700/80 text-xs text-neutral-500 space-y-2">
-    <p className="font-semibold text-neutral-400">Disclaimer</p>
+  <div className="mt-6 pt-4 border-t border-neutral-700/80 text-xs text-neutral-500 space-y-1">
+    <p className="font-semibold text-neutral-400">Data & Accuracy Disclaimer</p>
     <p>
-      All data comes from NASA and this simulation is not to scale of the solar system. There is also no guarantee for the accuracy of CME data.
+      Orbital and Coronal Mass Ejection (CME) data is provided by the National Aeronautics and Space Administration (NASA). This model is a visual representation for illustrative purposes only and is not to scale. No guarantee is provided for the accuracy of source data or its derived impact predictions.
     </p>
   </div>
 );
@@ -136,8 +135,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           <div className={`mt-3 text-sm text-neutral-400 italic`}>Fetching Data... Please Wait.</div>
         )}
 
-        {/* === DISCLAIMER ADDED HERE === */}
-        {/* The new disclaimer component is placed at the end of the scrollable content area. */}
+        {/* Disclaimer with professional wording is placed here */}
         <Disclaimer />
 
       </div>
