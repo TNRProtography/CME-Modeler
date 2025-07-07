@@ -38,7 +38,6 @@ const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React
   </button>
 );
 
-// === UPDATED DISCLAIMER COMPONENT ===
 const Disclaimer = () => (
   <div className="mt-6 pt-4 border-t border-neutral-700/80 text-xs text-neutral-500 space-y-1">
     <p className="font-semibold text-neutral-400">Data & Accuracy Disclaimer</p>
@@ -71,7 +70,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
     <div className="panel lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl space-y-5 lg:max-w-xs w-full h-full flex flex-col">
       <div className="flex justify-between items-center border-b border-neutral-700/80 pb-2 mb-3">
         <div className="flex items-center space-x-3">
-          <h1 className={`text-2xl font-bold text-neutral-100`}>Spot the Aurora - CME Modeler by TNR Protography</h1>
+          <h1 className={`text-2xl font-bold text-neutral-100`}>CME Modeler</h1>
+
+          {/* === NEW FORECAST LINK ADDED HERE === */}
+          <a 
+            href="/forecast.html" 
+            title="Go to Aurora Forecast Page"
+            className="text-sm font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+          >
+            Forecast
+          </a>
+
           <button
             onClick={onOpenGuide}
             className="p-1 text-neutral-400 hover:text-neutral-100 hover:bg-white/10 rounded-full transition-colors"
@@ -127,15 +136,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           <div className="flex space-x-2 text-xs">
             <Button onClick={() => onCmeFilterChange(CMEFilter.ALL)} isActive={cmeFilter === CMEFilter.ALL}>All</Button>
             <Button onClick={() => onCmeFilterChange(CMEFilter.EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.EARTH_DIRECTED}>Earth-Directed</Button>
-            <Button onClick={() => onCmeFilterChange(CMEFilter.NOT_EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.NOT_EARTH_DIRECTED}>Not Earth-Directed</Button>
+            <Button onClick={() => onCmeFilterChange(CMEFilter.NOT_EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.NOT_EARH_DIRECTED}>Not Earth-Directed</Button>
           </div>
         </div>
 
-        {isLoading && (
-          <div className={`mt-3 text-sm text-neutral-400 italic`}>Fetching Data... Please Wait.</div>
-        )}
-
-        {/* Disclaimer with professional wording is placed here */}
         <Disclaimer />
 
       </div>
