@@ -5,6 +5,7 @@ import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
 import TutorialModal from './components/TutorialModal';
+import LoadingOverlay from './components/LoadingOverlay'; // <-- IMPORT THE NEW COMPONENT
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, InteractionMode, SimulationCanvasHandle } from './types';
 
@@ -237,6 +238,11 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-screen h-screen bg-black text-neutral-300 overflow-hidden">
+      
+      {/* --- LOADING OVERLAY --- */}
+      {/* This will cover the entire screen when isLoading is true */}
+      {isLoading && <LoadingOverlay />}
+
       <SimulationCanvas
         ref={canvasRef}
         cmeData={filteredCmes}
