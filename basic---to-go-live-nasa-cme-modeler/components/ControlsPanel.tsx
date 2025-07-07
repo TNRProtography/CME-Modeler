@@ -63,7 +63,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
     <div className="panel lg:bg-[#14193c]/80 backdrop-blur-md lg:border lg:border-sky-500/30 lg:rounded-lg p-4 lg:shadow-xl space-y-5 lg:max-w-xs w-full h-full flex flex-col">
       <div className="flex justify-between items-center border-b border-sky-500/50 pb-2 mb-3">
         <div className="flex items-center space-x-3">
-          <h1 className={`text-2xl font-bold text-[${PRIMARY_COLOR}]`}>CME Modeler</h1>
+          <h1 className={`text-2xl font-bold text-[${PRIMARY_COLOR}]`}>Spot the Aurora - CME Modeler</h1>
+          <body className={`text-2xl font-bold text-[${PRIMARY_COLOR}]`}>By TNR Protography</body>
           <button
             onClick={onOpenGuide}
             className="p-1 text-sky-300 hover:text-white hover:bg-sky-500/20 rounded-full transition-colors"
