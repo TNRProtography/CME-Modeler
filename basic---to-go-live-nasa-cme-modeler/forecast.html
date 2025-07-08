@@ -65,17 +65,6 @@
         .chart-card { grid-column: span 6; height: 450px; }
         .chart-card canvas { width: 100% !important; height: 100% !important; }
 
-        /* --- IPS SECTION STYLING --- */
-        #ips-section { grid-column: 1 / -1; }
-        .ips-event { text-align: left; padding: 15px 0; border-bottom: 1px solid var(--border-color); }
-        .ips-event:last-child { border-bottom: none; }
-        .ips-header { font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
-        .ips-details-list { list-style: none; padding: 0; margin: 0; font-size: 0.9rem; }
-        .ips-details-list li { padding: 4px 0; }
-        .ips-details-list strong { color: var(--text-primary); }
-        .ips-details-list a { color: var(--link-color); text-decoration: none; }
-        .ips-details-list a:hover { text-decoration: underline; }
-
         /* --- RESPONSIVE ADJUSTMENTS --- */
         @media (max-width: 1200px) { .chart-card { grid-column: 1 / -1; } }
         @media (max-width: 900px) { h1 { font-size: 1.75rem; } #nz-spotlight { grid-template-columns: 1fr; } #aurora-score-display { border-right: none; border-bottom: 1px solid var(--border-color); padding-right: 0; padding-bottom: 20px; margin-bottom: 20px; } }
@@ -107,7 +96,8 @@
         </div>
         <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2><canvas id="auroraChart"></canvas></div>
         <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
-        <div id="ips-section" class="card"><h2 class="card-title">Recent Interplanetary Shocks (Last 24 Hours)</h2><div id="ips-container"><p>Loading shock data...</p></div></div>
+        
+        <!-- IPS SECTION HAS BEEN REMOVED -->
     </main>
 </div>
 
@@ -156,13 +146,10 @@
             const unit = type==='speed'?' km/s':type==='density'?' p/cm³': ' nT'; const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)}${unit}`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color;
         } catch (error) { console.error(`[${type}] Error updating gauge:`, error); valEl.innerText = "Error"; emEl.innerHTML = GAUGE_EMOJIS.error; luEl.innerText = `Update Failed: ${error.message.substring(0,30)}`; barEl.style.width='0%'; }
     }
-
     async function renderMagneticChart() {
-        const ctx = document.getElementById('magneticFieldChart').getContext('2d');
-        const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
+        const ctx = document.getElementById('magneticFieldChart').getContext('2d'); const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
         try {
-            let data = apiDataCache[NOAA_MAG_ENDPOINT];
-            if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
+            let data = apiDataCache[NOAA_MAG_ENDPOINT]; if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
             if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
             const headers = data[0]; const timeIndex = headers.indexOf('time_tag'); const btIndex = headers.indexOf('bt'); const bzIndex = headers.indexOf('bz_gsm');
             const filteredData = data.slice(1).map(row => ({ time: new Date(row[timeIndex]), bt: parseFloat(row[btIndex]) > -9999 ? parseFloat(row[btIndex]) : null, bz: parseFloat(row[bzIndex]) > -9999 ? parseFloat(row[bzIndex]) : null, })).filter(p => p.time >= chartTimeLimit);
@@ -182,13 +169,9 @@
         try {
             const [tnrResponse, basicResponse] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
             if (!tnrResponse.ok || !basicResponse.ok) throw new Error(`Fetch failed`);
-            const tnrData = await tnrResponse.json(); const basicData = await basicResponse.json();
-            const scoreValue = parseFloat(tnrData.values.pop().value);
-            document.getElementById('aurora-score').innerHTML = `${scoreValue.toFixed(1)}% <span class="emoji">${getAuroraEmoji(scoreValue)}</span>`;
-            const lastUpdated = new Date(basicData.values.pop().lastUpdated);
-            document.getElementById('last-updated').innerText = `Last Updated: ${lastUpdated.toLocaleDateString()} ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-            updateThermometer(scoreValue);
-            updateAuroraBlurb(scoreValue);
+            const tnrData = await tnrResponse.json(); const basicData = await basicResponse.json(); const scoreValue = parseFloat(tnrData.values.pop().value); document.getElementById('aurora-score').innerHTML = `${scoreValue.toFixed(1)}% <span class="emoji">${getAuroraEmoji(scoreValue)}</span>`;
+            const lastUpdated = new Date(basicData.values.pop().lastUpdated); document.getElementById('last-updated').innerText = `Last Updated: ${lastUpdated.toLocaleDateString()} ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            updateThermometer(scoreValue); updateAuroraBlurb(scoreValue);
         } catch (error) { console.error("Error fetching NZ sensor data:", error); document.getElementById('aurora-score').innerHTML = `Error <span class="emoji">❓</span>`; document.getElementById('last-updated').innerText = `Update Failed: ${error.message}`; updateThermometer(0); updateAuroraBlurb(-1); }
     }
     function getAuroraEmoji(s){return s<10?'\u{1F61F}':s<25?'\u{1F610}':s<50?'\u{1F642}':s<80?'\u{1F600}':'\u{1F929}'}
@@ -201,34 +184,6 @@
         if(auroraChartInstance){auroraChartInstance.data=cD;auroraChartInstance.update()}else{auroraChartInstance=new Chart(ctx,{type:'line',data:cD,options:{responsive:!0,maintainAspectRatio:!1,plugins:{legend:{labels:{color:'#a1a1aa'}},title:{display:!1}},scales:{x:{ticks:{color:'#71717a'},grid:{color:'#3f3f46'}},y:{min:0,max:100,ticks:{color:'#71717a'},grid:{color:'#3f3f46'}}},interaction:{mode:'index',intersect:!1}}})}}catch(e){console.error("Error rendering aurora chart:",e)}
     }
     
-    // --- IPS Functionality ---
-    async function fetchAndDisplayIPSData() {
-        const container = document.getElementById('ips-container');
-        container.innerHTML = '<p>Loading shock data...</p>';
-        const endDate = new Date(); const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 1);
-        const formattedStartDate = startDate.toISOString().split('T')[0];
-        const formattedEndDate = endDate.toISOString().split('T')[0];
-        const url = `/api/ips?startDate=${formattedStartDate}&endDate=${formattedEndDate}`;
-        try {
-            const response = await fetch(url);
-            if (!response.ok) { const errorText = await response.text(); throw new Error(`API fetch failed (${response.status}): ${errorText}`); }
-            const ipsData = await response.json();
-            container.innerHTML = '';
-            if (ipsData.length === 0) { container.innerHTML = '<p>No Interplanetary Shocks detected in the last 24 hours.</p>'; return; }
-            ipsData.forEach(shock => {
-                const eventDiv = document.createElement('div');
-                eventDiv.className = 'ips-event';
-                let instruments = (shock.instruments && shock.instruments.length > 0) ? shock.instruments.map(inst => inst.displayName).join(', ') : 'N/A';
-                eventDiv.innerHTML = `<h4 class="ips-header">Shock detected by: ${shock.location || 'Unknown'}</h4><ul class="ips-details-list"><li><strong>Event Time:</strong> ${formatTimestamp(shock.eventTime)}</li><li><strong>Shock ID:</strong> ${shock.shockID}</li><li><strong>Instruments:</strong> ${instruments}</li><li><strong>Catalog:</strong> ${shock.catalog}</li><li><strong>Link:</strong> <a href="${shock.link}" target="_blank" rel="noopener noreferrer">View Details on DONKI</a></li></ul>`;
-                container.appendChild(eventDiv);
-            });
-        } catch (error) {
-            console.error("Error fetching IPS data:", error);
-            container.innerHTML = `<p style="color: #ef4444;">Error loading Interplanetary Shock data: ${error.message}</p>`;
-        }
-    }
-
     // --- Initialization ---
     function runAllUpdates() {
         apiDataCache = {};
@@ -236,7 +191,6 @@
         renderAuroraChart();
         Object.keys(GAUGE_API_ENDPOINTS).forEach(type => updateGauge(type));
         renderMagneticChart();
-        fetchAndDisplayIPSData();
     }
     document.addEventListener('DOMContentLoaded', () => {
         runAllUpdates();
