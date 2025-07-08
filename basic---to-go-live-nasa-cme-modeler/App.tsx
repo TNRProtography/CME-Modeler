@@ -23,12 +23,14 @@ const useHash = () => {
 const App: React.FC = () => {
   const hash = useHash();
 
-  // The modeler page is shown when the hash is exactly '#/modeler'
+  // The modeler page is shown only when the hash is exactly '#/modeler'
   const isModelerPage = hash === '#/modeler';
 
   return (
-    <div className="w-screen h-screen bg-black overflow-hidden">
+    // This is the main container for the entire application
+    <div className="w-screen h-screen bg-black">
       <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center space-x-1 p-1 bg-neutral-900 border border-neutral-800 rounded-lg shadow-lg">
+        {/* Link to the Forecast page (the default) */}
         <a
           href="#/"
           className={`flex items-center space-x-2 px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${!isModelerPage ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
@@ -36,6 +38,7 @@ const App: React.FC = () => {
           <ForecastIcon className="w-5 h-5" />
           <span>Forecast</span>
         </a>
+        {/* Link to the CME Modeler page */}
         <a
           href="#/modeler"
           className={`flex items-center space-x-2 px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${isModelerPage ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
@@ -45,8 +48,8 @@ const App: React.FC = () => {
         </a>
       </header>
 
-      {/* The main content area where the selected "page" will be rendered */}
-      <main className="w-full h-full pt-20 overflow-y-auto"> {/* Added padding-top and scrolling */}
+      {/* Conditionally render the correct "page" component */}
+      <main className="w-full h-full pt-20 overflow-y-auto">
         {isModelerPage ? <CmeModeler /> : <ForecastDashboard />}
       </main>
     </div>

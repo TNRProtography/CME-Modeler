@@ -1,4 +1,3 @@
-// components/icons/CmeIcon.tsx
 import React from 'react';
 
 const CmeIcon: React.FC<{ className?: string }> = ({ className }) => (
