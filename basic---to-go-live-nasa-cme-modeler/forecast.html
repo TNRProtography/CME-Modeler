@@ -84,79 +84,34 @@
             </div>
         </div>
         <div class="gauge-grid">
-            <div class="card gauge">
-                <h3 class="card-title">Hemispheric Power</h3>
-                <div class="gauge-value" id="power-value">...</div>
-                <div class="gauge-emoji" id="power-emoji">...</div>
-                <div class="gauge-bar-track"><div class="gauge-bar" id="power-gauge-bar"></div></div>
-                <div class="gauge-last-updated" id="power-last-updated">...</div>
-            </div>
-            <div class="card gauge">
-                <h3 class="card-title">Solar Wind Speed</h3>
-                <div class="gauge-value" id="speed-value">...</div>
-                <div class="gauge-emoji" id="speed-emoji">...</div>
-                <div class="gauge-bar-track"><div class="gauge-bar" id="speed-gauge-bar"></div></div>
-                <div class="gauge-last-updated" id="speed-last-updated">...</div>
-            </div>
-            <div class="card gauge">
-                <h3 class="card-title">Solar Wind Density</h3>
-                <div class="gauge-value" id="density-value">...</div>
-                <div class="gauge-emoji" id="density-emoji">...</div>
-                <div class="gauge-bar-track"><div class="gauge-bar" id="density-gauge-bar"></div></div>
-                <div class="gauge-last-updated" id="density-last-updated">...</div>
-            </div>
-            <div class="card gauge">
-                <h3 class="card-title">IMF Bt (Total)</h3>
-                <div class="gauge-value" id="bt-value">...</div>
-                <div class="gauge-emoji" id="bt-emoji">...</div>
-                <div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div>
-                <div class="gauge-last-updated" id="bt-last-updated">...</div>
-            </div>
-            <div class="card gauge">
-                <h3 class="card-title">IMF Bz (N/S)</h3>
-                <div class="gauge-value" id="bz-value">...</div>
-                <div class="gauge-emoji" id="bz-emoji">...</div>
-                <div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div>
-                <div class="gauge-last-updated" id="bz-last-updated">...</div>
-            </div>
+            <div class="card gauge"><h3 class="card-title">Hemispheric Power</h3><div class="gauge-value" id="power-value">...</div><div class="gauge-emoji" id="power-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="power-gauge-bar"></div></div><div class="gauge-last-updated" id="power-last-updated">...</div></div>
+            <div class="card gauge"><h3 class="card-title">Solar Wind Speed</h3><div class="gauge-value" id="speed-value">...</div><div class="gauge-emoji" id="speed-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="speed-gauge-bar"></div></div><div class="gauge-last-updated" id="speed-last-updated">...</div></div>
+            <div class="card gauge"><h3 class="card-title">Solar Wind Density</h3><div class="gauge-value" id="density-value">...</div><div class="gauge-emoji" id="density-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="density-gauge-bar"></div></div><div class="gauge-last-updated" id="density-last-updated">...</div></div>
+            <div class="card gauge"><h3 class="card-title">IMF Bt (Total)</h3><div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div></div>
+            <div class="card gauge"><h3 class="card-title">IMF Bz (N/S)</h3><div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div></div>
         </div>
-        <div class="card chart-card">
-            <h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2>
-            <canvas id="auroraChart"></canvas>
-        </div>
-        <div class="card chart-card">
-            <h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2>
-            <canvas id="magneticFieldChart"></canvas>
-        </div>
+        <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2><canvas id="auroraChart"></canvas></div>
+        <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
     </main>
 </div>
 
 <script>
-    // --- JAVASCRIPT SECTION (UPDATED FOR NOAA DATA SOURCES) ---
-
     // --- Global Variables & Constants ---
     let auroraChartInstance = null;
     let magneticChart = null;
-    let apiDataCache = {}; // Simple cache to avoid re-fetching the same file during an update cycle
-
-    // --- NEW NOAA JSON URLs ---
+    let apiDataCache = {}; 
     const NOAA_PLASMA_ENDPOINT = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-5-minute.json';
     const NOAA_MAG_ENDPOINT = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
-
     const GAUGE_API_ENDPOINTS = {
-        // Power remains on the old endpoint as it's a calculated value not in the NOAA files
         power: 'https://hemispheric-power.thenamesrock.workers.dev/',
         speed: NOAA_PLASMA_ENDPOINT,
         density: NOAA_PLASMA_ENDPOINT,
         bt: NOAA_MAG_ENDPOINT,
         bz: NOAA_MAG_ENDPOINT
     };
-
-    // Gauge configurations remain the same
     const GAUGE_THRESHOLDS = { speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 }, density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 }, power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity, maxExpected: 250 }, bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 60 }, bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }};
     const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
     const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
-
     const UPDATE_INTERVAL_MS = 600000;
     const CHART_HOURS = 24;
     
@@ -168,115 +123,43 @@
     async function updateGauge(type) {
         const endpoint = GAUGE_API_ENDPOINTS[type];
         const { value: valEl, emoji: emEl, lastUpdated: luEl, bar: barEl } = { value: document.getElementById(`${type}-value`), emoji: document.getElementById(`${type}-emoji`), lastUpdated: document.getElementById(`${type}-last-updated`), bar: document.getElementById(`${type}-gauge-bar`) };
-
         try {
-            // Special handling for the original 'power' endpoint
             if (type === 'power') {
-                const response = await fetch(endpoint);
-                if (!response.ok) throw new Error(`Fetch failed for power`);
-                const data = await response.json();
-                const latestData = data.values[data.values.length - 1];
-                const value = parseFloat(latestData.value);
-                const style = getGaugeStyle(value, type);
-                valEl.innerText = `${value.toFixed(1)} GW`;
-                emEl.innerHTML = style.emoji;
-                luEl.innerText = `Last Updated: ${formatTimestamp(latestData.lastUpdated)}`;
-                barEl.style.width = `${style.percentage}%`;
-                barEl.style.backgroundColor = style.color;
-                return; // Exit after handling power
+                const response = await fetch(endpoint); if (!response.ok) throw new Error(`Fetch failed for power`);
+                const data = await response.json(); const latestData = data.values[data.values.length - 1]; const value = parseFloat(latestData.value); const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)} GW`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(latestData.lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color; return;
             }
-
             let data = apiDataCache[endpoint];
             if (!data) {
-                const response = await fetch(endpoint);
-                if (!response.ok) throw new Error(`Network error: ${response.status}`);
-                data = await response.json();
-                apiDataCache[endpoint] = data;
+                const response = await fetch(endpoint); if (!response.ok) throw new Error(`Network error: ${response.status}`); data = await response.json(); apiDataCache[endpoint] = data;
             }
-
             if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
-            
-            const headers = data[0];
-            const columnName = type === 'bz' ? 'bz_gsm' : type; // NOAA uses 'bz_gsm'
-            const valueIndex = headers.indexOf(columnName);
-            const timeIndex = headers.indexOf('time_tag');
-
+            const headers = data[0]; const columnName = type === 'bz' ? 'bz_gsm' : type; const valueIndex = headers.indexOf(columnName); const timeIndex = headers.indexOf('time_tag');
             if (valueIndex === -1 || timeIndex === -1) throw new Error(`Column not found: ${columnName}`);
-            
             let latestRow = null;
             for (let i = data.length - 1; i > 0; i--) {
-                const row = data[i];
-                const val = parseFloat(row[valueIndex]);
-                if (!isNaN(val) && val > -9999) { // NOAA uses -9999.x for invalid data
-                    latestRow = row;
-                    break;
-                }
+                const row = data[i]; const val = parseFloat(row[valueIndex]);
+                if (!isNaN(val) && val > -9999) { latestRow = row; break; }
             }
-
             if (!latestRow) throw new Error("No valid recent data found");
-
-            const value = parseFloat(latestRow[valueIndex]);
-            const lastUpdated = latestRow[timeIndex];
-            
-            const unit = type==='speed'?' km/s':type==='density'?' p/cm³': ' nT';
-            const style = getGaugeStyle(value, type);
-            valEl.innerText = `${value.toFixed(1)}${unit}`;
-            emEl.innerHTML = style.emoji;
-            luEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`;
-            barEl.style.width = `${style.percentage}%`;
-            barEl.style.backgroundColor = style.color;
-
-        } catch (error) {
-            console.error(`[${type}] Error updating gauge:`, error);
-            valEl.innerText = "Error"; emEl.innerHTML = GAUGE_EMOJIS.error; luEl.innerText = `Update Failed: ${error.message.substring(0,30)}`; barEl.style.width='0%';
-        }
+            const value = parseFloat(latestRow[valueIndex]); const lastUpdated = latestRow[timeIndex];
+            const unit = type==='speed'?' km/s':type==='density'?' p/cm³': ' nT'; const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)}${unit}`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color;
+        } catch (error) { console.error(`[${type}] Error updating gauge:`, error); valEl.innerText = "Error"; emEl.innerHTML = GAUGE_EMOJIS.error; luEl.innerText = `Update Failed: ${error.message.substring(0,30)}`; barEl.style.width='0%'; }
     }
-
     async function renderMagneticChart() {
-        const ctx = document.getElementById('magneticFieldChart').getContext('2d');
-        const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
-
+        const ctx = document.getElementById('magneticFieldChart').getContext('2d'); const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
         try {
-            let data = apiDataCache[NOAA_MAG_ENDPOINT];
-            if (!data) {
-                const response = await fetch(NOAA_MAG_ENDPOINT);
-                if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-                data = await response.json();
-                apiDataCache[NOAA_MAG_ENDPOINT] = data;
-            }
-            
+            let data = apiDataCache[NOAA_MAG_ENDPOINT]; if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed: ${response.status}`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
             if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format for chart");
-
-            const headers = data[0];
-            const timeIndex = headers.indexOf('time_tag');
-            const btIndex = headers.indexOf('bt');
-            const bzIndex = headers.indexOf('bz_gsm'); // Use bz_gsm
-
-            const filteredData = data.slice(1).map(row => ({
-                time: new Date(row[timeIndex]),
-                bt: parseFloat(row[btIndex]) > -9999 ? parseFloat(row[btIndex]) : null,
-                bz: parseFloat(row[bzIndex]) > -9999 ? parseFloat(row[bzIndex]) : null,
-            })).filter(p => p.time >= chartTimeLimit);
-
+            const headers = data[0]; const timeIndex = headers.indexOf('time_tag'); const btIndex = headers.indexOf('bt'); const bzIndex = headers.indexOf('bz_gsm');
+            const filteredData = data.slice(1).map(row => ({ time: new Date(row[timeIndex]), bt: parseFloat(row[btIndex]) > -9999 ? parseFloat(row[btIndex]) : null, bz: parseFloat(row[bzIndex]) > -9999 ? parseFloat(row[bzIndex]) : null, })).filter(p => p.time >= chartTimeLimit);
             const labels = filteredData.map(p => p.time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
-            const chartData = {
-                labels,
-                datasets: [
-                    { label: 'Bt (Total)', data: filteredData.map(p => p.bt), borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', borderWidth: 1.5, tension: 0.3, pointRadius: 0, spanGaps: true },
-                    { label: 'Bz (N/S)', data: filteredData.map(p => p.bz), borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.3)', borderWidth: 1.5, tension: 0.3, pointRadius: 0, spanGaps: true }
-                ]
-            };
-            
+            const chartData = { labels, datasets: [ { label: 'Bt (Total)', data: filteredData.map(p => p.bt), borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', borderWidth: 1.5, tension: 0.3, pointRadius: 0, spanGaps: true }, { label: 'Bz (N/S)', data: filteredData.map(p => p.bz), borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.3)', borderWidth: 1.5, tension: 0.3, pointRadius: 0, spanGaps: true } ] };
             if (magneticChart) { magneticChart.data = chartData; magneticChart.update(); } 
-            else {
-                magneticChart = new Chart(ctx, { type: 'line', data: chartData, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } }, scales: { x: { ticks: { color: '#71717a', maxRotation: 0, autoSkip: true, maxTicksLimit: 24 }, grid: { color: '#3f3f46' } }, y: { ticks: { color: '#71717a' }, grid: { color: c=>c.tick.value===0?'#fafafa':'#3f3f46', lineWidth:c=>c.tick.value===0?1.5:1 } } }, interaction: { mode: 'index', intersect: false } } });
-            }
-        } catch (e) {
-            console.error("Error rendering magnetic chart:", e);
-        }
+            else { magneticChart = new Chart(ctx, { type: 'line', data: chartData, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } }, scales: { x: { ticks: { color: '#71717a', maxRotation: 0, autoSkip: true, maxTicksLimit: 24 }, grid: { color: '#3f3f46' } }, y: { ticks: { color: '#71717a' }, grid: { color: c=>c.tick.value===0?'#fafafa':'#3f3f46', lineWidth:c=>c.tick.value===0?1.5:1 } } }, interaction: { mode: 'index', intersect: false } } }); }
+        } catch (e) { console.error("Error rendering magnetic chart:", e); }
     }
     
-    // --- NZ Aurora Forecast Functions (Unchanged) ---
+    // --- NZ Aurora Forecast Functions (kept separate, with emoji fix) ---
     async function fetchSensor() {
         try {
             const [tnrResponse, basicResponse] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
@@ -290,7 +173,16 @@
             updateAuroraBlurb(scoreValue);
         } catch (error) { console.error("Error fetching NZ sensor data:", error); document.getElementById('aurora-score').innerHTML = `Error <span class="emoji">❓</span>`; document.getElementById('last-updated').innerText = `Update Failed: ${error.message}`; updateThermometer(0); updateAuroraBlurb(-1); }
     }
-    function getAuroraEmoji(s){return s<10?'':s<25?'':s<40?'':s<50?'':s<80?'':''}
+
+    // === CORRECTED EMOJI FUNCTION ===
+    function getAuroraEmoji(score) {
+        if (score < 10) return '\u{1F61F}'; // 😟 Worried Face
+        if (score < 25) return '\u{1F610}'; // 😐 Neutral Face
+        if (score < 50) return '\u{1F642}'; // 🙂 Slightly Smiling Face
+        if (score < 80) return '\u{1F600}'; // 😀 Grinning Face
+        return '\u{1F929}';                 // 🤩 Star-Struck
+    }
+
     function updateThermometer(s){const t=document.getElementById('thermometer-line');t.style.width=Math.min(s,100)+'%';t.style.backgroundColor=s<10?'#808080':s<25?'#FFD700':s<40?'#FFA500':s<50?'#FF4500':s<80?'#800080':'#FF1493'}
     function updateAuroraBlurb(s){document.querySelectorAll('#aurora-blurbs .aurora-blurb').forEach(e=>e.style.display='none');document.getElementById(s<10?'blurb-10':s<25?'blurb-25':s<40?'blurb-40':s<50?'blurb-50':s<80?'blurb-80':'blurb-80plus').style.display='block'}
     async function renderAuroraChart() {
