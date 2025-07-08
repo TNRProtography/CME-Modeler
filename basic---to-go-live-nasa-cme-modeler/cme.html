@@ -11,7 +11,11 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- This now points to the correct entry point for your React app -->
-    <script type="module" src="/src/index.tsx"></script>
+    <!-- 
+      The path is changed from "/src/index.tsx" to "./src/index.tsx".
+      The leading dot specifies a relative path from the project root,
+      which Vite's build process understands correctly.
+    -->
+    <script type="module" src="./src/index.tsx"></script>
 </body>
 </html>
