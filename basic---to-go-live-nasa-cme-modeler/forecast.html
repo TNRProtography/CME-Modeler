@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spot The Aurora - Aurora Forecast by TNR Protography</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* --- Global Styles & Dark Theme --- */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            text-align: center;
+            background-color: #0a0a0a; /* Very dark background */
+            color: #e5e5e5; /* Light text (neutral-200) */
+            padding: 20px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+
+        /* --- Navigation Button --- */
+        .nav-button {
+            display: inline-block;
+            background-color: #27272a; /* neutral-800 */
+            color: #e5e5e5;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            border: 1px solid #3f3f46; /* neutral-700 */
+            transition: background-color 0.2s ease, transform 0.2s ease;
+            margin-bottom: 30px;
+        }
+        .nav-button:hover {
+            background-color: #3f3f46;
+            transform: translateY(-2px);
+        }
+
+        /* --- Section Styling --- */
+        .forecast-section {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 25px;
+            background-color: #171717; /* neutral-900 */
+            border: 1px solid #262626; /* neutral-800 */
+            border-radius: 15px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+        h1, h2, h3 {
+            color: #fafafa; /* Brighter white for headers */
+            margin-bottom: 20px;
+        }
+
+        /* --- NZ Aurora Score Specific Styling --- */
+        #aurora-score-label {
+            font-size: 23px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #a1a1aa; /* neutral-400 */
+        }
+        #aurora-score {
+            font-size: 36px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 5px;
+            display: inline-block;
+            min-width: 100px;
+            min-height: 1.5em;
+            line-height: 1.2;
+        }
+        #last-updated {
+            font-size: 16px;
+            margin-top: 10px;
+            color: #71717a; /* neutral-500 */
+        }
+        #thermometer-container {
+            margin-top: 20px;
+            position: relative;
+            height: 40px;
+            width: 100%;
+            border: 1px solid #3f3f46;
+            border-radius: 20px;
+            box-sizing: border-box;
+            overflow: hidden;
+            background-color: #27272a;
+        }
+        #thermometer-line {
+            height: 100%;
+            border-radius: 20px;
+            width: 0%;
+            transition: width 1.5s ease, background-color 1s ease;
+        }
+        #aurora-blurbs {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #d4d4d8;
+            text-align: center;
+        }
+        .aurora-blurb { margin: 7px 0; }
+        .emoji {
+            display: inline-block;
+            font-size: 40px;
+            transition: transform 0.3s ease;
+            vertical-align: middle;
+            margin-left: 5px;
+        }
+        .emoji:hover { transform: scale(1.2) rotate(15deg); }
+
+
+        /* --- Solar Dashboard Gauge Styling --- */
+        #gauges-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .gauge-wrapper {
+            background: #27272a; /* neutral-800 */
+            border: 1px solid #3f3f46;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            flex: 1;
+            min-width: 250px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .gauge-wrapper:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        .gauge-title {
+            font-size: 1.3em;
+            font-weight: 600; /* Semibold */
+            margin-bottom: 15px;
+            color: #d4d4d8; /* neutral-300 */
+        }
+        .gauge-display {
+            height: 30px;
+            width: 90%;
+            background-color: #171717; /* neutral-900 */
+            border-radius: 15px;
+            margin: 15px auto;
+            overflow: hidden;
+            position: relative;
+        }
+        .gauge-bar {
+            height: 100%;
+            width: 0%;
+            border-radius: 15px;
+            background-color: #808080;
+            transition: width 1.5s ease, background-color 1s ease;
+            box-shadow: inset 0 -2px 5px rgba(0,0,0,0.3);
+        }
+        .gauge-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-top: 10px;
+            color: #fafafa;
+            min-height: 1.2em;
+        }
+        .gauge-emoji {
+            font-size: 2.5em;
+            margin-top: 10px;
+            display: inline-block;
+            transition: transform 0.3s ease;
+            min-height: 1.2em;
+            line-height: 1;
+        }
+        .gauge-emoji:hover { transform: scale(1.2) rotate(10deg); }
+        .gauge-last-updated {
+            font-size: 0.9em;
+            margin-top: 15px;
+            color: #a1a1aa; /* neutral-400 */
+            min-height: 1.1em;
+        }
+
+        /* --- Chart Container Styling (for both charts) --- */
+        .chart-container {
+            width: 95%;
+            max-width: 1000px;
+            height: 450px;
+            margin: 40px auto 20px auto;
+            background: #1e1e21; /* Slightly different dark bg */
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            border: 1px solid #3f3f46;
+        }
+
+        /* --- Responsive Design (Adjustments for dark theme) --- */
+        @media only screen and (max-width: 700px) {
+             #gauges-container { flex-direction: column; align-items: center; gap: 15px; }
+             .gauge-wrapper { width: 90%; max-width: 400px; min-width: unset; }
+        }
+        @media only screen and (max-width: 600px) {
+            body { padding: 10px; }
+            .forecast-section, .chart-container { padding: 15px; }
+            .chart-container { height: 350px; width: 100%; box-sizing: border-box; }
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="nav-button">← Back to CME Modeler</a>
+
+    <!-- Section for NZ West Coast Aurora Forecast -->
+    <div id="nz-forecast-section" class="forecast-section">
+        <h1>Aurora Forecast for West Coast of NZ</h1>
+        <div id="aurora-score-label">Real-time Aurora Chance</div>
+        <div id="aurora-score">Loading...</div>
+        <div id="last-updated">Last Updated: Loading...</div>
+        <div id="thermometer-container">
+            <div id="thermometer-line"></div>
+        </div>
+        <div id="aurora-blurbs">
+            <div class="aurora-blurb" id="blurb-10">Little to no auroral activity.</div>
+            <div class="aurora-blurb" id="blurb-25">Minimal auroral activity likely, possibly only a faint glow detectable by professional cameras.</div>
+            <div class="aurora-blurb" id="blurb-40">Clear auroral activity visible in camera/phone images, potentially visible to the naked eye under ideal conditions.</div>
+            <div class="aurora-blurb" id="blurb-50">Faint auroral glow potentially visible to the naked eye, possibly with some color.</div>
+            <div class="aurora-blurb" id="blurb-80">Good chance of seeing auroral color with the naked eye (depending on individual eyesight and viewing conditions).</div>
+            <div class="aurora-blurb" id="blurb-80plus">High probability of significant auroral substorms, potentially displaying a wide range of colors and dynamic activity.</div>
+        </div>
+        <div class="chart-container">
+            <canvas id="auroraChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Section for General Solar Activity Dashboard -->
+    <div id="solar-dashboard-section" class="forecast-section">
+        <h1>Current Solar Conditions for Aurora</h1>
+        <div id="gauges-container">
+            <!-- Gauges will be populated by JS -->
+            <div class="gauge-wrapper" id="power-gauge-wrapper">
+                <div class="gauge-title">Hemispheric Power</div> <div class="gauge-display"><div class="gauge-bar" id="power-gauge-bar"></div></div> <div class="gauge-value" id="power-value">Loading...</div> <div class="gauge-emoji" id="power-emoji">□</div> <div class="gauge-last-updated" id="power-last-updated">Last Updated: Loading...</div>
+            </div>
+            <div class="gauge-wrapper" id="speed-gauge-wrapper">
+                <div class="gauge-title">Solar Wind Speed</div> <div class="gauge-display"><div class="gauge-bar" id="speed-gauge-bar"></div></div> <div class="gauge-value" id="speed-value">Loading...</div> <div class="gauge-emoji" id="speed-emoji">□</div> <div class="gauge-last-updated" id="speed-last-updated">Last Updated: Loading...</div>
+            </div>
+            <div class="gauge-wrapper" id="density-gauge-wrapper">
+                <div class="gauge-title">Solar Wind Density</div> <div class="gauge-display"><div class="gauge-bar" id="density-gauge-bar"></div></div> <div class="gauge-value" id="density-value">Loading...</div> <div class="gauge-emoji" id="density-emoji">□</div> <div class="gauge-last-updated" id="density-last-updated">Last Updated: Loading...</div>
+            </div>
+            <div class="gauge-wrapper" id="bt-gauge-wrapper">
+                <div class="gauge-title">IMF Bt (Total Strength)</div> <div class="gauge-display"><div class="gauge-bar" id="bt-gauge-bar"></div></div> <div class="gauge-value" id="bt-value">Loading...</div> <div class="gauge-emoji" id="bt-emoji">□</div> <div class="gauge-last-updated" id="bt-last-updated">Last Updated: Loading...</div>
+            </div>
+            <div class="gauge-wrapper" id="bz-gauge-wrapper">
+                <div class="gauge-title">IMF Bz (North/South)</div> <div class="gauge-display"><div class="gauge-bar" id="bz-gauge-bar"></div></div> <div class="gauge-value" id="bz-value">Loading...</div> <div class="gauge-emoji" id="bz-emoji">□</div> <div class="gauge-last-updated" id="bz-last-updated">Last Updated: Loading...</div>
+            </div>
+        </div>
+        <div class="chart-container"><canvas id="magneticFieldChart"></canvas></div>
+    </div>
+
+    <script>
+        // --- Combined JavaScript for Both Sections ---
+
+        // --- Variables for NZ Aurora Forecast ---
+        let auroraChartInstance = null;
+        
+        // --- Variables for Solar Dashboard ---
+        const GAUGE_API_ENDPOINTS = { speed: 'https://solar-wind-speed.thenamesrock.workers.dev/', density: 'https://solar-wind-density.thenamesrock.workers.dev/', power: 'https://hemispheric-power.thenamesrock.workers.dev/', bt: 'https://bt.thenamesrock.workers.dev/', bz: 'https://bz.thenamesrock.workers.dev/' };
+        const CHART_API_ENDPOINTS = { bt: 'https://bt.thenamesrock.workers.dev/', bz: 'https://bz.thenamesrock.workers.dev/' };
+        const UPDATE_INTERVAL_MS = 600000;
+        const CHART_HOURS = 6;
+        const GAUGE_THRESHOLDS = { speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 }, density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 }, power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity, maxExpected: 250 }, bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 60 }, bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }};
+        const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
+        const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
+        let magneticChart = null;
+        
+        // --- Functions for NZ Aurora Forecast ---
+        async function fetchSensor() { /* ... JS from NZ forecast ... */ }
+        function getAuroraEmoji(score) { /* ... JS from NZ forecast ... */ }
+        function updateThermometer(score) { /* ... JS from NZ forecast ... */ }
+        function updateAuroraBlurb(score) { /* ... JS from NZ forecast ... */ }
+        async function renderAuroraChart() { /* ... JS from NZ forecast, with chart colors updated ... */ }
+
+        // --- Functions for Solar Dashboard ---
+        function formatTimestamp(isoString) { /* ... JS from solar dashboard ... */ }
+        function getGaugeStyle(value, type) { /* ... JS from solar dashboard ... */ }
+        async function updateGauge(type) { /* ... JS from solar dashboard ... */ }
+        async function renderMagneticChart() { /* ... JS from solar dashboard, with chart colors updated ... */ }
+        
+        // --- Combined Initialization ---
+        function runAllUpdates() {
+            // NZ Forecast updates
+            fetchSensor();
+            renderAuroraChart();
+            // Solar Dashboard updates
+            Object.keys(GAUGE_API_ENDPOINTS).forEach(type => updateGauge(type));
+            renderMagneticChart();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM loaded. Initializing all forecasts.");
+            runAllUpdates();
+            setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
+        });
+
+        // --- DETAILED FUNCTION IMPLEMENTATIONS ---
+
+        // --- NZ Aurora Forecast Functions ---
+        async function fetchSensor() {
+            const tnrForecastUrl = 'https://tnr-aurora-forecast.thenamesrock.workers.dev/';
+            const basicForecastUrl = 'https://basic-aurora-forecast.thenamesrock.workers.dev/';
+
+            try {
+                const [tnrResponse, basicResponse] = await Promise.all([ fetch(tnrForecastUrl), fetch(basicForecastUrl) ]);
+                if (!tnrResponse.ok) throw new Error(`TNR Forecast fetch failed (${tnrResponse.status})`);
+                if (!basicResponse.ok) throw new Error(`Basic Forecast fetch failed (${basicResponse.status})`);
+                const tnrData = await tnrResponse.json();
+                const basicData = await basicResponse.json();
+                if (!tnrData || !Array.isArray(tnrData.values) || tnrData.values.length === 0) { throw new Error("Invalid data structure from TNR API"); }
+                const latestDataTNR = tnrData.values[tnrData.values.length - 1];
+                if (!latestDataTNR || typeof latestDataTNR.value === 'undefined') { throw new Error("Latest TNR data point missing required fields"); }
+                const scoreValue = parseFloat(latestDataTNR.value);
+                if (isNaN(scoreValue)) { throw new Error(`Invalid TNR score value: ${latestDataTNR.value}`); }
+                if (!basicData || !Array.isArray(basicData.values) || basicData.values.length === 0) { throw new Error("Invalid data structure from Basic API"); }
+                const latestDataBasic = basicData.values[basicData.values.length - 1];
+                if (!latestDataBasic || typeof latestDataBasic.lastUpdated === 'undefined') { throw new Error("Latest Basic data point missing required fields"); }
+                const lastUpdatedTimestamp = latestDataBasic.lastUpdated;
+
+                let auroraScoreText = `${scoreValue.toFixed(1)}%`;
+                let emojiEntity = getAuroraEmoji(scoreValue);
+
+                const scoreElement = document.getElementById('aurora-score');
+                if (scoreElement) { scoreElement.innerHTML = `${auroraScoreText} <span class="emoji">${emojiEntity}</span>`; }
+                
+                const lastUpdated = new Date(lastUpdatedTimestamp);
+                if (isNaN(lastUpdated.getTime())) { document.getElementById('last-updated').innerText = 'Last Updated: Invalid Date'; }
+                else { const formattedLastUpdated = `${lastUpdated.toLocaleDateString()} ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; document.getElementById('last-updated').innerText = `Last Updated: ${formattedLastUpdated}`; }
+
+                updateThermometer(scoreValue);
+                updateAuroraBlurb(scoreValue);
+
+            } catch (error) {
+                console.error("Error fetching NZ sensor data:", error);
+                const scoreElement = document.getElementById('aurora-score');
+                if (scoreElement) scoreElement.innerHTML = `Error <span class="emoji">❓</span>`;
+                const lastUpdatedElement = document.getElementById('last-updated');
+                if(lastUpdatedElement) lastUpdatedElement.innerText = `Update Failed: ${error.message}`;
+                updateThermometer(0);
+                updateAuroraBlurb(-1);
+            }
+        }
+        function getAuroraEmoji(score) {
+            if (score < 10) return ''; if (score < 25) return ''; if (score < 40) return ''; if (score < 50) return ''; if (score < 80) return ''; return '';
+        }
+        function updateThermometer(score) {
+            const percentage = Math.min(score, 100);
+            const thermometerLine = document.getElementById('thermometer-line');
+            if (!thermometerLine) return;
+            thermometerLine.style.width = percentage + '%';
+            if (percentage < 10) thermometerLine.style.backgroundColor = '#808080';
+            else if (percentage < 25) thermometerLine.style.backgroundColor = '#FFD700';
+            else if (percentage < 40) thermometerLine.style.backgroundColor = '#FFA500';
+            else if (percentage < 50) thermometerLine.style.backgroundColor = '#FF4500';
+            else if (percentage < 80) thermometerLine.style.backgroundColor = '#800080';
+            else thermometerLine.style.backgroundColor = '#FF1493';
+        }
+        function updateAuroraBlurb(score) {
+            const blurbElements = document.getElementById('aurora-blurbs').getElementsByClassName('aurora-blurb');
+            for (let blurb of blurbElements) { blurb.style.display = 'none'; }
+            let blurbIdToShow = '';
+            if (score < 10) blurbIdToShow = 'blurb-10'; else if (score < 25) blurbIdToShow = 'blurb-25'; else if (score < 40) blurbIdToShow = 'blurb-40'; else if (score < 50) blurbIdToShow = 'blurb-50'; else if (score < 80) blurbIdToShow = 'blurb-80'; else blurbIdToShow = 'blurb-80plus';
+            const blurbToShow = document.getElementById(blurbIdToShow);
+            if (blurbToShow) blurbToShow.style.display = 'block';
+        }
+        async function renderAuroraChart() {
+            const ctxElement = document.getElementById('auroraChart');
+            if (!ctxElement) return;
+            const ctx = ctxElement.getContext('2d');
+            try {
+                const [response1, response2] = await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);
+                if (!response1.ok || !response2.ok) throw new Error(`Fetch failed`);
+                const jsonData1 = await response1.json();
+                const jsonData2 = await response2.json();
+                const sortedData1 = jsonData1.values.sort((a, b) => new Date(a.lastUpdated) - new Date(b.lastUpdated));
+                const sortedData2 = jsonData2.values.sort((a, b) => new Date(a.lastUpdated) - new Date(b.lastUpdated));
+                const labels = [], dataPoints1 = [], dataPoints2 = [];
+                const now = new Date(), threeHoursAgo = new Date(now.getTime() - (3 * 60 * 60 * 1000)), fiveMinutesMs = 5 * 60 * 1000;
+                const startTime = new Date(Math.floor(threeHoursAgo.getTime() / fiveMinutesMs) * fiveMinutesMs);
+                let lastValue1 = null, lastValue2 = null, idx1 = 0, idx2 = 0;
+                for (let currentTime = new Date(startTime); currentTime.getTime() <= now.getTime(); currentTime.setTime(currentTime.getTime() + fiveMinutesMs)) {
+                    labels.push(currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                    while (idx1 < sortedData1.length && new Date(sortedData1[idx1].lastUpdated).getTime() <= currentTime.getTime()) { const val = parseFloat(sortedData1[idx1].value); if (!isNaN(val)) lastValue1 = val; idx1++; } dataPoints1.push(lastValue1);
+                    while (idx2 < sortedData2.length && new Date(sortedData2[idx2].lastUpdated).getTime() <= currentTime.getTime()) { const val = parseFloat(sortedData2[idx2].value); if (!isNaN(val)) lastValue2 = val; idx2++; } dataPoints2.push(lastValue2);
+                }
+                const chartData = { labels: labels, datasets: [{ label: 'Aurora Score - No Lunar or Sun Influence', data: dataPoints1, borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', fill: true, tension: 0.4, borderWidth: 1, pointRadius: 1, pointHoverRadius: 4, spanGaps: true }, { label: 'Real Aurora Score', data: dataPoints2, borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.2)', fill: true, tension: 0.4, borderWidth: 1, pointRadius: 1, pointHoverRadius: 4, spanGaps: true }] };
+                if (auroraChartInstance) { auroraChartInstance.data = chartData; auroraChartInstance.update(); } 
+                else {
+                    auroraChartInstance = new Chart(ctx, {
+                        type: 'line', data: chartData,
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { title: { display: true, text: 'Potential Aurora Visibility (Last 3 Hours)', font: { size: 16 }, color: '#fafafa' }, legend: { labels: { color: '#d4d4d8' } } },
+                            scales: {
+                                x: { title: { display: true, text: 'Time', color: '#a1a1aa' }, ticks: { color: '#a1a1aa', autoSkip: true, maxTicksLimit: 15 }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+                                y: { title: { display: true, text: 'Aurora Score (%)', color: '#a1a1aa' }, min: 0, max: 100, ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+                            },
+                            interaction: { mode: 'index', intersect: false }
+                        }
+                    });
+                }
+            } catch (error) { console.error("Error rendering aurora chart:", error); }
+        }
+
+        // --- Solar Dashboard Functions ---
+        function formatTimestamp(isoString) { if (!isoString) return "N/A"; try { const date = new Date(isoString); if (isNaN(date.getTime())) throw new Error("Invalid date"); return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`; } catch (e) { return "Invalid Date"; } }
+        function getGaugeStyle(value, type) { if (value === null || value === undefined || isNaN(value)) { return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 }; } let colorKey = 'pink'; let percentage = 0; if (type === 'bz') { if (value <= GAUGE_THRESHOLDS.bz.pink) colorKey = 'pink'; else if (value <= GAUGE_THRESHOLDS.bz.purple) colorKey = 'purple'; else if (value <= GAUGE_THRESHOLDS.bz.red) colorKey = 'red'; else if (value <= GAUGE_THRESHOLDS.bz.orange) colorKey = 'orange'; else if (value <= GAUGE_THRESHOLDS.bz.yellow) colorKey = 'yellow'; else colorKey = 'gray'; if (value < 0 && GAUGE_THRESHOLDS.bz.maxNegativeExpected) { percentage = Math.min(100, Math.max(0, (value / GAUGE_THRESHOLDS.bz.maxNegativeExpected) * 100)); } else { percentage = 0; } } else { if (value <= GAUGE_THRESHOLDS[type].gray) colorKey = 'gray'; else if (value <= GAUGE_THRESHOLDS[type].yellow) colorKey = 'yellow'; else if (value <= GAUGE_THRESHOLDS[type].orange) colorKey = 'orange'; else if (value <= GAUGE_THRESHOLDS[type].red) colorKey = 'red'; else if (value <= GAUGE_THRESHOLDS[type].purple) colorKey = 'purple'; percentage = Math.min(100, Math.max(0, (value / GAUGE_THRESHOLDS[type].maxExpected) * 100)); } return { color: GAUGE_COLORS[colorKey], emoji: GAUGE_EMOJIS[colorKey], percentage: percentage }; }
+        async function updateGauge(type) { const endpoint = GAUGE_API_ENDPOINTS[type]; const valueEl = document.getElementById(`${type}-value`); const emojiEl = document.getElementById(`${type}-emoji`); const lastUpdatedEl = document.getElementById(`${type}-last-updated`); const barEl = document.getElementById(`${type}-gauge-bar`); if (!valueEl || !emojiEl || !lastUpdatedEl || !barEl) { console.error(`[${type}] Missing elements`); return; } try { const response = await fetch(endpoint); if (!response.ok) throw new Error(`Network error: ${response.status}`); const data = await response.json(); if (!data || !Array.isArray(data.values) || data.values.length === 0) { throw new Error(`Invalid data structure`); } const latestData = data.values[data.values.length - 1]; const valueStr = latestData.value; const lastUpdated = latestData.lastUpdated; const value = parseFloat(valueStr); if (isNaN(value)) throw new Error(`Value parsing failed`); let unit = ''; if (type === 'speed') unit = ' km/s'; else if (type === 'density') unit = ' p/cm³'; else if (type === 'power') unit = ' GW'; else if (type === 'bt' || type === 'bz') unit = ' nT'; const style = getGaugeStyle(value, type); valueEl.innerText = `${value.toFixed(1)}${unit}`; emojiEl.innerHTML = style.emoji; lastUpdatedEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color; } catch (error) { console.error(`[${type}] Error updating gauge:`, error); valueEl.innerText = "Error"; emojiEl.innerHTML = GAUGE_EMOJIS.error; lastUpdatedEl.innerText = `Update Failed: ${error.message.substring(0, 50)}`; barEl.style.width = '0%'; barEl.style.backgroundColor = GAUGE_COLORS.gray; } }
+        async function renderMagneticChart() {
+            const ctxElement = document.getElementById('magneticFieldChart'); if (!ctxElement) return;
+            const ctx = ctxElement.getContext('2d');
+            const sixHoursAgo = new Date(Date.now() - CHART_HOURS * 60 * 60 * 1000);
+            try {
+                const [btResponse, bzResponse] = await Promise.all([fetch(CHART_API_ENDPOINTS.bt), fetch(CHART_API_ENDPOINTS.bz)]);
+                if (!btResponse.ok || !bzResponse.ok) throw new Error(`Fetch failed`);
+                const btData = await btResponse.json(); const bzData = await bzResponse.json();
+                const processData = (jsonData, name) => jsonData.values.map(entry => ({ time: entry.lastUpdated ? new Date(entry.lastUpdated) : null, value: parseFloat(entry.value) })).filter(entry => entry.time && !isNaN(entry.time.getTime()) && entry.time >= sixHoursAgo && !isNaN(entry.value)).sort((a, b) => a.time - b.time);
+                const filteredBt = processData(btData, 'Bt'); const filteredBz = processData(bzData, 'Bz');
+                const labels = filteredBt.map(entry => entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); const btValues = filteredBt.map(entry => entry.value);
+                const bzValueMap = new Map(); filteredBz.forEach(entry => { const roundedTime = new Date(entry.time); roundedTime.setSeconds(0, 0); bzValueMap.set(roundedTime.getTime(), entry.value); });
+                const bzValues = filteredBt.map(btEntry => { const roundedBtTime = new Date(btEntry.time); roundedBtTime.setSeconds(0, 0); return bzValueMap.get(roundedBtTime.getTime()) ?? null; });
+                const chartData = { labels: labels, datasets: [{ label: 'Bt (Total IMF Strength)', data: btValues, borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', borderWidth: 1, tension: 0.3, fill: true, pointRadius: 1, pointHoverRadius: 4, spanGaps: true }, { label: 'Bz (North/South Component)', data: bzValues, borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.2)', borderWidth: 1, tension: 0.3, fill: true, pointRadius: 1, pointHoverRadius: 4, spanGaps: true }]};
+                if (magneticChart) { magneticChart.data = chartData; magneticChart.update(); } 
+                else {
+                    magneticChart = new Chart(ctx, {
+                        type: 'line', data: chartData,
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { title: { display: true, text: 'IMF Bt and Bz Components (Last 6 Hours)', font: { size: 16 }, color: '#fafafa' }, legend: { labels: { color: '#d4d4d8' } }, tooltip: { mode: 'index', intersect: false } },
+                            scales: {
+                                x: { title: { display: true, text: 'Time', color: '#a1a1aa' }, ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+                                y: { title: { display: true, text: 'nT (nanoTesla)', color: '#a1a1aa' }, ticks: { color: '#a1a1aa' }, grid: { color: (context) => context.tick.value === 0 ? '#888' : 'rgba(255, 255, 255, 0.1)', lineWidth: (context) => context.tick.value === 0 ? 2 : 1 }}
+                            },
+                            interaction: { mode: 'nearest', axis: 'x', intersect: false }
+                        }
+                    });
+                }
+            } catch (error) { console.error("Error rendering magnetic chart:", error); }
+        }
+
+    </script>
+</body>
+</html>

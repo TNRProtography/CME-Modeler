@@ -5,7 +5,7 @@ import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
 import TutorialModal from './components/TutorialModal';
-import LoadingOverlay from './components/LoadingOverlay'; // <-- IMPORT THE NEW COMPONENT
+import LoadingOverlay from './components/LoadingOverlay';
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, InteractionMode, SimulationCanvasHandle } from './types';
 
@@ -14,7 +14,7 @@ import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
-
+import ForecastIcon from './components/icons/ForecastIcon'; // <-- Import the new icon
 
 const App: React.FC = () => {
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -239,8 +239,6 @@ const App: React.FC = () => {
   return (
     <div className="relative w-screen h-screen bg-black text-neutral-300 overflow-hidden">
       
-      {/* --- LOADING OVERLAY --- */}
-      {/* This will cover the entire screen when isLoading is true */}
       {isLoading && <LoadingOverlay />}
 
       <SimulationCanvas
@@ -269,7 +267,6 @@ const App: React.FC = () => {
         interactionMode={interactionMode}
       />
 
-      {/* Planet Labels */}
       {showLabels && rendererDomElement && threeCamera && planetLabelInfos
         .filter(info => {
             const name = info.name.toUpperCase();
@@ -279,7 +276,6 @@ const App: React.FC = () => {
             if (['MOON', 'L1'].includes(name)) {
                 return showMoonL1;
             }
-            // Always show Sun and Earth labels if the main toggle is on
             return true;
         })
         .map(info => (
@@ -295,11 +291,17 @@ const App: React.FC = () => {
       
       {/* --- UI Panels --- */}
 
-      {/* Top-left menu toggle (mobile only) */}
-       <div className="lg:hidden fixed top-4 left-4 z-30 flex items-center space-x-2">
+      {/* Top-left menu toggle (desktop and mobile) */}
+       <div className="fixed top-4 left-4 z-30 flex items-center space-x-2">
         <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
             <SettingsIcon className="w-6 h-6" />
         </button>
+
+        {/* === NEW FORECAST BUTTON ADDED HERE === */}
+        <a href="/forecast.html" className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform inline-block" title="View Aurora Forecasts">
+            <ForecastIcon className="w-6 h-6" />
+        </a>
+        
         <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
             <HomeIcon className="w-6 h-6" />
         </button>
