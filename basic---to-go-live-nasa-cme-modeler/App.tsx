@@ -14,9 +14,10 @@ import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
-import ForecastIcon from './components/icons/ForecastIcon'; // <-- Import the new icon
+import ForecastIcon from './components/icons/ForecastIcon';
 
 const App: React.FC = () => {
+  // ... (all your existing state and logic remains the same) ...
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -42,23 +43,21 @@ const App: React.FC = () => {
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
 
   // Timeline State
-  const [timelineActive, setTimelineActive] = useState<boolean>(false); // True when scrubbing or playing via timeline
+  const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
-  const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0); // 0-1000
+  const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
   const [timelineSpeed, setTimelineSpeed] = useState<number>(1);
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
 
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
-  const [threeCamera, setThreeCamera] = useState<any>(null); // To be passed from SimulationCanvas for labels
+  const [threeCamera, setThreeCamera] = useState<any>(null);
 
-  // Manage THREE.Clock instance here to pass elapsedTime consistently
-  const clockRef = useRef<any>(null); // THREE.Clock instance
+  const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
   useEffect(() => {
-    // Initialize THREE.Clock once
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
     }
@@ -71,7 +70,7 @@ const App: React.FC = () => {
   const resetClock = useCallback(() => {
     if (clockRef.current) {
         clockRef.current.stop();
-        clockRef.current.start(); // Effectively resets elapsed time to 0
+        clockRef.current.start();
     }
   }, []);
 
@@ -79,28 +78,24 @@ const App: React.FC = () => {
   const loadCMEData = useCallback(async (days: TimeRange) => {
     setIsLoading(true);
     setFetchError(null);
-    setCurrentlyModeledCMEId(null); // Reset modeled CME
+    setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
-    setTimelineActive(false); // Reset timeline interaction
+    setTimelineActive(false);
     setTimelinePlaying(false);
     setTimelineScrubberValue(0);
-    resetClock(); // Reset simulation clock on new data load
-    setDataVersion(v => v + 1); // Trigger canvas recreation
+    resetClock();
+    setDataVersion(v => v + 1);
 
     try {
       const data = await fetchCMEData(days);
       setCmeData(data);
       if (data.length > 0) {
-        // Set timeline range based on fetched data
-        const endDate = new Date(); // Today
+        const endDate = new Date();
         const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3); // Simulate up to 3 days in future
-        
-        // Find earliest CME start time for minDate
+        futureDate.setDate(endDate.getDate() + 3);
         const earliestCMEStartTime = data.reduce((min, cme) => Math.min(min, cme.startTime.getTime()), Date.now());
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - days);
-
         setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
         setTimelineMaxDate(futureDate.getTime());
       } else {
@@ -120,17 +115,11 @@ const App: React.FC = () => {
     loadCMEData(activeTimeRange);
   }, [activeTimeRange, loadCMEData]);
 
-  // Filtered CME data based on the cmeFilter state
   const filteredCmes = useMemo(() => {
-    if (cmeFilter === CMEFilter.ALL) {
-      return cmeData;
-    }
-    return cmeData.filter(cme => 
-      cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected
-    );
+    if (cmeFilter === CMEFilter.ALL) return cmeData;
+    return cmeData.filter(cme => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected);
   }, [cmeData, cmeFilter]);
 
-  // When filter changes, if the selected CME is no longer in the list, deselect it.
   useEffect(() => {
     if (currentlyModeledCMEId && !filteredCmes.find(c => c.id === currentlyModeledCMEId)) {
       setCurrentlyModeledCMEId(null);
@@ -138,17 +127,9 @@ const App: React.FC = () => {
     }
   }, [filteredCmes, currentlyModeledCMEId]);
 
-  const handleTimeRangeChange = (range: TimeRange) => {
-    setActiveTimeRange(range);
-  };
-
-  const handleViewChange = (view: ViewMode) => {
-    setActiveView(view);
-  };
-
-  const handleFocusChange = (target: FocusTarget) => {
-    setActiveFocus(target);
-  };
+  const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
+  const handleViewChange = (view: ViewMode) => setActiveView(view);
+  const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
 
   const handleResetView = useCallback(() => {
     setActiveView(ViewMode.TOP);
@@ -160,13 +141,11 @@ const App: React.FC = () => {
     setCurrentlyModeledCMEId(cme ? cme.id : null);
     setSelectedCMEForInfo(cme);
     if (cme) {
-        setTimelineActive(false); // If modeling one, disable timeline mode
+        setTimelineActive(false);
         setTimelinePlaying(false);
     } else {
-        // When deselecting, switch to move mode for easier navigation
         setInteractionMode(InteractionMode.MOVE);
     }
-    // Close mobile panels on selection from list
     setIsCmeListOpen(false);
   }, []);
 
@@ -175,23 +154,21 @@ const App: React.FC = () => {
     setSelectedCMEForInfo(cme);
     setTimelineActive(false);
     setTimelinePlaying(false);
-    // On mobile, if a user clicks a CME in the 3D view, open the details panel.
     setIsCmeListOpen(true); 
   }, []);
 
-  // Timeline interaction handlers
   const handleTimelinePlayPause = useCallback(() => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying(prev => !prev);
-    setCurrentlyModeledCMEId(null); // When using timeline, don't model a single CME
+    setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
   const handleTimelineScrub = useCallback((value: number) => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
-    setTimelinePlaying(false); // Pause if scrubbing
+    setTimelinePlaying(false);
     setTimelineScrubberValue(value);
     setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
@@ -201,39 +178,22 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
-
     const timeRange = timelineMaxDate - timelineMinDate;
     if (timeRange > 0) {
-      const oneHourInMillis = 3600_000; // 1 hour
+      const oneHourInMillis = 3600_000;
       const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000;
       setTimelineScrubberValue(prev => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep)));
     } else {
-      // Fallback in case time range is not set, step by 1%
       setTimelineScrubberValue(prev => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-    
     setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes, timelineMinDate, timelineMaxDate]);
 
-  const handleTimelineSetSpeed = useCallback((speed: number) => {
-    setTimelineSpeed(speed);
-  }, []);
-  
-  const handleScrubberChangeByAnim = useCallback((value: number) => {
-    setTimelineScrubberValue(value);
-  }, []);
-
-  const handleTimelineEnd = useCallback(() => {
-    setTimelinePlaying(false);
-  }, []);
-
-
-  // Callback to receive planet meshes from SimulationCanvas
-  const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => {
-      setPlanetLabelInfos(infos);
-  }, []);
-  
+  const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
+  const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
+  const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
+  const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
   return (
@@ -254,9 +214,9 @@ const App: React.FC = () => {
         timelineValue={timelineScrubberValue}
         timelineMinDate={timelineMinDate}
         timelineMaxDate={timelineMaxDate}
-        setPlanetMeshesForLabels={handleSetPlanetMeshes} // Pass callback
+        setPlanetMeshesForLabels={handleSetPlanetMeshes}
         setRendererDomElement={setRendererDomElement}
-        onCameraReady={setThreeCamera} // Receive camera from canvas
+        onCameraReady={setThreeCamera}
         getClockElapsedTime={getClockElapsedTime}
         resetClock={resetClock}
         onScrubberChangeByAnim={handleScrubberChangeByAnim}
@@ -270,12 +230,8 @@ const App: React.FC = () => {
       {showLabels && rendererDomElement && threeCamera && planetLabelInfos
         .filter(info => {
             const name = info.name.toUpperCase();
-            if (['MERCURY', 'VENUS', 'MARS'].includes(name)) {
-                return showExtraPlanets;
-            }
-            if (['MOON', 'L1'].includes(name)) {
-                return showMoonL1;
-            }
+            if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets;
+            if (['MOON', 'L1'].includes(name)) return showMoonL1;
             return true;
         })
         .map(info => (
@@ -291,13 +247,13 @@ const App: React.FC = () => {
       
       {/* --- UI Panels --- */}
 
-      {/* Top-left menu toggle (desktop and mobile) */}
-       <div className="fixed top-4 left-4 z-30 flex items-center space-x-2">
+      {/* MODIFIED: Top-left menu buttons (desktop and mobile) */}
+      <div className="fixed top-4 left-4 z-30 flex items-center space-x-2">
         <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
             <SettingsIcon className="w-6 h-6" />
         </button>
 
-        {/* === NEW FORECAST BUTTON ADDED HERE === */}
+        {/* === NEW FORECAST BUTTON MOVED HERE === */}
         <a href="/forecast.html" className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform inline-block" title="View Aurora Forecasts">
             <ForecastIcon className="w-6 h-6" />
         </a>
@@ -324,7 +280,7 @@ const App: React.FC = () => {
       {/* Panels Wrapper */}
       <div className="absolute top-0 left-0 right-0 bottom-0 p-0 lg:p-5 flex justify-between items-stretch pointer-events-none">
         
-        {/* Left Side: Controls + Guide */}
+        {/* Left Side: Controls Panel */}
         <div className={`
           flex flex-col justify-between h-full pointer-events-auto
           lg:h-[calc(100vh-40px)] lg:relative lg:w-auto lg:max-w-xs lg:bg-transparent lg:translate-x-0 lg:z-auto
@@ -333,23 +289,16 @@ const App: React.FC = () => {
           ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}
         `}>
           <ControlsPanel
-              activeTimeRange={activeTimeRange}
-              onTimeRangeChange={handleTimeRangeChange}
-              activeView={activeView}
-              onViewChange={handleViewChange}
-              activeFocus={activeFocus}
-              onFocusChange={handleFocusChange}
+              activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange}
+              activeView={activeView} onViewChange={handleViewChange}
+              activeFocus={activeFocus} onFocusChange={handleFocusChange}
               isLoading={isLoading}
               onClose={() => setIsControlsOpen(false)}
               onOpenGuide={() => setIsTutorialOpen(true)}
-              showLabels={showLabels}
-              onShowLabelsChange={setShowLabels}
-              showExtraPlanets={showExtraPlanets}
-              onShowExtraPlanetsChange={setShowExtraPlanets}
-              showMoonL1={showMoonL1}
-              onShowMoonL1Change={setShowMoonL1}
-              cmeFilter={cmeFilter}
-              onCmeFilterChange={setCmeFilter}
+              showLabels={showLabels} onShowLabelsChange={setShowLabels}
+              showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets}
+              showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1}
+              cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter}
           />
         </div>
         
@@ -362,17 +311,13 @@ const App: React.FC = () => {
           ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}
         `}>
              <CMEListPanel
-                cmes={filteredCmes}
-                onSelectCME={handleSelectCMEForModeling}
-                selectedCMEId={currentlyModeledCMEId}
-                selectedCMEForInfo={selectedCMEForInfo}
-                isLoading={isLoading}
-                fetchError={fetchError}
+                cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling}
+                selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo}
+                isLoading={isLoading} fetchError={fetchError}
                 onClose={() => setIsCmeListOpen(false)}
             />
         </div>
 
-        {/* Backdrop for mobile panels */}
         {(isControlsOpen || isCmeListOpen) && (
             <div 
                 className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
@@ -383,21 +328,14 @@ const App: React.FC = () => {
 
       <TimelineControls
         isVisible={!isLoading && filteredCmes.length > 0}
-        isPlaying={timelinePlaying}
-        onPlayPause={handleTimelinePlayPause}
-        onScrub={handleTimelineScrub}
-        scrubberValue={timelineScrubberValue}
+        isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
+        onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
         onStepFrame={handleTimelineStep}
-        playbackSpeed={timelineSpeed}
-        onSetSpeed={handleTimelineSetSpeed}
-        minDate={timelineMinDate}
-        maxDate={timelineMaxDate}
+        playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed}
+        minDate={timelineMinDate} maxDate={timelineMaxDate}
       />
 
-      <TutorialModal
-        isOpen={isTutorialOpen}
-        onClose={() => setIsTutorialOpen(false)}
-      />
+      <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
     </div>
   );
 };
