@@ -50,6 +50,7 @@
         #thermometer-container { height: 12px; width: 100%; background-color: var(--bg-gauge-track); border-radius: 6px; margin-top: 20px; overflow: hidden; }
         #thermometer-line { height: 100%; border-radius: 6px; width: 0%; transition: width 1.5s ease, background-color 1s ease; }
         #aurora-blurbs { font-size: 1rem; color: var(--text-secondary); }
+        .aurora-blurb { display: none; }
 
         /* --- GAUGE STYLING --- */
         .gauge-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
@@ -84,16 +85,9 @@
             margin: 0;
             font-size: 0.9rem;
         }
-        .ips-details-list li {
-            padding: 4px 0;
-        }
-        .ips-details-list strong {
-            color: var(--text-primary);
-        }
-        .ips-details-list a {
-            color: var(--link-color);
-            text-decoration: none;
-        }
+        .ips-details-list li { padding: 4px 0; }
+        .ips-details-list strong { color: var(--text-primary); }
+        .ips-details-list a { color: var(--link-color); text-decoration: none; }
         .ips-details-list a:hover { text-decoration: underline; }
 
         /* --- RESPONSIVE ADJUSTMENTS --- */
@@ -127,14 +121,7 @@
         </div>
         <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2><canvas id="auroraChart"></canvas></div>
         <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
-        
-        <!-- === NEW IPS SECTION === -->
-        <div id="ips-section" class="card">
-            <h2 class="card-title">Recent Interplanetary Shocks (Last 24 Hours)</h2>
-            <div id="ips-container">
-                <p>Loading shock data...</p>
-            </div>
-        </div>
+        <div id="ips-section" class="card"><h2 class="card-title">Recent Interplanetary Shocks (Last 24 Hours)</h2><div id="ips-container"><p>Loading shock data...</p></div></div>
     </main>
 </div>
 
@@ -143,7 +130,7 @@
     let auroraChartInstance = null;
     let magneticChart = null;
     let apiDataCache = {}; 
-    const NASA_API_KEY = 'DEMO_KEY'; // Use DEMO_KEY or your own
+    const NASA_API_KEY = 'DEMO_KEY';
     const NOAA_PLASMA_ENDPOINT = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-5-minute.json';
     const NOAA_MAG_ENDPOINT = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
     const NASA_IPS_ENDPOINT = `https://api.nasa.gov/DONKI/IPS`;
@@ -165,49 +152,89 @@
     function getGaugeStyle(v, t) { if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 }; let k='pink', p=0; if (t==='bz') { k=v<=-50?'pink':v<=-20?'purple':v<=-15?'red':v<=-10?'orange':v<=-5?'yellow':'gray'; p=v<0?Math.min(100,Math.max(0,(v/GAUGE_THRESHOLDS.bz.maxNegativeExpected)*100)):0; } else { const th=GAUGE_THRESHOLDS[t]; k=v<=th.gray?'gray':v<=th.yellow?'yellow':v<=th.orange?'orange':v<=th.red?'red':v<=th.purple?'purple':'pink'; p=Math.min(100,Math.max(0,(v/th.maxExpected)*100)); } return { color: GAUGE_COLORS[k], emoji: GAUGE_EMOJIS[k], percentage: p }; }
 
     // --- Main Update Logic ---
-    async function updateGauge(type) { /* ... JS from previous version ... */ }
-    async function renderMagneticChart() { /* ... JS from previous version ... */ }
-    async function fetchSensor() { /* ... JS from previous version ... */ }
-    function getAuroraEmoji(s) { /* ... JS from previous version ... */ }
-    function updateThermometer(s) { /* ... JS from previous version ... */ }
-    function updateAuroraBlurb(s) { /* ... JS from previous version ... */ }
-    async function renderAuroraChart() { /* ... JS from previous version ... */ }
-
+    async function updateGauge(type) {
+        const endpoint = GAUGE_API_ENDPOINTS[type];
+        const { value: valEl, emoji: emEl, lastUpdated: luEl, bar: barEl } = { value: document.getElementById(`${type}-value`), emoji: document.getElementById(`${type}-emoji`), lastUpdated: document.getElementById(`${type}-last-updated`), bar: document.getElementById(`${type}-gauge-bar`) };
+        try {
+            if (type === 'power') {
+                const response = await fetch(endpoint); if (!response.ok) throw new Error(`Fetch failed for power`);
+                const data = await response.json(); const latestData = data.values[data.values.length - 1]; const value = parseFloat(latestData.value); const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)} GW`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(latestData.lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color; return;
+            }
+            let data = apiDataCache[endpoint];
+            if (!data) { const response = await fetch(endpoint); if (!response.ok) throw new Error(`Network error: ${response.status}`); data = await response.json(); apiDataCache[endpoint] = data; }
+            if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
+            const headers = data[0]; const columnName = type === 'bz' ? 'bz_gsm' : type; const valueIndex = headers.indexOf(columnName); const timeIndex = headers.indexOf('time_tag');
+            if (valueIndex === -1 || timeIndex === -1) throw new Error(`Column not found: ${columnName}`);
+            let latestRow = null;
+            for (let i = data.length - 1; i > 0; i--) { const row = data[i]; const val = parseFloat(row[valueIndex]); if (!isNaN(val) && val > -9999) { latestRow = row; break; } }
+            if (!latestRow) throw new Error("No valid recent data found");
+            const value = parseFloat(latestRow[valueIndex]); const lastUpdated = latestRow[timeIndex];
+            const unit = type==='speed'?' km/s':type==='density'?' p/cm³': ' nT'; const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)}${unit}`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color;
+        } catch (error) { console.error(`[${type}] Error updating gauge:`, error); valEl.innerText = "Error"; emEl.innerHTML = GAUGE_EMOJIS.error; luEl.innerText = `Update Failed: ${error.message.substring(0,30)}`; barEl.style.width='0%'; }
+    }
+    async function renderMagneticChart() {
+        const ctx = document.getElementById('magneticFieldChart').getContext('2d'); const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
+        try {
+            let data = apiDataCache[NOAA_MAG_ENDPOINT]; if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
+            if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
+            const headers = data[0]; const timeIndex = headers.indexOf('time_tag'); const btIndex = headers.indexOf('bt'); const bzIndex = headers.indexOf('bz_gsm');
+            const filteredData = data.slice(1).map(row => ({ time: new Date(row[timeIndex]), bt: parseFloat(row[btIndex]) > -9999 ? parseFloat(row[btIndex]) : null, bz: parseFloat(row[bzIndex]) > -9999 ? parseFloat(row[bzIndex]) : null, })).filter(p => p.time >= chartTimeLimit);
+            if (filteredData.length === 0) return;
+            const labels = filteredData.map(p => p.time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+            const btValues = filteredData.map(p => p.bt); const bzValues = filteredData.map(p => p.bz);
+            const allValues = [...btValues, ...bzValues].filter(v => v !== null); const dataMin = Math.min(...allValues); const dataMax = Math.max(...allValues);
+            const padding = Math.max((dataMax - dataMin) * 0.1, 1); const yMin = Math.floor(dataMin - padding); const yMax = Math.ceil(dataMax + padding);
+            const chartData = { labels, datasets: [ { label: 'Bt (Total)', data: btValues, borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', borderWidth: 1.5, tension: 0.3, pointRadius: 0, spanGaps: true }, { label: 'Bz (N/S)', data: bzValues, borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.3)', borderWidth: 1.5, tension: 0.3, pointRadius: 0, spanGaps: true } ] };
+            if (magneticChart) { magneticChart.data = chartData; magneticChart.options.scales.y.min = yMin; magneticChart.options.scales.y.max = yMax; magneticChart.update(); } 
+            else { magneticChart = new Chart(ctx, { type: 'line', data: chartData, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } }, scales: { x: { ticks: { color: '#71717a', maxRotation: 0, autoSkip: true, maxTicksLimit: 24 }, grid: { color: '#3f3f46' } }, y: { min: yMin, max: yMax, ticks: { color: '#71717a' }, grid: { color: c=>c.tick.value===0?'#fafafa':'#3f3f46', lineWidth:c=>c.tick.value===0?1.5:1 } } }, interaction: { mode: 'index', intersect: false } } }); }
+        } catch (e) { console.error("Error rendering magnetic chart:", e); }
+    }
+    
+    // --- NZ Aurora Forecast Functions ---
+    async function fetchSensor() {
+        try {
+            const [tnrResponse, basicResponse] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
+            if (!tnrResponse.ok || !basicResponse.ok) throw new Error(`Fetch failed`);
+            const tnrData = await tnrResponse.json(); const basicData = await basicResponse.json(); const scoreValue = parseFloat(tnrData.values.pop().value); document.getElementById('aurora-score').innerHTML = `${scoreValue.toFixed(1)}% <span class="emoji">${getAuroraEmoji(scoreValue)}</span>`;
+            const lastUpdated = new Date(basicData.values.pop().lastUpdated); document.getElementById('last-updated').innerText = `Last Updated: ${lastUpdated.toLocaleDateString()} ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            updateThermometer(scoreValue); updateAuroraBlurb(scoreValue);
+        } catch (error) { console.error("Error fetching NZ sensor data:", error); document.getElementById('aurora-score').innerHTML = `Error <span class="emoji">❓</span>`; document.getElementById('last-updated').innerText = `Update Failed: ${error.message}`; updateThermometer(0); updateAuroraBlurb(-1); }
+    }
+    function getAuroraEmoji(s){return s<10?'\u{1F61F}':s<25?'\u{1F610}':s<50?'\u{1F642}':s<80?'\u{1F600}':'\u{1F929}'}
+    function updateThermometer(s){const t=document.getElementById('thermometer-line');t.style.width=Math.min(s,100)+'%';t.style.backgroundColor=s<10?'#808080':s<25?'#FFD700':s<40?'#FFA500':s<50?'#FF4500':s<80?'#800080':'#FF1493'}
+    function updateAuroraBlurb(s){document.querySelectorAll('#aurora-blurbs .aurora-blurb').forEach(e=>e.style.display='none');document.getElementById(s<10?'blurb-10':s<25?'blurb-25':s<40?'blurb-40':s<50?'blurb-50':s<80?'blurb-80':'blurb-80plus').style.display='block'}
+    async function renderAuroraChart() {
+        const ctx=document.getElementById('auroraChart').getContext('2d');
+        try{const[r1,r2]=await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'),fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);const j1=await r1.json(),j2=await r2.json();const d1=j1.values.sort((a,b)=>new Date(a.lastUpdated)-new Date(b.lastUpdated)),d2=j2.values.sort((a,b)=>new Date(a.lastUpdated)-new Date(b.lastUpdated));const l=[],p1=[],p2=[];const n=new Date(),s=new Date(Math.floor((n.getTime()-10800000)/300000)*300000);let v1=null,v2=null,i1=0,i2=0;for(let t=new Date(s);t<=n;t.setTime(t.getTime()+300000)){l.push(t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));while(i1<d1.length&&new Date(d1[i1].lastUpdated)<=t)v1=parseFloat(d1[i1++].value);p1.push(v1);while(i2<d2.length&&new Date(d2[i2].lastUpdated)<=t)v2=parseFloat(d2[i2++].value);p2.push(v2)}
+        const cD={labels:l,datasets:[{label:'Base Score',data:p1,borderColor:'#A9A9A9',backgroundColor:'rgba(169,169,169,0.2)',tension:.4,borderWidth:1.5,pointRadius:0},{label:'Real Score',data:p2,borderColor:'#FF6347',backgroundColor:'rgba(255,99,71,0.3)',tension:.4,borderWidth:1.5,pointRadius:0}]};
+        if(auroraChartInstance){auroraChartInstance.data=cD;auroraChartInstance.update()}else{auroraChartInstance=new Chart(ctx,{type:'line',data:cD,options:{responsive:!0,maintainAspectRatio:!1,plugins:{legend:{labels:{color:'#a1a1aa'}},title:{display:!1}},scales:{x:{ticks:{color:'#71717a'},grid:{color:'#3f3f46'}},y:{min:0,max:100,ticks:{color:'#71717a'},grid:{color:'#3f3f46'}}},interaction:{mode:'index',intersect:!1}}})}}catch(e){console.error("Error rendering aurora chart:",e)}
+    }
+    
     // --- NEW IPS Functionality ---
     async function fetchAndDisplayIPSData() {
         const container = document.getElementById('ips-container');
         container.innerHTML = '<p>Loading shock data...</p>';
-
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 1); // Get data for the last day
-
+        const endDate = new Date(); const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 1);
         const formattedStartDate = startDate.toISOString().split('T')[0];
         const formattedEndDate = endDate.toISOString().split('T')[0];
-
         const url = `${NASA_IPS_ENDPOINT}?startDate=${formattedStartDate}&endDate=${formattedEndDate}&api_key=${NASA_API_KEY}`;
-        
         try {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`NASA API fetch failed (${response.status})`);
             const ipsData = await response.json();
-            
-            container.innerHTML = ''; // Clear loading message
-
+            container.innerHTML = '';
             if (ipsData.length === 0) {
                 container.innerHTML = '<p>No Interplanetary Shocks detected in the last 24 hours.</p>';
                 return;
             }
-
             ipsData.forEach(shock => {
                 const eventDiv = document.createElement('div');
                 eventDiv.className = 'ips-event';
-
                 let instruments = 'N/A';
                 if (shock.instruments && shock.instruments.length > 0) {
                     instruments = shock.instruments.map(inst => inst.displayName).join(', ');
                 }
-
                 eventDiv.innerHTML = `
                     <h4 class="ips-header">Shock detected by: ${shock.location || 'Unknown'}</h4>
                     <ul class="ips-details-list">
@@ -216,8 +243,7 @@
                         <li><strong>Instruments:</strong> ${instruments}</li>
                         <li><strong>Catalog:</strong> ${shock.catalog}</li>
                         <li><strong>Link:</strong> <a href="${shock.link}" target="_blank" rel="noopener noreferrer">View Details on DONKI</a></li>
-                    </ul>
-                `;
+                    </ul>`;
                 container.appendChild(eventDiv);
             });
         } catch (error) {
@@ -226,16 +252,13 @@
         }
     }
 
-    // --- Combined Initialization ---
+    // --- Initialization ---
     function runAllUpdates() {
         apiDataCache = {};
-        // NZ Forecast updates
         fetchSensor();
         renderAuroraChart();
-        // Solar Dashboard updates
         Object.keys(GAUGE_API_ENDPOINTS).forEach(type => updateGauge(type));
         renderMagneticChart();
-        // NEW: IPS Data update
         fetchAndDisplayIPSData();
     }
 
@@ -243,15 +266,6 @@
         runAllUpdates();
         setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
     });
-
-    // --- (Detailed function implementations are placed below for clarity) ---
-    async function updateGauge(type) { /* ... same as previous version ... */ }
-    async function renderMagneticChart() { /* ... same as previous version ... */ }
-    async function fetchSensor() { /* ... same as previous version ... */ }
-    function getAuroraEmoji(s) { /* ... same as previous version ... */ }
-    function updateThermometer(s){ /* ... same as previous version ... */ }
-    function updateAuroraBlurb(s){ /* ... same as previous version ... */ }
-    async function renderAuroraChart() { /* ... same as previous version ... */ }
 
 </script>
 </body>
