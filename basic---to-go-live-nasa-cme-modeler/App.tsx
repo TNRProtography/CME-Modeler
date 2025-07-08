@@ -254,7 +254,7 @@ const App: React.FC = () => {
       </div>
 
       {/* FORECAST BUTTON (TOP-CENTER) */}
-      <a href="/forecast.html" 
+      <a href="/" 
          className="fixed top-4 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
          title="View Live Aurora Forecasts">
           <ForecastIcon className="w-5 h-5" />

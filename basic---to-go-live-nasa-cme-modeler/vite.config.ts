@@ -8,10 +8,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        // This defines the main app entry point
+        // 'main' now points to the new index.html (the forecast page).
+        // This is served by default at the root URL.
         main: resolve(__dirname, 'index.html'),
-        // This tells Vite to also build forecast.html as a separate page
-        forecast: resolve(__dirname, 'forecast.html'),
+
+        // 'cme' now points to the cme.html file (the React modeler app).
+        // This will be accessible at /cme.html.
+        cme: resolve(__dirname, 'cme.html'),
       },
     },
   },
