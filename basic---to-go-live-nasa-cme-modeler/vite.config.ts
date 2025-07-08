@@ -8,12 +8,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        // 'main' now points to the new index.html (the forecast page).
-        // This is served by default at the root URL.
+        // This is the main landing page (Forecast Dashboard)
         main: resolve(__dirname, 'index.html'),
 
-        // 'cme' now points to the cme.html file (the React modeler app).
-        // This will be accessible at /cme.html.
+        // This is the secondary page (CME Modeler)
         cme: resolve(__dirname, 'cme.html'),
       },
     },
