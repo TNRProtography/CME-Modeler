@@ -15,12 +15,9 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
-
-// CHANGE 1: IMPORT THE NEW MODAL COMPONENT
 import ForecastModal from './components/ForecastModal';
 
 const App: React.FC = () => {
-  // ... (all your existing state and logic remains the same) ...
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -37,8 +34,6 @@ const App: React.FC = () => {
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-
-  // CHANGE 2: ADD STATE FOR THE FORECAST MODAL
   const [isForecastModalOpen, setIsForecastModalOpen] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
@@ -60,7 +55,7 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // ... (all your useEffects and handler functions remain the same) ...
+  // ... all your handler functions and useEffects remain unchanged ...
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -252,7 +247,7 @@ const App: React.FC = () => {
       {/* --- UI Panels & Buttons --- */}
 
       {/* Top-left icon buttons */}
-      <div className="fixed top-4 left-4 z-30 flex items-center space-x-2">
+      <div className="fixed top-4 left-4 z-60 flex items-center space-x-2"> {/* <-- FIX: z-30 to z-60 */}
         <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
             <SettingsIcon className="w-6 h-6" />
         </button>
@@ -261,17 +256,17 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      {/* CHANGE 3: CONVERT THE <a> TAG TO A <button> WITH AN ONCLICK HANDLER */}
+      {/* FORECAST BUTTON (TOP-CENTER) */}
       <button 
          onClick={() => setIsForecastModalOpen(true)}
-         className="fixed top-4 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
+         className="fixed top-4 left-1/2 -translate-x-1/2 z-60 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"  /* <-- FIX: z-30 to z-60 */
          title="View Live Aurora Forecasts">
           <ForecastIcon className="w-5 h-5" />
           <span className="text-sm font-semibold">Live Aurora Forecast</span>
       </button>
 
       {/* Top-right icon buttons */}
-      <div className="fixed top-4 right-4 z-30 flex items-center space-x-2">
+      <div className="fixed top-4 right-4 z-60 flex items-center space-x-2"> {/* <-- FIX: z-30 to z-60 */}
         <button 
             onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
             className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
@@ -329,8 +324,6 @@ const App: React.FC = () => {
       />
 
       <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-
-      {/* CHANGE 4: RENDER THE NEW FORECAST MODAL */}
       <ForecastModal isOpen={isForecastModalOpen} onClose={() => setIsForecastModalOpen(false)} />
 
     </div>
