@@ -18,7 +18,7 @@ import ForecastIcon from './components/icons/ForecastIcon';
 import ForecastModal from './components/ForecastModal';
 
 const App: React.FC = () => {
-  // All state and functions remain unchanged
+  // All state declarations are here
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -39,7 +39,9 @@ const App: React.FC = () => {
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
-  const [showMoonL1, setShowMoonL1] = useState(true);
+  // --- THIS IS THE LINE TO CHANGE ---
+  const [showMoonL1, setShowMoonL1] = useState(false); // Changed from true to false
+  // ---
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
 
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
@@ -203,10 +205,8 @@ const App: React.FC = () => {
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
   return (
-    // The root container is now a flex row for the desktop layout
     <div className="w-screen h-screen bg-black text-neutral-300 overflow-hidden flex">
       
-      {/* Left Panel: Part of the flex row on desktop, fixed slide-out on mobile */}
       <div className={`
           flex-shrink-0 lg:p-5
           lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
@@ -228,9 +228,7 @@ const App: React.FC = () => {
         />
       </div>
 
-      {/* Main Content Area: Takes up the remaining space and contains the canvas and top buttons */}
       <main className="flex-1 relative min-w-0 h-full">
-        {/* The canvas and all elements that live on top of it are here */}
         <SimulationCanvas
           ref={canvasRef}
           cmeData={filteredCmes}
@@ -275,7 +273,6 @@ const App: React.FC = () => {
             />
         ))}
         
-        {/* A single container for all top buttons, positioned absolutely within the main area */}
         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
           <div className="flex items-center space-x-2 pointer-events-auto">
             <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
@@ -318,7 +315,6 @@ const App: React.FC = () => {
         />
       </main>
 
-      {/* Right Panel: Part of the flex row on desktop, fixed slide-out on mobile */}
       <div className={`
           flex-shrink-0 lg:p-5
           lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md
@@ -334,7 +330,6 @@ const App: React.FC = () => {
           />
       </div>
       
-      {/* Mobile backdrop for slide-out panels */}
       {(isControlsOpen || isCmeListOpen) && (
           <div 
               className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
@@ -342,7 +337,6 @@ const App: React.FC = () => {
           />
       )}
 
-      {/* Modals are kept at the end to render on top of everything */}
       {isLoading && <LoadingOverlay />}
       <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
       <ForecastModal isOpen={isForecastModalOpen} onClose={() => setIsForecastModalOpen(false)} />
