@@ -96,8 +96,6 @@
         </div>
         <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2><canvas id="auroraChart"></canvas></div>
         <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
-        
-        <!-- IPS SECTION HAS BEEN REMOVED -->
     </main>
 </div>
 
@@ -146,8 +144,10 @@
             const unit = type==='speed'?' km/s':type==='density'?' p/cm³': ' nT'; const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)}${unit}`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color;
         } catch (error) { console.error(`[${type}] Error updating gauge:`, error); valEl.innerText = "Error"; emEl.innerHTML = GAUGE_EMOJIS.error; luEl.innerText = `Update Failed: ${error.message.substring(0,30)}`; barEl.style.width='0%'; }
     }
+    
     async function renderMagneticChart() {
-        const ctx = document.getElementById('magneticFieldChart').getContext('2d'); const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
+        const ctx = document.getElementById('magneticFieldChart').getContext('2d');
+        const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
         try {
             let data = apiDataCache[NOAA_MAG_ENDPOINT]; if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
             if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
@@ -177,11 +177,105 @@
     function getAuroraEmoji(s){return s<10?'\u{1F61F}':s<25?'\u{1F610}':s<50?'\u{1F642}':s<80?'\u{1F600}':'\u{1F929}'}
     function updateThermometer(s){const t=document.getElementById('thermometer-line');t.style.width=Math.min(s,100)+'%';t.style.backgroundColor=s<10?'#808080':s<25?'#FFD700':s<40?'#FFA500':s<50?'#FF4500':s<80?'#800080':'#FF1493'}
     function updateAuroraBlurb(s){document.querySelectorAll('#aurora-blurbs .aurora-blurb').forEach(e=>e.style.display='none');document.getElementById(s<10?'blurb-10':s<25?'blurb-25':s<40?'blurb-40':s<50?'blurb-50':s<80?'blurb-80':'blurb-80plus').style.display='block'}
+    
+    /**
+     * FIX: This is the rewritten, robust function for rendering the Aurora Chart.
+     * It correctly processes and resamples the data to 10-minute intervals.
+     */
     async function renderAuroraChart() {
-        const ctx=document.getElementById('auroraChart').getContext('2d');
-        try{const[r1,r2]=await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'),fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);const j1=await r1.json(),j2=await r2.json();const d1=j1.values.sort((a,b)=>new Date(a.lastUpdated)-new Date(b.lastUpdated)),d2=j2.values.sort((a,b)=>new Date(a.lastUpdated)-new Date(b.lastUpdated));const l=[],p1=[],p2=[];const n=new Date(),s=new Date(Math.floor((n.getTime()-10800000)/300000)*300000);let v1=null,v2=null,i1=0,i2=0;for(let t=new Date(s);t<=n;t.setTime(t.getTime()+300000)){l.push(t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));while(i1<d1.length&&new Date(d1[i1].lastUpdated)<=t)v1=parseFloat(d1[i1++].value);p1.push(v1);while(i2<d2.length&&new Date(d2[i2].lastUpdated)<=t)v2=parseFloat(d2[i2++].value);p2.push(v2)}
-        const cD={labels:l,datasets:[{label:'Base Score',data:p1,borderColor:'#A9A9A9',backgroundColor:'rgba(169,169,169,0.2)',tension:.4,borderWidth:1.5,pointRadius:0},{label:'Real Score',data:p2,borderColor:'#FF6347',backgroundColor:'rgba(255,99,71,0.3)',tension:.4,borderWidth:1.5,pointRadius:0}]};
-        if(auroraChartInstance){auroraChartInstance.data=cD;auroraChartInstance.update()}else{auroraChartInstance=new Chart(ctx,{type:'line',data:cD,options:{responsive:!0,maintainAspectRatio:!1,plugins:{legend:{labels:{color:'#a1a1aa'}},title:{display:!1}},scales:{x:{ticks:{color:'#71717a'},grid:{color:'#3f3f46'}},y:{min:0,max:100,ticks:{color:'#71717a'},grid:{color:'#3f3f46'}}},interaction:{mode:'index',intersect:!1}}})}}catch(e){console.error("Error rendering aurora chart:",e)}
+        const ctx = document.getElementById('auroraChart').getContext('2d');
+        try {
+            // 1. Fetch data from both endpoints concurrently.
+            const [response1, response2] = await Promise.all([
+                fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'),
+                fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')
+            ]);
+            if (!response1.ok || !response2.ok) {
+                throw new Error(`Failed to fetch aurora data: ${response1.status}, ${response2.status}`);
+            }
+            const json1 = await response1.json();
+            const json2 = await response2.json();
+
+            // 2. Helper function to clean, deduplicate, parse, and sort the raw API data.
+            const processApiData = (dataArray) => {
+                if (!Array.isArray(dataArray)) return [];
+                // Use a Map to automatically handle duplicates by keeping the last entry for each timestamp.
+                const uniqueMap = new Map(dataArray.map(item => [item.lastUpdated, item]));
+                // Convert back to an array, parse values, and sort chronologically.
+                return Array.from(uniqueMap.values())
+                    .map(item => ({
+                        time: new Date(item.lastUpdated),
+                        value: parseFloat(item.value)
+                    }))
+                    .sort((a, b) => a.time - b.time);
+            };
+
+            const data1 = processApiData(json1.values);
+            const data2 = processApiData(json2.values);
+
+            // 3. Resample the data into clean 10-minute intervals for the last 3 hours.
+            const labels = [], points1 = [], points2 = [];
+            const now = new Date();
+            const threeHoursAgo = now.getTime() - (3 * 60 * 60 * 1000);
+            const tenMinutes = 10 * 60 * 1000;
+            
+            // Start the chart from a clean 10-minute boundary.
+            const startTime = new Date(Math.floor(threeHoursAgo / tenMinutes) * tenMinutes);
+
+            // Pointers for efficiently iterating through the sorted data arrays.
+            let dataIndex1 = 0, dataIndex2 = 0;
+            let lastKnownValue1 = null, lastKnownValue2 = null;
+
+            // Loop through each 10-minute interval from the start time to now.
+            for (let t = new Date(startTime); t <= now; t.setTime(t.getTime() + tenMinutes)) {
+                labels.push(t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+                // Find the most recent value for dataset 1 at or before this time interval (last observation carried forward).
+                while (dataIndex1 < data1.length && data1[dataIndex1].time <= t) {
+                    lastKnownValue1 = data1[dataIndex1].value;
+                    dataIndex1++;
+                }
+                points1.push(lastKnownValue1);
+
+                // Do the same for dataset 2.
+                while (dataIndex2 < data2.length && data2[dataIndex2].time <= t) {
+                    lastKnownValue2 = data2[dataIndex2].value;
+                    dataIndex2++;
+                }
+                points2.push(lastKnownValue2);
+            }
+            
+            // 4. Prepare the final chart data object.
+            const chartData = {
+                labels: labels,
+                datasets: [
+                    { label: 'Base Score', data: points1, borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true },
+                    { label: 'Real Score', data: points2, borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.3)', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true }
+                ]
+            };
+            
+            // 5. Update or create the chart instance.
+            if (auroraChartInstance) {
+                auroraChartInstance.data = chartData;
+                auroraChartInstance.update();
+            } else {
+                auroraChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: chartData,
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
+                            y: { min: 0, max: 100, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } }
+                        },
+                        interaction: { mode: 'index', intersect: false }
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Error rendering aurora chart:", e);
+        }
     }
     
     // --- Initialization ---
