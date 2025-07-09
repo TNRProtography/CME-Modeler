@@ -56,20 +56,10 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // --- UPDATED: useEffect to open modal on first visit OR with reset flag ---
+  // --- UPDATED: useEffect to ALWAYS open the modal on load ---
   useEffect(() => {
-    // Check for a reset parameter in the URL for easy testing
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('reset') === 'true') {
-      localStorage.removeItem('hasSeenForecastModal');
-    }
-
-    const hasSeenForecast = localStorage.getItem('hasSeenForecastModal');
-    if (!hasSeenForecast) {
-      setIsForecastModalOpen(true);
-      localStorage.setItem('hasSeenForecastModal', 'true');
-    }
-  }, []); // The empty array ensures this runs only once when the app loads
+    setIsForecastModalOpen(true);
+  }, []); // The empty array ensures this runs only once when the app first renders
 
   // All other useEffects and functions remain the same
   useEffect(() => {
