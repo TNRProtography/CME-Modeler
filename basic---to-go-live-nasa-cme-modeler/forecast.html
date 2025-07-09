@@ -155,7 +155,8 @@
             <div class="card gauge"><h3 class="card-title">IMF Bt (Total)</h3><div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div></div>
             <div class="card gauge"><h3 class="card-title">IMF Bz (N/S)</h3><div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div></div>
         </div>
-        <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2><canvas id="auroraChart"></canvas></div>
+        <!-- CHANGE 1: Updated the chart title from 3 to 6 hours -->
+        <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2><canvas id="auroraChart"></canvas></div>
         <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
     </main>
 </div>
@@ -265,9 +266,10 @@
             const data2 = processApiData(json2.values);
             const labels = [], points1 = [], points2 = [];
             const now = new Date();
-            const threeHoursAgo = now.getTime() - (3 * 60 * 60 * 1000);
+            // CHANGE 2: Changed the calculation from 3 hours to 6 hours ago
+            const sixHoursAgo = now.getTime() - (6 * 60 * 60 * 1000);
             const tenMinutes = 10 * 60 * 1000;
-            const startTime = new Date(Math.floor(threeHoursAgo / tenMinutes) * tenMinutes);
+            const startTime = new Date(Math.floor(sixHoursAgo / tenMinutes) * tenMinutes);
             let dataIndex1 = 0, dataIndex2 = 0;
             let lastKnownValue1 = null, lastKnownValue2 = null;
             for (let t = new Date(startTime); t <= now; t.setTime(t.getTime() + tenMinutes)) {
