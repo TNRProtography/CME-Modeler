@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- PWA & Favicon Links - THIS IS THE CORRECTED SECTION -->
-    <link rel="manifest" href="/site.webmanifest">
+    <!-- PWA & Favicon Links -->
+    <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#171717">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
@@ -18,29 +18,11 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
     <style>
-        body {
-            margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background-color: #171717; /* --bg-color: neutral-900 */
-            color: #d4d4d4; /* --text-color: neutral-300 */
-            overflow: hidden;
-        }
-        /* Custom scrollbar for WebKit browsers */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #262626; /* neutral-800 */
-            border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #525252; /* neutral-600 */
-            border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #737373; /* neutral-500 */
-        }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #171717; color: #d4d4d4; overflow: hidden; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #737373; }
     </style>
 <script type="importmap">
 {
@@ -51,7 +33,6 @@
   }
 }
 </script>
-<!-- Note: Vite projects usually don't link to index.css this way, but we'll leave it if it works for you -->
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
