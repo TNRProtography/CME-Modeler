@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spot The Aurora - Aurora Forecast by TNR Protography</title>
+    <title>Spot The Aurora - West Coast Aurora Forecast by TNR Protography</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* --- GLOBAL & THEME STYLES --- */
@@ -116,7 +116,7 @@
     const GAUGE_THRESHOLDS = { speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 }, density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 }, power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity, maxExpected: 250 }, bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 60 }, bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }};
     const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
     const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
-    const UPDATE_INTERVAL_MS = 600000;
+    const UPDATE_INTERVAL_MS = 120000; // 2 minutes in milliseconds (was 600000 for 10 minutes)
     const CHART_HOURS = 24;
     
     // --- Helper Functions ---
@@ -280,7 +280,8 @@
     
     // --- Initialization ---
     function runAllUpdates() {
-        apiDataCache = {};
+        console.log(`Updating all data at ${new Date().toLocaleTimeString()}...`);
+        apiDataCache = {}; // Clear cache to fetch fresh data
         fetchSensor();
         renderAuroraChart();
         Object.keys(GAUGE_API_ENDPOINTS).forEach(type => updateGauge(type));
