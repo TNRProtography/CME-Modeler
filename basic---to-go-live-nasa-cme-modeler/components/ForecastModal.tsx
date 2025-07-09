@@ -1,5 +1,3 @@
-// src/components/ForecastModal.tsx
-
 import React from 'react';
 import './ForecastModal.css';
 
@@ -30,5 +28,4 @@ const ForecastModal: React.FC<ForecastModalProps> = ({ isOpen, onClose }) => {
   );
 };
 
-// THIS IS THE CRUCIAL LINE THAT WAS MISSING OR INCORRECT
-export default ForecastModal; 
+export default ForecastModal;
