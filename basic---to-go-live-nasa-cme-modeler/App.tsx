@@ -279,7 +279,7 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* --- FIX: MOVED ALL TOP BUTTONS HERE, TO RENDER 'ON TOP' OF THE SIDE PANEL CONTAINER --- */}
+      {/* --- ALL TOP BUTTONS --- */}
       {/* Top-left icon buttons */}
       <div className="fixed top-4 left-4 z-60 flex items-center space-x-2">
         <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
@@ -329,4 +329,5 @@ const App: React.FC = () => {
   );
 };
 
-export export default App;
+// --- THIS IS THE CORRECTED LINE ---
+export default App;
