@@ -16,6 +16,10 @@
             --text-secondary: #a1a1aa;
             --text-muted: #71717a;
             --link-color: #60a5fa;
+            /* Aurora Colors */
+            --aurora-green: rgba(46, 204, 113, 0.2);
+            --aurora-blue: rgba(52, 152, 219, 0.15);
+            --aurora-purple: rgba(155, 89, 182, 0.18);
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -23,11 +27,52 @@
             color: var(--text-secondary);
             margin: 0;
             padding: 20px;
+            position: relative; /* Required for pseudo-element positioning */
+            overflow-x: hidden; /* Prevents scrollbar from aurora effect */
         }
-        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* --- SUBTLE AURORA BACKGROUND EFFECT --- */
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 200%; /* Wider than viewport for smooth animation */
+            height: 100%;
+            z-index: 0; /* Position behind content */
+            opacity: 0.7;
+            will-change: transform; /* Performance hint for browser */
+        }
+
+        body::before {
+            background: 
+                radial-gradient(circle at 25% 30%, var(--aurora-green) 0%, transparent 40%),
+                radial-gradient(circle at 75% 40%, var(--aurora-blue) 0%, transparent 50%);
+            animation: moveAurora 30s linear infinite;
+        }
+
+        body::after {
+            background: 
+                radial-gradient(circle at 20% 70%, var(--aurora-purple) 0%, transparent 40%),
+                radial-gradient(circle at 80% 60%, var(--aurora-green) 0%, transparent 50%);
+            animation: moveAurora 45s linear infinite reverse; /* Different duration/direction */
+        }
+
+        @keyframes moveAurora {
+            from { transform: translateX(-50%); }
+            to { transform: translateX(0%); }
+        }
+
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            position: relative; /* Ensures content stays above the aurora effect */
+            z-index: 1;
+        }
 
         /* --- NAVIGATION --- */
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
         h1 { font-size: 2.25rem; color: var(--text-primary); margin: 0; text-align: left; }
         .nav-button { display: inline-flex; align-items: center; gap: 8px; background-color: var(--bg-gauge-track); color: var(--text-primary); padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--border-color); transition: background-color 0.2s ease, transform 0.2s ease; }
         .nav-button:hover { background-color: var(--border-color); transform: translateY(-2px); }
@@ -37,7 +82,18 @@
         .dashboard-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px; }
         
         /* --- CARD STYLING --- */
-        .card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 25px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); text-align: center; display: flex; flex-direction: column; }
+        .card { 
+            background-color: rgba(23, 23, 23, 0.85); /* Slightly transparent to hint at background */
+            backdrop-filter: blur(5px); /* Frosted glass effect */
+            -webkit-backdrop-filter: blur(5px);
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            padding: 25px; 
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); 
+            text-align: center; 
+            display: flex; 
+            flex-direction: column;
+        }
         .card-title { font-size: 1.25rem; font-weight: 600; color: var(--text-primary); margin: 0 0 20px 0; text-align: left; }
 
         /* --- NZ FORECAST STYLING --- */
@@ -68,7 +124,7 @@
         /* --- RESPONSIVE ADJUSTMENTS --- */
         @media (max-width: 1200px) { .chart-card { grid-column: 1 / -1; } }
         @media (max-width: 900px) { h1 { font-size: 1.75rem; } #nz-spotlight { grid-template-columns: 1fr; } #aurora-score-display { border-right: none; border-bottom: 1px solid var(--border-color); padding-right: 0; padding-bottom: 20px; margin-bottom: 20px; } }
-        @media (max-width: 600px) { body { padding: 10px; } .header { flex-direction: column; gap: 20px; } .card { padding: 20px; } }
+        @media (max-width: 600px) { body { padding: 10px; } .header { flex-direction: column; align-items: flex-start; gap: 20px; } .card { padding: 20px; } }
     </style>
 </head>
 <body>
@@ -116,7 +172,7 @@
     const GAUGE_THRESHOLDS = { speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 }, density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 }, power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity, maxExpected: 250 }, bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 60 }, bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }};
     const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
     const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
-    const UPDATE_INTERVAL_MS = 120000; // 2 minutes in milliseconds (was 600000 for 10 minutes)
+    const UPDATE_INTERVAL_MS = 120000; // 2 minutes in milliseconds
     const CHART_HOURS = 24;
     
     // --- Helper Functions ---
@@ -178,14 +234,9 @@
     function updateThermometer(s){const t=document.getElementById('thermometer-line');t.style.width=Math.min(s,100)+'%';t.style.backgroundColor=s<10?'#808080':s<25?'#FFD700':s<40?'#FFA500':s<50?'#FF4500':s<80?'#800080':'#FF1493'}
     function updateAuroraBlurb(s){document.querySelectorAll('#aurora-blurbs .aurora-blurb').forEach(e=>e.style.display='none');document.getElementById(s<10?'blurb-10':s<25?'blurb-25':s<40?'blurb-40':s<50?'blurb-50':s<80?'blurb-80':'blurb-80plus').style.display='block'}
     
-    /**
-     * FIX: This is the rewritten, robust function for rendering the Aurora Chart.
-     * It correctly processes and resamples the data to 10-minute intervals.
-     */
     async function renderAuroraChart() {
         const ctx = document.getElementById('auroraChart').getContext('2d');
         try {
-            // 1. Fetch data from both endpoints concurrently.
             const [response1, response2] = await Promise.all([
                 fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'),
                 fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')
@@ -195,13 +246,9 @@
             }
             const json1 = await response1.json();
             const json2 = await response2.json();
-
-            // 2. Helper function to clean, deduplicate, parse, and sort the raw API data.
             const processApiData = (dataArray) => {
                 if (!Array.isArray(dataArray)) return [];
-                // Use a Map to automatically handle duplicates by keeping the last entry for each timestamp.
                 const uniqueMap = new Map(dataArray.map(item => [item.lastUpdated, item]));
-                // Convert back to an array, parse values, and sort chronologically.
                 return Array.from(uniqueMap.values())
                     .map(item => ({
                         time: new Date(item.lastUpdated),
@@ -209,43 +256,28 @@
                     }))
                     .sort((a, b) => a.time - b.time);
             };
-
             const data1 = processApiData(json1.values);
             const data2 = processApiData(json2.values);
-
-            // 3. Resample the data into clean 10-minute intervals for the last 3 hours.
             const labels = [], points1 = [], points2 = [];
             const now = new Date();
             const threeHoursAgo = now.getTime() - (3 * 60 * 60 * 1000);
             const tenMinutes = 10 * 60 * 1000;
-            
-            // Start the chart from a clean 10-minute boundary.
             const startTime = new Date(Math.floor(threeHoursAgo / tenMinutes) * tenMinutes);
-
-            // Pointers for efficiently iterating through the sorted data arrays.
             let dataIndex1 = 0, dataIndex2 = 0;
             let lastKnownValue1 = null, lastKnownValue2 = null;
-
-            // Loop through each 10-minute interval from the start time to now.
             for (let t = new Date(startTime); t <= now; t.setTime(t.getTime() + tenMinutes)) {
                 labels.push(t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-
-                // Find the most recent value for dataset 1 at or before this time interval (last observation carried forward).
                 while (dataIndex1 < data1.length && data1[dataIndex1].time <= t) {
                     lastKnownValue1 = data1[dataIndex1].value;
                     dataIndex1++;
                 }
                 points1.push(lastKnownValue1);
-
-                // Do the same for dataset 2.
                 while (dataIndex2 < data2.length && data2[dataIndex2].time <= t) {
                     lastKnownValue2 = data2[dataIndex2].value;
                     dataIndex2++;
                 }
                 points2.push(lastKnownValue2);
             }
-            
-            // 4. Prepare the final chart data object.
             const chartData = {
                 labels: labels,
                 datasets: [
@@ -253,8 +285,6 @@
                     { label: 'Real Score', data: points2, borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.3)', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true }
                 ]
             };
-            
-            // 5. Update or create the chart instance.
             if (auroraChartInstance) {
                 auroraChartInstance.data = chartData;
                 auroraChartInstance.update();
