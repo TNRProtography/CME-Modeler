@@ -18,7 +18,7 @@ import ForecastIcon from './components/icons/ForecastIcon';
 import ForecastModal from './components/ForecastModal';
 
 const App: React.FC = () => {
-  // All state remains the same
+  // All state and functions remain the same
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -56,12 +56,11 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // --- UPDATED: useEffect to ALWAYS open the modal on load ---
   useEffect(() => {
+    // This will now open the forecast modal every time the app loads.
     setIsForecastModalOpen(true);
-  }, []); // The empty array ensures this runs only once when the app first renders
+  }, []);
 
-  // All other useEffects and functions remain the same
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -108,7 +107,12 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      setFetchError((err as Error).message || "Unknown error fetching data.");
+      // More descriptive error for rate limiting
+      if (err instanceof Error && err.message.includes('429')) {
+        setFetchError('NASA API rate limit exceeded. Please wait a moment and try again.');
+      } else {
+        setFetchError((err as Error).message || "Unknown error fetching data.");
+      }
       setCmeData([]);
     } finally {
       setIsLoading(false);
@@ -249,6 +253,7 @@ const App: React.FC = () => {
           />
       ))}
       
+      {/* Container for side panels */}
       <div className="absolute top-0 left-0 right-0 bottom-0 p-0 lg:p-5 flex justify-between items-stretch pointer-events-none">
         <div className={`flex flex-col justify-between h-full pointer-events-auto lg:h-[calc(100vh-40px)] lg:relative lg:w-auto lg:max-w-xs lg:bg-transparent lg:translate-x-0 lg:z-auto fixed top-0 left-0 w-4/5 max-w-[320px] bg-neutral-950 shadow-2xl z-50 transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <ControlsPanel
@@ -280,34 +285,42 @@ const App: React.FC = () => {
         )}
       </div>
 
-      <div className="fixed top-4 left-4 z-50 flex items-center space-x-2">
-        <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
-            <SettingsIcon className="w-6 h-6" />
-        </button>
-        <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-            <HomeIcon className="w-6 h-6" />
-        </button>
-      </div>
+      {/* --- NEW: A SINGLE CONTAINER FOR ALL TOP BUTTONS --- */}
+      <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between p-4 lg:p-5 pointer-events-none">
+        {/* Left Buttons */}
+        <div className="flex items-center space-x-2 pointer-events-auto">
+          <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
+              <SettingsIcon className="w-6 h-6" />
+          </button>
+          <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
+              <HomeIcon className="w-6 h-6" />
+          </button>
+        </div>
 
-      <button 
-         onClick={() => setIsForecastModalOpen(true)}
-         className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
-         title="View Live Aurora Forecasts">
-          <ForecastIcon className="w-5 h-5" />
-          <span className="text-sm font-semibold">Live Aurora Forecast</span>
-      </button>
+        {/* Center Button */}
+        <div className="pointer-events-auto">
+          <button 
+            onClick={() => setIsForecastModalOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
+            title="View Live Aurora Forecasts">
+              <ForecastIcon className="w-5 h-5" />
+              <span className="text-sm font-semibold">Live Aurora Forecast</span>
+          </button>
+        </div>
 
-      <div className="fixed top-4 right-4 z-50 flex items-center space-x-2">
-        <button 
-            onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
-            className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
-            title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
-        >
-            {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
-        </button>
-        <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
-            <ListIcon className="w-6 h-6" />
-        </button>
+        {/* Right Buttons */}
+        <div className="flex items-center space-x-2 pointer-events-auto">
+          <button 
+              onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
+              className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
+              title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
+          >
+              {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
+          </button>
+          <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
+              <ListIcon className="w-6 h-6" />
+          </button>
+        </div>
       </div>
 
       <TimelineControls
