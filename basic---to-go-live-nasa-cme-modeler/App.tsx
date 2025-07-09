@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
@@ -15,6 +16,7 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
+// CORRECTED: Import the component with the correct name from your structure
 import ForecastModal from './components/ForecastModal';
 
 const App: React.FC = () => {
@@ -35,13 +37,13 @@ const App: React.FC = () => {
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  const [isForecastModalOpen, setIsForecastModalOpen] = useState(false);
+  
+  // CHANGED: This state now controls which view is shown
+  const [showForecast, setShowForecast] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
-  // --- THIS IS THE LINE TO CHANGE ---
-  const [showMoonL1, setShowMoonL1] = useState(false); // Changed from true to false
-  // ---
+  const [showMoonL1, setShowMoonL1] = useState(false);
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
 
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
@@ -57,10 +59,6 @@ const App: React.FC = () => {
 
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
-
-  useEffect(() => {
-    setIsForecastModalOpen(true);
-  }, []);
 
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
@@ -204,9 +202,15 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
+  // ADDED: This is the main logic change. If showForecast is true, it renders the forecast page.
+  if (showForecast) {
+    // We pass the function to close the view to the component.
+    return <ForecastModal onClose={() => setShowForecast(false)} />;
+  }
+
+  // Otherwise, it renders the normal CME modeler.
   return (
     <div className="w-screen h-screen bg-black text-neutral-300 overflow-hidden flex">
-      
       <div className={`
           flex-shrink-0 lg:p-5
           lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
@@ -258,7 +262,7 @@ const App: React.FC = () => {
         {showLabels && rendererDomElement && threeCamera && planetLabelInfos
           .filter(info => {
               const name = info.name.toUpperCase();
-              if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets;
+              if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtra_planets;
               if (['MOON', 'L1'].includes(name)) return showMoonL1;
               return true;
           })
@@ -284,7 +288,8 @@ const App: React.FC = () => {
           </div>
           <div className="pointer-events-auto">
             <button 
-              onClick={() => setIsForecastModalOpen(true)}
+              // CHANGED: This button now switches to the forecast view
+              onClick={() => setShowForecast(true)}
               className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
               title="View Live Aurora Forecasts">
                 <ForecastIcon className="w-5 h-5" />
@@ -339,7 +344,6 @@ const App: React.FC = () => {
 
       {isLoading && <LoadingOverlay />}
       <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-      <ForecastModal isOpen={isForecastModalOpen} onClose={() => setIsForecastModalOpen(false)} />
     </div>
   );
 };
