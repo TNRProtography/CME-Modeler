@@ -14,11 +14,11 @@ import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
-import ForecastIcon from './components/icons/ForecastIcon'; // This is your "aurora" icon
+import ForecastIcon from './components/icons/ForecastIcon';
 import ForecastModal from './components/ForecastModal';
 
 const App: React.FC = () => {
-  // All state, including the new one for the modal
+  // All state remains the same
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -35,7 +35,7 @@ const App: React.FC = () => {
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  const [isForecastModalOpen, setIsForecastModalOpen] = useState(false); // State for our new pop-up
+  const [isForecastModalOpen, setIsForecastModalOpen] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -56,7 +56,16 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // All your handler functions and useEffects remain unchanged
+  // --- NEW: useEffect to open the modal on first visit ---
+  useEffect(() => {
+    const hasSeenForecast = localStorage.getItem('hasSeenForecastModal');
+    if (!hasSeenForecast) {
+      setIsForecastModalOpen(true);
+      localStorage.setItem('hasSeenForecastModal', 'true');
+    }
+  }, []); // The empty array ensures this runs only once when the app loads
+
+  // All other useEffects and functions remain the same
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -244,7 +253,6 @@ const App: React.FC = () => {
           />
       ))}
       
-      {/* This container holds the side panels that were blocking clicks */}
       <div className="absolute top-0 left-0 right-0 bottom-0 p-0 lg:p-5 flex justify-between items-stretch pointer-events-none">
         <div className={`flex flex-col justify-between h-full pointer-events-auto lg:h-[calc(100vh-40px)] lg:relative lg:w-auto lg:max-w-xs lg:bg-transparent lg:translate-x-0 lg:z-auto fixed top-0 left-0 w-4/5 max-w-[320px] bg-neutral-950 shadow-2xl z-50 transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <ControlsPanel
@@ -276,9 +284,6 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* RENDER ALL BUTTONS AND CONTROLS *AFTER* THE SIDE PANELS TO ENSURE THEY ARE ON TOP */}
-      
-      {/* Top-left icon buttons */}
       <div className="fixed top-4 left-4 z-50 flex items-center space-x-2">
         <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
             <SettingsIcon className="w-6 h-6" />
@@ -288,7 +293,6 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      {/* The new, working "Live Aurora Forecast" button */}
       <button 
          onClick={() => setIsForecastModalOpen(true)}
          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
@@ -297,7 +301,6 @@ const App: React.FC = () => {
           <span className="text-sm font-semibold">Live Aurora Forecast</span>
       </button>
 
-      {/* Top-right icon buttons */}
       <div className="fixed top-4 right-4 z-50 flex items-center space-x-2">
         <button 
             onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
@@ -320,7 +323,6 @@ const App: React.FC = () => {
         minDate={timelineMinDate} maxDate={timelineMaxDate}
       />
 
-      {/* Render all modals last, so they appear on top of everything */}
       <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
       <ForecastModal isOpen={isForecastModalOpen} onClose={() => setIsForecastModalOpen(false)} />
 
@@ -328,4 +330,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; // Corrected export statement
+export default App;
