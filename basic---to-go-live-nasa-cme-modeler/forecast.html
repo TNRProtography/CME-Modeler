@@ -17,9 +17,9 @@
             --text-muted: #71717a;
             --link-color: #60a5fa;
             /* Aurora Colors */
-            --aurora-green: rgba(46, 204, 113, 0.2);
-            --aurora-blue: rgba(52, 152, 219, 0.15);
-            --aurora-purple: rgba(155, 89, 182, 0.18);
+            --aurora-green: rgba(46, 204, 113, 0.25);
+            --aurora-blue: rgba(52, 152, 219, 0.2);
+            --aurora-purple: rgba(155, 89, 182, 0.22);
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -31,31 +31,36 @@
             overflow-x: hidden; /* Prevents scrollbar from aurora effect */
         }
         
-        /* --- SUBTLE AURORA BACKGROUND EFFECT --- */
+        /* --- TOP-ALIGNED AURORA BACKGROUND EFFECT --- */
         body::before,
         body::after {
             content: '';
             position: fixed;
             top: 0;
             left: 0;
-            width: 200%; /* Wider than viewport for smooth animation */
-            height: 100%;
+            width: 200%;
+            height: 40vh; /* MODIFIED: Restrict height to top 40% of the viewport */
             z-index: 0; /* Position behind content */
-            opacity: 0.7;
-            will-change: transform; /* Performance hint for browser */
+            opacity: 0.9;
+            will-change: transform;
+            /* ADDED: Creates a soft fade-out at the bottom of the effect */
+            mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
         }
 
         body::before {
             background: 
-                radial-gradient(circle at 25% 30%, var(--aurora-green) 0%, transparent 40%),
-                radial-gradient(circle at 75% 40%, var(--aurora-blue) 0%, transparent 50%);
+                /* MODIFIED: Adjusted vertical positions for the new shorter container */
+                radial-gradient(circle at 25% 80%, var(--aurora-green) 0%, transparent 50%),
+                radial-gradient(circle at 75% 70%, var(--aurora-blue) 0%, transparent 60%);
             animation: moveAurora 30s linear infinite;
         }
 
         body::after {
             background: 
-                radial-gradient(circle at 20% 70%, var(--aurora-purple) 0%, transparent 40%),
-                radial-gradient(circle at 80% 60%, var(--aurora-green) 0%, transparent 50%);
+                /* MODIFIED: Adjusted vertical positions for the new shorter container */
+                radial-gradient(circle at 20% 100%, var(--aurora-purple) 0%, transparent 50%),
+                radial-gradient(circle at 80% 90%, var(--aurora-green) 0%, transparent 60%);
             animation: moveAurora 45s linear infinite reverse; /* Different duration/direction */
         }
 
