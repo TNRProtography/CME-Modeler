@@ -68,12 +68,24 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
 }) => {
   return (
     <div className="panel lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl space-y-5 lg:max-w-xs w-full h-full flex flex-col">
-      <div className="flex justify-between items-center border-b border-neutral-700/80 pb-2 mb-3">
-        <div className="flex items-center space-x-3">
-          <h1 className={`text-2xl font-bold text-neutral-100`}>CME Modeler</h1>
-          
-          {/* Link was removed from here */}
-          
+      {/* --- MODIFIED HEADER SECTION --- */}
+      <div className="flex justify-between items-start border-b border-neutral-700/80 pb-3 mb-3">
+        {/* Left side: Logo and Title */}
+        <div>
+          <img 
+            src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
+            alt="TNR Protography Logo"
+            className="h-6 w-auto mb-2" // Controls logo size and spacing
+          />
+          <h1 className="text-xl font-bold text-neutral-100 leading-tight">
+            Spot The Aurora
+            <br />
+            CME Modeler
+          </h1>
+        </div>
+        
+        {/* Right side: Action Icons */}
+        <div className="flex items-center space-x-1 flex-shrink-0">
           <button
             onClick={onOpenGuide}
             className="p-1 text-neutral-400 hover:text-neutral-100 hover:bg-white/10 rounded-full transition-colors"
@@ -81,14 +93,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           >
             <GuideIcon className="w-5 h-5" />
           </button>
+          {onClose && (
+              <button onClick={onClose} className="lg:hidden p-1 text-neutral-400 hover:text-white">
+                  <CloseIcon className="w-6 h-6"/>
+              </button>
+          )}
         </div>
-        {onClose && (
-            <button onClick={onClose} className="lg:hidden p-1 text-neutral-400 hover:text-white">
-                <CloseIcon className="w-6 h-6"/>
-            </button>
-        )}
       </div>
 
+      {/* --- REST OF THE PANEL REMAINS THE SAME --- */}
       <div className="flex-grow overflow-y-auto pr-2 space-y-5">
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Date Range:</label>
