@@ -14,9 +14,11 @@ const ForecastModal: React.FC<ForecastModalProps> = ({ isOpen, onClose }) => {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close-button" onClick={onClose}>
-          ×
+        {/* --- THIS IS THE MODIFIED BUTTON --- */}
+        <button className="modal-back-button" onClick={onClose}>
+          CME Modeler
         </button>
+        
         <iframe
           src="/forecast.html"
           title="West Coast Aurora Forecast"
