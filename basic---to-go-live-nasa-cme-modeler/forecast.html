@@ -95,8 +95,9 @@
             <div class="card gauge"><h3 class="card-title">IMF Bz (N/S)</h3><div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div></div>
         </div>
         <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 3 Hours)</h2><canvas id="auroraChart"></canvas></div>
-        <!-- FIX: Updated title to reflect 3 hours of data -->
-        <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 3 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
+        <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
+        
+        <!-- IPS SECTION HAS BEEN REMOVED -->
     </main>
 </div>
 
@@ -118,8 +119,7 @@
     const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
     const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
     const UPDATE_INTERVAL_MS = 600000;
-    // FIX 1: Changed CHART_HOURS to 3 for the magnetic field chart
-    const CHART_HOURS = 3;
+    const CHART_HOURS = 24;
     
     // --- Helper Functions ---
     function formatTimestamp(isoString) { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`; } catch { return "Invalid Date"; } }
@@ -146,10 +146,8 @@
             const unit = type==='speed'?' km/s':type==='density'?' p/cm³': ' nT'; const style = getGaugeStyle(value, type); valEl.innerText = `${value.toFixed(1)}${unit}`; emEl.innerHTML = style.emoji; luEl.innerText = `Last Updated: ${formatTimestamp(lastUpdated)}`; barEl.style.width = `${style.percentage}%`; barEl.style.backgroundColor = style.color;
         } catch (error) { console.error(`[${type}] Error updating gauge:`, error); valEl.innerText = "Error"; emEl.innerHTML = GAUGE_EMOJIS.error; luEl.innerText = `Update Failed: ${error.message.substring(0,30)}`; barEl.style.width='0%'; }
     }
-    
     async function renderMagneticChart() {
-        const ctx = document.getElementById('magneticFieldChart').getContext('2d');
-        const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
+        const ctx = document.getElementById('magneticFieldChart').getContext('2d'); const chartTimeLimit = new Date(Date.now() - CHART_HOURS * 3600 * 1000);
         try {
             let data = apiDataCache[NOAA_MAG_ENDPOINT]; if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
             if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
@@ -179,97 +177,11 @@
     function getAuroraEmoji(s){return s<10?'\u{1F61F}':s<25?'\u{1F610}':s<50?'\u{1F642}':s<80?'\u{1F600}':'\u{1F929}'}
     function updateThermometer(s){const t=document.getElementById('thermometer-line');t.style.width=Math.min(s,100)+'%';t.style.backgroundColor=s<10?'#808080':s<25?'#FFD700':s<40?'#FFA500':s<50?'#FF4500':s<80?'#800080':'#FF1493'}
     function updateAuroraBlurb(s){document.querySelectorAll('#aurora-blurbs .aurora-blurb').forEach(e=>e.style.display='none');document.getElementById(s<10?'blurb-10':s<25?'blurb-25':s<40?'blurb-40':s<50?'blurb-50':s<80?'blurb-80':'blurb-80plus').style.display='block'}
-    
-    // FIX 2: Rewritten renderAuroraChart function for readability and to prevent duplicate values
     async function renderAuroraChart() {
-        const ctx = document.getElementById('auroraChart').getContext('2d');
-        try {
-            // Fetch data from both endpoints
-            const [response1, response2] = await Promise.all([
-                fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'),
-                fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')
-            ]);
-            if (!response1.ok || !response2.ok) {
-                throw new Error(`Failed to fetch aurora data: ${response1.status}, ${response2.status}`);
-            }
-            const json1 = await response1.json();
-            const json2 = await response2.json();
-
-            // Helper to clean and sort data: removes duplicates by timestamp, then sorts.
-            const cleanAndSort = (dataArray) => {
-                if (!Array.isArray(dataArray)) return [];
-                // Use a Map to automatically handle duplicates, keeping the last one seen.
-                const uniqueMap = new Map(dataArray.map(item => [item.lastUpdated, item]));
-                // Convert map back to array and sort by date
-                return Array.from(uniqueMap.values()).sort((a, b) => new Date(a.lastUpdated) - new Date(b.lastUpdated));
-            };
-            
-            const data1 = cleanAndSort(json1.values);
-            const data2 = cleanAndSort(json2.values);
-
-            // Define the time window and intervals
-            const labels = [], points1 = [], points2 = [];
-            const now = new Date();
-            const threeHoursAgo = now.getTime() - 3 * 60 * 60 * 1000;
-            const fiveMinutes = 5 * 60 * 1000;
-            const startTime = new Date(Math.floor(threeHoursAgo / fiveMinutes) * fiveMinutes); // Align to a 5-min interval
-
-            // Pointers for iterating through the sorted data arrays
-            let currentIndex1 = 0;
-            let currentIndex2 = 0;
-            let lastValue1 = null;
-            let lastValue2 = null;
-
-            // Iterate through time labels and populate data points using "last observation carried forward"
-            for (let t = new Date(startTime); t <= now; t.setTime(t.getTime() + fiveMinutes)) {
-                labels.push(t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-
-                // Advance pointer and update last known value for dataset 1
-                while (currentIndex1 < data1.length && new Date(data1[currentIndex1].lastUpdated) <= t) {
-                    lastValue1 = parseFloat(data1[currentIndex1].value);
-                    currentIndex1++;
-                }
-                points1.push(lastValue1);
-
-                // Advance pointer and update last known value for dataset 2
-                while (currentIndex2 < data2.length && new Date(data2[currentIndex2].lastUpdated) <= t) {
-                    lastValue2 = parseFloat(data2[currentIndex2].value);
-                    currentIndex2++;
-                }
-                points2.push(lastValue2);
-            }
-
-            const chartData = {
-                labels: labels,
-                datasets: [
-                    { label: 'Base Score', data: points1, borderColor: '#A9A9A9', backgroundColor: 'rgba(169, 169, 169, 0.2)', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true },
-                    { label: 'Real Score', data: points2, borderColor: '#FF6347', backgroundColor: 'rgba(255, 99, 71, 0.3)', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true }
-                ]
-            };
-            
-            // Update or create the chart
-            if (auroraChartInstance) {
-                auroraChartInstance.data = chartData;
-                auroraChartInstance.update();
-            } else {
-                auroraChartInstance = new Chart(ctx, {
-                    type: 'line',
-                    data: chartData,
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } },
-                        scales: {
-                            x: { ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
-                            y: { min: 0, max: 100, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } }
-                        },
-                        interaction: { mode: 'index', intersect: false }
-                    }
-                });
-            }
-        } catch (e) {
-            console.error("Error rendering aurora chart:", e);
-        }
+        const ctx=document.getElementById('auroraChart').getContext('2d');
+        try{const[r1,r2]=await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'),fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);const j1=await r1.json(),j2=await r2.json();const d1=j1.values.sort((a,b)=>new Date(a.lastUpdated)-new Date(b.lastUpdated)),d2=j2.values.sort((a,b)=>new Date(a.lastUpdated)-new Date(b.lastUpdated));const l=[],p1=[],p2=[];const n=new Date(),s=new Date(Math.floor((n.getTime()-10800000)/300000)*300000);let v1=null,v2=null,i1=0,i2=0;for(let t=new Date(s);t<=n;t.setTime(t.getTime()+300000)){l.push(t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));while(i1<d1.length&&new Date(d1[i1].lastUpdated)<=t)v1=parseFloat(d1[i1++].value);p1.push(v1);while(i2<d2.length&&new Date(d2[i2].lastUpdated)<=t)v2=parseFloat(d2[i2++].value);p2.push(v2)}
+        const cD={labels:l,datasets:[{label:'Base Score',data:p1,borderColor:'#A9A9A9',backgroundColor:'rgba(169,169,169,0.2)',tension:.4,borderWidth:1.5,pointRadius:0},{label:'Real Score',data:p2,borderColor:'#FF6347',backgroundColor:'rgba(255,99,71,0.3)',tension:.4,borderWidth:1.5,pointRadius:0}]};
+        if(auroraChartInstance){auroraChartInstance.data=cD;auroraChartInstance.update()}else{auroraChartInstance=new Chart(ctx,{type:'line',data:cD,options:{responsive:!0,maintainAspectRatio:!1,plugins:{legend:{labels:{color:'#a1a1aa'}},title:{display:!1}},scales:{x:{ticks:{color:'#71717a'},grid:{color:'#3f3f46'}},y:{min:0,max:100,ticks:{color:'#71717a'},grid:{color:'#3f3f46'}}},interaction:{mode:'index',intersect:!1}}})}}catch(e){console.error("Error rendering aurora chart:",e)}
     }
     
     // --- Initialization ---
