@@ -18,6 +18,7 @@ import ForecastIcon from './components/icons/ForecastIcon';
 import ForecastModal from './components/ForecastModal';
 
 const App: React.FC = () => {
+  // --- All your state and functions remain exactly the same ---
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -55,7 +56,6 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // ... all your handler functions and useEffects remain unchanged ...
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -244,41 +244,6 @@ const App: React.FC = () => {
           />
       ))}
       
-      {/* --- UI Panels & Buttons --- */}
-
-      {/* Top-left icon buttons */}
-      <div className="fixed top-4 left-4 z-60 flex items-center space-x-2"> {/* <-- FIX: z-30 to z-60 */}
-        <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
-            <SettingsIcon className="w-6 h-6" />
-        </button>
-        <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-            <HomeIcon className="w-6 h-6" />
-        </button>
-      </div>
-
-      {/* FORECAST BUTTON (TOP-CENTER) */}
-      <button 
-         onClick={() => setIsForecastModalOpen(true)}
-         className="fixed top-4 left-1/2 -translate-x-1/2 z-60 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"  /* <-- FIX: z-30 to z-60 */
-         title="View Live Aurora Forecasts">
-          <ForecastIcon className="w-5 h-5" />
-          <span className="text-sm font-semibold">Live Aurora Forecast</span>
-      </button>
-
-      {/* Top-right icon buttons */}
-      <div className="fixed top-4 right-4 z-60 flex items-center space-x-2"> {/* <-- FIX: z-30 to z-60 */}
-        <button 
-            onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
-            className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
-            title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
-        >
-            {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
-        </button>
-        <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
-            <ListIcon className="w-6 h-6" />
-        </button>
-      </div>
-      
       {/* Side Panels */}
       <div className="absolute top-0 left-0 right-0 bottom-0 p-0 lg:p-5 flex justify-between items-stretch pointer-events-none">
         
@@ -314,6 +279,40 @@ const App: React.FC = () => {
         )}
       </div>
 
+      {/* --- FIX: MOVED ALL TOP BUTTONS HERE, TO RENDER 'ON TOP' OF THE SIDE PANEL CONTAINER --- */}
+      {/* Top-left icon buttons */}
+      <div className="fixed top-4 left-4 z-60 flex items-center space-x-2">
+        <button onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
+            <SettingsIcon className="w-6 h-6" />
+        </button>
+        <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
+            <HomeIcon className="w-6 h-6" />
+        </button>
+      </div>
+
+      {/* FORECAST BUTTON (TOP-CENTER) */}
+      <button 
+         onClick={() => setIsForecastModalOpen(true)}
+         className="fixed top-4 left-1/2 -translate-x-1/2 z-60 flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
+         title="View Live Aurora Forecasts">
+          <ForecastIcon className="w-5 h-5" />
+          <span className="text-sm font-semibold">Live Aurora Forecast</span>
+      </button>
+
+      {/* Top-right icon buttons */}
+      <div className="fixed top-4 right-4 z-60 flex items-center space-x-2">
+        <button 
+            onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
+            className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
+            title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
+        >
+            {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
+        </button>
+        <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
+            <ListIcon className="w-6 h-6" />
+        </button>
+      </div>
+
       <TimelineControls
         isVisible={!isLoading && filteredCmes.length > 0}
         isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
@@ -330,4 +329,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+export export default App;
