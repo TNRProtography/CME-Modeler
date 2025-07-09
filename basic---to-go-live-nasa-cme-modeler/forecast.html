@@ -126,6 +126,44 @@
         .chart-card { grid-column: span 6; height: 450px; }
         .chart-card canvas { width: 100% !important; height: 100% !important; }
 
+        /* --- FOOTER STYLING --- */
+        .page-footer {
+            margin-top: 60px;
+            padding-top: 30px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .page-footer h3 {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        .page-footer p {
+            max-width: 800px;
+            margin: 0 auto 1.5em auto;
+            line-height: 1.7;
+        }
+        .page-footer a {
+            color: var(--link-color);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .page-footer a:hover {
+            text-decoration: underline;
+            color: #93c5fd; /* A lighter blue on hover */
+        }
+        .footer-credits {
+            margin-top: 30px;
+            font-size: 0.85rem;
+        }
+        .footer-credits span {
+            margin: 0 8px;
+        }
+
         /* --- RESPONSIVE ADJUSTMENTS --- */
         @media (max-width: 1200px) { .chart-card { grid-column: 1 / -1; } }
         @media (max-width: 900px) { h1 { font-size: 1.75rem; } #nz-spotlight { grid-template-columns: 1fr; } #aurora-score-display { border-right: none; border-bottom: 1px solid var(--border-color); padding-right: 0; padding-bottom: 20px; margin-bottom: 20px; } }
@@ -155,10 +193,25 @@
             <div class="card gauge"><h3 class="card-title">IMF Bt (Total)</h3><div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div></div>
             <div class="card gauge"><h3 class="card-title">IMF Bz (N/S)</h3><div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div></div>
         </div>
-        <!-- CHANGE 1: Updated the chart title from 3 to 6 hours -->
         <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2><canvas id="auroraChart"></canvas></div>
         <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
     </main>
+
+    <footer class="page-footer">
+        <h3>About This Forecast</h3>
+        <p>
+            This forecast is derived from a proprietary algorithm that considers several key factors influencing auroral visibility on the West Coast of New Zealand. The model incorporates lunar illumination, astronomical darkness, Hemispheric Power, and the critical Bt/Bz components of the interplanetary magnetic field. This provides a more localized and nuanced prediction compared to broader-coverage models like the NOAA Ovation.
+        </p>
+        <p>
+            <strong>Disclaimer:</strong> The aurora is a natural phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. The model is not a live substorm magnetometer; it provides an estimate of probable conditions over a two-hour window, with updates continually refining the outlook.
+        </p>
+        <div class="footer-credits">
+            <span>Data courtesy of <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA SWPC</a></span>
+            <span>•</span>
+            <span>Forecast & Visualization by <a href="https://www.tnrprotography.com/" target="_blank" rel="noopener noreferrer">TNR Protography</a></span>
+        </div>
+    </footer>
+
 </div>
 
 <script>
@@ -266,7 +319,6 @@
             const data2 = processApiData(json2.values);
             const labels = [], points1 = [], points2 = [];
             const now = new Date();
-            // CHANGE 2: Changed the calculation from 3 hours to 6 hours ago
             const sixHoursAgo = now.getTime() - (6 * 60 * 60 * 1000);
             const tenMinutes = 10 * 60 * 1000;
             const startTime = new Date(Math.floor(sixHoursAgo / tenMinutes) * tenMinutes);
