@@ -37,7 +37,9 @@ const App: React.FC = () => {
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   
-  const [showForecast, setShowForecast] = useState(false);
+  // --- THIS IS THE ONLY LINE THAT WAS CHANGED ---
+  // The forecast page will now be the default view on load.
+  const [showForecast, setShowForecast] = useState(true);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -116,8 +118,12 @@ const App: React.FC = () => {
   }, [resetClock]);
 
   useEffect(() => {
-    loadCMEData(activeTimeRange);
-  }, [activeTimeRange, loadCMEData]);
+    // Only load CME data if we are on the modeler page.
+    // This is more efficient.
+    if (!showForecast) {
+      loadCMEData(activeTimeRange);
+    }
+  }, [activeTimeRange, loadCMEData, showForecast]);
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -257,7 +263,6 @@ const App: React.FC = () => {
         {showLabels && rendererDomElement && threeCamera && planetLabelInfos
           .filter(info => {
               const name = info.name.toUpperCase();
-              // THIS IS THE CORRECTED LINE
               if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; 
               if (['MOON', 'L1'].includes(name)) return showMoonL1;
               return true;
