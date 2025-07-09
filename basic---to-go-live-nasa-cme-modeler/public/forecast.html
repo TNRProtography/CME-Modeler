@@ -6,7 +6,7 @@
     <title>Spot The Aurora - West Coast Aurora Forecast</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* --- ALL CSS REMAINS THE SAME --- */
+        /* --- GLOBAL & THEME STYLES --- */
         :root {
             --bg-main: #0a0a0a;
             --bg-card: #171717;
@@ -113,8 +113,29 @@
         .gauge-bar-track { height: 8px; width: 100%; background-color: var(--bg-gauge-track); border-radius: 4px; overflow: hidden; }
         .gauge-bar { height: 100%; width: 0%; border-radius: 4px; transition: width 1.5s ease, background-color 1s ease; }
         .gauge-last-updated { font-size: 0.8rem; color: var(--text-muted); margin-top: auto; padding-top: 15px; }
-        .chart-card { grid-column: span 6; height: 450px; }
-        .chart-card canvas { width: 100% !important; height: 100% !important; }
+        
+        /* --- CSS FIX 1: NEW CHART CONTAINER STYLES --- */
+        .chart-card {
+            grid-column: span 6;
+            height: 450px;
+            /* Use flexbox to correctly position the title and chart wrapper */
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-wrapper {
+            position: relative; /* Needed for the canvas absolute positioning */
+            flex-grow: 1;      /* Allows this div to fill the card's remaining vertical space */
+            min-height: 0;     /* A flexbox fix to prevent overflow issues */
+        }
+        .chart-wrapper canvas {
+            /* Position the canvas inside the wrapper, not the card */
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
         .page-footer {
             margin-top: 60px;
             padding-top: 30px;
@@ -176,18 +197,26 @@
             <div class="card gauge"><h3 class="card-title">IMF Bt (Total)</h3><div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div></div>
             <div class="card gauge"><h3 class="card-title">IMF Bz (N/S)</h3><div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div></div>
         </div>
-        <div class="card chart-card"><h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2><canvas id="auroraChart"></canvas></div>
-        <div class="card chart-card"><h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2><canvas id="magneticFieldChart"></canvas></div>
+
+        <!-- HTML FIX: WRAP CANVAS IN A DIV -->
+        <div class="card chart-card">
+            <h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2>
+            <div class="chart-wrapper">
+                <canvas id="auroraChart"></canvas>
+            </div>
+        </div>
+        <div class="card chart-card">
+            <h2 class="card-title">Magnetic Field Components (Past 24 Hours)</h2>
+            <div class="chart-wrapper">
+                <canvas id="magneticFieldChart"></canvas>
+            </div>
+        </div>
     </main>
 
     <footer class="page-footer">
         <h3>About This Forecast</h3>
-        <p>
-            This forecast is derived from a proprietary algorithm that considers several key factors influencing auroral visibility on the West Coast of New Zealand. The model incorporates lunar illumination, astronomical darkness, Hemispheric Power, and the critical Bt/Bz components of the interplanetary magnetic field. This provides a more localized and nuanced prediction compared to broader-coverage models like the NOAA Ovation.
-        </p>
-        <p>
-            <strong>Disclaimer:</strong> The aurora is a natural phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. The model is not a live substorm magnetometer; it provides an estimate of probable conditions over a two-hour window, with updates continually refining the outlook.
-        </p>
+        <p>This forecast is derived from a proprietary algorithm that considers several key factors influencing auroral visibility on the West Coast of New Zealand. The model incorporates lunar illumination, astronomical darkness, Hemispheric Power, and the critical Bt/Bz components of the interplanetary magnetic field. This provides a more localized and nuanced prediction compared to broader-coverage models like the NOAA Ovation.</p>
+        <p><strong>Disclaimer:</strong> The aurora is a natural phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. The model is not a live substorm magnetometer; it provides an estimate of probable conditions over a two-hour window, with updates continually refining the outlook.</p>
         <div class="footer-credits">
             <span>Data courtesy of <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA SWPC</a></span>
             <span>•</span>
@@ -259,19 +288,12 @@
                     data: chartData, 
                     options: { 
                         responsive: true, 
-                        maintainAspectRatio: false, 
-                        // --- MODIFICATION 1: ADDED PADDING ---
+                        maintainAspectRatio: false,
                         layout: {
-                            padding: {
-                                left: 10,
-                                right: 20,
-                                top: 10,
-                                bottom: 5
-                            }
+                            padding: { left: 10, right: 20, top: 10, bottom: 20 } // JS FIX 1: INCREASED BOTTOM PADDING
                         },
                         plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } }, 
                         scales: { 
-                            // --- MODIFICATION 2: OPTIMIZED X-AXIS TICKS ---
                             x: { ticks: { color: '#71717a', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: '#3f3f46' } }, 
                             y: { min: yMin, max: yMax, ticks: { color: '#71717a' }, grid: { color: c=>c.tick.value===0?'#fafafa':'#3f3f46', lineWidth:c=>c.tick.value===0?1.5:1 } } 
                         }, 
@@ -357,18 +379,11 @@
                     options: {
                         responsive: true, 
                         maintainAspectRatio: false,
-                        // --- MODIFICATION 1: ADDED PADDING ---
                         layout: {
-                            padding: {
-                                left: 10,
-                                right: 20,
-                                top: 10,
-                                bottom: 5
-                            }
+                            padding: { left: 10, right: 20, top: 10, bottom: 20 } // JS FIX 2: INCREASED BOTTOM PADDING
                         },
                         plugins: { legend: { labels: { color: '#a1a1aa' } }, title: { display: false } },
                         scales: {
-                            // --- MODIFICATION 2: OPTIMIZED X-AXIS TICKS ---
                             x: { ticks: { color: '#71717a', autoSkip: true, maxTicksLimit: 12 }, grid: { color: '#3f3f46' } },
                             y: { min: 0, max: 100, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } }
                         },
