@@ -187,11 +187,34 @@
             background-color: var(--bg-gauge-track);
             border: 1px solid var(--border-color);
         }
+        
+        /* --- NEW: Style for Name Input --- */
+        .sighting-reporter-name {
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+        .sighting-reporter-name label {
+            color: var(--text-secondary);
+            margin-right: 10px;
+            font-weight: 500;
+        }
+        .sighting-reporter-name input {
+            background-color: var(--bg-gauge-track);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            width: 200px;
+        }
+        .sighting-reporter-name input:focus {
+            outline: none;
+            border-color: var(--link-color);
+        }
+
         .sighting-controls {
             display: flex;
             justify-content: center;
             gap: 15px;
-            margin-top: 25px;
             flex-wrap: wrap;
         }
         .sighting-button {
@@ -239,15 +262,13 @@
             color: var(--text-primary) !important;
         }
 
-        /* --- NEW: Style for the Emoji Pins --- */
         .sighting-emoji-icon {
-            font-size: 2rem; /* Makes the emoji nice and big */
+            font-size: 2rem; 
             text-align: center;
             line-height: 1;
-            /* Adds a shadow so the emoji is visible on any map background */
             text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.8);
-            background: none; /* Removes default icon background */
-            border: none; /* Removes default icon border */
+            background: none;
+            border: none;
         }
         
         .page-footer {
@@ -441,6 +462,13 @@
             <h2 class="card-title" style="font-size: 1.5rem;">Live Sighting Map</h2>
             <p style="margin-top: 10px; color: var(--text-secondary);">Help fellow aurora chasers! Share what you're seeing from your location.</p>
             <div id="sighting-map"></div>
+            
+            <!-- NEW: Name Input Field -->
+            <div class="sighting-reporter-name">
+                <label for="reporter-name">Your Name (Optional):</label>
+                <input type="text" id="reporter-name" placeholder="Anonymous" maxlength="50">
+            </div>
+
             <div class="sighting-controls">
                 <button class="sighting-button" id="report-aurora">✔️ I See Aurora!</button>
                 <button class="sighting-button" id="report-cloudy">☁️ It's Cloudy</button>
@@ -567,7 +595,6 @@
     
     const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/'; 
     
-    // --- UPDATED: Use Emojis instead of colored circles ---
     const SIGHTING_EMOJIS = {
         aurora: '😊',
         cloudy: '☁️',
@@ -575,6 +602,16 @@
     };
     let sightingMap = null;
     let sightingMarkersLayer = null;
+
+    // --- MODIFIED: Added a simple HTML sanitizer for names ---
+    function escapeHtml(unsafe) {
+        return unsafe
+             .replace(/&/g, "&")
+             .replace(/</g, "<")
+             .replace(/>/g, ">")
+             .replace(/"/g, """)
+             .replace(/'/g, "'");
+    }
 
     function formatTimestamp(isoString) { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`; } catch { return "Invalid Date"; } }
     function getGaugeStyle(v, t) { if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 }; let k='pink', p=0; if (t==='bz') { k=v<=-50?'pink':v<=-20?'purple':v<=-15?'red':v<=-10?'orange':v<=-5?'yellow':'gray'; p=v<0?Math.min(100,Math.max(0,(v/GAUGE_THRESHOLDS.bz.maxNegativeExpected)*100)):0; } else { const th=GAUGE_THRESHOLDS[t]; k=v<=th.gray?'gray':v<=th.yellow?'yellow':v<=th.orange?'orange':v<=th.red?'red':v<=th.purple?'purple':'pink'; p=Math.min(100,Math.max(0,(v/th.maxExpected)*100)); } return { color: GAUGE_COLORS[k], emoji: GAUGE_EMOJIS[k], percentage: p }; }
@@ -731,7 +768,7 @@
     }
     
     async function initializeSightingMap() {
-        sightingMap = L.map('sighting-map').setView([-41.2, 172.5], 5); // Center on NZ
+        sightingMap = L.map('sighting-map').setView([-41.2, 172.5], 5);
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
@@ -758,26 +795,24 @@
             sightingMarkersLayer.clearLayers();
 
             sightings.forEach(sighting => {
-                // --- THIS IS THE MODIFIED SECTION ---
                 const emoji = SIGHTING_EMOJIS[sighting.status];
-                if (!emoji) return; // Skip if status is unknown
+                if (!emoji) return;
 
-                // Create a custom HTML-based icon using the emoji
                 const emojiIcon = L.divIcon({
                     html: emoji,
-                    className: 'sighting-emoji-icon', // Use our new CSS class
-                    iconSize: [32, 32],   // The size of the icon
-                    iconAnchor: [16, 16]  // The point of the icon which will correspond to the marker's location
+                    className: 'sighting-emoji-icon',
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
                 });
 
-                // Create a standard marker, but pass in our custom emoji icon
                 const marker = L.marker([sighting.lat, sighting.lng], { 
                     icon: emojiIcon 
                 }).addTo(sightingMarkersLayer);
-                // --- END OF MODIFIED SECTION ---
 
                 const time = new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                marker.bindPopup(`<b>${sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)} seen</b><br>at ${time}`);
+                // --- MODIFIED: Updated popup to include the reporter's name ---
+                const reporterName = sighting.name ? escapeHtml(sighting.name) : 'Anonymous';
+                marker.bindPopup(`<b>${sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)} seen</b><br>by ${reporterName}<br>at ${time}`);
             });
         } catch (error) {
             console.error('Error fetching sightings:', error);
@@ -785,6 +820,10 @@
     }
 
     function handleReportSighting(status) {
+        // --- MODIFIED: Get the name from the input field ---
+        const reporterNameInput = document.getElementById('reporter-name');
+        const reporterName = reporterNameInput.value.trim();
+
         const buttons = document.querySelectorAll('.sighting-button');
         buttons.forEach(b => b.disabled = true);
 
@@ -802,14 +841,21 @@
                     const response = await fetch(SIGHTING_API_ENDPOINT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        // --- MODIFIED: Send the name in the request body ---
                         body: JSON.stringify({
                             lat: latitude,
                             lng: longitude,
-                            status: status
+                            status: status,
+                            name: reporterName 
                         })
                     });
 
                     if (!response.ok) throw new Error('Failed to submit report.');
+
+                    // --- MODIFIED: Save the name to local storage for next time ---
+                    if (reporterName) {
+                        localStorage.setItem('auroraReporterName', reporterName);
+                    }
 
                     alert('Thank you! Your report has been added to the map.');
                     fetchAndDisplaySightings();
@@ -940,6 +986,12 @@
         setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
         initializeInfoModals();
         initializeSightingMap();
+        
+        // --- NEW: Remember the user's name ---
+        const savedName = localStorage.getItem('auroraReporterName');
+        if (savedName) {
+            document.getElementById('reporter-name').value = savedName;
+        }
     });
 </script>
 
