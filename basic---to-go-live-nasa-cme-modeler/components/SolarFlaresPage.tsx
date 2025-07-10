@@ -1,4 +1,5 @@
 // SolarFlaresPage.tsx
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
@@ -144,6 +145,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {
+      // --- THIS IS THE FIX ---
+      // Add a defensive check to ensure the chart is fully initialized before drawing.
+      if (!chart.chartArea || !chart.scales || !chart.scales.y) {
+        return;
+      }
+      // --- END OF FIX ---
+
       const { ctx, chartArea: { left, right }, scales: { y } } = chart;
       const flareClasses = [
         { level: 1e-8, label: 'A' }, { level: 1e-7, label: 'B' },
