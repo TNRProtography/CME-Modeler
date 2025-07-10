@@ -21,35 +21,21 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // --- THIS IS THE FIX for mobile date parsing ---
-    // It manually rebuilds the date string into a universally compatible format.
-    const standardizeDateString = (dateString: string): string => {
-        if (!dateString) return '';
-        // If it's already in the correct format, do nothing
-        if (dateString.includes('T') && dateString.endsWith('Z')) {
-            return dateString;
-        }
-        // Otherwise, replace the space with 'T' and add 'Z'
-        return dateString.replace(' ', 'T') + 'Z';
-    };
-
     const fetchData = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
+        // This single call gets all data, now with corrected timestamps from the server
         const { xray, proton, flares } = await fetchSolarActivityData();
 
         if (xray && Array.isArray(xray)) {
-          const longWaveXray = xray
-            .filter(d => d.energy === '0.1-0.8nm')
-            .map(d => ({ ...d, time_tag: standardizeDateString(d.time_tag) }));
+          const longWaveXray = xray.filter(d => d.energy === '0.1-0.8nm');
           setFullXrayData(longWaveXray);
         }
 
         if (proton && Array.isArray(proton) && proton.length > 1) {
-          const protonDataPoints = proton.slice(1).map(d => ({ ...d, time_tag: standardizeDateString(d.time_tag) }));
-          setFullProtonData(protonDataPoints);
+          setFullProtonData(proton.slice(1)); // Skip header row
         }
         
         setFlareData(flares);
@@ -76,7 +62,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      return data.filter(d => new Date(d.time_tag).getTime() >= startTime);
+      // --- FIX: Compare against the reliable timestamp from the server ---
+      return data.filter(d => d.timestamp && d.timestamp >= startTime);
     };
 
     const filteredXray = filterDataByTime(fullXrayData);
@@ -84,7 +71,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     return {
       xray: {
-        labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
+        labels: filteredXray.map(d => new Date(d.timestamp).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
           data: filteredXray.map(d => d.flux),
@@ -93,7 +80,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         }],
       },
       proton: {
-        labels: filteredProton.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
+        labels: filteredProton.map(d => new Date(d.timestamp).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'Proton Flux (>10 MeV)',
           data: filteredProton.map(d => d.flux),
@@ -104,8 +91,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     };
   }, [fullXrayData, fullProtonData, timeRange]);
 
-  // ... (The rest of the component remains the same, no changes needed below this line)
-  
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {
@@ -160,7 +145,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = flares.reduce((acc, flare) => {
-      if (!acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
+      if (flare.activeRegionNum && !acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
         acc.push({
           activeRegionNum: flare.activeRegionNum,
           classType: flare.classType,
