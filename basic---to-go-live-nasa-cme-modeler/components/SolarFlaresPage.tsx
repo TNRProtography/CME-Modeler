@@ -13,9 +13,12 @@ interface SolarFlaresPageProps {
 }
 
 const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
+  // State for the full data sets received from the server
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
+
+  // State for UI interaction
   const [timeRange, setTimeRange] = useState<TimeRangeHours>(6);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +32,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         // This single call gets all data, fully processed and cleaned by the server
         const { xray, proton, flares } = await fetchSolarActivityData();
 
+        // The data is already clean, so we just set it to state
         setFullXrayData(xray || []);
         setFullProtonData(proton || []);
         setFlareData(flares || []);
@@ -42,6 +46,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     fetchData();
   }, []);
   
+  // This hook now simply filters the clean data based on the selected time range
   const chartData = useMemo(() => {
     const now = Date.now();
     const startTime = now - timeRange * 60 * 60 * 1000;
@@ -55,7 +60,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      // This now uses the reliable numeric timestamp from the server
       return data.filter(d => d.timestamp && d.timestamp >= startTime);
     };
 
@@ -71,10 +75,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     });
 
     const protonColors: { [key: string]: string } = {
-        '>=10 MeV': '#f87171',   // red
-        '>=50 MeV': '#fb923c',   // orange
-        '>=100 MeV': '#fbbf24',  // amber
-        '>=500 MeV': '#a3e635', // lime
+        '>=10 MeV': '#f87171',
+        '>=50 MeV': '#fb923c',
+        '>=100 MeV': '#fbbf24',
+        '>=500 MeV': '#a3e635',
     };
     
     const protonDatasets = Object.keys(protonDataByEnergy).map(energy => ({
@@ -158,16 +162,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     scales: {
         x: { 
             type: 'time',
-            time: {
-                tooltipFormat: 'HH:mm',
-                displayFormats: { hour: 'HH:mm' }
-            },
-            adapters: {
-                date: {
-                    locale: 'en-NZ',
-                    timeZone: 'Pacific/Auckland'
-                }
-            },
+            time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
+            adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
             ticks: { color: '#a3a3a3' }, 
             grid: { color: '#404040' } 
         },
