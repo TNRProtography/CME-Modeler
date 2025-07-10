@@ -15,9 +15,9 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
+import FlareIcon from './components/icons/FlareIcon';
 import ForecastModal from './components/ForecastModal';
-import SolarFlaresPage from './components/SolarFlaresPage'; // Import the new page
-import FlareIcon from './components/icons/FlareIcon';       // Import the new icon
+import SolarFlaresPage from './components/SolarFlaresPage';
 
 const App: React.FC = () => {
   // All state declarations are here
@@ -39,7 +39,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   
   const [showForecast, setShowForecast] = useState(true);
-  const [showFlares, setShowFlares] = useState(false); // State for the new Solar Flares page
+  const [showFlares, setShowFlares] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -60,6 +60,7 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
   
+  // Use import.meta.env for Vite environment variables
   const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
 
   useEffect(() => {
@@ -91,7 +92,6 @@ const App: React.FC = () => {
     setDataVersion(v => v + 1);
 
     try {
-      // Pass the API key to the fetch function
       const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
       if (data.length > 0) {
@@ -121,7 +121,6 @@ const App: React.FC = () => {
   }, [resetClock, apiKey]);
 
   useEffect(() => {
-    // Only load CME data if we are on the modeler page.
     if (!showForecast && !showFlares) {
       loadCMEData(activeTimeRange);
     }
