@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v7'; // Version incremented to force update
+const CACHE_NAME = 'cme-modeler-cache-v8'; // Version incremented to force update
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -18,7 +18,8 @@ const API_HOSTS = [
   'services.swpc.noaa.gov',
   'hemispheric-power.thenamesrock.workers.dev',
   'tnr-aurora-forecast.thenamesrock.workers.dev',
-  'basic-aurora-forecast.thenamesrock.workers.dev'
+  'basic-aurora-forecast.thenamesrock.workers.dev',
+  'aurora-sightings.thenamesrock.workers.dev' // MODIFIED: Added your sightings API
 ];
 
 
