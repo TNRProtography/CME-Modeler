@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-// MODIFIED: No longer needs fetchGoesXrayData, we will use a more reliable link directly.
-import { fetchGoesProtonData, fetchSolarFlareData, GoesProtonData, SolarFlareData } from '../services/nasaService';
+// MODIFIED: Re-import fetchGoesProtonData and its type
+import { fetchGoesProtonData, fetchSolarActivityData, GoesProtonData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
-// NEW: Define the structure for the X-Ray data fetched directly
 interface XrayFluxData {
   time_tag: string;
   flux: number;
@@ -29,24 +28,21 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         setIsLoading(true);
         setError(null);
         
-        // --- MODIFIED: Fetch X-Ray data from the secondary satellite for better reliability ---
+        // Use the secondary satellite URL for X-rays for reliability
         const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/secondary/xrays-5-minute.json';
         
         // Fetch all data sources concurrently
-        const [xrayRes, proton, flares] = await Promise.all([
+        const [xrayRes, protonRes, activityRes] = await Promise.all([
           fetch(xrayUrl).then(res => res.json()),
           fetchGoesProtonData(),
-          fetchSolarFlareData(import.meta.env.VITE_NASA_API_KEY || ''),
+          fetchSolarActivityData(), // This gets flares from the proxy
         ]);
 
         // Process X-Ray data
-        if (xrayRes && xrayRes.length > 1) {
-            const xrayHeaders = xrayRes[0];
-            const timeIndex = xrayHeaders.time_tag;
-            const fluxIndex = xrayHeaders.flux;
-            const processedXray: XrayFluxData[] = xrayRes.slice(1).map((d: any) => ({
-                time_tag: d[timeIndex],
-                flux: d[fluxIndex]
+        if (xrayRes && xrayRes.length > 0) {
+            const processedXray: XrayFluxData[] = xrayRes.map((d: any) => ({
+                time_tag: d.time_tag,
+                flux: d.flux
             }));
             setXrayData({
                 labels: processedXray.map(d => new Date(d.time_tag).toLocaleTimeString()),
@@ -64,10 +60,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         
         // Process Proton data
         setProtonData({
-          labels: proton.map(d => new Date(d.time_tag).toLocaleTimeString()),
+          labels: protonRes.map(d => new Date(d.time_tag).toLocaleTimeString()),
           datasets: [{
             label: 'Proton Flux (>10 MeV)',
-            data: proton.map(d => d.flux),
+            data: protonRes.map(d => d.flux),
             borderColor: '#f87171',
             backgroundColor: 'rgba(248, 113, 113, 0.2)',
             fill: true,
@@ -76,7 +72,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
           }],
         });
         
-        setFlareData(flares);
+        // Set flare data from the proxy
+        setFlareData(activityRes.flares);
 
       } catch (err) {
         setError((err as Error).message);
@@ -110,7 +107,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     },
   };
 
-  // --- NEW: Separate component for the Sunspot list for better layout control ---
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = flares.reduce((acc, flare) => {
       if (!acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
@@ -147,7 +143,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     );
   };
 
-
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300">
       <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-between items-center">
@@ -171,7 +166,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         )}
         {error && <div className="text-center text-red-400 text-lg p-8">Error: {error}</div>}
         {!isLoading && !error && (
-          // --- MODIFIED: This entire layout has been changed to your requested order ---
           <div className="space-y-6 max-w-7xl mx-auto">
             
             <SunImageViewer />

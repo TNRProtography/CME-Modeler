@@ -1,20 +1,16 @@
 import { CMEData, ProcessedCME } from '../types';
 
-// The API key is NO LONGER needed on the client-side for CME data.
-// We will use the proxy function for that too.
 const formatDateForAPI = (date: Date): string => date.toISOString().split('T')[0];
 
 export const fetchCMEData = async (days: number): Promise<ProcessedCME[]> => {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(endDate.getDate() - days);
-
-  // This will use the key available on the client-side during build, as originally intended.
   const apiKey = import.meta.env.VITE_NASA_API_KEY;
-
   if (!apiKey) {
     throw new Error("NASA API Key is not defined in the application's environment.");
   }
+  
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(endDate.getDate() - days);
 
   const url = `https://api.nasa.gov/DONKI/CME?startDate=${formatDateForAPI(startDate)}&endDate=${formatDateForAPI(endDate)}&api_key=${apiKey}`;
 
@@ -49,7 +45,6 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
 };
 
 const processCMEData = (data: CMEData[]): ProcessedCME[] => {
-  // ... (this function remains exactly the same as before) ...
   const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
@@ -76,12 +71,7 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
 
-// --- SOLAR ACTIVITY SECTION (Uses the proxy) ---
-
-export interface GoesXrayData {
-  time_tag: string;
-  flux: number;
-}
+// --- THIS SECTION IS NOW CORRECTED ---
 
 export interface GoesProtonData {
   time_tag: string;
@@ -99,41 +89,40 @@ export interface SolarFlareData {
   link: string;
 }
 
-// NEW: Single function to get all solar activity data from our proxy
+// Helper to parse NOAA JSON format, needed by proton fetcher
+const parseNoaaJson = <T>(jsonData: any[], valueColumn: string): T[] => {
+  if (!jsonData || jsonData.length < 2) return [];
+  const headers = jsonData[0]; // NOAA format uses an object for headers
+  const timeKey = Object.keys(headers).find(k => k.toLowerCase().includes('time_tag')) || 'time_tag';
+  const valueKey = Object.keys(headers).find(k => headers[k] === valueColumn) || valueColumn;
+  
+  return jsonData.slice(1).map((row: any) => ({
+    time_tag: row[timeKey],
+    flux: row[valueKey],
+  } as unknown as T));
+};
+
+// Re-add and export the proton fetcher
+export const fetchGoesProtonData = async (): Promise<GoesProtonData[]> => {
+  const response = await fetch('https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json');
+  if (!response.ok) throw new Error('Failed to fetch GOES proton data');
+  const jsonData = await response.json();
+  return parseNoaaJson<GoesProtonData>(jsonData, 'flux');
+};
+
+// No changes to fetchSolarFlareData, it uses the proxy
 export const fetchSolarActivityData = async () => {
-  // --- THIS IS THE CORRECTED LINE ---
-  const response = await fetch('/solar-data'); // Calls the function at the correct path
-
+  const response = await fetch('/solar-data');
   if (!response.ok) {
-    // Check if the server returned a specific error message
-    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
-    throw new Error(errorBody.error || `Server responded with status ${response.status}`);
+    throw new Error('Failed to fetch solar activity data from proxy.');
   }
-
   const data = await response.json();
   if (data.error) {
     throw new Error(data.error);
   }
 
-  // Parse the data returned from our proxy
-  const xray = parseNoaaJson<GoesXrayData>(data.xrayData, 'flux');
-  const proton = parseNoaaJson<GoesProtonData>(data.protonData, 'flux');
+  // The proxy now returns pre-fetched X-ray data, proton data is fetched separately by client
   const flares = data.flareData.filter((flare: any) => flare.activeRegionNum);
-
-  return { xray, proton, flares };
-};
-
-// This helper function is now used by our new main fetch function
-const parseNoaaJson = <T>(jsonData: any[], valueColumn: string): T[] => {
-  if (!jsonData || jsonData.length < 2) return [];
-  const headers = jsonData[0] as string[];
-  const timeIndex = headers.indexOf('time_tag');
-  const valueIndex = headers.indexOf(valueColumn);
-
-  if (timeIndex === -1 || valueIndex === -1) return [];
-
-  return jsonData.slice(1).map((row: any) => ({
-    time_tag: row[timeIndex],
-    flux: row[valueIndex],
-  }) as unknown as T);
+  
+  return { xray: data.xrayData, flares }; // Only return what the proxy provides now
 };
