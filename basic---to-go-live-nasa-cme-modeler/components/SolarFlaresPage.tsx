@@ -3,7 +3,7 @@ import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService'
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
-import ForecastIcon from './icons/ForecastIcon'; // Import the icon
+import ForecastIcon from './icons/ForecastIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
 type TimeRangeHours = 1 | 6 | 12 | 24;
@@ -21,14 +21,16 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // --- FIX: This function standardizes the ambiguous NOAA date format ---
-    const parseUTCDate = (dateString: string) => {
-      // Input: "2025-07-10 21:00:00" -> Output: a valid Date object in UTC
-      const [datePart, timePart] = dateString.split(' ');
-      const [year, month, day] = datePart.split('-').map(Number);
-      const [hour, minute, second] = timePart.split(':').map(Number);
-      // Date.UTC() is the most reliable way to create a UTC date from components
-      return new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+    // --- THIS IS THE FIX for mobile date parsing ---
+    // It manually rebuilds the date string into a universally compatible format.
+    const standardizeDateString = (dateString: string): string => {
+        if (!dateString) return '';
+        // If it's already in the correct format, do nothing
+        if (dateString.includes('T') && dateString.endsWith('Z')) {
+            return dateString;
+        }
+        // Otherwise, replace the space with 'T' and add 'Z'
+        return dateString.replace(' ', 'T') + 'Z';
     };
 
     const fetchData = async () => {
@@ -41,12 +43,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         if (xray && Array.isArray(xray)) {
           const longWaveXray = xray
             .filter(d => d.energy === '0.1-0.8nm')
-            .map(d => ({ ...d, time_tag_utc: parseUTCDate(d.time_tag) }));
+            .map(d => ({ ...d, time_tag: standardizeDateString(d.time_tag) }));
           setFullXrayData(longWaveXray);
         }
 
         if (proton && Array.isArray(proton) && proton.length > 1) {
-          const protonDataPoints = proton.slice(1).map(d => ({ ...d, time_tag_utc: parseUTCDate(d.time_tag) }));
+          const protonDataPoints = proton.slice(1).map(d => ({ ...d, time_tag: standardizeDateString(d.time_tag) }));
           setFullProtonData(protonDataPoints);
         }
         
@@ -74,7 +76,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      return data.filter(d => d.time_tag_utc.getTime() >= startTime);
+      return data.filter(d => new Date(d.time_tag).getTime() >= startTime);
     };
 
     const filteredXray = filterDataByTime(fullXrayData);
@@ -82,7 +84,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     return {
       xray: {
-        labels: filteredXray.map(d => d.time_tag_utc.toLocaleTimeString('en-NZ', nzTimeOptions)),
+        labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
           data: filteredXray.map(d => d.flux),
@@ -91,7 +93,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         }],
       },
       proton: {
-        labels: filteredProton.map(d => d.time_tag_utc.toLocaleTimeString('en-NZ', nzTimeOptions)),
+        labels: filteredProton.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'Proton Flux (>10 MeV)',
           data: filteredProton.map(d => d.flux),
@@ -102,6 +104,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     };
   }, [fullXrayData, fullProtonData, timeRange]);
 
+  // ... (The rest of the component remains the same, no changes needed below this line)
+  
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {

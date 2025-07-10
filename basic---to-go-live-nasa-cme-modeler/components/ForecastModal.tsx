@@ -1,6 +1,6 @@
 import React from 'react';
 import HomeIcon from './icons/HomeIcon';
-import FlareIcon from './icons/FlareIcon'; // Import the icon
+import FlareIcon from './icons/FlareIcon';
 
 interface ForecastPageProps {
   onNavChange: (page: 'modeler' | 'flares') => void;
@@ -11,7 +11,6 @@ const ForecastModal: React.FC<ForecastPageProps> = ({ onNavChange }) => {
     <div className="w-screen h-screen bg-black flex flex-col">
       <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-end items-center gap-4">
         
-        {/* NEW: Solar Activity Button */}
         <button
           onClick={() => onNavChange('flares')}
           className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
