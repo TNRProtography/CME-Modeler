@@ -1,3 +1,4 @@
+// src/index.tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -9,15 +10,6 @@ declare global {
     gsap: any;
   }
 }
-// Ensure API_KEY is available in the environment, e.g., through a .env file and bundler setup
-// For this example, we'll hardcode it as a placeholder if not found, with a warning.
-// In a real build process, process.env.REACT_APP_NASA_API_KEY would be replaced.
-if (!process.env.REACT_APP_NASA_API_KEY) {
-  console.warn("NASA API Key not found in process.env.REACT_APP_NASA_API_KEY. Using placeholder. Please set your API key.");
-  // @ts-ignore
-  process.env.REACT_APP_NASA_API_KEY = "DEMO_KEY"; // Or your actual key for development
-}
-
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -30,7 +22,6 @@ root.render(
     <App />
   </React.StrictMode>
 );
-
 
 // --- Service Worker Registration with EXPLICIT SCOPE ---
 if ('serviceWorker' in navigator) {

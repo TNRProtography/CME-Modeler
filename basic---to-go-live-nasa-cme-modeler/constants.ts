@@ -1,6 +1,11 @@
+// src/constants.ts
 import { PlanetData, POIData } from './types';
 
-export const NASA_API_KEY: string = process.env.VITE_NASA_API_KEY || 'DEMO_KEY';
+// --- THIS IS THE CORRECTED LINE ---
+// Vite uses import.meta.env to access environment variables
+export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
+// ------------------------------------
+
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
 export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day synodic period)
@@ -9,8 +14,6 @@ export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 1.2, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
   VENUS: { name: 'Venus', radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 3.5, labelElementId: 'venus-label', orbitalPeriodDays: 225 },
   
-  // === MODIFIED EARTH ===
-  // Changed the color from gray (0xd4d4d8) to a planetary blue to represent the "Blue Marble".
   EARTH: { name: 'Earth', radius: 1.0 * SCENE_SCALE, size: 0.02 * SCENE_SCALE, color: 0x2a6a9c, angle: 0, labelElementId: 'earth-label', orbitalPeriodDays: 365.25 },
   
   MOON: { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
