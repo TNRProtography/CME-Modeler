@@ -6,7 +6,7 @@
     <title>Spot The Aurora - West Coast Aurora Forecast</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* All CSS remains the same */
+        /* All CSS remains the same, with additions for tooltips */
         :root {
             --bg-main: #0a0a0a;
             --bg-card: #171717;
@@ -77,6 +77,13 @@
             height: auto;
             margin-bottom: 15px;
         }
+        .header .logo-link {
+            display: inline-block;
+            transition: transform 0.2s ease-in-out;
+        }
+        .header .logo-link:hover {
+            transform: scale(1.03);
+        }
         h1 { 
             font-size: 2.25rem; 
             color: var(--text-primary); 
@@ -95,8 +102,80 @@
             display: flex; 
             flex-direction: column;
         }
-        .card-title { font-size: 1.25rem; font-weight: 600; color: var(--text-primary); margin: 0 0 20px 0; text-align: left; }
+        .card-title { font-size: 1.1rem; text-align: center; font-weight: 600; color: var(--text-primary); margin: 0; }
+        
+        /* --- NEW STYLES for Tooltips --- */
+        .card-title-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .tooltip-trigger {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 18px;
+            height: 18px;
+            border: 1.5px solid var(--text-muted);
+            border-radius: 50%;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: bold;
+            cursor: help;
+            transition: all 0.2s ease;
+        }
+        .tooltip-trigger:hover {
+            background-color: var(--border-color);
+            color: var(--text-primary);
+            border-color: var(--link-color);
+        }
+        .tooltip-text {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            bottom: 150%; /* Position above the icon */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 280px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            text-align: left;
+            font-size: 0.875rem;
+            font-weight: 400;
+            line-height: 1.6;
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 10;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+            pointer-events: none; /* Allows hover to pass through if needed */
+        }
+        .tooltip-text::after { /* The little triangle */
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: var(--border-color) transparent transparent transparent;
+        }
+        .tooltip-trigger:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        .tooltip-text strong {
+            color: var(--text-primary);
+        }
+        /* --- End of Tooltip Styles --- */
+
         #nz-spotlight { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center; text-align: left; }
+        #nz-spotlight .card-title { text-align: left; }
         #aurora-score-display { padding-right: 30px; border-right: 1px solid var(--border-color); }
         #aurora-score-label { font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
         #aurora-score { font-size: 4rem; font-weight: 800; color: var(--text-primary); line-height: 1; }
@@ -107,7 +186,6 @@
         #aurora-blurbs { font-size: 1rem; color: var(--text-secondary); }
         .aurora-blurb { display: none; }
         .gauge-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
-        .gauge .card-title { font-size: 1.1rem; text-align: center; }
         .gauge-value { font-size: 2.25rem; font-weight: 700; color: var(--text-primary); margin: 10px 0; }
         .gauge-emoji { font-size: 2rem; margin: 5px 0 15px 0; min-height: 1.2em; }
         .gauge-bar-track { height: 8px; width: 100%; background-color: var(--bg-gauge-track); border-radius: 4px; overflow: hidden; }
@@ -119,6 +197,7 @@
             display: flex;
             flex-direction: column;
         }
+        .chart-card .card-title-container { justify-content: flex-start; } /* Align chart titles left */
         .chart-wrapper {
             position: relative;
             flex-grow: 1;
@@ -160,8 +239,6 @@
             text-decoration: underline;
             color: #93c5fd;
         }
-        
-        /* --- NEW STYLES for Community Links --- */
         .community-links-section {
             margin-top: 40px;
             padding-top: 30px;
@@ -198,8 +275,6 @@
             height: 24px;
             fill: var(--link-color);
         }
-        /* --- End of NEW STYLES --- */
-
         .footer-credits {
             margin-top: 30px;
             font-size: 0.85rem;
@@ -224,24 +299,97 @@
 
     <main class="dashboard-grid">
         <div id="nz-spotlight" class="card">
-            <div id="aurora-score-display"><h2 class="card-title">NZ West Coast Aurora Chance</h2><div id="aurora-score">Loading...</div><div id="thermometer-container"><div id="thermometer-line"></div></div><div id="last-updated">Last Updated: Loading...</div></div>
+            <div id="aurora-score-display">
+                <div class="card-title-container">
+                    <h2 class="card-title">NZ West Coast Aurora Chance</h2>
+                </div>
+                <div id="aurora-score">Loading...</div>
+                <div id="thermometer-container"><div id="thermometer-line"></div></div>
+                <div id="last-updated">Last Updated: Loading...</div>
+            </div>
             <div id="aurora-blurbs"><div class="aurora-blurb" id="blurb-10">Little to no auroral activity.</div><div class="aurora-blurb" id="blurb-25">Minimal auroral activity likely.</div><div class="aurora-blurb" id="blurb-40">Clear auroral activity visible in cameras.</div><div class="aurora-blurb" id="blurb-50">Faint auroral glow potentially visible to the naked eye.</div><div class="aurora-blurb" id="blurb-80">Good chance of seeing naked-eye auroral color.</div><div class="aurora-blurb" id="blurb-80plus">High probability of significant auroral substorms.</div></div>
         </div>
+        
+        <!-- MODIFIED Gauge Grid with Tooltips -->
         <div class="gauge-grid">
-            <div class="card gauge"><h3 class="card-title">Hemispheric Power</h3><div class="gauge-value" id="power-value">...</div><div class="gauge-emoji" id="power-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="power-gauge-bar"></div></div><div class="gauge-last-updated" id="power-last-updated">...</div></div>
-            <div class="card gauge"><h3 class="card-title">Solar Wind Speed</h3><div class="gauge-value" id="speed-value">...</div><div class="gauge-emoji" id="speed-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="speed-gauge-bar"></div></div><div class="gauge-last-updated" id="speed-last-updated">...</div></div>
-            <div class="card gauge"><h3 class="card-title">Solar Wind Density</h3><div class="gauge-value" id="density-value">...</div><div class="gauge-emoji" id="density-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="density-gauge-bar"></div></div><div class="gauge-last-updated" id="density-last-updated">...</div></div>
-            <div class="card gauge"><h3 class="card-title">IMF Bt (Total)</h3><div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div></div>
-            <div class="card gauge"><h3 class="card-title">IMF Bz (N/S)</h3><div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div></div>
+            <div class="card gauge">
+                <div class="card-title-container">
+                    <h3 class="card-title">Hemispheric Power</h3>
+                    <div class="tooltip-trigger">?
+                        <span class="tooltip-text">
+                            <strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br>
+                            <strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available to create a brighter and more widespread aurora.
+                        </span>
+                    </div>
+                </div>
+                <div class="gauge-value" id="power-value">...</div><div class="gauge-emoji" id="power-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="power-gauge-bar"></div></div><div class="gauge-last-updated" id="power-last-updated">...</div>
+            </div>
+
+            <div class="card gauge">
+                <div class="card-title-container">
+                    <h3 class="card-title">Solar Wind Speed</h3>
+                    <div class="tooltip-trigger">?
+                        <span class="tooltip-text">
+                            <strong>What it is:</strong> The speed of the charged particles flowing from the Sun. Measured in kilometers per second (km/s).<br><br>
+                            <strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy. This leads to more dynamic and vibrant auroras with faster-moving curtains and rays.
+                        </span>
+                    </div>
+                </div>
+                <div class="gauge-value" id="speed-value">...</div><div class="gauge-emoji" id="speed-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="speed-gauge-bar"></div></div><div class="gauge-last-updated" id="speed-last-updated">...</div>
+            </div>
+
+            <div class="card gauge">
+                <div class="card-title-container">
+                    <h3 class="card-title">Solar Wind Density</h3>
+                    <div class="tooltip-trigger">?
+                        <span class="tooltip-text">
+                            <strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind. Measured in protons per cm³ (p/cm³).<br><br>
+                            <strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere. This can result in more widespread and "thicker" looking auroral displays with more saturated color.
+                        </span>
+                    </div>
+                </div>
+                <div class="gauge-value" id="density-value">...</div><div class="gauge-emoji" id="density-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="density-gauge-bar"></div></div><div class="gauge-last-updated" id="density-last-updated">...</div>
+            </div>
+
+            <div class="card gauge">
+                <div class="card-title-container">
+                    <h3 class="card-title">IMF Bt (Total)</h3>
+                    <div class="tooltip-trigger">?
+                        <span class="tooltip-text">
+                            <strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF). Measured in nanoteslas (nT).<br><br>
+                            <strong>Effect on Aurora:</strong> A high Bt value indicates that the magnetic field is strong. While not a guarantee of aurora on its own, a strong field can carry more energy and lead to more powerful events if the Bz component is also favorable.
+                        </span>
+                    </div>
+                </div>
+                <div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div>
+            </div>
+
+            <div class="card gauge">
+                <div class="card-title-container">
+                    <h3 class="card-title">IMF Bz (N/S)</h3>
+                    <div class="tooltip-trigger">?
+                        <span class="tooltip-text">
+                            <strong>What it is:</strong> The North-South direction of the IMF. Measured in nanoteslas (nT). This is the most critical component for aurora.<br><br>
+                            <strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly **negative (pointing south)**, it connects with Earth's northward-pointing magnetic field, opening a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>
+                        </span>
+                    </div>
+                </div>
+                <div class="gauge-value" id="bz-value">...</div><div class="gauge-emoji" id="bz-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bz-gauge-bar"></div></div><div class="gauge-last-updated" id="bz-last-updated">...</div>
+            </div>
         </div>
+
         <div class="card chart-card">
-            <h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2>
+            <div class="card-title-container">
+                <h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2>
+            </div>
             <div class="chart-wrapper">
                 <canvas id="auroraChart"></canvas>
             </div>
         </div>
         <div class="card chart-card">
-            <h2 class="card-title">Magnetic Field Components (Past 2 Hours)</h2>
+            <div class="card-title-container">
+                <h2 class="card-title">Magnetic Field Components (Past 2 Hours)</h2>
+            </div>
             <div class="chart-wrapper">
                 <canvas id="magneticFieldChart"></canvas>
             </div>
@@ -253,21 +401,20 @@
         <p>This forecast is derived from a proprietary algorithm that considers several key factors influencing auroral visibility on the West Coast of New Zealand. The model incorporates lunar illumination, astronomical darkness, Hemispheric Power, and the critical Bt/Bz components of the interplanetary magnetic field. This provides a more localized and nuanced prediction compared to broader-coverage models like the NOAA Ovation.</p>
         <p><strong>Disclaimer:</strong> The aurora is a natural phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. The model is not a live substorm magnetometer; it provides an estimate of probable conditions over a two-hour window, with updates continually refining the outlook.</p>
         
-        <!-- NEW SECTION for Community Links -->
         <div class="community-links-section">
             <h3>Get Real-Time Alerts & Join the Discussion</h3>
             <p>The forecast is great, but the aurora can be unpredictable. Get instant notifications sent directly to your device when conditions look promising, and share your sightings with our growing community of West Coast aurora chasers!</p>
             <div class="community-links">
                 <a href="https://www.facebook.com/profile.php?id=61575593713727" class="community-link" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10v4h3v7h4v-7h3l1 -4h-4v-2a1 1 0 0 1 1 -1h3v-4h-3a5 5 0 0 0 -5 5v2h-3" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M15.12,5.32H17V2.14A26.11,26.11,0,0,0,14.26,2C11.54,2,9.68,3.66,9.68,6.7V9.32H6.61v3.56H9.68V22h3.68V12.88h3.06l.46-3.56H13.36V7.05C13.36,6,13.64,5.32,15.12,5.32Z"/></svg>
                     <span>Facebook Alerts Page</span>
                 </a>
                 <a href="https://t.me/Spot_The_Aurora" class="community-link" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 10l-4 4l6 6l4 -16l-18 7l4 2l2 6l3 -4" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M21.8,3.24a2,2,0,0,0-1.87-1.15c-3,.2-16.36,6.08-16.36,6.08a1,1,0,0,0,.1,1.8l3.65,1.14,1.1,3.83a1,1,0,0,0,1.82.16s2.5-3.37,3.61-4.57,1.83-1.28,1.83-1.28a1,1,0,0,0-.12-1.82S4.85,5.4,4.48,5.13a1,1,0,0,0-1.42,1l8.53,7.83a1,1,0,0,0,1.45.19l7.53-5.26A2,2,0,0,0,21.8,3.24Z"/></svg>
                     <span>Telegram Alerts Channel</span>
                 </a>
                 <a href="https://www.facebook.com/groups/spottheaurora.greywestland" class="community-link" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 13a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M8 21v-1a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v1" /><path d="M15 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M17 10h2a2 2 0 0 1 2 2v1" /><path d="M5 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M3 13v-1a2 2 0 0 1 2 -2h2" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"/><path d="M12,7a3,3,0,1,0,3,3A3,3,0,0,0,12,7Zm0,4a1,1,0,1,1,1-1A1,1,0,0,1,12,11Z"/><path d="M18.63,16.27l-.28-.27a1,1,0,0,0-1.28-.1,5,5,0,0,0-1.29.62,1,1,0,0,0-.24.16,1,1,0,0,0-.1.14,3.29,3.29,0,0,1-1.3,1.1,3.48,3.48,0,0,1-3.66,0,3.29,3.29,0,0,1-1.3-1.1A1.18,1.18,0,0,0,9,16.62a1,1,0,0,0-1.28.1l-.28.27a8.44,8.44,0,0,0-1.41,1.55,1,1,0,0,0,.15,1.4,8,8,0,0,0,11.38,0,1,1,0,0,0,.15-1.4A8.44,8.44,0,0,0,18.63,16.27Z"/></svg>
                     <span>Facebook Discussion Group</span>
                 </a>
             </div>
@@ -283,7 +430,7 @@
 </div>
 
 <script>
-    // All Javascript remains the same
+    // All Javascript remains the same and does not need to be changed.
     let auroraChartInstance = null;
     let magneticChart = null;
     let apiDataCache = {}; 
