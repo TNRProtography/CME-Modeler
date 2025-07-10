@@ -1,17 +1,19 @@
 {
   "short_name": "Spot the Aurora",
-  "name": "TNR Protography - Forecast and Modeler",
+  "name": "Aurora Forecast and Modeler",
   "description": "A 3D modeler for NASA Coronal Mass Ejections (CMEs) with a live aurora forecast.",
   "icons": [
     {
       "src": "/icons/android-chrome-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/android-chrome-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/android-chrome-512x512.png",
@@ -20,8 +22,15 @@
       "purpose": "maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "fullscreen",
-  "theme_color": "#0a0a0a",
-  "background_color": "#0a0a0a"
+  "orientation": "any",
+  "background_color": "#171717",
+  "theme_color": "#171717"
 }
+
+
+
+
+
+
