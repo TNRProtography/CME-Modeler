@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
@@ -41,10 +41,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     fetchData();
   }, []);
   
-  // --- NEW, SIMPLIFIED CHART DATA LOGIC ---
+  // This logic is now simpler and more direct.
   const now = Date.now();
   const startTime = now - timeRange * 60 * 60 * 1000;
-
+  
   const filteredXray = fullXrayData.filter(d => d.timestamp && d.timestamp >= startTime);
   const filteredProton = fullProtonData.filter(d => d.timestamp && d.timestamp >= startTime);
 
@@ -56,7 +56,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       fill: true, pointRadius: 0, borderWidth: 1.5,
     }],
   };
-
+  
   const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
   filteredProton.forEach(p => {
       if (!protonDataByEnergy[p.energy]) {
@@ -66,10 +66,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   });
 
   const protonColors: { [key: string]: string } = {
-      '>=10 MeV': '#f87171',
-      '>=50 MeV': '#fb923c',
-      '>=100 MeV': '#fbbf24',
-      '>=500 MeV': '#a3e635',
+      '>=10 MeV': '#f87171', '>=50 MeV': '#fb923c',
+      '>=100 MeV': '#fbbf24', '>=500 MeV': '#a3e635',
   };
   
   const protonDatasets = Object.keys(protonDataByEnergy).map(energy => ({
@@ -77,13 +75,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       data: protonDataByEnergy[energy],
       borderColor: protonColors[energy] || '#a3a3a3',
       backgroundColor: 'transparent',
-      pointRadius: 0,
-      borderWidth: 1.5,
+      pointRadius: 0, borderWidth: 1.5,
   }));
 
-  const protonChartData = {
-      datasets: protonDatasets,
-  };
+  const protonChartData = { datasets: protonDatasets };
 
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
@@ -115,16 +110,24 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     }
   };
   
-  const xrayChartOptions = {
+  const chartOptionsBase = {
     responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: { enabled: true, mode: 'index' as const, intersect: false } },
+    interaction: { intersect: false, mode: 'index' as const },
     scales: {
       x: { 
         type: 'time' as const,
         time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
         adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
         ticks: { color: '#a3a3a3' }, grid: { color: '#404040' } 
-      },
+      }
+    }
+  };
+
+  const xrayChartOptions = {
+    ...chartOptionsBase,
+    plugins: { legend: { display: false }, tooltip: { enabled: true, mode: 'index' as const, intersect: false } },
+    scales: {
+      ...chartOptionsBase.scales,
       y: {
         type: 'logarithmic' as const, min: 1e-9, max: 1e-2,
         ticks: { color: '#a3a3a3', callback: (value: any) => {
@@ -136,28 +139,20 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         }},
         grid: { color: '#404040' },
       },
-    },
-    interaction: { intersect: false, mode: 'index' as const },
+    }
   };
 
   const protonChartOptions = {
-    responsive: true, maintainAspectRatio: false,
+    ...chartOptionsBase,
     plugins: { legend: { labels: { color: '#e5e5e5' } } },
     scales: {
-        x: { 
-            type: 'time' as const,
-            time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
-            adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
-            ticks: { color: '#a3a3a3' }, 
-            grid: { color: '#404040' } 
-        },
+      ...chartOptionsBase.scales,
         y: {
             type: 'logarithmic' as const, min: 1e-1,
             ticks: { color: '#a3a3a3'},
             grid: { color: '#404040' }
         }
-    },
-    interaction: { intersect: false, mode: 'index' as const },
+    }
   };
   
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
@@ -231,8 +226,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
                 </div>
               </div>
               <div className="relative h-72">
-                {chartData.xray.datasets[0].data.length > 0 
-                  ? <DataChart data={chartData.xray} options={xrayChartOptions} plugins={[xrayAnnotationsPlugin]} /> 
+                {xrayChartData.datasets[0].data.length > 0 
+                  ? <DataChart data={xrayChartData} options={xrayChartOptions} plugins={[xrayAnnotationsPlugin]} /> 
                   : <p className="text-center text-neutral-400 pt-10">No X-Ray data available for this time range.</p>}
               </div>
             </div>
@@ -242,8 +237,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
                  <h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux (NZT)</h3>
               </div>
               <div className="relative h-72">
-                {chartData.proton.datasets.length > 0 && chartData.proton.datasets.some(ds => ds.data.length > 0)
-                  ? <DataChart data={chartData.proton} options={protonChartOptions} /> 
+                {protonChartData.datasets.length > 0 && protonChartData.datasets.some(ds => ds.data.length > 0)
+                  ? <DataChart data={protonChartData} options={protonChartOptions} /> 
                   : <p className="text-center text-neutral-400 pt-10">No Proton Flux data available.</p>}
               </div>
             </div>
