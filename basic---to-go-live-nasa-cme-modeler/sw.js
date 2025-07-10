@@ -1,17 +1,17 @@
 // sw.js
-const CACHE_NAME = 'cme-modeler-cache-v4'; // IMPORTANT: We've incremented the version number again.
+const CACHE_NAME = 'cme-modeler-cache-v5'; // Version incremented
+
 const urlsToCache = [
-  '/', // The root of the site
+  '/',
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
   '/forecast.html',
-  // Add paths to your main icons
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
+  // DELETED: Removed '/index.css' from this list
 ];
 
-// The install event fires when the service worker is first installed.
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Install');
   event.waitUntil(
@@ -23,7 +23,6 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// The activate event fires after install. It's a good place to clean up old caches.
 self.addEventListener('activate', (event) => {
   console.log('[Service Worker] Activate');
   event.waitUntil(
@@ -39,17 +38,13 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
-// The fetch event fires for every network request the page makes.
-// This is what enables offline functionality. It MUST exist.
 self.addEventListener('fetch', (event) => {
-  // We only want to cache GET requests.
   if (event.request.method !== 'GET') {
     return;
   }
   
   event.respondWith(
     caches.match(event.request).then((response) => {
-      // If the request is in the cache, return it. Otherwise, fetch from the network.
       return response || fetch(event.request);
     })
   );
