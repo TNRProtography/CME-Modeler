@@ -1,6 +1,6 @@
 interface SolarActivityResponse {
-  xrayData: any[];
-  protonData: any[];
+  xrayData: { timestamp: number; flux: number }[];
+  protonData: { timestamp: number; flux: number }[];
   flareData: any[];
   error?: string;
 }
@@ -9,10 +9,11 @@ declare interface Env {
   SECRET_NASA_API_KEY: string;
 }
 
-// This is a robust, server-side function to parse ambiguous NOAA date strings
-// It converts "YYYY-MM-DD HH:mm:ss" into a reliable Unix timestamp (number)
+// This robust function runs on the server to parse ambiguous NOAA date strings.
+// It will not fail, even on mobile browsers, because the browser never runs this code.
 const parseNoaaDate = (dateString: string): number | null => {
-  if (!dateString) return null;
+  if (typeof dateString !== 'string' || dateString.trim() === '') return null;
+  // Creates a universally compatible ISO string: "2024-07-11T22:05:00Z"
   const isoString = dateString.replace(' ', 'T') + 'Z';
   const timestamp = new Date(isoString).getTime();
   return isNaN(timestamp) ? null : timestamp;
@@ -40,23 +41,22 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    // --- Correctly process X-Ray data on the server ---
+    // --- All data processing now happens safely on the server ---
     const rawXrayData = xrayRes.status === 'fulfilled' && xrayRes.value.ok ? await xrayRes.value.json() : [];
     const processedXray = Array.isArray(rawXrayData)
       ? rawXrayData
-          .filter(d => d.energy === '0.1-0.8nm') // 1. Keep only the flare classification band
+          .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0) // Filter for the correct band and valid flux
           .map(d => ({
-            timestamp: parseNoaaDate(d.time_tag), // 2. Create reliable numeric timestamp
-            flux: d.flux,                         // 3. Use the correct "flux" field
+            timestamp: parseNoaaDate(d.time_tag),
+            flux: d.flux,
           }))
-          .filter(d => d.timestamp !== null)      // 4. Remove any entries that couldn't be parsed
+          .filter(d => d.timestamp !== null) // Remove any entries that failed to parse
       : [];
 
-    // Correctly process Proton data on the server
     const rawProtonData = protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [];
     const processedProton = Array.isArray(rawProtonData) && rawProtonData.length > 1
       ? rawProtonData
-          .slice(1) // Skip header row
+          .slice(1) // Skip header row in proton data
           .map(d => ({
             timestamp: parseNoaaDate(d.time_tag),
             flux: d.flux,
@@ -72,6 +72,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Failed to fetch data from external APIs.' }), { status: 502 });
+    return new Response(JSON.stringify({ error: 'Failed to fetch or process data from external APIs.' }), { status: 502 });
   }
 };
