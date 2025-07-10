@@ -240,6 +240,44 @@
         #report-cloudy:hover:not(:disabled) { background-color: #6b7280; }
         #report-nothing { background-color: #991b1b; border-color: #7f1d1d; }
         #report-nothing:hover:not(:disabled) { background-color: #b91c1c; }
+        
+        /* --- NEW STYLES for Embedded Content --- */
+        .embedded-content-container {
+            margin-top: 30px;
+        }
+        .embedded-content-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .responsive-iframe-wrapper {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            height: 0; /* This is part of the aspect ratio trick */
+            border-radius: 12px;
+        }
+        .responsive-iframe-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+        .iframe-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1; /* Sits on top of the iframe */
+            background: transparent;
+        }
+        /* --- End of NEW STYLES --- */
+
         .leaflet-popup-content-wrapper {
             background-color: var(--bg-card);
             color: var(--text-primary);
@@ -472,6 +510,17 @@
                 <button class="sighting-button" id="report-cloudy">☁️ It's Cloudy</button>
                 <button class="sighting-button" id="report-nothing">❌ Nothing Yet</button>
             </div>
+
+            <!-- NEW SECTION for Windy.com embed -->
+            <div class="embedded-content-container">
+                <h3 class="embedded-content-title">Live Cloud Cover</h3>
+                <div class="responsive-iframe-wrapper" style="padding-bottom: 69.23%;">
+                    <div class="iframe-overlay"></div>
+                    <iframe title="Windy.com Cloud Map" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=default&metricTemp=default&metricWind=default&zoom=6&overlay=clouds&product=ecmwf&level=surface&lat=-43.213&lon=171.365&detailLat=-43.21318330073887&detailLon=171.36474609375&marker=true"></iframe>
+                </div>
+            </div>
+            <!-- END NEW SECTION -->
+
         </div>
 
         <div class="gauge-grid">
@@ -529,6 +578,17 @@
                 <canvas id="magneticFieldChart"></canvas>
             </div>
         </div>
+
+        <!-- NEW SECTION for Roundshot Webcam embed -->
+        <div class="card" style="grid-column: 1 / -1;">
+             <h2 class="embedded-content-title">Live View from Queenstown</h2>
+             <div class="responsive-iframe-wrapper" style="padding-bottom: 56.25%;">
+                 <div class="iframe-overlay"></div>
+                 <iframe title="Live View from Queenstown" src="https://queenstown.roundshot.com/#/"></iframe>
+             </div>
+        </div>
+        <!-- END NEW SECTION -->
+
     </main>
 
     <footer class="page-footer">
@@ -775,7 +835,7 @@
         document.getElementById('report-cloudy').addEventListener('click', () => handleReportSighting('cloudy'));
         document.getElementById('report-nothing').addEventListener('click', () => handleReportSighting('nothing'));
         
-        // MODIFIED: This section is updated for smarter refreshing.
+        // --- THIS IS THE CORRECTED REFRESH LOGIC ---
         // Initial fetch when the page loads
         fetchAndDisplaySightings();
 
@@ -869,7 +929,7 @@
                     localStorage.setItem('auroraReporterName', reporterName);
 
                     alert('Thank you! Your report has been added to the map.');
-                    // MODIFIED: Immediately refresh the map after successful submission.
+                    // --- THIS IS THE IMMEDIATE REFRESH FIX ---
                     fetchAndDisplaySightings();
                 } catch (error) {
                     console.error('Error submitting report:', error);
