@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spot The Aurora - West Coast Aurora Forecast</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- NEW: Leaflet Map Library -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
     <style>
         :root {
             --bg-main: #0a0a0a;
@@ -100,7 +105,6 @@
             border-radius: 16px; 
             padding: 25px; 
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); 
-            text-align: center; 
             display: flex; 
             flex-direction: column;
         }
@@ -171,6 +175,74 @@
             width: 100%;
             height: 100%;
         }
+
+        /* --- NEW: Sighting Map Styles --- */
+        #sighting-map-section {
+            grid-column: 1 / -1;
+            text-align: center;
+        }
+        #sighting-map {
+            height: 450px;
+            width: 100%;
+            border-radius: 12px;
+            margin-top: 20px;
+            background-color: var(--bg-gauge-track);
+            border: 1px solid var(--border-color);
+        }
+        .sighting-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 25px;
+            flex-wrap: wrap;
+        }
+        .sighting-button {
+            padding: 12px 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            color: var(--text-primary);
+        }
+        .sighting-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        .sighting-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #report-aurora { background-color: #166534; border-color: #14532d; }
+        #report-aurora:hover:not(:disabled) { background-color: #15803d; }
+        #report-cloudy { background-color: #4b5563; border-color: #374151; }
+        #report-cloudy:hover:not(:disabled) { background-color: #6b7280; }
+        #report-nothing { background-color: #991b1b; border-color: #7f1d1d; }
+        #report-nothing:hover:not(:disabled) { background-color: #b91c1c; }
+        /* Style Leaflet popups to match theme */
+        .leaflet-popup-content-wrapper {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        .leaflet-popup-content {
+            margin: 12px;
+            font-size: 0.9rem;
+        }
+        .leaflet-popup-tip {
+            background-color: var(--bg-card);
+        }
+        .leaflet-popup-close-button {
+            color: var(--text-secondary) !important;
+            padding: 4px 4px 0 0 !important;
+        }
+        .leaflet-popup-close-button:hover {
+            color: var(--text-primary) !important;
+        }
+        /* --- End of Sighting Map Styles --- */
+
         .page-footer {
             margin-top: 60px;
             padding-top: 30px;
@@ -244,7 +316,6 @@
             margin: 0 8px;
         }
         
-        /* --- NEW MODAL STYLES --- */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -276,9 +347,6 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             transform: scale(0.95);
             transition: transform 0.3s ease;
-        }
-        .modal-overlay.visible .modal-content {
-            transform: scale(1);
         }
         .modal-header {
             display: flex;
@@ -312,7 +380,7 @@
             color: var(--text-secondary);
             max-height: 60vh;
             overflow-y: auto;
-            padding-right: 10px; /* For scrollbar */
+            padding-right: 10px;
         }
         .modal-body strong {
             color: var(--text-primary);
@@ -332,8 +400,7 @@
             margin-right: 8px;
             vertical-align: middle;
         }
-        /* --- End of Modal Styles --- */
-
+        
         @media (max-width: 1200px) { .chart-card { grid-column: 1 / -1; } }
         @media (max-width: 900px) { h1 { font-size: 1.75rem; } #nz-spotlight { grid-template-columns: 1fr; } #aurora-score-display { border-right: none; border-bottom: 1px solid var(--border-color); padding-right: 0; padding-bottom: 20px; margin-bottom: 20px; } }
         @media (max-width: 600px) { body { padding: 10px; } .card { padding: 20px; } }
@@ -363,6 +430,18 @@
             <div id="aurora-blurbs"><div class="aurora-blurb" id="blurb-10">Little to no auroral activity.</div><div class="aurora-blurb" id="blurb-25">Minimal auroral activity likely.</div><div class="aurora-blurb" id="blurb-40">Clear auroral activity visible in cameras.</div><div class="aurora-blurb" id="blurb-50">Faint auroral glow potentially visible to the naked eye.</div><div class="aurora-blurb" id="blurb-80">Good chance of seeing naked-eye auroral color.</div><div class="aurora-blurb" id="blurb-80plus">High probability of significant auroral substorms.</div></div>
         </div>
         
+        <!-- NEW: Live Sighting Map Section -->
+        <div id="sighting-map-section" class="card">
+            <h2 class="card-title" style="font-size: 1.5rem;">Live Sighting Map</h2>
+            <p style="margin-top: 10px; color: var(--text-secondary);">Help fellow aurora chasers! Share what you're seeing from your location.</p>
+            <div id="sighting-map"></div>
+            <div class="sighting-controls">
+                <button class="sighting-button" id="report-aurora">✔️ I See Aurora!</button>
+                <button class="sighting-button" id="report-cloudy">☁️ It's Cloudy</button>
+                <button class="sighting-button" id="report-nothing">❌ Nothing Yet</button>
+            </div>
+        </div>
+
         <div class="gauge-grid">
             <div class="card gauge">
                 <div class="card-title-container">
@@ -450,7 +529,6 @@
     </footer>
 </div>
 
-<!-- NEW: Reusable Modal Structure -->
 <div id="info-modal" class="modal-overlay">
     <div class="modal-content">
         <div class="modal-header">
@@ -458,7 +536,6 @@
             <button id="modal-close-btn" class="modal-close-btn">×</button>
         </div>
         <div id="modal-body" class="modal-body">
-            <!-- Content is injected here by JavaScript -->
         </div>
     </div>
 </div>
@@ -482,6 +559,16 @@
     const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
     const UPDATE_INTERVAL_MS = 120000;
     
+    // --- SIGHTING MAP CONSTANTS ---
+    const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/'; // **IMPORTANT: YOU NEED TO CREATE THIS WORKER**
+    const SIGHTING_MARKER_STYLES = {
+        aurora: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.7, weight: 1 },
+        cloudy: { color: '#a1a1aa', fillColor: '#a1a1aa', fillOpacity: 0.6, weight: 1 },
+        nothing: { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.6, weight: 1 }
+    };
+    let sightingMap = null;
+    let sightingMarkersLayer = null;
+
     function formatTimestamp(isoString) { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`; } catch { return "Invalid Date"; } }
     function getGaugeStyle(v, t) { if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 }; let k='pink', p=0; if (t==='bz') { k=v<=-50?'pink':v<=-20?'purple':v<=-15?'red':v<=-10?'orange':v<=-5?'yellow':'gray'; p=v<0?Math.min(100,Math.max(0,(v/GAUGE_THRESHOLDS.bz.maxNegativeExpected)*100)):0; } else { const th=GAUGE_THRESHOLDS[t]; k=v<=th.gray?'gray':v<=th.yellow?'yellow':v<=th.orange?'orange':v<=th.red?'red':v<=th.purple?'purple':'pink'; p=Math.min(100,Math.max(0,(v/th.maxExpected)*100)); } return { color: GAUGE_COLORS[k], emoji: GAUGE_EMOJIS[k], percentage: p }; }
     async function updateGauge(type) {
@@ -636,6 +723,106 @@
         }
     }
     
+    // --- NEW: Sighting Map Functions ---
+    async function initializeSightingMap() {
+        sightingMap = L.map('sighting-map').setView([-41.2, 172.5], 5); // Center on NZ
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(sightingMap);
+
+        sightingMarkersLayer = L.layerGroup().addTo(sightingMap);
+        
+        document.getElementById('report-aurora').addEventListener('click', () => handleReportSighting('aurora'));
+        document.getElementById('report-cloudy').addEventListener('click', () => handleReportSighting('cloudy'));
+        document.getElementById('report-nothing').addEventListener('click', () => handleReportSighting('nothing'));
+        
+        fetchAndDisplaySightings(); // Initial fetch
+        setInterval(fetchAndDisplaySightings, 60000); // Refresh sightings every minute
+    }
+
+    async function fetchAndDisplaySightings() {
+        try {
+            const response = await fetch(SIGHTING_API_ENDPOINT);
+            if (!response.ok) throw new Error('Failed to fetch sightings.');
+            const sightings = await response.json();
+            
+            sightingMarkersLayer.clearLayers();
+
+            sightings.forEach(sighting => {
+                const style = SIGHTING_MARKER_STYLES[sighting.status];
+                if (!style) return;
+
+                const marker = L.circleMarker([sighting.lat, sighting.lng], {
+                    ...style,
+                    radius: 8
+                }).addTo(sightingMarkersLayer);
+
+                const time = new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                marker.bindPopup(`<b>${sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)} seen</b><br>at ${time}`);
+            });
+        } catch (error) {
+            console.error('Error fetching sightings:', error);
+        }
+    }
+
+    function handleReportSighting(status) {
+        const buttons = document.querySelectorAll('.sighting-button');
+        buttons.forEach(b => b.disabled = true);
+
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser.');
+            buttons.forEach(b => b.disabled = false);
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                const { latitude, longitude } = position.coords;
+                
+                try {
+                    const response = await fetch(SIGHTING_API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lat: latitude,
+                            lng: longitude,
+                            status: status
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('Failed to submit report.');
+
+                    alert('Thank you! Your report has been added to the map.');
+                    fetchAndDisplaySightings(); // Refresh map immediately
+                } catch (error) {
+                    console.error('Error submitting report:', error);
+                    alert('Could not submit your report. Please try again later.');
+                } finally {
+                    buttons.forEach(b => b.disabled = false);
+                }
+            },
+            (error) => {
+                let message = 'Could not get your location. ';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        message += 'Please enable location permissions for this site.';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        message += 'Location information is unavailable.';
+                        break;
+                    case error.TIMEOUT:
+                        message += 'The request to get user location timed out.';
+                        break;
+                }
+                alert(message);
+                buttons.forEach(b => b.disabled = false);
+            }
+        );
+    }
+    
     function runAllUpdates() {
         console.log(`Updating all data at ${new Date().toLocaleTimeString()}...`);
         apiDataCache = {};
@@ -645,7 +832,6 @@
         renderMagneticChart();
     }
 
-    // --- MODIFIED & NEW JAVASCRIPT for Modals ---
     function initializeInfoModals() {
         const modalContent = {
             'forecast': {
@@ -736,7 +922,8 @@
     document.addEventListener('DOMContentLoaded', () => {
         runAllUpdates();
         setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
-        initializeInfoModals(); // Initialize the new modal functionality
+        initializeInfoModals();
+        initializeSightingMap(); // NEW: Initialize the map
     });
 </script>
 
