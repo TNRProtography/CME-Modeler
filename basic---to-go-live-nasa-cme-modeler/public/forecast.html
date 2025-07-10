@@ -104,7 +104,7 @@
         }
         .card-title { font-size: 1.1rem; text-align: center; font-weight: 600; color: var(--text-primary); margin: 0; }
         
-        /* --- NEW STYLES for Tooltips --- */
+        /* --- MODIFIED & NEW STYLES for Tooltips --- */
         .card-title-container {
             position: relative;
             display: flex;
@@ -134,12 +134,12 @@
             border-color: var(--link-color);
         }
         .tooltip-text {
-            visibility: hidden;
+            visibility: hidden; /* Controlled by JS now */
             opacity: 0;
             position: absolute;
-            bottom: 150%; /* Position above the icon */
+            bottom: 150%; 
             left: 50%;
-            transform: translateX(-50%);
+            transform: translateX(-50%); /* Default centered position */
             width: 280px;
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -153,9 +153,14 @@
             z-index: 10;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
             transition: opacity 0.3s ease, visibility 0.3s ease;
-            pointer-events: none; /* Allows hover to pass through if needed */
+            pointer-events: none;
         }
-        .tooltip-text::after { /* The little triangle */
+        /* NEW CLASS to show tooltip via JS */
+        .tooltip-text.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+        .tooltip-text::after {
             content: "";
             position: absolute;
             top: 100%;
@@ -165,10 +170,6 @@
             border-style: solid;
             border-color: var(--border-color) transparent transparent transparent;
         }
-        .tooltip-trigger:hover .tooltip-text {
-            visibility: visible;
-            opacity: 1;
-        }
         .tooltip-text strong {
             color: var(--text-primary);
         }
@@ -176,6 +177,7 @@
 
         #nz-spotlight { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center; text-align: left; }
         #nz-spotlight .card-title { text-align: left; }
+        #nz-spotlight .card-title-container { justify-content: flex-start; }
         #aurora-score-display { padding-right: 30px; border-right: 1px solid var(--border-color); }
         #aurora-score-label { font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
         #aurora-score { font-size: 4rem; font-weight: 800; color: var(--text-primary); line-height: 1; }
@@ -197,7 +199,7 @@
             display: flex;
             flex-direction: column;
         }
-        .chart-card .card-title-container { justify-content: flex-start; } /* Align chart titles left */
+        .chart-card .card-title-container { justify-content: flex-start; }
         .chart-wrapper {
             position: relative;
             flex-grow: 1;
@@ -301,7 +303,7 @@
         <div id="nz-spotlight" class="card">
             <div id="aurora-score-display">
                 <div class="card-title-container">
-                    <h2 class="card-title">NZ West Coast Aurora Chance</h2>
+                    <h2 class="card-title">Spot The Aurora Forecast</h2>
                 </div>
                 <div id="aurora-score">Loading...</div>
                 <div id="thermometer-container"><div id="thermometer-line"></div></div>
@@ -310,7 +312,6 @@
             <div id="aurora-blurbs"><div class="aurora-blurb" id="blurb-10">Little to no auroral activity.</div><div class="aurora-blurb" id="blurb-25">Minimal auroral activity likely.</div><div class="aurora-blurb" id="blurb-40">Clear auroral activity visible in cameras.</div><div class="aurora-blurb" id="blurb-50">Faint auroral glow potentially visible to the naked eye.</div><div class="aurora-blurb" id="blurb-80">Good chance of seeing naked-eye auroral color.</div><div class="aurora-blurb" id="blurb-80plus">High probability of significant auroral substorms.</div></div>
         </div>
         
-        <!-- MODIFIED Gauge Grid with Tooltips -->
         <div class="gauge-grid">
             <div class="card gauge">
                 <div class="card-title-container">
@@ -370,7 +371,7 @@
                     <div class="tooltip-trigger">?
                         <span class="tooltip-text">
                             <strong>What it is:</strong> The North-South direction of the IMF. Measured in nanoteslas (nT). This is the most critical component for aurora.<br><br>
-                            <strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly **negative (pointing south)**, it connects with Earth's northward-pointing magnetic field, opening a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>
+                            <strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (pointing south)</strong>, it connects with Earth's northward-pointing magnetic field, opening a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>
                         </span>
                     </div>
                 </div>
@@ -406,15 +407,15 @@
             <p>The forecast is great, but the aurora can be unpredictable. Get instant notifications sent directly to your device when conditions look promising, and share your sightings with our growing community of West Coast aurora chasers!</p>
             <div class="community-links">
                 <a href="https://www.facebook.com/profile.php?id=61575593713727" class="community-link" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M15.12,5.32H17V2.14A26.11,26.11,0,0,0,14.26,2C11.54,2,9.68,3.66,9.68,6.7V9.32H6.61v3.56H9.68V22h3.68V12.88h3.06l.46-3.56H13.36V7.05C13.36,6,13.64,5.32,15.12,5.32Z"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15.12,5.32H17V2.14A26.11,26.11,0,0,0,14.26,2C11.54,2,9.68,3.66,9.68,6.7V9.32H6.61v3.56H9.68V22h3.68V12.88h3.06l.46-3.56H13.36V7.05C13.36,6,13.64,5.32,15.12,5.32Z"/></svg>
                     <span>Facebook Alerts Page</span>
                 </a>
                 <a href="https://t.me/Spot_The_Aurora" class="community-link" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M21.8,3.24a2,2,0,0,0-1.87-1.15c-3,.2-16.36,6.08-16.36,6.08a1,1,0,0,0,.1,1.8l3.65,1.14,1.1,3.83a1,1,0,0,0,1.82.16s2.5-3.37,3.61-4.57,1.83-1.28,1.83-1.28a1,1,0,0,0-.12-1.82S4.85,5.4,4.48,5.13a1,1,0,0,0-1.42,1l8.53,7.83a1,1,0,0,0,1.45.19l7.53-5.26A2,2,0,0,0,21.8,3.24Z"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M21.8,3.24a2,2,0,0,0-1.87-1.15c-3,.2-16.36,6.08-16.36,6.08a1,1,0,0,0,.1,1.8l3.65,1.14,1.1,3.83a1,1,0,0,0,1.82.16s2.5-3.37,3.61-4.57,1.83-1.28,1.83-1.28a1,1,0,0,0-.12-1.82S4.85,5.4,4.48,5.13a1,1,0,0,0-1.42,1l8.53,7.83a1,1,0,0,0,1.45.19l7.53-5.26A2,2,0,0,0,21.8,3.24Z"/></svg>
                     <span>Telegram Alerts Channel</span>
                 </a>
                 <a href="https://www.facebook.com/groups/spottheaurora.greywestland" class="community-link" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"/><path d="M12,7a3,3,0,1,0,3,3A3,3,0,0,0,12,7Zm0,4a1,1,0,1,1,1-1A1,1,0,0,1,12,11Z"/><path d="M18.63,16.27l-.28-.27a1,1,0,0,0-1.28-.1,5,5,0,0,0-1.29.62,1,1,0,0,0-.24.16,1,1,0,0,0-.1.14,3.29,3.29,0,0,1-1.3,1.1,3.48,3.48,0,0,1-3.66,0,3.29,3.29,0,0,1-1.3-1.1A1.18,1.18,0,0,0,9,16.62a1,1,0,0,0-1.28.1l-.28.27a8.44,8.44,0,0,0-1.41,1.55,1,1,0,0,0,.15,1.4,8,8,0,0,0,11.38,0,1,1,0,0,0,.15-1.4A8.44,8.44,0,0,0,18.63,16.27Z"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"/><path d="M12,7a3,3,0,1,0,3,3A3,3,0,0,0,12,7Zm0,4a1,1,0,1,1,1-1A1,1,0,0,1,12,11Z"/><path d="M18.63,16.27l-.28-.27a1,1,0,0,0-1.28-.1,5,5,0,0,0-1.29.62,1,1,0,0,0-.24.16,1,1,0,0,0-.1.14,3.29,3.29,0,0,1-1.3,1.1,3.48,3.48,0,0,1-3.66,0,3.29,3.29,0,0,1-1.3-1.1A1.18,1.18,0,0,0,9,16.62a1,1,0,0,0-1.28.1l-.28.27a8.44,8.44,0,0,0-1.41,1.55,1,1,0,0,0,.15,1.4,8,8,0,0,0,11.38,0,1,1,0,0,0,.15-1.4A8.44,8.44,0,0,0,18.63,16.27Z"/></svg>
                     <span>Facebook Discussion Group</span>
                 </a>
             </div>
@@ -430,7 +431,7 @@
 </div>
 
 <script>
-    // All Javascript remains the same and does not need to be changed.
+    // All existing Javascript remains the same
     let auroraChartInstance = null;
     let magneticChart = null;
     let apiDataCache = {}; 
@@ -611,9 +612,48 @@
         Object.keys(GAUGE_API_ENDPOINTS).forEach(type => updateGauge(type));
         renderMagneticChart();
     }
+
+    // --- NEW JAVASCRIPT for Tooltips ---
+    function initializeTooltips() {
+        const triggers = document.querySelectorAll('.tooltip-trigger');
+        const PADDING = 10; // 10px padding from the edge of the screen
+
+        triggers.forEach(trigger => {
+            const tooltip = trigger.querySelector('.tooltip-text');
+            if (!tooltip) return;
+
+            trigger.addEventListener('mouseenter', () => {
+                // First, make it visible to measure it
+                tooltip.classList.add('visible');
+                
+                // Get dimensions
+                const rect = tooltip.getBoundingClientRect();
+                const viewportWidth = window.innerWidth;
+
+                // Reset transform to default for calculation
+                tooltip.style.transform = 'translateX(-50%)';
+
+                // Check for collisions and adjust
+                if (rect.left < PADDING) {
+                    // It's off the left edge, so shift it right
+                    tooltip.style.transform = `translateX(${-rect.left + PADDING}px)`;
+                } else if (rect.right > viewportWidth - PADDING) {
+                    // It's off the right edge, so shift it left
+                    tooltip.style.transform = `translateX(${viewportWidth - rect.right - PADDING}px)`;
+                }
+            });
+
+            trigger.addEventListener('mouseleave', () => {
+                // Hide the tooltip
+                tooltip.classList.remove('visible');
+            });
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         runAllUpdates();
         setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
+        initializeTooltips(); // Initialize the new tooltip functionality
     });
 
 </script>
