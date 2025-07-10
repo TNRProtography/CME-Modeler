@@ -20,6 +20,16 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // --- FIX: This function standardizes the ambiguous NOAA date format ---
+    const fixNoaaTime = (dataPoint: any) => {
+      // Input: "2025-07-10 21:00:00" -> Output: "2025-07-10T21:00:00Z"
+      // This is a valid ISO 8601 format that works on ALL browsers.
+      if (dataPoint.time_tag && !dataPoint.time_tag.endsWith('Z')) {
+        return { ...dataPoint, time_tag: dataPoint.time_tag.replace(' ', 'T') + 'Z' };
+      }
+      return dataPoint;
+    };
+
     const fetchData = async () => {
       try {
         setIsLoading(true);
@@ -28,15 +38,14 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         const { xray, proton, flares } = await fetchSolarActivityData();
 
         if (xray && Array.isArray(xray)) {
-          // --- FIX: Ensure all time_tags are treated as UTC by all browsers ---
           const longWaveXray = xray
             .filter(d => d.energy === '0.1-0.8nm')
-            .map(d => ({ ...d, time_tag: d.time_tag.endsWith('Z') ? d.time_tag : d.time_tag + 'Z' }));
+            .map(fixNoaaTime); // Apply the fix to every data point
           setFullXrayData(longWaveXray);
         }
 
         if (proton && Array.isArray(proton) && proton.length > 1) {
-          const protonDataPoints = proton.slice(1).map(d => ({ ...d, time_tag: d.time_tag.endsWith('Z') ? d.time_tag : d.time_tag + 'Z' }));
+          const protonDataPoints = proton.slice(1).map(fixNoaaTime); // Apply the fix here too
           setFullProtonData(protonDataPoints);
         }
         
@@ -54,6 +63,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
   const chartData = useMemo(() => {
     const now = Date.now();
     const startTime = now - timeRange * 60 * 60 * 1000;
+    
+    // --- FIX: Options to force all displayed times to NZT ---
+    const nzTimeOptions: Intl.DateTimeFormatOptions = {
+        timeZone: 'Pacific/Auckland',
+        hour: '2-digit',
+        minute: '2-digit'
+    };
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
@@ -65,27 +81,21 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
 
     return {
       xray: {
-        labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
           data: filteredXray.map(d => d.flux),
-          borderColor: '#facc15',
-          backgroundColor: 'rgba(250, 204, 21, 0.2)',
-          fill: true,
-          pointRadius: 0,
-          borderWidth: 1.5,
+          borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.2)',
+          fill: true, pointRadius: 0, borderWidth: 1.5,
         }],
       },
       proton: {
-        labels: filteredProton.map(d => new Date(d.time_tag).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        labels: filteredProton.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'Proton Flux (>10 MeV)',
           data: filteredProton.map(d => d.flux),
-          borderColor: '#f87171',
-          backgroundColor: 'rgba(248, 113, 113, 0.2)',
-          fill: true,
-          pointRadius: 0,
-          borderWidth: 1.5,
+          borderColor: '#f87171', backgroundColor: 'rgba(248, 113, 113, 0.2)',
+          fill: true, pointRadius: 0, borderWidth: 1.5,
         }],
       },
     };
@@ -133,12 +143,9 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
             // --- FIX: Custom callback to display flare classes ---
             callback: function(value: any) {
                 switch(Number(value)) {
-                    case 1e-8: return 'A';
-                    case 1e-7: return 'B';
-                    case 1e-6: return 'C';
-                    case 1e-5: return 'M';
-                    case 1e-4: return 'X';
-                    default: return null; // Don't show labels for other grid lines
+                    case 1e-8: return 'A'; case 1e-7: return 'B';
+                    case 1e-6: return 'C'; case 1e-5: return 'M';
+                    case 1e-4: return 'X'; default: return null;
                 }
             }
         },
@@ -222,7 +229,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
             </div>
             <ActiveRegionsList flares={flareData} />
             <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES Proton Flux</h3>
+              <div className="flex justify-between items-center mb-2">
+                 <h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux</h3>
+                 <span className="text-xs text-neutral-400">Times in NZT</span>
+              </div>
               <div className="relative h-72">
                 {chartData.proton.datasets[0].data.length > 0 
                   ? <DataChart data={chartData.proton} options={protonChartOptions} /> 
