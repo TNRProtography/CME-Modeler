@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
@@ -28,7 +28,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         
         const { xray, proton, flares } = await fetchSolarActivityData();
 
-        // The data is already clean from the server, just check if it's an array before setting
         setFullXrayData(Array.isArray(xray) ? xray : []);
         setFullProtonData(Array.isArray(proton) ? proton : []);
         setFlareData(Array.isArray(flares) ? flares : []);
@@ -42,63 +41,49 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     fetchData();
   }, []);
   
-  const chartData = useMemo(() => {
-    const now = Date.now();
-    const startTime = now - timeRange * 60 * 60 * 1000;
-    
-    const nzTimeOptions: Intl.DateTimeFormatOptions = {
-        timeZone: 'Pacific/Auckland',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    };
+  // --- NEW, SIMPLIFIED CHART DATA LOGIC ---
+  const now = Date.now();
+  const startTime = now - timeRange * 60 * 60 * 1000;
 
-    const filterDataByTime = (data: any[]) => {
-      if (!data) return [];
-      return data.filter(d => d.timestamp && d.timestamp >= startTime);
-    };
+  const filteredXray = fullXrayData.filter(d => d.timestamp && d.timestamp >= startTime);
+  const filteredProton = fullProtonData.filter(d => d.timestamp && d.timestamp >= startTime);
 
-    const filteredXray = filterDataByTime(fullXrayData);
-    const filteredProton = filterDataByTime(fullProtonData);
+  const xrayChartData = {
+    datasets: [{
+      label: 'X-Ray Flux (watts/m^2)',
+      data: filteredXray.map(d => ({ x: d.timestamp, y: d.flux })),
+      borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.2)',
+      fill: true, pointRadius: 0, borderWidth: 1.5,
+    }],
+  };
 
-    const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
-    filteredProton.forEach(p => {
-        if (!protonDataByEnergy[p.energy]) {
-            protonDataByEnergy[p.energy] = [];
-        }
-        protonDataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
-    });
+  const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
+  filteredProton.forEach(p => {
+      if (!protonDataByEnergy[p.energy]) {
+          protonDataByEnergy[p.energy] = [];
+      }
+      protonDataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
+  });
 
-    const protonColors: { [key: string]: string } = {
-        '>=10 MeV': '#f87171',
-        '>=50 MeV': '#fb923c',
-        '>=100 MeV': '#fbbf24',
-        '>=500 MeV': '#a3e635',
-    };
-    
-    const protonDatasets = Object.keys(protonDataByEnergy).map(energy => ({
-        label: `Proton Flux ${energy.replace('>=', '≥')}`,
-        data: protonDataByEnergy[energy],
-        borderColor: protonColors[energy] || '#a3a3a3',
-        backgroundColor: 'transparent',
-        pointRadius: 0,
-        borderWidth: 1.5,
-    }));
+  const protonColors: { [key: string]: string } = {
+      '>=10 MeV': '#f87171',
+      '>=50 MeV': '#fb923c',
+      '>=100 MeV': '#fbbf24',
+      '>=500 MeV': '#a3e635',
+  };
+  
+  const protonDatasets = Object.keys(protonDataByEnergy).map(energy => ({
+      label: `Proton Flux ${energy.replace('>=', '≥')}`,
+      data: protonDataByEnergy[energy],
+      borderColor: protonColors[energy] || '#a3a3a3',
+      backgroundColor: 'transparent',
+      pointRadius: 0,
+      borderWidth: 1.5,
+  }));
 
-    return {
-      xray: {
-        datasets: [{
-          label: 'X-Ray Flux (watts/m^2)',
-          data: filteredXray.map(d => ({ x: d.timestamp, y: d.flux })),
-          borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.2)',
-          fill: true, pointRadius: 0, borderWidth: 1.5,
-        }],
-      },
-      proton: {
-        datasets: protonDatasets,
-      },
-    };
-  }, [fullXrayData, fullProtonData, timeRange]);
+  const protonChartData = {
+      datasets: protonDatasets,
+  };
 
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
@@ -135,13 +120,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     plugins: { legend: { display: false }, tooltip: { enabled: true, mode: 'index' as const, intersect: false } },
     scales: {
       x: { 
-        type: 'time',
+        type: 'time' as const,
         time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
         adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
         ticks: { color: '#a3a3a3' }, grid: { color: '#404040' } 
       },
       y: {
-        type: 'logarithmic', min: 1e-9, max: 1e-2,
+        type: 'logarithmic' as const, min: 1e-9, max: 1e-2,
         ticks: { color: '#a3a3a3', callback: (value: any) => {
             switch(Number(value)) {
                 case 1e-8: return 'A'; case 1e-7: return 'B';
@@ -160,14 +145,14 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     plugins: { legend: { labels: { color: '#e5e5e5' } } },
     scales: {
         x: { 
-            type: 'time',
+            type: 'time' as const,
             time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
             adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
             ticks: { color: '#a3a3a3' }, 
             grid: { color: '#404040' } 
         },
         y: {
-            type: 'logarithmic', min: 1e-1,
+            type: 'logarithmic' as const, min: 1e-1,
             ticks: { color: '#a3a3a3'},
             grid: { color: '#404040' }
         }
