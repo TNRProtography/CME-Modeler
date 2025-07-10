@@ -217,8 +217,8 @@
             flex-wrap: wrap;
         }
         .sighting-button {
-            padding: 12px 25px;
-            font-size: 1rem;
+            padding: 10px 15px; /* Slightly smaller padding for 5 buttons */
+            font-size: 0.9rem; /* Slightly smaller font for more buttons */
             font-weight: 600;
             border-radius: 10px;
             border: 1px solid var(--border-color);
@@ -234,12 +234,17 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
-        #report-aurora { background-color: #166534; border-color: #14532d; }
-        #report-aurora:hover:not(:disabled) { background-color: #15803d; }
+        /* --- NEW BUTTON COLORS --- */
+        #report-eye { background-color: #16a34a; border-color: #15803d; }
+        #report-eye:hover:not(:disabled) { background-color: #22c55e; }
+        #report-phone { background-color: #4ade80; border-color: #22c55e; }
+        #report-phone:hover:not(:disabled) { background-color: #86efac; }
+        #report-dslr { background-color: #2563eb; border-color: #1d4ed8; }
+        #report-dslr:hover:not(:disabled) { background-color: #3b82f6; }
         #report-cloudy { background-color: #4b5563; border-color: #374151; }
         #report-cloudy:hover:not(:disabled) { background-color: #6b7280; }
-        #report-nothing { background-color: #991b1b; border-color: #7f1d1d; }
-        #report-nothing:hover:not(:disabled) { background-color: #b91c1c; }
+        #report-nothing { background-color: #dc2626; border-color: #b91c1c; }
+        #report-nothing:hover:not(:disabled) { background-color: #ef4444; }
         
         .embedded-content-container {
             margin-top: 30px;
@@ -288,8 +293,9 @@
             color: var(--text-primary) !important;
         }
 
+        /* --- MODIFIED: Emoji size reduced --- */
         .sighting-emoji-icon {
-            font-size: 2rem; 
+            font-size: 1.2rem; 
             text-align: center;
             line-height: 1;
             text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.8);
@@ -526,16 +532,18 @@
                 <p id="sighting-status-text">Sending report...</p>
             </div>
             
+            <!-- MODIFIED: Updated button layout and IDs -->
             <div class="sighting-controls">
-                <button class="sighting-button" id="report-aurora">✔️ I See Aurora!</button>
+                <button class="sighting-button" id="report-eye">👁️ Eye Visibility</button>
+                <button class="sighting-button" id="report-phone">🤳 Phone Camera</button>
+                <button class="sighting-button" id="report-dslr">📷 DSLR Camera</button>
                 <button class="sighting-button" id="report-cloudy">☁️ It's Cloudy</button>
-                <button class="sighting-button" id="report-nothing">❌ Nothing Yet</button>
+                <button class="sighting-button" id="report-nothing">❌ Nothing Seen</button>
             </div>
 
             <div class="embedded-content-container">
                 <h3 class="embedded-content-title">Live Cloud Cover</h3>
                 <div class="responsive-iframe-wrapper" style="padding-bottom: 69.23%;">
-                    <div class="iframe-overlay"></div>
                     <iframe title="Windy.com Cloud Map" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=default&metricTemp=default&metricWind=default&zoom=6&overlay=clouds&product=ecmwf&level=surface&lat=-43.213&lon=171.365&detailLat=-43.21318330073887&detailLon=171.36474609375&marker=true"></iframe>
                 </div>
             </div>
@@ -668,8 +676,11 @@
     
     const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/'; 
     
+    // --- MODIFIED: Updated emoji list for new options ---
     const SIGHTING_EMOJIS = {
-        aurora: '😊',
+        eye: '👁️',
+        phone: '🤳',
+        dslr: '📷',
         cloudy: '☁️',
         nothing: '❌'
     };
@@ -863,7 +874,10 @@
 
         sightingMarkersLayer = L.layerGroup().addTo(sightingMap);
         
-        document.getElementById('report-aurora').addEventListener('click', () => handleReportSighting('aurora'));
+        // --- MODIFIED: Add event listeners for new buttons ---
+        document.getElementById('report-eye').addEventListener('click', () => handleReportSighting('eye'));
+        document.getElementById('report-phone').addEventListener('click', () => handleReportSighting('phone'));
+        document.getElementById('report-dslr').addEventListener('click', () => handleReportSighting('dslr'));
         document.getElementById('report-cloudy').addEventListener('click', () => handleReportSighting('cloudy'));
         document.getElementById('report-nothing').addEventListener('click', () => handleReportSighting('nothing'));
         
@@ -897,7 +911,8 @@
             sightings.forEach(sighting => {
                 const emoji = SIGHTING_EMOJIS[sighting.status];
                 if (!emoji) return;
-                const emojiIcon = L.divIcon({ html: emoji, className: 'sighting-emoji-icon', iconSize: [32, 32], iconAnchor: [16, 16] });
+                // --- MODIFIED: Use smaller icon size ---
+                const emojiIcon = L.divIcon({ html: emoji, className: 'sighting-emoji-icon', iconSize: [20, 20], iconAnchor: [10, 10] });
                 const marker = L.marker([sighting.lat, sighting.lng], { icon: emojiIcon }).addTo(sightingMarkersLayer);
                 const time = new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 const reporterName = sighting.name || 'Anonymous';
