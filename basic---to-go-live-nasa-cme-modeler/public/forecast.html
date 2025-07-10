@@ -775,8 +775,26 @@
         document.getElementById('report-cloudy').addEventListener('click', () => handleReportSighting('cloudy'));
         document.getElementById('report-nothing').addEventListener('click', () => handleReportSighting('nothing'));
         
+        // MODIFIED: This section is updated for smarter refreshing.
+        // Initial fetch when the page loads
         fetchAndDisplaySightings();
-        setInterval(fetchAndDisplaySightings, 60000);
+
+        // Set up a recurring check every 30 seconds
+        setInterval(() => {
+            // Only fetch if the user is actually looking at the page
+            if (document.visibilityState === 'visible') {
+                console.log("Checking for new sightings (30-second interval)...");
+                fetchAndDisplaySightings();
+            }
+        }, 30000); // 30 seconds
+
+        // Also, fetch immediately when the user switches back to this tab
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log("Tab is visible again, fetching latest sightings immediately...");
+                fetchAndDisplaySightings();
+            }
+        });
     }
 
     async function fetchAndDisplaySightings() {
