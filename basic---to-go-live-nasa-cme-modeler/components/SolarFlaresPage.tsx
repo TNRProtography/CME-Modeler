@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchGoesXrayData, fetchGoesProtonData, fetchSolarFlareData, GoesXrayData, GoesProtonData, SolarFlareData } from '../services/nasaService';
+import { fetchSolarActivityData, GoesXrayData, GoesProtonData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
@@ -7,10 +7,10 @@ import LoadingSpinner from './icons/LoadingSpinner';
 
 interface SolarFlaresPageProps {
   onClose: () => void;
-  apiKey: string;
+  // No apiKey prop needed
 }
 
-const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose, apiKey }) => {
+const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
   const [xrayData, setXrayData] = useState<any>(null);
   const [protonData, setProtonData] = useState<any>(null);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
@@ -24,20 +24,15 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose, apiKey }) =>
       try {
         setIsLoading(true);
         setError(null);
+        
+        const { xray, proton, flares } = await fetchSolarActivityData();
 
-        const [xray, proton, flares] = await Promise.all([
-          fetchGoesXrayData(),
-          fetchGoesProtonData(),
-          fetchSolarFlareData(apiKey),
-        ]);
-
-        // Process X-Ray data for chart
         setXrayData({
           labels: xray.map(d => new Date(d.time_tag).toLocaleTimeString()),
           datasets: [{
             label: 'X-Ray Flux (watts/m^2)',
             data: xray.map(d => d.flux),
-            borderColor: '#facc15', // amber-400
+            borderColor: '#facc15',
             backgroundColor: 'rgba(250, 204, 21, 0.2)',
             fill: true,
             pointRadius: 0,
@@ -45,13 +40,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose, apiKey }) =>
           }],
         });
 
-        // Process Proton data for chart
         setProtonData({
           labels: proton.map(d => new Date(d.time_tag).toLocaleTimeString()),
           datasets: [{
             label: 'Proton Flux (>10 MeV)',
             data: proton.map(d => d.flux),
-            borderColor: '#f87171', // red-400
+            borderColor: '#f87171',
             backgroundColor: 'rgba(248, 113, 113, 0.2)',
             fill: true,
             pointRadius: 0,
@@ -68,7 +62,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose, apiKey }) =>
       }
     };
     fetchData();
-  }, [apiKey]);
+  }, []); // No dependency array needed
 
   const commonChartOptions = {
     responsive: true,
@@ -136,5 +130,4 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose, apiKey }) =>
   );
 };
 
-// THIS LINE IS THE FIX
 export default SolarFlaresPage;

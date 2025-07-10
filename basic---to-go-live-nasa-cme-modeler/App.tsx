@@ -20,7 +20,7 @@ import ForecastModal from './components/ForecastModal';
 import SolarFlaresPage from './components/SolarFlaresPage';
 
 const App: React.FC = () => {
-  // All state declarations are here
+  // ... (state declarations remain the same)
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -59,9 +59,6 @@ const App: React.FC = () => {
 
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
-  
-  // Use import.meta.env for Vite environment variables
-  const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
 
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
@@ -92,7 +89,7 @@ const App: React.FC = () => {
     setDataVersion(v => v + 1);
 
     try {
-      const data = await fetchCMEData(days, apiKey);
+      const data = await fetchCMEData(days);
       setCmeData(data);
       if (data.length > 0) {
         const endDate = new Date();
@@ -118,7 +115,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [resetClock, apiKey]);
+  }, [resetClock]);
 
   useEffect(() => {
     if (!showForecast && !showFlares) {
@@ -208,7 +205,7 @@ const App: React.FC = () => {
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
   if (showFlares) {
-    return <SolarFlaresPage onClose={() => setShowFlares(false)} apiKey={apiKey} />;
+    return <SolarFlaresPage onClose={() => setShowFlares(false)} />;
   }
 
   if (showForecast) {

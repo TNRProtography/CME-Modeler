@@ -2,11 +2,18 @@ import { CMEData, ProcessedCME } from '../types';
 
 const formatDateForAPI = (date: Date): string => date.toISOString().split('T')[0];
 
-// The API key is now passed into the functions that need it.
-export const fetchCMEData = async (days: number, apiKey: string): Promise<ProcessedCME[]> => {
+// MODIFIED: This function now correctly uses the VITE_NASA_API_KEY from the build environment.
+export const fetchCMEData = async (days: number): Promise<ProcessedCME[]> => {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(endDate.getDate() - days);
+
+  // This will use the key available on the client-side during build, as originally intended.
+  const apiKey = import.meta.env.VITE_NASA_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("NASA API Key is not defined in the application's environment.");
+  }
 
   const url = `https://api.nasa.gov/DONKI/CME?startDate=${formatDateForAPI(startDate)}&endDate=${formatDateForAPI(endDate)}&api_key=${apiKey}`;
 
@@ -67,9 +74,8 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
 
-// --- NEW CODE STARTS HERE ---
+// --- SOLAR ACTIVITY SECTION (Uses the proxy) ---
 
-// NEW: Interfaces for the new data types
 export interface GoesXrayData {
   time_tag: string;
   flux: number;
@@ -91,7 +97,23 @@ export interface SolarFlareData {
   link: string;
 }
 
-// Helper to parse the standard NOAA JSON format
+export const fetchSolarActivityData = async () => {
+  const response = await fetch('/functions/solar-data'); // This calls our secure messenger
+  if (!response.ok) {
+    throw new Error('Failed to fetch solar activity data from proxy.');
+  }
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error);
+  }
+
+  const xray = parseNoaaJson<GoesXrayData>(data.xrayData, 'flux');
+  const proton = parseNoaaJson<GoesProtonData>(data.protonData, 'flux');
+  const flares = data.flareData.filter((flare: any) => flare.activeRegionNum);
+
+  return { xray, proton, flares };
+};
+
 const parseNoaaJson = <T>(jsonData: any[], valueColumn: string): T[] => {
   if (!jsonData || jsonData.length < 2) return [];
   const headers = jsonData[0] as string[];
@@ -102,36 +124,6 @@ const parseNoaaJson = <T>(jsonData: any[], valueColumn: string): T[] => {
 
   return jsonData.slice(1).map((row: any) => ({
     time_tag: row[timeIndex],
-    [valueColumn]: row[valueIndex],
-  } as T));
-};
-
-export const fetchGoesXrayData = async (): Promise<GoesXrayData[]> => {
-  // Fetches the last 3 days of 5-min X-ray data
-  const response = await fetch('https://services.swpc.noaa.gov/json/goes/primary/xrays-5-minute.json');
-  if (!response.ok) throw new Error('Failed to fetch GOES X-ray data');
-  const jsonData = await response.json();
-  return parseNoaaJson<GoesXrayData>(jsonData, 'flux');
-};
-
-export const fetchGoesProtonData = async (): Promise<GoesProtonData[]> => {
-  // Fetches the last 3 days of 5-min proton flux data
-  const response = await fetch('https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json');
-  if (!response.ok) throw new Error('Failed to fetch GOES proton data');
-  const jsonData = await response.json();
-  return parseNoaaJson<GoesProtonData>(jsonData, 'flux');
-};
-
-export const fetchSolarFlareData = async (apiKey: string): Promise<SolarFlareData[]> => {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(endDate.getDate() - 7); // Flares from the last 7 days
-
-  const formatDate = (d: Date) => d.toISOString().split('T')[0];
-  const url = `https://api.nasa.gov/DONKI/FLR?startDate=${formatDate(startDate)}&endDate=${formatDate(endDate)}&api_key=${apiKey}`;
-
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Failed to fetch Solar Flare data');
-  const jsonData = await response.json();
-  return jsonData.filter((flare: any) => flare.activeRegionNum); // Only show flares with a numbered active region
+    flux: row[valueIndex],
+  }) as unknown as T);
 };
