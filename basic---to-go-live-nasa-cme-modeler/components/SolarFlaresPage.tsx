@@ -55,6 +55,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
+      // This now uses the reliable numeric timestamp from the server
       return data.filter(d => d.timestamp && d.timestamp >= startTime);
     };
 
