@@ -8,7 +8,6 @@ import HomeIcon from './icons/HomeIcon';
 import ForecastIcon from './icons/ForecastIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
-// --- MODIFIED: New TimeRangeHours type and default ---
 type TimeRangeHours = 1 | 2 | 4 | 6;
 
 interface SolarFlaresPageProps {
@@ -19,7 +18,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
-  // --- MODIFIED: Default to 2 hours ---
   const [timeRange, setTimeRange] = useState<TimeRangeHours>(2);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,15 +40,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     fetchData();
   }, []);
 
-  // --- CHART DATA AND OPTIONS ARE NOW BUILT HERE ---
-
   const now = Date.now();
   const startTime = now - timeRange * 60 * 60 * 1000;
   
   const filteredXray = fullXrayData.filter(d => d.timestamp >= startTime);
   const filteredProton = fullProtonData.filter(d => d.timestamp >= startTime);
   
-  // X-Ray Chart Data and Options
   const xrayChartData = {
     datasets: [{
       label: 'X-Ray Flux (watts/m^2)',
@@ -70,7 +65,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     interaction: { intersect: false, mode: 'index' as const },
     scales: {
       x: {
-        type: 'time' as const, // This tells the chart how to interpret the x-data
+        type: 'time' as const,
         time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
         adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
         ticks: { color: '#a3a3a3' },
@@ -98,7 +93,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     },
   };
 
-  // Proton Chart Data and Options
   const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
   filteredProton.forEach(p => {
     if (!protonDataByEnergy[p.energy]) protonDataByEnergy[p.energy] = [];
@@ -145,14 +139,24 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {
-      // --- THIS IS THE FIX ---
-      // Add a defensive check to ensure the chart is fully initialized before drawing.
-      if (!chart.chartArea || !chart.scales || !chart.scales.y) {
-        return;
+      // --- THIS IS THE BULLETPROOF FIX ---
+      // We check not just for the parent objects, but for all the specific properties
+      // we are about to use. This prevents any "Cannot read properties of undefined" errors.
+      if (
+        !chart.ctx ||
+        !chart.chartArea ||
+        typeof chart.chartArea.left === 'undefined' ||
+        typeof chart.chartArea.right === 'undefined' ||
+        typeof chart.chartArea.top === 'undefined' ||
+        typeof chart.chartArea.bottom === 'undefined' ||
+        !chart.scales ||
+        !chart.scales.y
+      ) {
+        return; // Exit early if the chart isn't fully ready
       }
       // --- END OF FIX ---
 
-      const { ctx, chartArea: { left, right }, scales: { y } } = chart;
+      const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
       const flareClasses = [
         { level: 1e-8, label: 'A' }, { level: 1e-7, label: 'B' },
         { level: 1e-6, label: 'C' }, { level: 1e-5, label: 'M' },
@@ -166,7 +170,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       ctx.textBaseline = 'bottom';
       flareClasses.forEach(({ level, label }) => {
         const yPos = y.getPixelForValue(level);
-        if (yPos >= chart.chartArea.top && yPos <= chart.chartArea.bottom) {
+        // We use the destructured `top` and `bottom` for the check
+        if (yPos >= top && yPos <= bottom) {
           ctx.beginPath();
           ctx.setLineDash([2, 4]);
           ctx.moveTo(left, yPos);
@@ -181,7 +186,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = flares.reduce((acc, flare) => {
-      if (flare.activeRegionNum && !acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
+        if (flare && flare.activeRegionNum && !acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
         acc.push({
           activeRegionNum: flare.activeRegionNum,
           classType: flare.classType,
@@ -242,7 +247,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux (NZT)</h3>
                 <div className="flex gap-1">
-                  {/* --- MODIFIED: New time range buttons --- */}
                   {([1, 2, 4, 6] as TimeRangeHours[]).map(h => (
                     <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>
                       {h}H
