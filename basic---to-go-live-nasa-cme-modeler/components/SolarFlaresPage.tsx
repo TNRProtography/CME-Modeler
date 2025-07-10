@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
+import { fetchGoesProtonData, fetchSolarFlareData, GoesProtonData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
@@ -29,20 +29,28 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         setIsLoading(true);
         setError(null);
         
-        const { xray, proton, flares } = await fetchSolarActivityData();
+        // This is the correct URL as you provided.
+        const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
+        
+        const [xrayRes, protonRes, activityRes] = await Promise.all([
+          fetch(xrayUrl).then(res => res.json()),
+          fetchGoesProtonData(),
+          fetchSolarActivityData(),
+        ]);
 
-        // Process and store the full dataset
-        if (xray && xray.length > 0) {
-          // Filter for the correct energy band used for flare classification
-          const longWaveXray = xray.filter(d => d.energy === '0.1-0.8nm');
-          setFullXrayData(longWaveXray);
+        // --- THIS IS THE CORRECTED DATA PROCESSING LOGIC ---
+        if (xrayRes && Array.isArray(xrayRes)) {
+            // 1. Filter the array to only get the data points for the correct energy band.
+            const longWaveXray = xrayRes.filter(d => d.energy === '0.1-0.8nm');
+            // 2. Set the full, correctly filtered data to state.
+            setFullXrayData(longWaveXray);
         }
 
-        if (proton && proton.length > 0) {
-          setFullProtonData(proton);
+        if (protonRes && protonRes.length > 0) {
+          setFullProtonData(protonRes);
         }
         
-        setFlareData(flares);
+        setFlareData(activityRes.flares);
 
       } catch (err) {
         setError((err as Error).message);
@@ -53,7 +61,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     fetchData();
   }, []);
   
-  // Use useMemo to efficiently filter data when the time range changes, without re-fetching
   const chartData = useMemo(() => {
     const now = Date.now();
     const startTime = now - timeRange * 60 * 60 * 1000;
@@ -71,7 +78,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
-          data: filteredXray.map(d => d.flux),
+          data: filteredXray.map(d => d.flux), // Now correctly using the flux field
           borderColor: '#facc15',
           backgroundColor: 'rgba(250, 204, 21, 0.2)',
           fill: true,
@@ -94,7 +101,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     };
   }, [fullXrayData, fullProtonData, timeRange]);
 
-  // --- NEW: Custom Chart.js plugin to draw flare class lines ---
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {
@@ -135,7 +141,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
-      // The annotation plugin is now part of the options
     },
     scales: {
       x: {
@@ -149,7 +154,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         ticks: { 
             color: '#a3a3a3',
             callback: function(value: any) {
-                // This will only show the major class labels on the axis
                 if (value === 1e-8 || value === 1e-7 || value === 1e-6 || value === 1e-5 || value === 1e-4) {
                     return this.getLabelForValue(value);
                 }
