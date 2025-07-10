@@ -23,7 +23,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), { status: 500 });
   }
 
-  // --- MODIFIED: Using the exact URLs you provided ---
   const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
   const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
   const endDate = new Date();
@@ -39,29 +38,39 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    const rawXrayData = xrayRes.status === 'fulfilled' && xrayRes.value.ok ? await xrayRes.value.json() : [];
-    const processedXray = Array.isArray(rawXrayData)
-      ? rawXrayData
-          .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0)
-          .map(d => ({
-            timestamp: parseNoaaDate(d.time_tag),
-            flux: d.flux,
-          }))
-          .filter(d => d.timestamp !== null)
-      : [];
+    // --- THIS IS THE CORRECTED, ROBUST LOGIC ---
+    let processedXray = [];
+    if (xrayRes.status === 'fulfilled' && xrayRes.value.ok) {
+        const rawXrayData = await xrayRes.value.json();
+        if (Array.isArray(rawXrayData)) {
+            processedXray = rawXrayData
+                .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0)
+                .map(d => ({
+                    timestamp: parseNoaaDate(d.time_tag),
+                    flux: d.flux,
+                }))
+                .filter(d => d.timestamp !== null);
+        }
+    }
 
-    const rawProtonData = protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [];
-    const processedProton = Array.isArray(rawProtonData)
-      ? rawProtonData
-          .map(d => ({
-            timestamp: parseNoaaDate(d.time_tag),
-            flux: d.flux,
-            energy: d.energy, // Pass the energy level through
-          }))
-          .filter(d => d.timestamp !== null && d.flux > 0)
-      : [];
+    let processedProton = [];
+    if (protonRes.status === 'fulfilled' && protonRes.value.ok) {
+        const rawProtonData = await protonRes.value.json();
+        if (Array.isArray(rawProtonData)) {
+            processedProton = rawProtonData
+                .map(d => ({
+                    timestamp: parseNoaaDate(d.time_tag),
+                    flux: d.flux,
+                    energy: d.energy,
+                }))
+                .filter(d => d.timestamp !== null && d.flux > 0 && d.energy);
+        }
+    }
     
-    const flareData = flareRes.status === 'fulfilled' && flareRes.value.ok ? await flareRes.value.json() : [];
+    let flareData = [];
+    if (flareRes.status === 'fulfilled' && flareRes.value.ok) {
+        flareData = await flareRes.value.json();
+    }
 
     return new Response(JSON.stringify({ xrayData: processedXray, protonData: processedProton, flareData }), {
       status: 200,
