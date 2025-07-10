@@ -60,24 +60,30 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     const filteredXray = filterDataByTime(fullXrayData);
     const filteredProton = filterDataByTime(fullProtonData);
 
-    // --- NEW: Logic to create multiple datasets for the proton graph ---
-    const protonEnergyLevels = ['>=10 MeV', '>=50 MeV', '>=100 MeV', '>=500 MeV'];
-    const protonColors = ['#f87171', '#fb923c', '#fbbf24', '#a3e635'];
-
-    const protonDatasets = protonEnergyLevels.map((energy, index) => {
-        const energyData = filteredProton.filter(p => p.energy === energy);
-        return {
-            label: `Proton Flux ${energy}`,
-            data: energyData.map(d => ({ x: d.timestamp, y: d.flux })),
-            borderColor: protonColors[index],
-            backgroundColor: 'transparent',
-            pointRadius: 0,
-            borderWidth: 1.5,
+    // --- NEW: Dynamic and robust way to create proton chart datasets ---
+    const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
+    filteredProton.forEach(p => {
+        if (!protonDataByEnergy[p.energy]) {
+            protonDataByEnergy[p.energy] = [];
         }
+        protonDataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
     });
 
-    // Create a combined set of all timestamps for the x-axis labels
-    const allProtonTimestamps = [...new Set(filteredProton.map(d => d.timestamp))].sort();
+    const protonColors: { [key: string]: string } = {
+        '>=10 MeV': '#f87171',   // red
+        '>=50 MeV': '#fb923c',   // orange
+        '>=100 MeV': '#fbbf24',  // amber
+        '>=500 MeV': '#a3e635', // lime
+    };
+    
+    const protonDatasets = Object.keys(protonDataByEnergy).map(energy => ({
+        label: `Proton Flux ${energy.replace('>=', '≥')}`,
+        data: protonDataByEnergy[energy],
+        borderColor: protonColors[energy] || '#a3a3a3',
+        backgroundColor: 'transparent',
+        pointRadius: 0,
+        borderWidth: 1.5,
+    }));
 
     return {
       xray: {
@@ -90,7 +96,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         }],
       },
       proton: {
-        labels: allProtonTimestamps.map(ts => new Date(ts).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: protonDatasets,
       },
     };
@@ -146,20 +151,19 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     interaction: { intersect: false, mode: 'index' },
   };
 
-  // --- NEW: Chart options for the multi-line proton graph ---
   const protonChartOptions = {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { labels: { color: '#e5e5e5' } } },
     scales: {
         x: { 
-            type: 'linear', // Use linear scale for timestamps
-            ticks: { 
-                color: '#a3a3a3', 
-                maxRotation: 0, 
-                autoSkip: true, 
-                maxTicksLimit: 8,
-                callback: (value: any) => new Date(value).toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit', hour12: false })
-            }, 
+            type: 'time',
+            time: {
+                tooltipFormat: 'HH:mm',
+                displayFormats: {
+                    hour: 'HH:mm'
+                }
+            },
+            ticks: { color: '#a3a3a3' }, 
             grid: { color: '#404040' } 
         },
         y: {

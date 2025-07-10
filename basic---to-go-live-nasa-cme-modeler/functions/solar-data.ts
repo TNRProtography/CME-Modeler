@@ -38,7 +38,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    // --- THIS IS THE CORRECTED, ROBUST LOGIC ---
     let processedXray = [];
     if (xrayRes.status === 'fulfilled' && xrayRes.value.ok) {
         const rawXrayData = await xrayRes.value.json();
@@ -57,6 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     if (protonRes.status === 'fulfilled' && protonRes.value.ok) {
         const rawProtonData = await protonRes.value.json();
         if (Array.isArray(rawProtonData)) {
+            // FIX: This data format has NO header row, so we do NOT use .slice(1)
             processedProton = rawProtonData
                 .map(d => ({
                     timestamp: parseNoaaDate(d.time_tag),
