@@ -20,10 +20,8 @@ import ForecastModal from './components/ForecastModal';
 import SolarFlaresPage from './components/SolarFlaresPage';
 
 const App: React.FC = () => {
-  // --- A single state to manage the current view ---
   const [activePage, setActivePage] = useState<'forecast' | 'flares' | 'modeler'>('forecast');
   
-  // All other state declarations are the same...
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -59,6 +57,9 @@ const App: React.FC = () => {
 
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
+
+  // --- THIS IS THE FIX: Restore the API key logic for the CME modeler ---
+  const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
   
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
@@ -89,7 +90,8 @@ const App: React.FC = () => {
     setDataVersion(v => v + 1);
 
     try {
-      const data = await fetchCMEData(days);
+      // --- THIS IS THE FIX: Pass the apiKey to the fetch function ---
+      const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
       if (data.length > 0) {
         const endDate = new Date();
@@ -115,7 +117,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [resetClock]);
+  }, [resetClock, apiKey]); // --- THIS IS THE FIX: Add apiKey back to the dependency array
 
   useEffect(() => {
     if (activePage === 'modeler') {
@@ -123,9 +125,87 @@ const App: React.FC = () => {
     }
   }, [activeTimeRange, loadCMEData, activePage]);
 
-  // ... (the rest of the component functions are the same)
-  
-  // --- This is the main render logic based on the activePage state ---
+  const filteredCmes = useMemo(() => {
+    if (cmeFilter === CMEFilter.ALL) return cmeData;
+    return cmeData.filter(cme => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected);
+  }, [cmeData, cmeFilter]);
+
+  useEffect(() => {
+    if (currentlyModeledCMEId && !filteredCmes.find(c => c.id === currentlyModeledCMEId)) {
+      setCurrentlyModeledCMEId(null);
+      setSelectedCMEForInfo(null);
+    }
+  }, [filteredCmes, currentlyModeledCMEId]);
+
+  const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
+  const handleViewChange = (view: ViewMode) => setActiveView(view);
+  const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
+
+  const handleResetView = useCallback(() => {
+    setActiveView(ViewMode.TOP);
+    setActiveFocus(FocusTarget.EARTH);
+    canvasRef.current?.resetView();
+  }, []);
+
+  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
+    setCurrentlyModeledCMEId(cme ? cme.id : null);
+    setSelectedCMEForInfo(cme);
+    if (cme) {
+        setTimelineActive(false);
+        setTimelinePlaying(false);
+    } else {
+        setInteractionMode(InteractionMode.MOVE);
+    }
+    setIsCmeListOpen(false);
+  }, []);
+
+  const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
+    setCurrentlyModeledCMEId(cme.id);
+    setSelectedCMEForInfo(cme);
+    setTimelineActive(false);
+    setTimelinePlaying(false);
+    setIsCmeListOpen(true); 
+  }, []);
+
+  const handleTimelinePlayPause = useCallback(() => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying(prev => !prev);
+    setCurrentlyModeledCMEId(null);
+    setSelectedCMEForInfo(null);
+  }, [filteredCmes]);
+
+  const handleTimelineScrub = useCallback((value: number) => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying(false);
+    setTimelineScrubberValue(value);
+    setCurrentlyModeledCMEId(null);
+    setSelectedCMEForInfo(null);
+  }, [filteredCmes]);
+
+  const handleTimelineStep = useCallback((direction: -1 | 1) => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying(false);
+    const timeRange = timelineMaxDate - timelineMinDate;
+    if (timeRange > 0) {
+      const oneHourInMillis = 3600_000;
+      const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000;
+      setTimelineScrubberValue(prev => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep)));
+    } else {
+      setTimelineScrubberValue(prev => Math.max(0, Math.min(1000, prev + direction * 10)));
+    }
+    setCurrentlyModeledCMEId(null);
+    setSelectedCMEForInfo(null);
+  }, [filteredCmes, timelineMinDate, timelineMaxDate]);
+
+  const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
+  const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
+  const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
+  const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
+  const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
+
   if (activePage === 'flares') {
     return <SolarFlaresPage onNavChange={setActivePage} />;
   }
@@ -134,10 +214,8 @@ const App: React.FC = () => {
     return <ForecastModal onNavChange={setActivePage} />;
   }
 
-  // Otherwise, render the modeler
   return (
     <div className="w-screen h-screen bg-black text-neutral-300 overflow-hidden flex">
-      {/* ... (left controls panel is the same) */}
       <div className={`
           flex-shrink-0 lg:p-5
           lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
@@ -160,7 +238,49 @@ const App: React.FC = () => {
       </div>
 
       <main className="flex-1 relative min-w-0 h-full">
-        {/* ... (SimulationCanvas and PlanetLabel sections are the same) */}
+        <SimulationCanvas
+          ref={canvasRef}
+          cmeData={filteredCmes}
+          activeView={activeView}
+          focusTarget={activeFocus}
+          currentlyModeledCMEId={currentlyModeledCMEId}
+          onCMEClick={handleCMEClickFromCanvas}
+          timelineActive={timelineActive}
+          timelinePlaying={timelinePlaying}
+          timelineSpeed={timelineSpeed}
+          timelineValue={timelineScrubberValue}
+          timelineMinDate={timelineMinDate}
+          timelineMaxDate={timelineMaxDate}
+          setPlanetMeshesForLabels={handleSetPlanetMeshes}
+          setRendererDomElement={setRendererDomElement}
+          onCameraReady={setThreeCamera}
+          getClockElapsedTime={getClockElapsedTime}
+          resetClock={resetClock}
+          onScrubberChangeByAnim={handleScrubberChangeByAnim}
+          onTimelineEnd={handleTimelineEnd}
+          showExtraPlanets={showExtraPlanets}
+          showMoonL1={showMoonL1}
+          dataVersion={dataVersion}
+          interactionMode={interactionMode}
+        />
+
+        {showLabels && rendererDomElement && threeCamera && planetLabelInfos
+          .filter(info => {
+              const name = info.name.toUpperCase();
+              if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; 
+              if (['MOON', 'L1'].includes(name)) return showMoonL1;
+              return true;
+          })
+          .map(info => (
+            <PlanetLabel 
+                key={info.id} 
+                planetMesh={info.mesh} 
+                camera={threeCamera}
+                rendererDomElement={rendererDomElement}
+                label={info.name} 
+                sunMesh={sunInfo ? sunInfo.mesh : null}
+            />
+        ))}
         
         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
           <div className="flex items-center space-x-2 pointer-events-auto">
@@ -171,7 +291,6 @@ const App: React.FC = () => {
                 <HomeIcon className="w-6 h-6" />
             </button>
           </div>
-          {/* --- MODIFIED: Navigation buttons in the center --- */}
           <div className="flex items-center space-x-2 pointer-events-auto">
             <button 
               onClick={() => setActivePage('forecast')}
@@ -188,10 +307,54 @@ const App: React.FC = () => {
                 <span className="text-sm font-semibold">Solar Activity</span>
             </button>
           </div>
-          {/* ... (right-side buttons are the same) */}
+          <div className="flex items-center space-x-2 pointer-events-auto">
+            <button 
+                onClick={() => setInteractionMode(prev => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
+                className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
+                title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
+            >
+                {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
+            </button>
+            <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
+                <ListIcon className="w-6 h-6" />
+            </button>
+          </div>
         </div>
-        {/* ... (rest of modeler page is the same) ... */}
+
+        <TimelineControls
+          isVisible={!isLoading && filteredCmes.length > 0}
+          isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
+          onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
+          onStepFrame={handleTimelineStep}
+          playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed}
+          minDate={timelineMinDate} maxDate={timelineMaxDate}
+        />
       </main>
+
+      <div className={`
+          flex-shrink-0 lg:p-5
+          lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md
+          fixed top-0 right-0 h-full w-4/5 max-w-[320px] z-50 
+          transition-transform duration-300 ease-in-out
+          ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}
+      `}>
+          <CMEListPanel
+              cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling}
+              selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo}
+              isLoading={isLoading} fetchError={fetchError}
+              onClose={() => setIsCmeListOpen(false)}
+          />
+      </div>
+      
+      {(isControlsOpen || isCmeListOpen) && (
+          <div 
+              className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+              onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }}
+          />
+      )}
+
+      {isLoading && <LoadingOverlay />}
+      <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
     </div>
   );
 };

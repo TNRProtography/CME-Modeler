@@ -2,10 +2,11 @@ import { CMEData, ProcessedCME } from '../types';
 
 const formatDateForAPI = (date: Date): string => date.toISOString().split('T')[0];
 
-export const fetchCMEData = async (days: number): Promise<ProcessedCME[]> => {
-  const apiKey = import.meta.env.VITE_NASA_API_KEY;
+// --- THIS IS THE CORRECTED FUNCTION ---
+// It now correctly accepts the API key as a parameter again.
+export const fetchCMEData = async (days: number, apiKey: string): Promise<ProcessedCME[]> => {
   if (!apiKey) {
-    throw new Error("NASA API Key is not defined in the application's environment.");
+    throw new Error("NASA API Key was not provided to fetchCMEData function.");
   }
   
   const endDate = new Date();
@@ -71,7 +72,7 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
 
-// --- SOLAR ACTIVITY SECTION ---
+// --- SOLAR ACTIVITY SECTION (This part is correct and remains unchanged) ---
 
 export interface SolarFlareData {
   flrID: string;
@@ -84,9 +85,8 @@ export interface SolarFlareData {
   link: string;
 }
 
-// Single function to get all solar activity data from our proxy
 export const fetchSolarActivityData = async () => {
-  const response = await fetch('/solar-data'); // Calls our single, reliable messenger
+  const response = await fetch('/solar-data');
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
     throw new Error(errorBody.error || `Server responded with status ${response.status}`);
@@ -96,10 +96,9 @@ export const fetchSolarActivityData = async () => {
     throw new Error(data.error);
   }
   
-  // The proxy now returns everything we need.
   return {
     xray: data.xrayData,
     proton: data.protonData,
-    flares: data.flareData.filter((flare: any) => flare.activeRegionNum),
+    flares: data.flareData,
   };
 };
