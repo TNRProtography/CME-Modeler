@@ -7,7 +7,6 @@ import LoadingSpinner from './icons/LoadingSpinner';
 
 interface SolarFlaresPageProps {
   onClose: () => void;
-  // No apiKey prop needed
 }
 
 const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
@@ -16,8 +15,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const sdoImageUrl = "https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg";
 
   useEffect(() => {
     const fetchData = async () => {
@@ -62,7 +59,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
       }
     };
     fetchData();
-  }, []); // No dependency array needed
+  }, []);
 
   const commonChartOptions = {
     responsive: true,
@@ -80,6 +77,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     },
     plugins: {
       legend: { labels: { color: '#e5e5e5' } },
+    },
+    interaction: {
+        intersect: false,
+        mode: 'index',
     },
   };
 
@@ -107,7 +108,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         {error && <div className="text-center text-red-400 text-lg p-8">Error: {error}</div>}
         {!isLoading && !error && (
           <div className="space-y-6 max-w-7xl mx-auto">
-            <SunImageViewer sdoImageUrl={sdoImageUrl} flares={flareData} />
+            <SunImageViewer flares={flareData} />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-neutral-900/80 p-4 rounded-lg">
