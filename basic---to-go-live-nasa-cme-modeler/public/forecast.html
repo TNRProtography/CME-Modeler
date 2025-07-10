@@ -879,7 +879,6 @@
             }
         });
         
-        // Listener for manual pin placement
         sightingMap.on('click', (e) => {
             if (isPlacingManualPin) {
                 placeManualPin(e.latlng);
@@ -947,10 +946,14 @@
             });
             if (!response.ok) throw new Error('Failed to submit report.');
             
-            // --- NEW: Set the timestamp for rate limiting ---
             localStorage.setItem('lastReportTimestamp', Date.now());
-
             localStorage.setItem('auroraReporterName', reporterName);
+            
+            // --- FIX: Close the manual pin popup if it exists ---
+            if (manualPinMarker) {
+                manualPinMarker.closePopup();
+            }
+
             setSightingStatus(false, "Report sent! It may take a moment to appear.");
             fetchAndDisplaySightings();
         } catch (error) {
@@ -967,29 +970,26 @@
         }
         manualPinMarker = L.marker(latlng, { draggable: true }).addTo(sightingMap);
         
-        const popupContent = `
-            <div>
-                <p>Is this your location?</p>
-                <button id="confirm-pin-btn" class="sighting-button" style="background-color: #166534; width: 100%; margin-top: 5px;">Confirm & Send Report</button>
-            </div>
-        `;
-        // We use a permanent popup until it's resolved.
-        manualPinMarker.bindPopup(popupContent).openPopup();
-            
-        // Using a timeout to ensure the button is in the DOM
-        setTimeout(() => {
-            const confirmBtn = document.getElementById('confirm-pin-btn');
-            if (confirmBtn) {
-                confirmBtn.onclick = () => {
-                    const finalLatLng = manualPinMarker.getLatLng();
-                    sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus);
-                };
-            }
-        }, 100);
+        const popupNode = document.createElement('div');
+        popupNode.innerHTML = '<p>Is this your location?</p>';
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'sighting-button';
+        confirmBtn.style.backgroundColor = '#166534';
+        confirmBtn.style.width = '100%';
+        confirmBtn.style.marginTop = '5px';
+        confirmBtn.textContent = 'Confirm & Send Report';
+        
+        confirmBtn.onclick = () => {
+            const finalLatLng = manualPinMarker.getLatLng();
+            sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus);
+        };
+        popupNode.appendChild(confirmBtn);
+        
+        manualPinMarker.bindPopup(popupNode).openPopup();
     }
 
     function handleReportSighting(status) {
-        // --- NEW: Rate-limiting check right at the start ---
         const lastReportTime = localStorage.getItem('lastReportTimestamp');
         const oneHour = 60 * 60 * 1000;
         if (lastReportTime && (Date.now() - parseInt(lastReportTime)) < oneHour) {
@@ -1007,7 +1007,7 @@
         }
 
         if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser. Please click on the map to place your pin.');
+            alert('Geolocation is not supported. Please click on the map to place your pin.');
             isPlacingManualPin = true;
             manualReportStatus = status;
             return;
