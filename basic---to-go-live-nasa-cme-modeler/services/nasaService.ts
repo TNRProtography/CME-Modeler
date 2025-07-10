@@ -1,8 +1,9 @@
 import { CMEData, ProcessedCME } from '../types';
 
+// The API key is NO LONGER needed on the client-side for CME data.
+// We will use the proxy function for that too.
 const formatDateForAPI = (date: Date): string => date.toISOString().split('T')[0];
 
-// MODIFIED: This function now correctly uses the VITE_NASA_API_KEY from the build environment.
 export const fetchCMEData = async (days: number): Promise<ProcessedCME[]> => {
   const endDate = new Date();
   const startDate = new Date();
@@ -48,6 +49,7 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
 };
 
 const processCMEData = (data: CMEData[]): ProcessedCME[] => {
+  // ... (this function remains exactly the same as before) ...
   const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
@@ -97,16 +99,23 @@ export interface SolarFlareData {
   link: string;
 }
 
+// NEW: Single function to get all solar activity data from our proxy
 export const fetchSolarActivityData = async () => {
-  const response = await fetch('/functions/solar-data'); // This calls our secure messenger
+  // --- THIS IS THE CORRECTED LINE ---
+  const response = await fetch('/solar-data'); // Calls the function at the correct path
+
   if (!response.ok) {
-    throw new Error('Failed to fetch solar activity data from proxy.');
+    // Check if the server returned a specific error message
+    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
+    throw new Error(errorBody.error || `Server responded with status ${response.status}`);
   }
+
   const data = await response.json();
   if (data.error) {
     throw new Error(data.error);
   }
 
+  // Parse the data returned from our proxy
   const xray = parseNoaaJson<GoesXrayData>(data.xrayData, 'flux');
   const proton = parseNoaaJson<GoesProtonData>(data.protonData, 'flux');
   const flares = data.flareData.filter((flare: any) => flare.activeRegionNum);
@@ -114,6 +123,7 @@ export const fetchSolarActivityData = async () => {
   return { xray, proton, flares };
 };
 
+// This helper function is now used by our new main fetch function
 const parseNoaaJson = <T>(jsonData: any[], valueColumn: string): T[] => {
   if (!jsonData || jsonData.length < 2) return [];
   const headers = jsonData[0] as string[];
