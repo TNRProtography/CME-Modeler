@@ -104,7 +104,6 @@
         }
         .card-title { font-size: 1.1rem; text-align: center; font-weight: 600; color: var(--text-primary); margin: 0; }
         
-        /* --- MODIFIED & NEW STYLES for Tooltips --- */
         .card-title-container {
             position: relative;
             display: flex;
@@ -134,12 +133,12 @@
             border-color: var(--link-color);
         }
         .tooltip-text {
-            visibility: hidden; /* Controlled by JS now */
+            visibility: hidden;
             opacity: 0;
             position: absolute;
             bottom: 150%; 
             left: 50%;
-            transform: translateX(-50%); /* Default centered position */
+            transform: translateX(-50%);
             width: 280px;
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -155,7 +154,16 @@
             transition: opacity 0.3s ease, visibility 0.3s ease;
             pointer-events: none;
         }
-        /* NEW CLASS to show tooltip via JS */
+        .tooltip-text.wide { /* New class for wider tooltips */
+            width: 320px;
+        }
+        .tooltip-text ul {
+            padding-left: 20px;
+            margin: 10px 0 0 0;
+        }
+        .tooltip-text li {
+            margin-bottom: 5px;
+        }
         .tooltip-text.visible {
             visibility: visible;
             opacity: 1;
@@ -173,7 +181,6 @@
         .tooltip-text strong {
             color: var(--text-primary);
         }
-        /* --- End of Tooltip Styles --- */
 
         #nz-spotlight { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center; text-align: left; }
         #nz-spotlight .card-title { text-align: left; }
@@ -304,6 +311,21 @@
             <div id="aurora-score-display">
                 <div class="card-title-container">
                     <h2 class="card-title">Spot The Aurora Forecast</h2>
+                    <!-- ADDED: Tooltip for the main forecast -->
+                    <div class="tooltip-trigger">?
+                        <span class="tooltip-text wide">
+                            <strong>About the Score:</strong> This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south!
+                            <br><br><strong>What the Percentage Means:</strong>
+                            <ul>
+                                <li><strong>< 10% 😞:</strong> Little to no auroral activity.</li>
+                                <li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li>
+                                <li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible in perfect conditions.</li>
+                                <li><strong>40-50% 🙂:</strong> Faint naked-eye aurora possible, maybe with color.</li>
+                                <li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li>
+                                <li><strong>80%+ 🤩:</strong> High probability of a significant substorm with dynamic color and movement.</li>
+                            </ul>
+                        </span>
+                    </div>
                 </div>
                 <div id="aurora-score">Loading...</div>
                 <div id="thermometer-container"><div id="thermometer-line"></div></div>
@@ -318,60 +340,56 @@
                     <h3 class="card-title">Hemispheric Power</h3>
                     <div class="tooltip-trigger">?
                         <span class="tooltip-text">
-                            <strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br>
-                            <strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available to create a brighter and more widespread aurora.
+                            <strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere, measured in Gigawatts (GW).<br><br>
+                            <strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.
                         </span>
                     </div>
                 </div>
                 <div class="gauge-value" id="power-value">...</div><div class="gauge-emoji" id="power-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="power-gauge-bar"></div></div><div class="gauge-last-updated" id="power-last-updated">...</div>
             </div>
-
             <div class="card gauge">
                 <div class="card-title-container">
                     <h3 class="card-title">Solar Wind Speed</h3>
                     <div class="tooltip-trigger">?
                         <span class="tooltip-text">
-                            <strong>What it is:</strong> The speed of the charged particles flowing from the Sun. Measured in kilometers per second (km/s).<br><br>
-                            <strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy. This leads to more dynamic and vibrant auroras with faster-moving curtains and rays.
+                            <strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br>
+                            <strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.
                         </span>
                     </div>
                 </div>
                 <div class="gauge-value" id="speed-value">...</div><div class="gauge-emoji" id="speed-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="speed-gauge-bar"></div></div><div class="gauge-last-updated" id="speed-last-updated">...</div>
             </div>
-
             <div class="card gauge">
                 <div class="card-title-container">
                     <h3 class="card-title">Solar Wind Density</h3>
                     <div class="tooltip-trigger">?
                         <span class="tooltip-text">
-                            <strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind. Measured in protons per cm³ (p/cm³).<br><br>
-                            <strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere. This can result in more widespread and "thicker" looking auroral displays with more saturated color.
+                            <strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³.<br><br>
+                            <strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.
                         </span>
                     </div>
                 </div>
                 <div class="gauge-value" id="density-value">...</div><div class="gauge-emoji" id="density-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="density-gauge-bar"></div></div><div class="gauge-last-updated" id="density-last-updated">...</div>
             </div>
-
             <div class="card gauge">
                 <div class="card-title-container">
                     <h3 class="card-title">IMF Bt (Total)</h3>
                     <div class="tooltip-trigger">?
                         <span class="tooltip-text">
-                            <strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF). Measured in nanoteslas (nT).<br><br>
-                            <strong>Effect on Aurora:</strong> A high Bt value indicates that the magnetic field is strong. While not a guarantee of aurora on its own, a strong field can carry more energy and lead to more powerful events if the Bz component is also favorable.
+                            <strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br>
+                            <strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.
                         </span>
                     </div>
                 </div>
                 <div class="gauge-value" id="bt-value">...</div><div class="gauge-emoji" id="bt-emoji">...</div><div class="gauge-bar-track"><div class="gauge-bar" id="bt-gauge-bar"></div></div><div class="gauge-last-updated" id="bt-last-updated">...</div>
             </div>
-
             <div class="card gauge">
                 <div class="card-title-container">
                     <h3 class="card-title">IMF Bz (N/S)</h3>
                     <div class="tooltip-trigger">?
                         <span class="tooltip-text">
-                            <strong>What it is:</strong> The North-South direction of the IMF. Measured in nanoteslas (nT). This is the most critical component for aurora.<br><br>
-                            <strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (pointing south)</strong>, it connects with Earth's northward-pointing magnetic field, opening a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>
+                            <strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br>
+                            <strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>
                         </span>
                     </div>
                 </div>
@@ -382,6 +400,16 @@
         <div class="card chart-card">
             <div class="card-title-container">
                 <h2 class="card-title">Aurora Visibility (Past 6 Hours)</h2>
+                <!-- ADDED: Tooltip for the aurora chart -->
+                <div class="tooltip-trigger">?
+                    <span class="tooltip-text wide">
+                        <strong>Reading the Chart:</strong> This chart shows the estimated visibility over time.
+                        <br><br>
+                        <strong><span style="color: #FF6347;">■</span> Real Score:</strong> This is the main forecast, including solar wind data and local factors like moonlight and darkness.
+                        <br><br>
+                        <strong><span style="color: #A9A9A9;">■</span> Base Score:</strong> This shows the forecast based *only* on solar wind data. It represents the "raw potential" if there were no sun or moon interference.
+                    </span>
+                </div>
             </div>
             <div class="chart-wrapper">
                 <canvas id="auroraChart"></canvas>
@@ -613,38 +641,29 @@
         renderMagneticChart();
     }
 
-    // --- NEW JAVASCRIPT for Tooltips ---
     function initializeTooltips() {
         const triggers = document.querySelectorAll('.tooltip-trigger');
-        const PADDING = 10; // 10px padding from the edge of the screen
+        const PADDING = 10; 
 
         triggers.forEach(trigger => {
             const tooltip = trigger.querySelector('.tooltip-text');
             if (!tooltip) return;
 
             trigger.addEventListener('mouseenter', () => {
-                // First, make it visible to measure it
                 tooltip.classList.add('visible');
-                
-                // Get dimensions
                 const rect = tooltip.getBoundingClientRect();
                 const viewportWidth = window.innerWidth;
 
-                // Reset transform to default for calculation
-                tooltip.style.transform = 'translateX(-50%)';
+                tooltip.style.transform = 'translateX(-50%)'; 
 
-                // Check for collisions and adjust
                 if (rect.left < PADDING) {
-                    // It's off the left edge, so shift it right
                     tooltip.style.transform = `translateX(${-rect.left + PADDING}px)`;
                 } else if (rect.right > viewportWidth - PADDING) {
-                    // It's off the right edge, so shift it left
                     tooltip.style.transform = `translateX(${viewportWidth - rect.right - PADDING}px)`;
                 }
             });
 
             trigger.addEventListener('mouseleave', () => {
-                // Hide the tooltip
                 tooltip.classList.remove('visible');
             });
         });
@@ -653,7 +672,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         runAllUpdates();
         setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
-        initializeTooltips(); // Initialize the new tooltip functionality
+        initializeTooltips();
     });
 
 </script>
