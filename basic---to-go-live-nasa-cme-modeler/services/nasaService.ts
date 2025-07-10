@@ -2,8 +2,6 @@ import { CMEData, ProcessedCME } from '../types';
 
 const formatDateForAPI = (date: Date): string => date.toISOString().split('T')[0];
 
-// --- THIS IS THE CORRECTED FUNCTION ---
-// It now correctly accepts the API key as a parameter again.
 export const fetchCMEData = async (days: number, apiKey: string): Promise<ProcessedCME[]> => {
   if (!apiKey) {
     throw new Error("NASA API Key was not provided to fetchCMEData function.");
@@ -72,7 +70,7 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
 
-// --- SOLAR ACTIVITY SECTION (This part is correct and remains unchanged) ---
+// --- SOLAR ACTIVITY SECTION ---
 
 export interface SolarFlareData {
   flrID: string;
@@ -85,20 +83,30 @@ export interface SolarFlareData {
   link: string;
 }
 
-export const fetchSolarActivityData = async () => {
-  const response = await fetch('/solar-data');
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
-    throw new Error(errorBody.error || `Server responded with status ${response.status}`);
-  }
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error);
-  }
-  
-  return {
-    xray: data.xrayData,
-    proton: data.protonData,
-    flares: data.flareData,
-  };
+// Fetches from the correct URL you provided
+export const fetchGoesXrayData = async (): Promise<any[]> => {
+  const url = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch GOES X-ray data');
+  return response.json();
+};
+
+// Fetches from the correct URL you provided
+export const fetchGoesProtonData = async (): Promise<any[]> => {
+  const url = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch GOES proton data');
+  return response.json();
+};
+
+export const fetchSolarFlareData = async (apiKey: string): Promise<SolarFlareData[]> => {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(endDate.getDate() - 7);
+  const formatDate = (d: Date) => d.toISOString().split('T')[0];
+  const url = `https://api.nasa.gov/DONKI/FLR?startDate=${formatDate(startDate)}&endDate=${formatDate(endDate)}&api_key=${apiKey}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch Solar Flare data');
+  const jsonData = await response.json();
+  return jsonData.filter((flare: any) => flare.activeRegionNum);
 };

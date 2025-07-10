@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
+import { fetchGoesXrayData, fetchGoesProtonData, fetchSolarFlareData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
@@ -10,9 +10,10 @@ type TimeRangeHours = 1 | 6 | 12 | 24;
 
 interface SolarFlaresPageProps {
   onNavChange: (page: 'modeler' | 'forecast') => void;
+  apiKey: string; // The API key is needed again
 }
 
-const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
+const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange, apiKey }) => {
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
@@ -21,16 +22,46 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // --- THIS IS THE BULLETPROOF DATE PARSER ---
+    // It manually constructs a Date object from parts, which is universally reliable.
+    const parseUTCDate = (dateString: string): Date | null => {
+      if (typeof dateString !== 'string' || !dateString.includes(' ')) return null;
+      const parts = dateString.split(' ');
+      const dateParts = parts[0].split('-').map(Number);
+      const timeParts = parts[1].split(':').map(Number);
+      if (dateParts.length !== 3 || timeParts.length !== 3 || dateParts.some(isNaN) || timeParts.some(isNaN)) {
+        return null;
+      }
+      return new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2], timeParts[0], timeParts[1], timeParts[2]));
+    };
+
     const fetchData = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
-        const { xray, proton, flares } = await fetchSolarActivityData();
+        const [xray, proton, flares] = await Promise.all([
+          fetchGoesXrayData(),
+          fetchGoesProtonData(),
+          fetchSolarFlareData(apiKey),
+        ]);
 
-        setFullXrayData(xray || []);
-        setFullProtonData(proton || []);
-        setFlareData(flares || []);
+        if (xray && Array.isArray(xray)) {
+          const longWaveXray = xray
+            .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0)
+            .map(d => ({ ...d, timestamp: parseUTCDate(d.time_tag)?.getTime() }))
+            .filter(d => d.timestamp);
+          setFullXrayData(longWaveXray);
+        }
+
+        if (proton && Array.isArray(proton)) {
+          const protonDataPoints = proton
+            .map(d => ({ ...d, timestamp: parseUTCDate(d.time_tag)?.getTime() }))
+            .filter(d => d.timestamp && d.flux > 0);
+          setFullProtonData(protonDataPoints);
+        }
+        
+        setFlareData(flares);
 
       } catch (err) {
         setError((err as Error).message);
@@ -39,7 +70,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       }
     };
     fetchData();
-  }, []);
+  }, [apiKey]);
   
   const chartData = useMemo(() => {
     const now = Date.now();
@@ -54,13 +85,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      return data.filter(d => d.timestamp && d.timestamp >= startTime);
+      return data.filter(d => d.timestamp >= startTime);
     };
 
     const filteredXray = filterDataByTime(fullXrayData);
     const filteredProton = filterDataByTime(fullProtonData);
 
-    // --- NEW: Dynamic and robust way to create proton chart datasets ---
     const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
     filteredProton.forEach(p => {
         if (!protonDataByEnergy[p.energy]) {
@@ -159,8 +189,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
             type: 'time',
             time: {
                 tooltipFormat: 'HH:mm',
-                displayFormats: {
-                    hour: 'HH:mm'
+                displayFormats: { hour: 'HH:mm' }
+            },
+            adapters: {
+                date: {
+                    locale: 'en-NZ',
+                    timeZone: 'Pacific/Auckland'
                 }
             },
             ticks: { color: '#a3a3a3' }, 
