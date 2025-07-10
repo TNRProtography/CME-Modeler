@@ -9,13 +9,10 @@ declare interface Env {
   SECRET_NASA_API_KEY: string;
 }
 
-// --- NEW: Bulletproof date parser that runs on the server ---
+// This is a robust, server-side function to parse ambiguous NOAA date strings
+// It converts "YYYY-MM-DD HH:mm:ss" into a reliable Unix timestamp (number)
 const parseNoaaDate = (dateString: string): number | null => {
   if (!dateString) return null;
-  // This format "YYYY-MM-DD HH:mm:ss" is not a valid ISO string.
-  // We must replace the space with a 'T' and add a 'Z' to make it explicitly UTC.
-  // Input:  "2024-07-11 12:34:56"
-  // Output: "2024-07-11T12:34:56Z"
   const isoString = dateString.replace(' ', 'T') + 'Z';
   const timestamp = new Date(isoString).getTime();
   return isNaN(timestamp) ? null : timestamp;
@@ -25,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const apiKey = context.env.SECRET_NASA_API_KEY;
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), { status: 500 });
   }
 
   const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
@@ -43,13 +40,30 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    // Process data on the server before sending to the client
-    const xrayData = xrayRes.status === 'fulfilled' && xrayRes.value.ok ? await xrayRes.value.json() : [];
-    const processedXray = Array.isArray(xrayData) ? xrayData.map(d => ({ ...d, timestamp: parseNoaaDate(d.time_tag) })) : [];
+    // --- Correctly process X-Ray data on the server ---
+    const rawXrayData = xrayRes.status === 'fulfilled' && xrayRes.value.ok ? await xrayRes.value.json() : [];
+    const processedXray = Array.isArray(rawXrayData)
+      ? rawXrayData
+          .filter(d => d.energy === '0.1-0.8nm') // 1. Keep only the flare classification band
+          .map(d => ({
+            timestamp: parseNoaaDate(d.time_tag), // 2. Create reliable numeric timestamp
+            flux: d.flux,                         // 3. Use the correct "flux" field
+          }))
+          .filter(d => d.timestamp !== null)      // 4. Remove any entries that couldn't be parsed
+      : [];
 
-    const protonData = protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [];
-    const processedProton = Array.isArray(protonData) ? protonData.map(d => ({ ...d, timestamp: parseNoaaDate(d.time_tag) })) : [];
-
+    // Correctly process Proton data on the server
+    const rawProtonData = protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [];
+    const processedProton = Array.isArray(rawProtonData) && rawProtonData.length > 1
+      ? rawProtonData
+          .slice(1) // Skip header row
+          .map(d => ({
+            timestamp: parseNoaaDate(d.time_tag),
+            flux: d.flux,
+          }))
+          .filter(d => d.timestamp !== null)
+      : [];
+    
     const flareData = flareRes.status === 'fulfilled' && flareRes.value.ok ? await flareRes.value.json() : [];
 
     return new Response(JSON.stringify({ xrayData: processedXray, protonData: processedProton, flareData }), {
@@ -58,6 +72,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Failed to fetch data from external APIs.' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Failed to fetch data from external APIs.' }), { status: 502 });
   }
 };

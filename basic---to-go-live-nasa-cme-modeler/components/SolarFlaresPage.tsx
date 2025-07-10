@@ -26,19 +26,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         setIsLoading(true);
         setError(null);
         
-        // This single call gets all data, now with corrected timestamps from the server
+        // This single call gets all data, now fully processed by the server
         const { xray, proton, flares } = await fetchSolarActivityData();
 
-        if (xray && Array.isArray(xray)) {
-          const longWaveXray = xray.filter(d => d.energy === '0.1-0.8nm');
-          setFullXrayData(longWaveXray);
-        }
-
-        if (proton && Array.isArray(proton) && proton.length > 1) {
-          setFullProtonData(proton.slice(1)); // Skip header row
-        }
-        
-        setFlareData(flares);
+        setFullXrayData(xray || []);
+        setFullProtonData(proton || []);
+        setFlareData(flares || []);
 
       } catch (err) {
         setError((err as Error).message);
@@ -62,7 +55,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      // --- FIX: Compare against the reliable timestamp from the server ---
+      // This now uses the reliable numeric timestamp from the server
       return data.filter(d => d.timestamp && d.timestamp >= startTime);
     };
 
@@ -74,7 +67,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         labels: filteredXray.map(d => new Date(d.timestamp).toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
-          data: filteredXray.map(d => d.flux),
+          data: filteredXray.map(d => d.flux), // Correctly using the 'flux' field
           borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.2)',
           fill: true, pointRadius: 0, borderWidth: 1.5,
         }],
