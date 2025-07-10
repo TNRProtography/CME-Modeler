@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v6'; // Version incremented
+const CACHE_NAME = 'cme-modeler-cache-v7'; // Version incremented to force update
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -11,6 +11,16 @@ const urlsToCache = [
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
 ];
+
+// List of API domains that should use a network-first strategy
+const API_HOSTS = [
+  'api.nasa.gov',
+  'services.swpc.noaa.gov',
+  'hemispheric-power.thenamesrock.workers.dev',
+  'tnr-aurora-forecast.thenamesrock.workers.dev',
+  'basic-aurora-forecast.thenamesrock.workers.dev'
+];
+
 
 // INSTALL: Cache the app shell.
 self.addEventListener('install', (event) => {
@@ -47,25 +57,52 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Strategy: Stale-While-Revalidate for HTML/main requests to keep it fast and fresh.
-  // This helps ensure the user gets updates quickly.
+  const url = new URL(event.request.url);
+
+  // Strategy 1: Network First for API calls.
+  // This ensures data is always fresh, with an offline fallback.
+  if (API_HOSTS.includes(url.hostname)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          // If fetch is successful, cache the new response for offline use
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+          return networkResponse;
+        })
+        .catch(() => {
+          // If fetch fails (offline), serve the cached version if it exists
+          return caches.match(event.request);
+        })
+    );
+    return; // End execution for API requests
+  }
+
+  // --- Fallback to original logic for non-API requests ---
+
+  // Strategy 2: Network-first for the main HTML page to get app updates.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.open(CACHE_NAME).then((cache) => {
-        return fetch(event.request).then((networkResponse) => {
+      fetch(event.request)
+        .then((networkResponse) => {
           // If fetch is successful, cache the new version
-          cache.put(event.request, networkResponse.clone());
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
           return networkResponse;
-        }).catch(() => {
+        })
+        .catch(() => {
           // If fetch fails (offline), serve the cached version
-          return cache.match(event.request);
-        });
-      })
+          return caches.match(event.request);
+        })
     );
     return;
   }
 
-  // Strategy: Cache-first for all other assets (JS, CSS, images).
+  // Strategy 3: Cache-first for all other static assets (JS, CSS, images).
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
