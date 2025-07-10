@@ -1,4 +1,3 @@
-// Define the structure for the data we will return
 interface SolarActivityResponse {
   xrayData: any[];
   protonData: any[];
@@ -6,14 +5,11 @@ interface SolarActivityResponse {
   error?: string;
 }
 
-// Declare the Cloudflare environment types
 declare interface Env {
-    SECRET_NASA_API_KEY: string;
+  SECRET_NASA_API_KEY: string;
 }
 
-// This is the server-side function that runs on Cloudflare's edge
 export const onRequestGet: PagesFunction<Env> = async (context) => {
-  // Get the secret key securely from the Cloudflare environment
   const apiKey = context.env.SECRET_NASA_API_KEY;
 
   if (!apiKey) {
@@ -23,8 +19,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // API endpoints to fetch
-  const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-5-minute.json';
+  // --- All external URLs are defined here ---
+  const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/secondary/xrays-5-minute.json';
   const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json';
   const endDate = new Date();
   const startDate = new Date();

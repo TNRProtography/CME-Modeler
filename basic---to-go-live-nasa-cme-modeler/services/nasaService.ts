@@ -71,9 +71,10 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
 
-// --- THIS SECTION IS NOW CORRECTED ---
+// --- SOLAR ACTIVITY SECTION ---
 
-export interface GoesProtonData {
+// Interfaces for the data types we expect
+export interface GoesDataPoint {
   time_tag: string;
   flux: number;
 }
@@ -89,30 +90,9 @@ export interface SolarFlareData {
   link: string;
 }
 
-// Helper to parse NOAA JSON format, needed by proton fetcher
-const parseNoaaJson = <T>(jsonData: any[], valueColumn: string): T[] => {
-  if (!jsonData || jsonData.length < 2) return [];
-  const headers = jsonData[0]; // NOAA format uses an object for headers
-  const timeKey = Object.keys(headers).find(k => k.toLowerCase().includes('time_tag')) || 'time_tag';
-  const valueKey = Object.keys(headers).find(k => headers[k] === valueColumn) || valueColumn;
-  
-  return jsonData.slice(1).map((row: any) => ({
-    time_tag: row[timeKey],
-    flux: row[valueKey],
-  } as unknown as T));
-};
-
-// Re-add and export the proton fetcher
-export const fetchGoesProtonData = async (): Promise<GoesProtonData[]> => {
-  const response = await fetch('https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json');
-  if (!response.ok) throw new Error('Failed to fetch GOES proton data');
-  const jsonData = await response.json();
-  return parseNoaaJson<GoesProtonData>(jsonData, 'flux');
-};
-
-// No changes to fetchSolarFlareData, it uses the proxy
+// Single function to get all solar activity data from our proxy
 export const fetchSolarActivityData = async () => {
-  const response = await fetch('/solar-data');
+  const response = await fetch('/solar-data'); // Calls our single, reliable messenger
   if (!response.ok) {
     throw new Error('Failed to fetch solar activity data from proxy.');
   }
@@ -121,8 +101,19 @@ export const fetchSolarActivityData = async () => {
     throw new Error(data.error);
   }
 
-  // The proxy now returns pre-fetched X-ray data, proton data is fetched separately by client
+  // Parse the data that comes back from the proxy
+  const xray = parseNoaaJson<GoesDataPoint>(data.xrayData, 'flux');
+  const proton = parseNoaaJson<GoesDataPoint>(data.protonData, 'flux');
   const flares = data.flareData.filter((flare: any) => flare.activeRegionNum);
-  
-  return { xray: data.xrayData, flares }; // Only return what the proxy provides now
+
+  return { xray, proton, flares };
+};
+
+// Helper function to parse the unique JSON format from NOAA
+const parseNoaaJson = <T>(jsonData: any[], valueKey: string): T[] => {
+  if (!jsonData || jsonData.length === 0) return [];
+  return jsonData.map(item => ({
+    time_tag: item.time_tag,
+    flux: item[valueKey],
+  })).filter(item => item.flux != null) as T[];
 };

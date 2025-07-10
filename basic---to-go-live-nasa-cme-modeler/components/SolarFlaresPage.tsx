@@ -1,15 +1,9 @@
 import React, { useEffect, useState } from 'react';
-// MODIFIED: Re-import fetchGoesProtonData and its type
-import { fetchGoesProtonData, fetchSolarActivityData, GoesProtonData, SolarFlareData } from '../services/nasaService';
+import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
-
-interface XrayFluxData {
-  time_tag: string;
-  flux: number;
-}
 
 interface SolarFlaresPageProps {
   onClose: () => void;
@@ -28,52 +22,42 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         setIsLoading(true);
         setError(null);
         
-        // Use the secondary satellite URL for X-rays for reliability
-        const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/secondary/xrays-5-minute.json';
-        
-        // Fetch all data sources concurrently
-        const [xrayRes, protonRes, activityRes] = await Promise.all([
-          fetch(xrayUrl).then(res => res.json()),
-          fetchGoesProtonData(),
-          fetchSolarActivityData(), // This gets flares from the proxy
-        ]);
+        // This now fetches everything in one go from our secure proxy
+        const { xray, proton, flares } = await fetchSolarActivityData();
 
-        // Process X-Ray data
-        if (xrayRes && xrayRes.length > 0) {
-            const processedXray: XrayFluxData[] = xrayRes.map((d: any) => ({
-                time_tag: d.time_tag,
-                flux: d.flux
-            }));
-            setXrayData({
-                labels: processedXray.map(d => new Date(d.time_tag).toLocaleTimeString()),
-                datasets: [{
-                    label: 'X-Ray Flux (watts/m^2)',
-                    data: processedXray.map(d => d.flux),
-                    borderColor: '#facc15',
-                    backgroundColor: 'rgba(250, 204, 21, 0.2)',
-                    fill: true,
-                    pointRadius: 0,
-                    borderWidth: 1.5,
-                }],
-            });
+        // Process X-Ray data for chart
+        if (xray && xray.length > 0) {
+          setXrayData({
+            labels: xray.map(d => new Date(d.time_tag).toLocaleTimeString()),
+            datasets: [{
+              label: 'X-Ray Flux (watts/m^2)',
+              data: xray.map(d => d.flux),
+              borderColor: '#facc15',
+              backgroundColor: 'rgba(250, 204, 21, 0.2)',
+              fill: true,
+              pointRadius: 0,
+              borderWidth: 1.5,
+            }],
+          });
         }
         
-        // Process Proton data
-        setProtonData({
-          labels: protonRes.map(d => new Date(d.time_tag).toLocaleTimeString()),
-          datasets: [{
-            label: 'Proton Flux (>10 MeV)',
-            data: protonRes.map(d => d.flux),
-            borderColor: '#f87171',
-            backgroundColor: 'rgba(248, 113, 113, 0.2)',
-            fill: true,
-            pointRadius: 0,
-            borderWidth: 1.5,
-          }],
-        });
+        // Process Proton data for chart
+        if (proton && proton.length > 0) {
+          setProtonData({
+            labels: proton.map(d => new Date(d.time_tag).toLocaleTimeString()),
+            datasets: [{
+              label: 'Proton Flux (>10 MeV)',
+              data: proton.map(d => d.flux),
+              borderColor: '#f87171',
+              backgroundColor: 'rgba(248, 113, 113, 0.2)',
+              fill: true,
+              pointRadius: 0,
+              borderWidth: 1.5,
+            }],
+          });
+        }
         
-        // Set flare data from the proxy
-        setFlareData(activityRes.flares);
+        setFlareData(flares);
 
       } catch (err) {
         setError((err as Error).message);
