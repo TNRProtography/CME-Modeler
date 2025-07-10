@@ -9,10 +9,23 @@ declare interface Env {
   SECRET_NASA_API_KEY: string;
 }
 
+/**
+ * A robust, bulletproof date parser that runs on the server.
+ * It correctly handles both "YYYY-MM-DD HH:mm:ss" and "YYYY-MM-DDTHH:mm:ssZ" formats from NOAA.
+ * This is the definitive fix for the mobile browser bug.
+ * @param dateString The ambiguous date string from NOAA.
+ * @returns A numeric timestamp (milliseconds since epoch) or null if invalid.
+ */
 const parseNoaaDate = (dateString: string): number | null => {
   if (typeof dateString !== 'string' || dateString.trim() === '') return null;
-  const isoString = dateString.replace(' ', 'T') + 'Z';
-  const timestamp = new Date(isoString).getTime();
+  
+  let parsableString = dateString;
+  // If the string doesn't already end with 'Z' (for Zulu/UTC time), we need to fix it.
+  if (!parsableString.endsWith('Z')) {
+    parsableString = parsableString.replace(' ', 'T') + 'Z';
+  }
+
+  const timestamp = new Date(parsableString).getTime();
   return isNaN(timestamp) ? null : timestamp;
 };
 
@@ -38,6 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
+    // --- All data processing now happens safely on the server ---
     let processedXray = [];
     if (xrayRes.status === 'fulfilled' && xrayRes.value.ok) {
         const rawXrayData = await xrayRes.value.json();
@@ -80,6 +94,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     });
 
   } catch (err) {
+    console.error("Error in server function:", err);
     return new Response(JSON.stringify({ error: 'Failed to fetch or process data from external APIs.' }), { status: 502 });
   }
 };
