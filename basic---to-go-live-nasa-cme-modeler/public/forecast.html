@@ -188,7 +188,6 @@
             border: 1px solid var(--border-color);
         }
         
-        /* --- NEW: Style for Name Input --- */
         .sighting-reporter-name {
             margin-top: 25px;
             margin-bottom: 15px;
@@ -463,10 +462,10 @@
             <p style="margin-top: 10px; color: var(--text-secondary);">Help fellow aurora chasers! Share what you're seeing from your location.</p>
             <div id="sighting-map"></div>
             
-            <!-- NEW: Name Input Field -->
             <div class="sighting-reporter-name">
-                <label for="reporter-name">Your Name (Optional):</label>
-                <input type="text" id="reporter-name" placeholder="Anonymous" maxlength="50">
+                <label for="reporter-name">Your Name:</label>
+                <!-- MODIFIED: Added the 'required' attribute to make this field mandatory -->
+                <input type="text" id="reporter-name" placeholder="Enter your name" maxlength="50" required>
             </div>
 
             <div class="sighting-controls">
@@ -603,7 +602,6 @@
     let sightingMap = null;
     let sightingMarkersLayer = null;
 
-    // --- MODIFIED: Added a simple HTML sanitizer for names ---
     function escapeHtml(unsafe) {
         return unsafe
              .replace(/&/g, "&")
@@ -768,7 +766,12 @@
     }
     
     async function initializeSightingMap() {
-        sightingMap = L.map('sighting-map').setView([-41.2, 172.5], 5);
+        // MODIFIED: Added map options to control dragging
+        sightingMap = L.map('sighting-map', {
+            dragging: !L.Browser.touch, // Disables one-finger drag on touch devices
+            scrollWheelZoom: true,      // Allows zooming with scroll wheel
+            touchZoom: true,            // Allows pinch-to-zoom on touch devices
+        }).setView([-41.2, 172.5], 5);
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
@@ -810,7 +813,6 @@
                 }).addTo(sightingMarkersLayer);
 
                 const time = new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                // --- MODIFIED: Updated popup to include the reporter's name ---
                 const reporterName = sighting.name ? escapeHtml(sighting.name) : 'Anonymous';
                 marker.bindPopup(`<b>${sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)} seen</b><br>by ${reporterName}<br>at ${time}`);
             });
@@ -820,9 +822,15 @@
     }
 
     function handleReportSighting(status) {
-        // --- MODIFIED: Get the name from the input field ---
         const reporterNameInput = document.getElementById('reporter-name');
         const reporterName = reporterNameInput.value.trim();
+
+        // MODIFIED: Check if the name is empty. If so, alert the user and stop.
+        if (!reporterName) {
+            alert('Please enter your name before submitting a report.');
+            reporterNameInput.focus(); // Focus the input field to prompt the user
+            return; // Stop the function here
+        }
 
         const buttons = document.querySelectorAll('.sighting-button');
         buttons.forEach(b => b.disabled = true);
@@ -841,7 +849,6 @@
                     const response = await fetch(SIGHTING_API_ENDPOINT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        // --- MODIFIED: Send the name in the request body ---
                         body: JSON.stringify({
                             lat: latitude,
                             lng: longitude,
@@ -852,10 +859,7 @@
 
                     if (!response.ok) throw new Error('Failed to submit report.');
 
-                    // --- MODIFIED: Save the name to local storage for next time ---
-                    if (reporterName) {
-                        localStorage.setItem('auroraReporterName', reporterName);
-                    }
+                    localStorage.setItem('auroraReporterName', reporterName);
 
                     alert('Thank you! Your report has been added to the map.');
                     fetchAndDisplaySightings();
@@ -987,7 +991,6 @@
         initializeInfoModals();
         initializeSightingMap();
         
-        // --- NEW: Remember the user's name ---
         const savedName = localStorage.getItem('auroraReporterName');
         if (savedName) {
             document.getElementById('reporter-name').value = savedName;
