@@ -28,13 +28,15 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         const { xray, proton, flares } = await fetchSolarActivityData();
 
         if (xray && Array.isArray(xray)) {
-          const longWaveXray = xray.filter(d => d.energy === '0.1-0.8nm');
+          // --- FIX: Ensure all time_tags are treated as UTC by all browsers ---
+          const longWaveXray = xray
+            .filter(d => d.energy === '0.1-0.8nm')
+            .map(d => ({ ...d, time_tag: d.time_tag.endsWith('Z') ? d.time_tag : d.time_tag + 'Z' }));
           setFullXrayData(longWaveXray);
         }
 
         if (proton && Array.isArray(proton) && proton.length > 1) {
-          // The proton data from NOAA's JSON has headers as the first object, so we skip it.
-          const protonDataPoints = proton.slice(1);
+          const protonDataPoints = proton.slice(1).map(d => ({ ...d, time_tag: d.time_tag.endsWith('Z') ? d.time_tag : d.time_tag + 'Z' }));
           setFullProtonData(protonDataPoints);
         }
         
@@ -126,16 +128,27 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
       x: { ticks: { color: '#a3a3a3', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: '#404040' } },
       y: {
         type: 'logarithmic', min: 1e-9, max: 1e-2,
-        ticks: { color: '#a3a3a3', callback: (value: any) => {
-          if ([1e-8, 1e-7, 1e-6, 1e-5, 1e-4].includes(value)) return (value as number).toExponential(0).replace('e-0', 'E-');
-        }},
+        ticks: { 
+            color: '#a3a3a3',
+            // --- FIX: Custom callback to display flare classes ---
+            callback: function(value: any) {
+                switch(Number(value)) {
+                    case 1e-8: return 'A';
+                    case 1e-7: return 'B';
+                    case 1e-6: return 'C';
+                    case 1e-5: return 'M';
+                    case 1e-4: return 'X';
+                    default: return null; // Don't show labels for other grid lines
+                }
+            }
+        },
         grid: { color: '#404040' },
       },
     },
     interaction: { intersect: false, mode: 'index' },
   };
 
-  const protonChartOptions = { ...xrayChartOptions, scales: { ...xrayChartOptions.scales, y: { ...xrayChartOptions.scales.y, min: 1e-1, max: 1e5 } } };
+  const protonChartOptions = { ...xrayChartOptions, scales: { ...xrayChartOptions.scales, y: { ...xrayChartOptions.scales.y, min: 1e-1, max: 1e5, type: 'logarithmic', ticks: { color: '#a3a3a3'} } } };
   
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = flares.reduce((acc, flare) => {
