@@ -241,7 +241,6 @@
         #report-nothing { background-color: #991b1b; border-color: #7f1d1d; }
         #report-nothing:hover:not(:disabled) { background-color: #b91c1c; }
         
-        /* --- NEW STYLES for Embedded Content --- */
         .embedded-content-container {
             margin-top: 30px;
         }
@@ -256,7 +255,7 @@
             position: relative;
             overflow: hidden;
             width: 100%;
-            height: 0; /* This is part of the aspect ratio trick */
+            height: 0; 
             border-radius: 12px;
         }
         .responsive-iframe-wrapper iframe {
@@ -273,11 +272,10 @@
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1; /* Sits on top of the iframe */
+            z-index: 1; 
             background: transparent;
         }
-        /* --- End of NEW STYLES --- */
-
+        
         .leaflet-popup-content-wrapper {
             background-color: var(--bg-card);
             color: var(--text-primary);
@@ -307,6 +305,35 @@
             background: none;
             border: none;
         }
+        
+        /* --- NEW: Reporting Status Styles --- */
+        #sighting-status {
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px;
+            margin-top: 15px;
+            border-radius: 10px;
+            background-color: rgba(39, 39, 42, 0.7);
+        }
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--link-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        #sighting-status-text {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* --- End of NEW STYLES --- */
         
         .page-footer {
             margin-top: 60px;
@@ -504,14 +531,19 @@
                 <label for="reporter-name">Your Name:</label>
                 <input type="text" id="reporter-name" placeholder="Enter your name" maxlength="50" required>
             </div>
-
+            
+            <!-- NEW: Status/Loading Indicator -->
+            <div id="sighting-status">
+                <div class="spinner"></div>
+                <p id="sighting-status-text">Sending report...</p>
+            </div>
+            
             <div class="sighting-controls">
                 <button class="sighting-button" id="report-aurora">✔️ I See Aurora!</button>
                 <button class="sighting-button" id="report-cloudy">☁️ It's Cloudy</button>
                 <button class="sighting-button" id="report-nothing">❌ Nothing Yet</button>
             </div>
 
-            <!-- NEW SECTION for Windy.com embed -->
             <div class="embedded-content-container">
                 <h3 class="embedded-content-title">Live Cloud Cover</h3>
                 <div class="responsive-iframe-wrapper" style="padding-bottom: 69.23%;">
@@ -519,8 +551,6 @@
                     <iframe title="Windy.com Cloud Map" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=default&metricTemp=default&metricWind=default&zoom=6&overlay=clouds&product=ecmwf&level=surface&lat=-43.213&lon=171.365&detailLat=-43.21318330073887&detailLon=171.36474609375&marker=true"></iframe>
                 </div>
             </div>
-            <!-- END NEW SECTION -->
-
         </div>
 
         <div class="gauge-grid">
@@ -579,15 +609,13 @@
             </div>
         </div>
 
-        <!-- NEW SECTION for Roundshot Webcam embed -->
+        <!-- MODIFIED: Removed the overlay div from the Roundshot embed -->
         <div class="card" style="grid-column: 1 / -1;">
              <h2 class="embedded-content-title">Live View from Queenstown</h2>
              <div class="responsive-iframe-wrapper" style="padding-bottom: 56.25%;">
-                 <div class="iframe-overlay"></div>
                  <iframe title="Live View from Queenstown" src="https://queenstown.roundshot.com/#/"></iframe>
              </div>
         </div>
-        <!-- END NEW SECTION -->
 
     </main>
 
@@ -661,6 +689,24 @@
     let sightingMap = null;
     let sightingMarkersLayer = null;
 
+    // --- NEW: Loading Puns & Manual Pin State ---
+    const LOADING_PUNS = [
+        "Sending your report via carrier pigeon...",
+        "Checking if your signal is lost in the Van Allen belt...",
+        "Are you reporting from a dial-up connection?",
+        "Bouncing signal off the ionosphere...",
+        "Geotagging your location... please hold.",
+        "Rerouting data packets around a solar flare...",
+        "Compressing photons for faster delivery...",
+        "Untangling the space-time continuum...",
+        "Tuning the subspace transmitter...",
+        "Asking the satellite to move a bit to the left..."
+    ];
+    let isPlacingManualPin = false;
+    let manualPinMarker = null;
+    let manualReportStatus = null;
+    let manualPinConfirmPopup = null;
+    
     function formatTimestamp(isoString) { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`; } catch { return "Invalid Date"; } }
     function getGaugeStyle(v, t) { if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 }; let k='pink', p=0; if (t==='bz') { k=v<=-50?'pink':v<=-20?'purple':v<=-15?'red':v<=-10?'orange':v<=-5?'yellow':'gray'; p=v<0?Math.min(100,Math.max(0,(v/GAUGE_THRESHOLDS.bz.maxNegativeExpected)*100)):0; } else { const th=GAUGE_THRESHOLDS[t]; k=v<=th.gray?'gray':v<=th.yellow?'yellow':v<=th.orange?'orange':v<=th.red?'red':v<=th.purple?'purple':'pink'; p=Math.min(100,Math.max(0,(v/th.maxExpected)*100)); } return { color: GAUGE_COLORS[k], emoji: GAUGE_EMOJIS[k], percentage: p }; }
     async function updateGauge(type) {
@@ -816,6 +862,7 @@
         }
     }
     
+    // --- THIS ENTIRE SECTION HAS BEEN RE-WRITTEN TO SUPPORT THE NEW UX ---
     async function initializeSightingMap() {
         sightingMap = L.map('sighting-map', {
             dragging: !L.Browser.touch,
@@ -835,24 +882,22 @@
         document.getElementById('report-cloudy').addEventListener('click', () => handleReportSighting('cloudy'));
         document.getElementById('report-nothing').addEventListener('click', () => handleReportSighting('nothing'));
         
-        // --- THIS IS THE CORRECTED REFRESH LOGIC ---
-        // Initial fetch when the page loads
         fetchAndDisplaySightings();
-
-        // Set up a recurring check every 30 seconds
         setInterval(() => {
-            // Only fetch if the user is actually looking at the page
             if (document.visibilityState === 'visible') {
-                console.log("Checking for new sightings (30-second interval)...");
                 fetchAndDisplaySightings();
             }
-        }, 30000); // 30 seconds
-
-        // Also, fetch immediately when the user switches back to this tab
+        }, 30000);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                console.log("Tab is visible again, fetching latest sightings immediately...");
                 fetchAndDisplaySightings();
+            }
+        });
+        
+        // Listener for manual pin placement
+        sightingMap.on('click', (e) => {
+            if (isPlacingManualPin) {
+                placeManualPin(e.latlng);
             }
         });
     }
@@ -868,18 +913,8 @@
             sightings.forEach(sighting => {
                 const emoji = SIGHTING_EMOJIS[sighting.status];
                 if (!emoji) return;
-
-                const emojiIcon = L.divIcon({
-                    html: emoji,
-                    className: 'sighting-emoji-icon',
-                    iconSize: [32, 32],
-                    iconAnchor: [16, 16]
-                });
-
-                const marker = L.marker([sighting.lat, sighting.lng], { 
-                    icon: emojiIcon 
-                }).addTo(sightingMarkersLayer);
-
+                const emojiIcon = L.divIcon({ html: emoji, className: 'sighting-emoji-icon', iconSize: [32, 32], iconAnchor: [16, 16] });
+                const marker = L.marker([sighting.lat, sighting.lng], { icon: emojiIcon }).addTo(sightingMarkersLayer);
                 const time = new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 const reporterName = sighting.name || 'Anonymous';
                 marker.bindPopup(`<b>${sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)} seen</b><br>by ${reporterName}<br>at ${time}`);
@@ -888,71 +923,111 @@
             console.error('Error fetching sightings:', error);
         }
     }
+    
+    function setSightingStatus(isLoading, message) {
+        const statusDiv = document.getElementById('sighting-status');
+        const spinner = statusDiv.querySelector('.spinner');
+        const text = document.getElementById('sighting-status-text');
+        const buttons = document.querySelectorAll('.sighting-button');
+
+        statusDiv.style.display = 'flex';
+        spinner.style.display = isLoading ? 'block' : 'none';
+        text.textContent = message;
+        buttons.forEach(b => b.disabled = true);
+    }
+
+    function resetSightingStatus() {
+        const statusDiv = document.getElementById('sighting-status');
+        const buttons = document.querySelectorAll('.sighting-button');
+        statusDiv.style.display = 'none';
+        buttons.forEach(b => b.disabled = false);
+        isPlacingManualPin = false;
+        manualReportStatus = null;
+        if (manualPinMarker) {
+            sightingMap.removeLayer(manualPinMarker);
+            manualPinMarker = null;
+        }
+    }
+
+    async function sendReport(latitude, longitude, status) {
+        const reporterName = document.getElementById('reporter-name').value.trim();
+        const randomPun = LOADING_PUNS[Math.floor(Math.random() * LOADING_PUNS.length)];
+        setSightingStatus(true, randomPun);
+
+        try {
+            const response = await fetch(SIGHTING_API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat: latitude, lng: longitude, status: status, name: reporterName })
+            });
+            if (!response.ok) throw new Error('Failed to submit report.');
+
+            localStorage.setItem('auroraReporterName', reporterName);
+            setSightingStatus(false, "Report sent! It may take a moment to appear.");
+            fetchAndDisplaySightings();
+        } catch (error) {
+            console.error('Error submitting report:', error);
+            setSightingStatus(false, "Could not send report. Please try again.");
+        } finally {
+            setTimeout(resetSightingStatus, 4000);
+        }
+    }
+    
+    function placeManualPin(latlng) {
+        if (manualPinMarker) {
+            sightingMap.removeLayer(manualPinMarker);
+        }
+        manualPinMarker = L.marker(latlng, { draggable: true }).addTo(sightingMap);
+        
+        const popupContent = `
+            <div>
+                <p>Is this your location?</p>
+                <button id="confirm-pin-btn" class="sighting-button" style="background-color: #166534; width: 100%; margin-top: 5px;">Confirm & Send Report</button>
+            </div>
+        `;
+        manualPinConfirmPopup = L.popup({ closeButton: false, closeOnClick: false })
+            .setLatLng(latlng)
+            .setContent(popupContent)
+            .openOn(sightingMap);
+            
+        // Using a timeout to ensure the button is in the DOM
+        setTimeout(() => {
+            const confirmBtn = document.getElementById('confirm-pin-btn');
+            if (confirmBtn) {
+                confirmBtn.onclick = () => {
+                    const finalLatLng = manualPinMarker.getLatLng();
+                    sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus);
+                };
+            }
+        }, 100);
+    }
 
     function handleReportSighting(status) {
         const reporterNameInput = document.getElementById('reporter-name');
-        const reporterName = reporterNameInput.value.trim();
-
-        if (!reporterName) {
+        if (!reporterNameInput.value.trim()) {
             alert('Please enter your name before submitting a report.');
             reporterNameInput.focus();
             return;
         }
 
-        const buttons = document.querySelectorAll('.sighting-button');
-        buttons.forEach(b => b.disabled = true);
-
         if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser.');
-            buttons.forEach(b => b.disabled = false);
+            alert('Geolocation is not supported by your browser. Please click on the map to place your pin.');
+            isPlacingManualPin = true;
+            manualReportStatus = status;
             return;
         }
 
+        setSightingStatus(true, "Getting your location...");
+
         navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                const { latitude, longitude } = position.coords;
-                
-                try {
-                    const response = await fetch(SIGHTING_API_ENDPOINT, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            lat: latitude,
-                            lng: longitude,
-                            status: status,
-                            name: reporterName 
-                        })
-                    });
-
-                    if (!response.ok) throw new Error('Failed to submit report.');
-
-                    localStorage.setItem('auroraReporterName', reporterName);
-
-                    alert('Thank you! Your report has been added to the map.');
-                    // --- THIS IS THE IMMEDIATE REFRESH FIX ---
-                    fetchAndDisplaySightings();
-                } catch (error) {
-                    console.error('Error submitting report:', error);
-                    alert('Could not submit your report. Please try again later.');
-                } finally {
-                    buttons.forEach(b => b.disabled = false);
-                }
+            (position) => {
+                sendReport(position.coords.latitude, position.coords.longitude, status);
             },
             (error) => {
-                let message = 'Could not get your location. ';
-                switch (error.code) {
-                    case error.PERMISSION_DENIED:
-                        message += 'Please enable location permissions for this site.';
-                        break;
-                    case error.POSITION_UNAVAILABLE:
-                        message += 'Location information is unavailable.';
-                        break;
-                    case error.TIMEOUT:
-                        message += 'The request to get user location timed out.';
-                        break;
-                }
-                alert(message);
-                buttons.forEach(b => b.disabled = false);
+                alert('Could not get your location. Please click on the map to place your pin.');
+                resetSightingStatus();
+                isPlacingManualPin = true;
+                manualReportStatus = status;
             }
         );
     }
