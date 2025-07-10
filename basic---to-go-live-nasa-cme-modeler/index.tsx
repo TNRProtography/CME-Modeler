@@ -32,11 +32,12 @@ root.render(
 );
 
 
-// --- ADDED: Service Worker Registration Logic ---
+// --- Service Worker Registration with EXPLICIT SCOPE ---
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then(registration => {
-      console.log('SW registered: ', registration);
+    // We explicitly set the scope to '/' to ensure it controls the whole site.
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(registration => {
+      console.log('SW registered with scope: ', registration.scope);
     }).catch(registrationError => {
       console.log('SW registration failed: ', registrationError);
     });
