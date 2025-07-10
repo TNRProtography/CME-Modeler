@@ -1,4 +1,4 @@
-// Define the structure of the data we'll return to the app
+// Define the structure for the data we will return
 interface SolarActivityResponse {
   xrayData: any[];
   protonData: any[];
@@ -6,23 +6,24 @@ interface SolarActivityResponse {
   error?: string;
 }
 
-// Declare the PagesFunction type and Env for Cloudflare
+// Declare the Cloudflare environment types
 declare interface Env {
     SECRET_NASA_API_KEY: string;
 }
 
+// This is the server-side function that runs on Cloudflare's edge
 export const onRequestGet: PagesFunction<Env> = async (context) => {
-  // Get the secret NASA API key from Cloudflare's environment variables
+  // Get the secret key securely from the Cloudflare environment
   const apiKey = context.env.SECRET_NASA_API_KEY;
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'NASA API key is not configured on the server.' }), {
+    return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // API endpoints
+  // API endpoints to fetch
   const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-5-minute.json';
   const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json';
   const endDate = new Date();
@@ -38,13 +39,13 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    const response: SolarActivityResponse = {
+    const responseData: SolarActivityResponse = {
       xrayData: xrayRes.status === 'fulfilled' && xrayRes.value.ok ? await xrayRes.value.json() : [],
       protonData: protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [],
       flareData: flareRes.status === 'fulfilled' && flareRes.value.ok ? await flareRes.value.json() : [],
     };
     
-    return new Response(JSON.stringify(response), {
+    return new Response(JSON.stringify(responseData), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
