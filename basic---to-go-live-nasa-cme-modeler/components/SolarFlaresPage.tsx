@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { fetchSolarActivityData, GoesXrayData, GoesProtonData, SolarFlareData } from '../services/nasaService';
+// MODIFIED: No longer needs fetchGoesXrayData, we will use a more reliable link directly.
+import { fetchGoesProtonData, fetchSolarFlareData, GoesProtonData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
+
+// NEW: Define the structure for the X-Ray data fetched directly
+interface XrayFluxData {
+  time_tag: string;
+  flux: number;
+}
 
 interface SolarFlaresPageProps {
   onClose: () => void;
@@ -22,21 +29,40 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         setIsLoading(true);
         setError(null);
         
-        const { xray, proton, flares } = await fetchSolarActivityData();
+        // --- MODIFIED: Fetch X-Ray data from the secondary satellite for better reliability ---
+        const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/secondary/xrays-5-minute.json';
+        
+        // Fetch all data sources concurrently
+        const [xrayRes, proton, flares] = await Promise.all([
+          fetch(xrayUrl).then(res => res.json()),
+          fetchGoesProtonData(),
+          fetchSolarFlareData(import.meta.env.VITE_NASA_API_KEY || ''),
+        ]);
 
-        setXrayData({
-          labels: xray.map(d => new Date(d.time_tag).toLocaleTimeString()),
-          datasets: [{
-            label: 'X-Ray Flux (watts/m^2)',
-            data: xray.map(d => d.flux),
-            borderColor: '#facc15',
-            backgroundColor: 'rgba(250, 204, 21, 0.2)',
-            fill: true,
-            pointRadius: 0,
-            borderWidth: 1.5,
-          }],
-        });
-
+        // Process X-Ray data
+        if (xrayRes && xrayRes.length > 1) {
+            const xrayHeaders = xrayRes[0];
+            const timeIndex = xrayHeaders.time_tag;
+            const fluxIndex = xrayHeaders.flux;
+            const processedXray: XrayFluxData[] = xrayRes.slice(1).map((d: any) => ({
+                time_tag: d[timeIndex],
+                flux: d[fluxIndex]
+            }));
+            setXrayData({
+                labels: processedXray.map(d => new Date(d.time_tag).toLocaleTimeString()),
+                datasets: [{
+                    label: 'X-Ray Flux (watts/m^2)',
+                    data: processedXray.map(d => d.flux),
+                    borderColor: '#facc15',
+                    backgroundColor: 'rgba(250, 204, 21, 0.2)',
+                    fill: true,
+                    pointRadius: 0,
+                    borderWidth: 1.5,
+                }],
+            });
+        }
+        
+        // Process Proton data
         setProtonData({
           labels: proton.map(d => new Date(d.time_tag).toLocaleTimeString()),
           datasets: [{
@@ -84,6 +110,44 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     },
   };
 
+  // --- NEW: Separate component for the Sunspot list for better layout control ---
+  const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
+    const activeRegions = flares.reduce((acc, flare) => {
+      if (!acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
+        acc.push({
+          activeRegionNum: flare.activeRegionNum,
+          classType: flare.classType,
+          location: flare.sourceLocation,
+        });
+      }
+      return acc;
+    }, [] as { activeRegionNum: number; classType: string; location: string }[]);
+    
+    activeRegions.sort((a, b) => a.activeRegionNum - b.activeRegionNum);
+
+    return (
+      <div className="bg-neutral-900/80 p-4 rounded-lg">
+        <h3 className="text-lg font-semibold text-neutral-200 mb-2">Active Sunspot Regions</h3>
+        <div className="bg-neutral-950/70 p-3 rounded-md h-72 overflow-y-auto styled-scrollbar">
+          {activeRegions.length > 0 ? (
+            <ul className="space-y-1">
+              {activeRegions.map(region => (
+                <li key={region.activeRegionNum} className="text-sm text-neutral-300 p-2 rounded-md">
+                  <strong className="text-white">AR{region.activeRegionNum}:</strong>
+                  <span className="ml-2 text-amber-400 font-mono">{region.classType}</span>
+                  <span className="ml-2 text-neutral-400">({region.location})</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-neutral-400 italic p-2">No numbered active regions with recent flares.</p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300">
       <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-between items-center">
@@ -107,23 +171,27 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         )}
         {error && <div className="text-center text-red-400 text-lg p-8">Error: {error}</div>}
         {!isLoading && !error && (
+          // --- MODIFIED: This entire layout has been changed to your requested order ---
           <div className="space-y-6 max-w-7xl mx-auto">
-            <SunImageViewer flares={flareData} />
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-neutral-900/80 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES X-Ray Flux (5-min)</h3>
-                <div className="relative h-72">
-                  {xrayData && <DataChart data={xrayData} options={commonChartOptions} />}
-                </div>
-              </div>
-              <div className="bg-neutral-900/80 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES Proton Flux (5-min)</h3>
-                <div className="relative h-72">
-                  {protonData && <DataChart data={protonData} options={commonChartOptions} />}
-                </div>
+            <SunImageViewer />
+
+            <div className="bg-neutral-900/80 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES X-Ray Flux (5-min)</h3>
+              <div className="relative h-72">
+                {xrayData ? <DataChart data={xrayData} options={commonChartOptions} /> : <p>No X-Ray data available.</p>}
               </div>
             </div>
+
+            <ActiveRegionsList flares={flareData} />
+
+            <div className="bg-neutral-900/80 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES Proton Flux (5-min)</h3>
+              <div className="relative h-72">
+                {protonData ? <DataChart data={protonData} options={commonChartOptions} /> : <p>No Proton Flux data available.</p>}
+              </div>
+            </div>
+
           </div>
         )}
       </main>
