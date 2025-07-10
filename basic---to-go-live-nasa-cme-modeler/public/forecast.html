@@ -266,15 +266,6 @@
             height: 100%;
             border: 0;
         }
-        .iframe-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1; 
-            background: transparent;
-        }
         
         .leaflet-popup-content-wrapper {
             background-color: var(--bg-card);
@@ -306,9 +297,8 @@
             border: none;
         }
         
-        /* --- NEW: Reporting Status Styles --- */
         #sighting-status {
-            display: none; /* Hidden by default */
+            display: none; 
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -333,7 +323,6 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        /* --- End of NEW STYLES --- */
         
         .page-footer {
             margin-top: 60px;
@@ -532,7 +521,6 @@
                 <input type="text" id="reporter-name" placeholder="Enter your name" maxlength="50" required>
             </div>
             
-            <!-- NEW: Status/Loading Indicator -->
             <div id="sighting-status">
                 <div class="spinner"></div>
                 <p id="sighting-status-text">Sending report...</p>
@@ -609,7 +597,6 @@
             </div>
         </div>
 
-        <!-- MODIFIED: Removed the overlay div from the Roundshot embed -->
         <div class="card" style="grid-column: 1 / -1;">
              <h2 class="embedded-content-title">Live View from Queenstown</h2>
              <div class="responsive-iframe-wrapper" style="padding-bottom: 56.25%;">
@@ -688,8 +675,7 @@
     };
     let sightingMap = null;
     let sightingMarkersLayer = null;
-
-    // --- NEW: Loading Puns & Manual Pin State ---
+    
     const LOADING_PUNS = [
         "Sending your report via carrier pigeon...",
         "Checking if your signal is lost in the Van Allen belt...",
@@ -705,7 +691,6 @@
     let isPlacingManualPin = false;
     let manualPinMarker = null;
     let manualReportStatus = null;
-    let manualPinConfirmPopup = null;
     
     function formatTimestamp(isoString) { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`; } catch { return "Invalid Date"; } }
     function getGaugeStyle(v, t) { if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 }; let k='pink', p=0; if (t==='bz') { k=v<=-50?'pink':v<=-20?'purple':v<=-15?'red':v<=-10?'orange':v<=-5?'yellow':'gray'; p=v<0?Math.min(100,Math.max(0,(v/GAUGE_THRESHOLDS.bz.maxNegativeExpected)*100)):0; } else { const th=GAUGE_THRESHOLDS[t]; k=v<=th.gray?'gray':v<=th.yellow?'yellow':v<=th.orange?'orange':v<=th.red?'red':v<=th.purple?'purple':'pink'; p=Math.min(100,Math.max(0,(v/th.maxExpected)*100)); } return { color: GAUGE_COLORS[k], emoji: GAUGE_EMOJIS[k], percentage: p }; }
@@ -961,6 +946,9 @@
                 body: JSON.stringify({ lat: latitude, lng: longitude, status: status, name: reporterName })
             });
             if (!response.ok) throw new Error('Failed to submit report.');
+            
+            // --- NEW: Set the timestamp for rate limiting ---
+            localStorage.setItem('lastReportTimestamp', Date.now());
 
             localStorage.setItem('auroraReporterName', reporterName);
             setSightingStatus(false, "Report sent! It may take a moment to appear.");
@@ -985,10 +973,8 @@
                 <button id="confirm-pin-btn" class="sighting-button" style="background-color: #166534; width: 100%; margin-top: 5px;">Confirm & Send Report</button>
             </div>
         `;
-        manualPinConfirmPopup = L.popup({ closeButton: false, closeOnClick: false })
-            .setLatLng(latlng)
-            .setContent(popupContent)
-            .openOn(sightingMap);
+        // We use a permanent popup until it's resolved.
+        manualPinMarker.bindPopup(popupContent).openPopup();
             
         // Using a timeout to ensure the button is in the DOM
         setTimeout(() => {
@@ -1003,6 +989,16 @@
     }
 
     function handleReportSighting(status) {
+        // --- NEW: Rate-limiting check right at the start ---
+        const lastReportTime = localStorage.getItem('lastReportTimestamp');
+        const oneHour = 60 * 60 * 1000;
+        if (lastReportTime && (Date.now() - parseInt(lastReportTime)) < oneHour) {
+            const timePassed = Date.now() - parseInt(lastReportTime);
+            const minutesLeft = Math.ceil((oneHour - timePassed) / 60000);
+            alert(`You have already reported recently. Please wait about ${minutesLeft} more minute(s).`);
+            return;
+        }
+
         const reporterNameInput = document.getElementById('reporter-name');
         if (!reporterNameInput.value.trim()) {
             alert('Please enter your name before submitting a report.');
