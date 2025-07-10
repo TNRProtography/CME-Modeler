@@ -20,7 +20,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   // --- All external URLs are defined here ---
-  const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/secondary/xrays-5-minute.json';
+  const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
   const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json';
   const endDate = new Date();
   const startDate = new Date();

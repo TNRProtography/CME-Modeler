@@ -73,12 +73,6 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
 
 // --- SOLAR ACTIVITY SECTION ---
 
-// Interfaces for the data types we expect
-export interface GoesDataPoint {
-  time_tag: string;
-  flux: number;
-}
-
 export interface SolarFlareData {
   flrID: string;
   beginTime: string;
@@ -94,26 +88,18 @@ export interface SolarFlareData {
 export const fetchSolarActivityData = async () => {
   const response = await fetch('/solar-data'); // Calls our single, reliable messenger
   if (!response.ok) {
-    throw new Error('Failed to fetch solar activity data from proxy.');
+    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
+    throw new Error(errorBody.error || `Server responded with status ${response.status}`);
   }
   const data = await response.json();
   if (data.error) {
     throw new Error(data.error);
   }
-
-  // Parse the data that comes back from the proxy
-  const xray = parseNoaaJson<GoesDataPoint>(data.xrayData, 'flux');
-  const proton = parseNoaaJson<GoesDataPoint>(data.protonData, 'flux');
-  const flares = data.flareData.filter((flare: any) => flare.activeRegionNum);
-
-  return { xray, proton, flares };
-};
-
-// Helper function to parse the unique JSON format from NOAA
-const parseNoaaJson = <T>(jsonData: any[], valueKey: string): T[] => {
-  if (!jsonData || jsonData.length === 0) return [];
-  return jsonData.map(item => ({
-    time_tag: item.time_tag,
-    flux: item[valueKey],
-  })).filter(item => item.flux != null) as T[];
+  
+  // The proxy now returns everything we need.
+  return {
+    xray: data.xrayData,
+    proton: data.protonData,
+    flares: data.flareData.filter((flare: any) => flare.activeRegionNum),
+  };
 };

@@ -1,11 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { fetchGoesProtonData, fetchSolarFlareData, GoesProtonData, SolarFlareData } from '../services/nasaService';
+import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
-// Define a type for the time range buttons
 type TimeRangeHours = 1 | 6 | 12 | 24;
 
 interface SolarFlaresPageProps {
@@ -13,12 +12,9 @@ interface SolarFlaresPageProps {
 }
 
 const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
-  // State for the raw, full-day data
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
-
-  // State for user interaction
   const [timeRange, setTimeRange] = useState<TimeRangeHours>(6);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,28 +25,20 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         setIsLoading(true);
         setError(null);
         
-        // This is the correct URL as you provided.
-        const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
-        
-        const [xrayRes, protonRes, activityRes] = await Promise.all([
-          fetch(xrayUrl).then(res => res.json()),
-          fetchGoesProtonData(),
-          fetchSolarActivityData(),
-        ]);
+        const { xray, proton, flares } = await fetchSolarActivityData();
 
-        // --- THIS IS THE CORRECTED DATA PROCESSING LOGIC ---
-        if (xrayRes && Array.isArray(xrayRes)) {
-            // 1. Filter the array to only get the data points for the correct energy band.
-            const longWaveXray = xrayRes.filter(d => d.energy === '0.1-0.8nm');
-            // 2. Set the full, correctly filtered data to state.
-            setFullXrayData(longWaveXray);
+        if (xray && Array.isArray(xray)) {
+          const longWaveXray = xray.filter(d => d.energy === '0.1-0.8nm');
+          setFullXrayData(longWaveXray);
         }
 
-        if (protonRes && protonRes.length > 0) {
-          setFullProtonData(protonRes);
+        if (proton && Array.isArray(proton) && proton.length > 1) {
+          // The proton data from NOAA's JSON has headers as the first object, so we skip it.
+          const protonDataPoints = proton.slice(1);
+          setFullProtonData(protonDataPoints);
         }
         
-        setFlareData(activityRes.flares);
+        setFlareData(flares);
 
       } catch (err) {
         setError((err as Error).message);
@@ -78,7 +66,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
-          data: filteredXray.map(d => d.flux), // Now correctly using the flux field
+          data: filteredXray.map(d => d.flux),
           borderColor: '#facc15',
           backgroundColor: 'rgba(250, 204, 21, 0.2)',
           fill: true,
@@ -105,22 +93,17 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {
       const { ctx, chartArea: { left, right }, scales: { y } } = chart;
-      
       const flareClasses = [
-        { level: 1e-8, label: 'A' },
-        { level: 1e-7, label: 'B' },
-        { level: 1e-6, label: 'C' },
-        { level: 1e-5, label: 'M' },
+        { level: 1e-8, label: 'A' }, { level: 1e-7, label: 'B' },
+        { level: 1e-6, label: 'C' }, { level: 1e-5, label: 'M' },
         { level: 1e-4, label: 'X' },
       ];
-      
       ctx.save();
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
-      
       flareClasses.forEach(({ level, label }) => {
         const yPos = y.getPixelForValue(level);
         if (yPos >= chart.chartArea.top && yPos <= chart.chartArea.bottom) {
@@ -137,35 +120,19 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
   };
   
   const xrayChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-    },
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
     scales: {
-      x: {
-        ticks: { color: '#a3a3a3', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
-        grid: { color: '#404040' },
-      },
+      x: { ticks: { color: '#a3a3a3', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: '#404040' } },
       y: {
-        type: 'logarithmic',
-        min: 1e-9,
-        max: 1e-2,
-        ticks: { 
-            color: '#a3a3a3',
-            callback: function(value: any) {
-                if (value === 1e-8 || value === 1e-7 || value === 1e-6 || value === 1e-5 || value === 1e-4) {
-                    return this.getLabelForValue(value);
-                }
-            }
-        },
+        type: 'logarithmic', min: 1e-9, max: 1e-2,
+        ticks: { color: '#a3a3a3', callback: (value: any) => {
+          if ([1e-8, 1e-7, 1e-6, 1e-5, 1e-4].includes(value)) return (value as number).toExponential(0).replace('e-0', 'E-');
+        }},
         grid: { color: '#404040' },
       },
     },
-    interaction: {
-        intersect: false,
-        mode: 'index',
-    },
+    interaction: { intersect: false, mode: 'index' },
   };
 
   const protonChartOptions = { ...xrayChartOptions, scales: { ...xrayChartOptions.scales, y: { ...xrayChartOptions.scales.y, min: 1e-1, max: 1e5 } } };
@@ -181,9 +148,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
       }
       return acc;
     }, [] as { activeRegionNum: number; classType: string; location: string }[]);
-    
     activeRegions.sort((a, b) => a.activeRegionNum - b.activeRegionNum);
-
     return (
       <div className="bg-neutral-900/80 p-4 rounded-lg">
         <h3 className="text-lg font-semibold text-neutral-200 mb-2">Active Sunspot Regions</h3>
@@ -198,9 +163,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-neutral-400 italic p-2">No numbered active regions with recent flares.</p>
-          )}
+          ) : (<p className="text-neutral-400 italic p-2">No numbered active regions with recent flares.</p>)}
         </div>
       </div>
     );
@@ -210,11 +173,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300">
       <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-between items-center">
         <h1 className="text-xl lg:text-2xl font-bold text-white">Live Solar Activity</h1>
-        <button
-          onClick={onClose}
-          className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
-          title="Back to 3D CME Modeler"
-        >
+        <button onClick={onClose} className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors" title="Back to 3D CME Modeler">
           <HomeIcon className="w-5 h-5" />
           <span className="text-sm font-semibold">3D CME Modeler</span>
         </button>
@@ -230,21 +189,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         {error && <div className="text-center text-red-400 text-lg p-8">Error: {error}</div>}
         {!isLoading && !error && (
           <div className="space-y-6 max-w-7xl mx-auto">
-            
             <SunImageViewer />
-
             <div className="bg-neutral-900/80 p-4 rounded-lg">
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux</h3>
                 <div className="flex gap-1">
                   {([1, 6, 12, 24] as TimeRangeHours[]).map(h => (
-                    <button 
-                      key={h}
-                      onClick={() => setTimeRange(h)}
-                      className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
-                        timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'
-                      }`}
-                    >
+                    <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>
                       {h}H
                     </button>
                   ))}
@@ -256,18 +207,15 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
                   : <p className="text-center text-neutral-400 pt-10">No X-Ray data available for this time range.</p>}
               </div>
             </div>
-
             <ActiveRegionsList flares={flareData} />
-
             <div className="bg-neutral-900/80 p-4 rounded-lg">
               <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES Proton Flux</h3>
               <div className="relative h-72">
                 {chartData.proton.datasets[0].data.length > 0 
                   ? <DataChart data={chartData.proton} options={protonChartOptions} /> 
-                  : <p className="text-center text-neutral-400 pt-10">No Proton Flux data available for this time range.</p>}
+                  : <p className="text-center text-neutral-400 pt-10">No Proton Flux data available.</p>}
               </div>
             </div>
-
           </div>
         )}
       </main>
