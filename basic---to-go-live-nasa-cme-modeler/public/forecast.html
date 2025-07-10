@@ -160,6 +160,46 @@
             text-decoration: underline;
             color: #93c5fd;
         }
+        
+        /* --- NEW STYLES for Community Links --- */
+        .community-links-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid var(--border-color);
+        }
+        .community-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+            margin-bottom: 30px;
+        }
+        .community-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 12px 24px;
+            border-radius: 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out;
+        }
+        .community-link:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.3);
+            border-color: var(--link-color);
+        }
+        .community-link svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--link-color);
+        }
+        /* --- End of NEW STYLES --- */
+
         .footer-credits {
             margin-top: 30px;
             font-size: 0.85rem;
@@ -210,6 +250,27 @@
         <h3>About This Forecast</h3>
         <p>This forecast is derived from a proprietary algorithm that considers several key factors influencing auroral visibility on the West Coast of New Zealand. The model incorporates lunar illumination, astronomical darkness, Hemispheric Power, and the critical Bt/Bz components of the interplanetary magnetic field. This provides a more localized and nuanced prediction compared to broader-coverage models like the NOAA Ovation.</p>
         <p><strong>Disclaimer:</strong> The aurora is a natural phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. The model is not a live substorm magnetometer; it provides an estimate of probable conditions over a two-hour window, with updates continually refining the outlook.</p>
+        
+        <!-- NEW SECTION for Community Links -->
+        <div class="community-links-section">
+            <h3>Get Real-Time Alerts & Join the Discussion</h3>
+            <p>The forecast is great, but the aurora can be unpredictable. Get instant notifications sent directly to your device when conditions look promising, and share your sightings with our growing community of West Coast aurora chasers!</p>
+            <div class="community-links">
+                <a href="https://www.facebook.com/profile.php?id=61575593713727" class="community-link" target="_blank" rel="noopener noreferrer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10v4h3v7h4v-7h3l1 -4h-4v-2a1 1 0 0 1 1 -1h3v-4h-3a5 5 0 0 0 -5 5v2h-3" /></svg>
+                    <span>Facebook Alerts Page</span>
+                </a>
+                <a href="https://t.me/Spot_The_Aurora" class="community-link" target="_blank" rel="noopener noreferrer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 10l-4 4l6 6l4 -16l-18 7l4 2l2 6l3 -4" /></svg>
+                    <span>Telegram Alerts Channel</span>
+                </a>
+                <a href="https://www.facebook.com/groups/spottheaurora.greywestland" class="community-link" target="_blank" rel="noopener noreferrer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 13a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M8 21v-1a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v1" /><path d="M15 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M17 10h2a2 2 0 0 1 2 2v1" /><path d="M5 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M3 13v-1a2 2 0 0 1 2 -2h2" /></svg>
+                    <span>Facebook Discussion Group</span>
+                </a>
+            </div>
+        </div>
+
         <div class="footer-credits">
             <span>Data courtesy of <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA SWPC</a></span>
             <span>•</span>
@@ -220,6 +281,7 @@
 </div>
 
 <script>
+    // All Javascript remains the same
     let auroraChartInstance = null;
     let magneticChart = null;
     let apiDataCache = {}; 
@@ -267,16 +329,12 @@
             let data = apiDataCache[NOAA_MAG_ENDPOINT]; if (!data) { const response = await fetch(NOAA_MAG_ENDPOINT); if (!response.ok) throw new Error(`Fetch failed`); data = await response.json(); apiDataCache[NOAA_MAG_ENDPOINT] = data; }
             if (!Array.isArray(data) || data.length < 2) throw new Error("Invalid NOAA data format");
             const headers = data[0]; const timeIndex = headers.indexOf('time_tag'); const btIndex = headers.indexOf('bt'); const bzIndex = headers.indexOf('bz_gsm');
-            
-            // --- FIX: REMOVED THE UNNECESSARY AND BUGGY .filter() CALL ---
             const chartPoints = data.slice(1).map(row => ({ 
                 time: new Date(row[timeIndex]), 
                 bt: parseFloat(row[btIndex]) > -9999 ? parseFloat(row[btIndex]) : null, 
                 bz: parseFloat(row[bzIndex]) > -9999 ? parseFloat(row[bzIndex]) : null, 
             }));
-
             if (chartPoints.length === 0) return;
-            
             const labels = chartPoints.map(p => p.time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
             const btValues = chartPoints.map(p => p.bt);
             const bzValues = chartPoints.map(p => p.bz);
