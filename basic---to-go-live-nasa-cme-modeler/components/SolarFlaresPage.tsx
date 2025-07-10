@@ -3,15 +3,16 @@ import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService'
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
+import ForecastIcon from './icons/ForecastIcon'; // Import the icon
 import LoadingSpinner from './icons/LoadingSpinner';
 
 type TimeRangeHours = 1 | 6 | 12 | 24;
 
 interface SolarFlaresPageProps {
-  onClose: () => void;
+  onNavChange: (page: 'modeler' | 'forecast') => void;
 }
 
-const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
+const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
@@ -21,13 +22,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
 
   useEffect(() => {
     // --- FIX: This function standardizes the ambiguous NOAA date format ---
-    const fixNoaaTime = (dataPoint: any) => {
-      // Input: "2025-07-10 21:00:00" -> Output: "2025-07-10T21:00:00Z"
-      // This is a valid ISO 8601 format that works on ALL browsers.
-      if (dataPoint.time_tag && !dataPoint.time_tag.endsWith('Z')) {
-        return { ...dataPoint, time_tag: dataPoint.time_tag.replace(' ', 'T') + 'Z' };
-      }
-      return dataPoint;
+    const parseUTCDate = (dateString: string) => {
+      // Input: "2025-07-10 21:00:00" -> Output: a valid Date object in UTC
+      const [datePart, timePart] = dateString.split(' ');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour, minute, second] = timePart.split(':').map(Number);
+      // Date.UTC() is the most reliable way to create a UTC date from components
+      return new Date(Date.UTC(year, month - 1, day, hour, minute, second));
     };
 
     const fetchData = async () => {
@@ -40,12 +41,12 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         if (xray && Array.isArray(xray)) {
           const longWaveXray = xray
             .filter(d => d.energy === '0.1-0.8nm')
-            .map(fixNoaaTime); // Apply the fix to every data point
+            .map(d => ({ ...d, time_tag_utc: parseUTCDate(d.time_tag) }));
           setFullXrayData(longWaveXray);
         }
 
         if (proton && Array.isArray(proton) && proton.length > 1) {
-          const protonDataPoints = proton.slice(1).map(fixNoaaTime); // Apply the fix here too
+          const protonDataPoints = proton.slice(1).map(d => ({ ...d, time_tag_utc: parseUTCDate(d.time_tag) }));
           setFullProtonData(protonDataPoints);
         }
         
@@ -64,16 +65,16 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     const now = Date.now();
     const startTime = now - timeRange * 60 * 60 * 1000;
     
-    // --- FIX: Options to force all displayed times to NZT ---
     const nzTimeOptions: Intl.DateTimeFormatOptions = {
         timeZone: 'Pacific/Auckland',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        hour12: false
     };
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      return data.filter(d => new Date(d.time_tag).getTime() >= startTime);
+      return data.filter(d => d.time_tag_utc.getTime() >= startTime);
     };
 
     const filteredXray = filterDataByTime(fullXrayData);
@@ -81,7 +82,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
 
     return {
       xray: {
-        labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
+        labels: filteredXray.map(d => d.time_tag_utc.toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'X-Ray Flux (watts/m^2)',
           data: filteredXray.map(d => d.flux),
@@ -90,7 +91,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         }],
       },
       proton: {
-        labels: filteredProton.map(d => new Date(d.time_tag).toLocaleTimeString('en-NZ', nzTimeOptions)),
+        labels: filteredProton.map(d => d.time_tag_utc.toLocaleTimeString('en-NZ', nzTimeOptions)),
         datasets: [{
           label: 'Proton Flux (>10 MeV)',
           data: filteredProton.map(d => d.flux),
@@ -138,17 +139,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
       x: { ticks: { color: '#a3a3a3', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: '#404040' } },
       y: {
         type: 'logarithmic', min: 1e-9, max: 1e-2,
-        ticks: { 
-            color: '#a3a3a3',
-            // --- FIX: Custom callback to display flare classes ---
-            callback: function(value: any) {
-                switch(Number(value)) {
-                    case 1e-8: return 'A'; case 1e-7: return 'B';
-                    case 1e-6: return 'C'; case 1e-5: return 'M';
-                    case 1e-4: return 'X'; default: return null;
-                }
+        ticks: { color: '#a3a3a3', callback: (value: any) => {
+            switch(Number(value)) {
+                case 1e-8: return 'A'; case 1e-7: return 'B';
+                case 1e-6: return 'C'; case 1e-5: return 'M';
+                case 1e-4: return 'X'; default: return null;
             }
-        },
+        }},
         grid: { color: '#404040' },
       },
     },
@@ -193,10 +190,16 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300">
       <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-between items-center">
         <h1 className="text-xl lg:text-2xl font-bold text-white">Live Solar Activity</h1>
-        <button onClick={onClose} className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors" title="Back to 3D CME Modeler">
-          <HomeIcon className="w-5 h-5" />
-          <span className="text-sm font-semibold">3D CME Modeler</span>
-        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => onNavChange('forecast')} className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors" title="View Aurora Forecast">
+            <ForecastIcon className="w-5 h-5" />
+            <span className="text-sm font-semibold">Aurora Forecast</span>
+          </button>
+          <button onClick={() => onNavChange('modeler')} className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors" title="Back to 3D CME Modeler">
+            <HomeIcon className="w-5 h-5" />
+            <span className="text-sm font-semibold">3D CME Modeler</span>
+          </button>
+        </div>
       </header>
       
       <main className="flex-grow p-4 overflow-y-auto styled-scrollbar">
@@ -206,13 +209,13 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
             <p className="mt-4 text-lg">Fetching live solar data...</p>
           </div>
         )}
-        {error && <div className="text-center text-red-400 text-lg p-8">Error: {error}</div>}
+        {error && <div className="text-center text-red-400 text-lg p-8">Error: {error.toString()}</div>}
         {!isLoading && !error && (
           <div className="space-y-6 max-w-7xl mx-auto">
             <SunImageViewer />
             <div className="bg-neutral-900/80 p-4 rounded-lg">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux</h3>
+                <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux (NZT)</h3>
                 <div className="flex gap-1">
                   {([1, 6, 12, 24] as TimeRangeHours[]).map(h => (
                     <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>
@@ -230,8 +233,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
             <ActiveRegionsList flares={flareData} />
             <div className="bg-neutral-900/80 p-4 rounded-lg">
               <div className="flex justify-between items-center mb-2">
-                 <h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux</h3>
-                 <span className="text-xs text-neutral-400">Times in NZT</span>
+                 <h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux (NZT)</h3>
               </div>
               <div className="relative h-72">
                 {chartData.proton.datasets[0].data.length > 0 

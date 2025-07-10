@@ -20,7 +20,9 @@ import ForecastModal from './components/ForecastModal';
 import SolarFlaresPage from './components/SolarFlaresPage';
 
 const App: React.FC = () => {
-  // ... (state declarations remain the same)
+  // --- MODIFIED: A single state to manage the current view ---
+  const [activePage, setActivePage] = useState<'forecast' | 'flares' | 'modeler'>('forecast');
+  
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -37,9 +39,6 @@ const App: React.FC = () => {
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  
-  const [showForecast, setShowForecast] = useState(true);
-  const [showFlares, setShowFlares] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -59,7 +58,7 @@ const App: React.FC = () => {
 
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
-
+  
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -118,10 +117,10 @@ const App: React.FC = () => {
   }, [resetClock]);
 
   useEffect(() => {
-    if (!showForecast && !showFlares) {
+    if (activePage === 'modeler') {
       loadCMEData(activeTimeRange);
     }
-  }, [activeTimeRange, loadCMEData, showForecast, showFlares]);
+  }, [activeTimeRange, loadCMEData, activePage]);
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -204,12 +203,12 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
-  if (showFlares) {
-    return <SolarFlaresPage onClose={() => setShowFlares(false)} />;
+  if (activePage === 'flares') {
+    return <SolarFlaresPage onNavChange={setActivePage} />;
   }
 
-  if (showForecast) {
-    return <ForecastModal onClose={() => setShowForecast(false)} />;
+  if (activePage === 'forecast') {
+    return <ForecastModal onNavChange={setActivePage} />;
   }
 
   return (
@@ -291,14 +290,14 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center space-x-2 pointer-events-auto">
             <button 
-              onClick={() => setShowForecast(true)}
+              onClick={() => setActivePage('forecast')}
               className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
               title="View Live Aurora Forecasts">
                 <ForecastIcon className="w-5 h-5" />
                 <span className="text-sm font-semibold">Aurora Forecast</span>
             </button>
             <button 
-              onClick={() => setShowFlares(true)}
+              onClick={() => setActivePage('flares')}
               className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
               title="View Solar Activity">
                 <FlareIcon className="w-5 h-5" />
