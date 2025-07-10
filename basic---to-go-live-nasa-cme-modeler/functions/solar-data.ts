@@ -66,11 +66,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         }
     }
     
-    // --- THIS IS THE CORRECTED AND ROBUST FLARE DATA LOGIC ---
     let flareData = [];
     if (flareRes.status === 'fulfilled' && flareRes.value.ok) {
         const rawFlareData = await flareRes.value.json();
-        // The NASA API can return an object on error, so we explicitly check if it's an array.
         if (Array.isArray(rawFlareData)) {
             flareData = rawFlareData;
         }

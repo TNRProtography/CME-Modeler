@@ -83,32 +83,24 @@ export interface SolarFlareData {
   link: string;
 }
 
-// Fetches X-Ray data directly from NOAA
-export const fetchGoesXrayData = async (): Promise<any[]> => {
-  const url = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Failed to fetch GOES X-ray data');
-  return response.json();
-};
-
-// Fetches Proton data directly from NOAA
-export const fetchGoesProtonData = async (): Promise<any[]> => {
-  const url = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Failed to fetch GOES proton data');
-  return response.json();
-};
-
-// Fetches Flare data via our secure server proxy to handle the API key and CORS
-export const fetchSolarFlareData = async (): Promise<SolarFlareData[]> => {
-  const response = await fetch('/solar-data'); // Calls our server function
+// Single function to get all solar activity data from our proxy
+export const fetchSolarActivityData = async () => {
+  const response = await fetch('/solar-data');
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar flare data from proxy.' }));
+    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
     throw new Error(errorBody.error || `Server responded with status ${response.status}`);
   }
   const data = await response.json();
   if (data.error) {
     throw new Error(data.error);
   }
-  return data.filter((flare: any) => flare.activeRegionNum);
+  
+  // --- THIS IS THE FIX ---
+  // The server now provides clean data. We just pass it through.
+  // The buggy .filter() call has been removed.
+  return {
+    xray: data.xrayData,
+    proton: data.protonData,
+    flares: data.flareData,
+  };
 };

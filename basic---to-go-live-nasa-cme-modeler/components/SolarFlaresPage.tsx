@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { fetchGoesXrayData, fetchGoesProtonData, fetchSolarFlareData, SolarFlareData } from '../services/nasaService';
+import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
@@ -21,42 +21,17 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const parseUTCDate = (dateString: string): Date | null => {
-      if (typeof dateString !== 'string' || !dateString.includes(' ')) return null;
-      const isoString = dateString.replace(' ', 'T') + 'Z';
-      const d = new Date(isoString);
-      return isNaN(d.getTime()) ? null : d;
-    };
-
     const fetchData = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
-        const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
-        
-        const [xray, proton, flares] = await Promise.all([
-          fetchGoesXrayData(),
-          fetchGoesProtonData(),
-          fetchSolarFlareData(apiKey),
-        ]);
+        const { xray, proton, flares } = await fetchSolarActivityData();
 
-        if (xray && Array.isArray(xray)) {
-          const longWaveXray = xray
-            .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0)
-            .map(d => ({ ...d, timestamp: parseUTCDate(d.time_tag)?.getTime() }))
-            .filter(d => d.timestamp);
-          setFullXrayData(longWaveXray);
-        }
-
-        if (proton && Array.isArray(proton)) {
-          const protonDataPoints = proton
-            .map(d => ({ ...d, timestamp: parseUTCDate(d.time_tag)?.getTime() }))
-            .filter(d => d.timestamp && d.flux > 0);
-          setFullProtonData(protonDataPoints);
-        }
-        
-        setFlareData(flares);
+        // The data is already clean from the server, just check if it's an array before setting
+        setFullXrayData(Array.isArray(xray) ? xray : []);
+        setFullProtonData(Array.isArray(proton) ? proton : []);
+        setFlareData(Array.isArray(flares) ? flares : []);
 
       } catch (err) {
         setError((err as Error).message);
@@ -80,7 +55,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      return data.filter(d => d.timestamp >= startTime);
+      return data.filter(d => d.timestamp && d.timestamp >= startTime);
     };
 
     const filteredXray = filterDataByTime(fullXrayData);
