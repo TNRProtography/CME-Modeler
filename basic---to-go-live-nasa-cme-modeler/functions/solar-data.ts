@@ -1,3 +1,4 @@
+// solar-data.ts
 interface SolarActivityResponse {
   xrayData: { timestamp: number; flux: number }[];
   protonData: { timestamp: number; flux: number; energy: string }[];
@@ -36,11 +37,13 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), { status: 500 });
   }
 
-  const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
-  const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
+  // --- MODIFIED ENDPOINTS ---
+  const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
+  const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-6-hour.json';
+  
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setDate(endDate.getDate() - 7);
+  startDate.setDate(endDate.getDate() - 7); // Keep 7 days for flares for broader context
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
   const flareUrl = `https://api.nasa.gov/DONKI/FLR?startDate=${formatDate(startDate)}&endDate=${formatDate(endDate)}&api_key=${apiKey}`;
 

@@ -1,3 +1,4 @@
+// SolarFlaresPage.tsx
 import React, { useEffect, useState, useMemo } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
@@ -6,7 +7,8 @@ import HomeIcon from './icons/HomeIcon';
 import ForecastIcon from './icons/ForecastIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
-type TimeRangeHours = 1 | 6 | 12 | 24;
+// --- MODIFIED: New TimeRangeHours type and default ---
+type TimeRangeHours = 1 | 2 | 4 | 6;
 
 interface SolarFlaresPageProps {
   onNavChange: (page: 'modeler' | 'forecast') => void;
@@ -16,7 +18,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
-  const [timeRange, setTimeRange] = useState<TimeRangeHours>(6);
+  // --- MODIFIED: Default to 2 hours ---
+  const [timeRange, setTimeRange] = useState<TimeRangeHours>(2);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -231,7 +234,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux (NZT)</h3>
                 <div className="flex gap-1">
-                  {([1, 6, 12, 24] as TimeRangeHours[]).map(h => (
+                  {/* --- MODIFIED: New time range buttons --- */}
+                  {([1, 2, 4, 6] as TimeRangeHours[]).map(h => (
                     <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>
                       {h}H
                     </button>
