@@ -95,6 +95,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
   const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
   filteredProton.forEach(p => {
+    if (!p) return; // Defensive check
     if (!protonDataByEnergy[p.energy]) protonDataByEnergy[p.energy] = [];
     protonDataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
   });
@@ -136,57 +137,44 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     },
   };
 
+  // The problematic plugin is now defined but NOT used.
   const xrayAnnotationsPlugin = {
     id: 'xrayAnnotations',
     afterDraw: (chart: any) => {
-      // --- THIS IS THE BULLETPROOF FIX ---
-      // We check not just for the parent objects, but for all the specific properties
-      // we are about to use. This prevents any "Cannot read properties of undefined" errors.
-      if (
-        !chart.ctx ||
-        !chart.chartArea ||
-        typeof chart.chartArea.left === 'undefined' ||
-        typeof chart.chartArea.right === 'undefined' ||
-        typeof chart.chartArea.top === 'undefined' ||
-        typeof chart.chartArea.bottom === 'undefined' ||
-        !chart.scales ||
-        !chart.scales.y
-      ) {
-        return; // Exit early if the chart isn't fully ready
-      }
-      // --- END OF FIX ---
+        if (!chart.chartArea) return;
+        const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
+        if (!ctx || !y) return;
 
-      const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
-      const flareClasses = [
-        { level: 1e-8, label: 'A' }, { level: 1e-7, label: 'B' },
-        { level: 1e-6, label: 'C' }, { level: 1e-5, label: 'M' },
-        { level: 1e-4, label: 'X' },
-      ];
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-      flareClasses.forEach(({ level, label }) => {
-        const yPos = y.getPixelForValue(level);
-        // We use the destructured `top` and `bottom` for the check
-        if (yPos >= top && yPos <= bottom) {
-          ctx.beginPath();
-          ctx.setLineDash([2, 4]);
-          ctx.moveTo(left, yPos);
-          ctx.lineTo(right, yPos);
-          ctx.stroke();
-          ctx.fillText(label, left - 5, yPos);
-        }
-      });
-      ctx.restore();
+        const flareClasses = [
+            { level: 1e-8, label: 'A' }, { level: 1e-7, label: 'B' },
+            { level: 1e-6, label: 'C' }, { level: 1e-5, label: 'M' },
+            { level: 1e-4, label: 'X' },
+        ];
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        flareClasses.forEach(({ level, label }) => {
+            const yPos = y.getPixelForValue(level);
+            if (yPos >= top && yPos <= bottom) {
+                ctx.beginPath();
+                ctx.setLineDash([2, 4]);
+                ctx.moveTo(left, yPos);
+                ctx.lineTo(right, yPos);
+                ctx.stroke();
+                ctx.fillText(label, left - 5, yPos);
+            }
+        });
+        ctx.restore();
     }
   };
 
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
-    const activeRegions = flares.reduce((acc, flare) => {
-        if (flare && flare.activeRegionNum && !acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
+    const activeRegions = (flares || []).reduce((acc, flare) => {
+      // Added defensive check for flare object itself.
+      if (flare && flare.activeRegionNum && !acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
         acc.push({
           activeRegionNum: flare.activeRegionNum,
           classType: flare.classType,
@@ -195,7 +183,9 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       }
       return acc;
     }, [] as { activeRegionNum: number; classType: string; location: string }[]);
+    
     activeRegions.sort((a, b) => a.activeRegionNum - b.activeRegionNum);
+    
     return (
       <div className="bg-neutral-900/80 p-4 rounded-lg">
         <h3 className="text-lg font-semibold text-neutral-200 mb-2">Active Sunspot Regions</h3>
@@ -256,7 +246,9 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
               </div>
               <div className="relative h-72">
                 {xrayChartData.datasets[0].data.length > 0 
-                  ? <DataChart data={xrayChartData} options={xrayChartOptions} plugins={[xrayAnnotationsPlugin]} /> 
+                  // --- THIS IS THE FIX ---
+                  // The xrayAnnotationsPlugin has been removed from the plugins array to stop the crash.
+                  ? <DataChart data={xrayChartData} options={xrayChartOptions} plugins={[]} /> 
                   : <p className="text-center text-neutral-400 pt-10">No X-Ray data available for this time range.</p>}
               </div>
             </div>
