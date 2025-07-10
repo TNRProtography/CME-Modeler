@@ -6,7 +6,6 @@
     <title>Spot The Aurora - West Coast Aurora Forecast</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- NEW: Leaflet Map Library -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -176,7 +175,6 @@
             height: 100%;
         }
 
-        /* --- NEW: Sighting Map Styles --- */
         #sighting-map-section {
             grid-column: 1 / -1;
             text-align: center;
@@ -220,7 +218,6 @@
         #report-cloudy:hover:not(:disabled) { background-color: #6b7280; }
         #report-nothing { background-color: #991b1b; border-color: #7f1d1d; }
         #report-nothing:hover:not(:disabled) { background-color: #b91c1c; }
-        /* Style Leaflet popups to match theme */
         .leaflet-popup-content-wrapper {
             background-color: var(--bg-card);
             color: var(--text-primary);
@@ -241,8 +238,18 @@
         .leaflet-popup-close-button:hover {
             color: var(--text-primary) !important;
         }
-        /* --- End of Sighting Map Styles --- */
 
+        /* --- NEW: Style for the Emoji Pins --- */
+        .sighting-emoji-icon {
+            font-size: 2rem; /* Makes the emoji nice and big */
+            text-align: center;
+            line-height: 1;
+            /* Adds a shadow so the emoji is visible on any map background */
+            text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.8);
+            background: none; /* Removes default icon background */
+            border: none; /* Removes default icon border */
+        }
+        
         .page-footer {
             margin-top: 60px;
             padding-top: 30px;
@@ -430,7 +437,6 @@
             <div id="aurora-blurbs"><div class="aurora-blurb" id="blurb-10">Little to no auroral activity.</div><div class="aurora-blurb" id="blurb-25">Minimal auroral activity likely.</div><div class="aurora-blurb" id="blurb-40">Clear auroral activity visible in cameras.</div><div class="aurora-blurb" id="blurb-50">Faint auroral glow potentially visible to the naked eye.</div><div class="aurora-blurb" id="blurb-80">Good chance of seeing naked-eye auroral color.</div><div class="aurora-blurb" id="blurb-80plus">High probability of significant auroral substorms.</div></div>
         </div>
         
-        <!-- NEW: Live Sighting Map Section -->
         <div id="sighting-map-section" class="card">
             <h2 class="card-title" style="font-size: 1.5rem;">Live Sighting Map</h2>
             <p style="margin-top: 10px; color: var(--text-secondary);">Help fellow aurora chasers! Share what you're seeing from your location.</p>
@@ -559,12 +565,13 @@
     const GAUGE_EMOJIS = { gray: '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red: '\u{1F604}', purple: '\u{1F60D}', pink: '\u{1F60D}', error: '\u{2753}' };
     const UPDATE_INTERVAL_MS = 120000;
     
-    // --- SIGHTING MAP CONSTANTS ---
-    const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/'; // **IMPORTANT: YOU NEED TO CREATE THIS WORKER**
-    const SIGHTING_MARKER_STYLES = {
-        aurora: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.7, weight: 1 },
-        cloudy: { color: '#a1a1aa', fillColor: '#a1a1aa', fillOpacity: 0.6, weight: 1 },
-        nothing: { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.6, weight: 1 }
+    const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/'; 
+    
+    // --- UPDATED: Use Emojis instead of colored circles ---
+    const SIGHTING_EMOJIS = {
+        aurora: '😊',
+        cloudy: '☁️',
+        nothing: '❌'
     };
     let sightingMap = null;
     let sightingMarkersLayer = null;
@@ -723,7 +730,6 @@
         }
     }
     
-    // --- NEW: Sighting Map Functions ---
     async function initializeSightingMap() {
         sightingMap = L.map('sighting-map').setView([-41.2, 172.5], 5); // Center on NZ
 
@@ -739,8 +745,8 @@
         document.getElementById('report-cloudy').addEventListener('click', () => handleReportSighting('cloudy'));
         document.getElementById('report-nothing').addEventListener('click', () => handleReportSighting('nothing'));
         
-        fetchAndDisplaySightings(); // Initial fetch
-        setInterval(fetchAndDisplaySightings, 60000); // Refresh sightings every minute
+        fetchAndDisplaySightings();
+        setInterval(fetchAndDisplaySightings, 60000);
     }
 
     async function fetchAndDisplaySightings() {
@@ -752,13 +758,23 @@
             sightingMarkersLayer.clearLayers();
 
             sightings.forEach(sighting => {
-                const style = SIGHTING_MARKER_STYLES[sighting.status];
-                if (!style) return;
+                // --- THIS IS THE MODIFIED SECTION ---
+                const emoji = SIGHTING_EMOJIS[sighting.status];
+                if (!emoji) return; // Skip if status is unknown
 
-                const marker = L.circleMarker([sighting.lat, sighting.lng], {
-                    ...style,
-                    radius: 8
+                // Create a custom HTML-based icon using the emoji
+                const emojiIcon = L.divIcon({
+                    html: emoji,
+                    className: 'sighting-emoji-icon', // Use our new CSS class
+                    iconSize: [32, 32],   // The size of the icon
+                    iconAnchor: [16, 16]  // The point of the icon which will correspond to the marker's location
+                });
+
+                // Create a standard marker, but pass in our custom emoji icon
+                const marker = L.marker([sighting.lat, sighting.lng], { 
+                    icon: emojiIcon 
                 }).addTo(sightingMarkersLayer);
+                // --- END OF MODIFIED SECTION ---
 
                 const time = new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 marker.bindPopup(`<b>${sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)} seen</b><br>at ${time}`);
@@ -796,7 +812,7 @@
                     if (!response.ok) throw new Error('Failed to submit report.');
 
                     alert('Thank you! Your report has been added to the map.');
-                    fetchAndDisplaySightings(); // Refresh map immediately
+                    fetchAndDisplaySightings();
                 } catch (error) {
                     console.error('Error submitting report:', error);
                     alert('Could not submit your report. Please try again later.');
@@ -923,7 +939,7 @@
         runAllUpdates();
         setInterval(runAllUpdates, UPDATE_INTERVAL_MS);
         initializeInfoModals();
-        initializeSightingMap(); // NEW: Initialize the map
+        initializeSightingMap();
     });
 </script>
 
