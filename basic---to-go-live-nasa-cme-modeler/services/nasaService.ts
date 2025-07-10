@@ -83,7 +83,7 @@ export interface SolarFlareData {
   link: string;
 }
 
-// Fetches from the correct URL you provided
+// Fetches X-Ray data directly from NOAA
 export const fetchGoesXrayData = async (): Promise<any[]> => {
   const url = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
   const response = await fetch(url);
@@ -91,7 +91,7 @@ export const fetchGoesXrayData = async (): Promise<any[]> => {
   return response.json();
 };
 
-// Fetches from the correct URL you provided
+// Fetches Proton data directly from NOAA
 export const fetchGoesProtonData = async (): Promise<any[]> => {
   const url = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
   const response = await fetch(url);
@@ -99,14 +99,16 @@ export const fetchGoesProtonData = async (): Promise<any[]> => {
   return response.json();
 };
 
-export const fetchSolarFlareData = async (apiKey: string): Promise<SolarFlareData[]> => {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(endDate.getDate() - 7);
-  const formatDate = (d: Date) => d.toISOString().split('T')[0];
-  const url = `https://api.nasa.gov/DONKI/FLR?startDate=${formatDate(startDate)}&endDate=${formatDate(endDate)}&api_key=${apiKey}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Failed to fetch Solar Flare data');
-  const jsonData = await response.json();
-  return jsonData.filter((flare: any) => flare.activeRegionNum);
+// Fetches Flare data via our secure server proxy to handle the API key and CORS
+export const fetchSolarFlareData = async (): Promise<SolarFlareData[]> => {
+  const response = await fetch('/solar-data'); // Calls our server function
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar flare data from proxy.' }));
+    throw new Error(errorBody.error || `Server responded with status ${response.status}`);
+  }
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error);
+  }
+  return data.filter((flare: any) => flare.activeRegionNum);
 };

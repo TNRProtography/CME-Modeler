@@ -10,10 +10,9 @@ type TimeRangeHours = 1 | 6 | 12 | 24;
 
 interface SolarFlaresPageProps {
   onNavChange: (page: 'modeler' | 'forecast') => void;
-  apiKey: string;
 }
 
-const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange, apiKey }) => {
+const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
   const [fullXrayData, setFullXrayData] = useState<any[]>([]);
   const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
@@ -22,25 +21,19 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange, apiKey }
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // --- THIS IS THE BULLETPROOF DATE PARSER ---
-    // It manually constructs a Date object from parts, which is universally reliable.
     const parseUTCDate = (dateString: string): Date | null => {
       if (typeof dateString !== 'string' || !dateString.includes(' ')) return null;
-      const parts = dateString.split(' ');
-      const dateParts = parts[0].split('-').map(Number);
-      const timeParts = parts[1].split(':').map(Number);
-      if (dateParts.length !== 3 || timeParts.length !== 3 || dateParts.some(isNaN) || timeParts.some(isNaN)) {
-        return null;
-      }
-      // Date.UTC() is the most reliable way to create a UTC date from components
-      // The month is 0-indexed in JavaScript (0 = January)
-      return new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2], timeParts[0], timeParts[1], timeParts[2]));
+      const isoString = dateString.replace(' ', 'T') + 'Z';
+      const d = new Date(isoString);
+      return isNaN(d.getTime()) ? null : d;
     };
 
     const fetchData = async () => {
       try {
         setIsLoading(true);
         setError(null);
+        
+        const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
         
         const [xray, proton, flares] = await Promise.all([
           fetchGoesXrayData(),
@@ -72,11 +65,18 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange, apiKey }
       }
     };
     fetchData();
-  }, [apiKey]);
+  }, []);
   
   const chartData = useMemo(() => {
     const now = Date.now();
     const startTime = now - timeRange * 60 * 60 * 1000;
+    
+    const nzTimeOptions: Intl.DateTimeFormatOptions = {
+        timeZone: 'Pacific/Auckland',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    };
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
@@ -95,10 +95,10 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange, apiKey }
     });
 
     const protonColors: { [key: string]: string } = {
-        '>=10 MeV': '#f87171',   // red
-        '>=50 MeV': '#fb923c',   // orange
-        '>=100 MeV': '#fbbf24',  // amber
-        '>=500 MeV': '#a3e635', // lime
+        '>=10 MeV': '#f87171',
+        '>=50 MeV': '#fb923c',
+        '>=100 MeV': '#fbbf24',
+        '>=500 MeV': '#a3e635',
     };
     
     const protonDatasets = Object.keys(protonDataByEnergy).map(energy => ({
@@ -182,7 +182,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange, apiKey }
 
   const protonChartOptions = {
     responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { labels: { color: '#e5e5e5' } }, tooltip: { enabled: true, mode: 'index' as const, intersect: false } },
+    plugins: { legend: { labels: { color: '#e5e5e5' } } },
     scales: {
         x: { 
             type: 'time',
