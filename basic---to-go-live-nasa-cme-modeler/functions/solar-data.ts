@@ -1,6 +1,6 @@
 interface SolarActivityResponse {
   xrayData: { timestamp: number; flux: number }[];
-  protonData: { timestamp: number; flux: number }[];
+  protonData: { timestamp: number; flux: number; energy: string }[];
   flareData: any[];
   error?: string;
 }
@@ -9,11 +9,8 @@ declare interface Env {
   SECRET_NASA_API_KEY: string;
 }
 
-// This robust function runs on the server to parse ambiguous NOAA date strings.
-// It will not fail, even on mobile browsers, because the browser never runs this code.
 const parseNoaaDate = (dateString: string): number | null => {
   if (typeof dateString !== 'string' || dateString.trim() === '') return null;
-  // Creates a universally compatible ISO string: "2024-07-11T22:05:00Z"
   const isoString = dateString.replace(' ', 'T') + 'Z';
   const timestamp = new Date(isoString).getTime();
   return isNaN(timestamp) ? null : timestamp;
@@ -26,8 +23,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), { status: 500 });
   }
 
+  // --- MODIFIED: Using the exact URLs you provided ---
   const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
-  const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/protons-5-minute.json';
+  const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(endDate.getDate() - 7);
@@ -41,27 +39,26 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    // --- All data processing now happens safely on the server ---
     const rawXrayData = xrayRes.status === 'fulfilled' && xrayRes.value.ok ? await xrayRes.value.json() : [];
     const processedXray = Array.isArray(rawXrayData)
       ? rawXrayData
-          .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0) // Filter for the correct band and valid flux
-          .map(d => ({
-            timestamp: parseNoaaDate(d.time_tag),
-            flux: d.flux,
-          }))
-          .filter(d => d.timestamp !== null) // Remove any entries that failed to parse
-      : [];
-
-    const rawProtonData = protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [];
-    const processedProton = Array.isArray(rawProtonData) && rawProtonData.length > 1
-      ? rawProtonData
-          .slice(1) // Skip header row in proton data
+          .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0)
           .map(d => ({
             timestamp: parseNoaaDate(d.time_tag),
             flux: d.flux,
           }))
           .filter(d => d.timestamp !== null)
+      : [];
+
+    const rawProtonData = protonRes.status === 'fulfilled' && protonRes.value.ok ? await protonRes.value.json() : [];
+    const processedProton = Array.isArray(rawProtonData)
+      ? rawProtonData
+          .map(d => ({
+            timestamp: parseNoaaDate(d.time_tag),
+            flux: d.flux,
+            energy: d.energy, // Pass the energy level through
+          }))
+          .filter(d => d.timestamp !== null && d.flux > 0)
       : [];
     
     const flareData = flareRes.status === 'fulfilled' && flareRes.value.ok ? await flareRes.value.json() : [];

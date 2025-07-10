@@ -26,7 +26,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         setIsLoading(true);
         setError(null);
         
-        // This single call gets all data, fully processed and cleaned by the server
         const { xray, proton, flares } = await fetchSolarActivityData();
 
         setFullXrayData(xray || []);
@@ -55,12 +54,30 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
 
     const filterDataByTime = (data: any[]) => {
       if (!data) return [];
-      // Uses the reliable numeric timestamp from the server
       return data.filter(d => d.timestamp && d.timestamp >= startTime);
     };
 
     const filteredXray = filterDataByTime(fullXrayData);
     const filteredProton = filterDataByTime(fullProtonData);
+
+    // --- NEW: Logic to create multiple datasets for the proton graph ---
+    const protonEnergyLevels = ['>=10 MeV', '>=50 MeV', '>=100 MeV', '>=500 MeV'];
+    const protonColors = ['#f87171', '#fb923c', '#fbbf24', '#a3e635'];
+
+    const protonDatasets = protonEnergyLevels.map((energy, index) => {
+        const energyData = filteredProton.filter(p => p.energy === energy);
+        return {
+            label: `Proton Flux ${energy}`,
+            data: energyData.map(d => ({ x: d.timestamp, y: d.flux })),
+            borderColor: protonColors[index],
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            borderWidth: 1.5,
+        }
+    });
+
+    // Create a combined set of all timestamps for the x-axis labels
+    const allProtonTimestamps = [...new Set(filteredProton.map(d => d.timestamp))].sort();
 
     return {
       xray: {
@@ -73,13 +90,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         }],
       },
       proton: {
-        labels: filteredProton.map(d => new Date(d.timestamp).toLocaleTimeString('en-NZ', nzTimeOptions)),
-        datasets: [{
-          label: 'Proton Flux (>10 MeV)',
-          data: filteredProton.map(d => d.flux),
-          borderColor: '#f87171', backgroundColor: 'rgba(248, 113, 113, 0.2)',
-          fill: true, pointRadius: 0, borderWidth: 1.5,
-        }],
+        labels: allProtonTimestamps.map(ts => new Date(ts).toLocaleTimeString('en-NZ', nzTimeOptions)),
+        datasets: protonDatasets,
       },
     };
   }, [fullXrayData, fullProtonData, timeRange]);
@@ -134,7 +146,30 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     interaction: { intersect: false, mode: 'index' },
   };
 
-  const protonChartOptions = { ...xrayChartOptions, scales: { ...xrayChartOptions.scales, y: { ...xrayChartOptions.scales.y, min: 1e-1, max: 1e5, type: 'logarithmic', ticks: { color: '#a3a3a3'} } } };
+  // --- NEW: Chart options for the multi-line proton graph ---
+  const protonChartOptions = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#e5e5e5' } } },
+    scales: {
+        x: { 
+            type: 'linear', // Use linear scale for timestamps
+            ticks: { 
+                color: '#a3a3a3', 
+                maxRotation: 0, 
+                autoSkip: true, 
+                maxTicksLimit: 8,
+                callback: (value: any) => new Date(value).toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit', hour12: false })
+            }, 
+            grid: { color: '#404040' } 
+        },
+        y: {
+            type: 'logarithmic', min: 1e-1,
+            ticks: { color: '#a3a3a3'},
+            grid: { color: '#404040' }
+        }
+    },
+    interaction: { intersect: false, mode: 'index' },
+  };
   
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = flares.reduce((acc, flare) => {
@@ -218,7 +253,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
                  <h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux (NZT)</h3>
               </div>
               <div className="relative h-72">
-                {chartData.proton.datasets[0].data.length > 0 
+                {chartData.proton.datasets.length > 0 && chartData.proton.datasets.some(ds => ds.data.length > 0)
                   ? <DataChart data={chartData.proton} options={protonChartOptions} /> 
                   : <p className="text-center text-neutral-400 pt-10">No Proton Flux data available.</p>}
               </div>
