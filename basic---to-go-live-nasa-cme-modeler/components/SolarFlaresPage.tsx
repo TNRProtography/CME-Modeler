@@ -1,18 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
 import DataChart from './DataChart';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
+// Define a type for the time range buttons
+type TimeRangeHours = 1 | 6 | 12 | 24;
+
 interface SolarFlaresPageProps {
   onClose: () => void;
 }
 
 const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
-  const [xrayData, setXrayData] = useState<any>(null);
-  const [protonData, setProtonData] = useState<any>(null);
+  // State for the raw, full-day data
+  const [fullXrayData, setFullXrayData] = useState<any[]>([]);
+  const [fullProtonData, setFullProtonData] = useState<any[]>([]);
   const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
+
+  // State for user interaction
+  const [timeRange, setTimeRange] = useState<TimeRangeHours>(6);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,39 +29,17 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
         setIsLoading(true);
         setError(null);
         
-        // This now fetches everything in one go from our secure proxy
         const { xray, proton, flares } = await fetchSolarActivityData();
 
-        // Process X-Ray data for chart
+        // Process and store the full dataset
         if (xray && xray.length > 0) {
-          setXrayData({
-            labels: xray.map(d => new Date(d.time_tag).toLocaleTimeString()),
-            datasets: [{
-              label: 'X-Ray Flux (watts/m^2)',
-              data: xray.map(d => d.flux),
-              borderColor: '#facc15',
-              backgroundColor: 'rgba(250, 204, 21, 0.2)',
-              fill: true,
-              pointRadius: 0,
-              borderWidth: 1.5,
-            }],
-          });
+          // Filter for the correct energy band used for flare classification
+          const longWaveXray = xray.filter(d => d.energy === '0.1-0.8nm');
+          setFullXrayData(longWaveXray);
         }
-        
-        // Process Proton data for chart
+
         if (proton && proton.length > 0) {
-          setProtonData({
-            labels: proton.map(d => new Date(d.time_tag).toLocaleTimeString()),
-            datasets: [{
-              label: 'Proton Flux (>10 MeV)',
-              data: proton.map(d => d.flux),
-              borderColor: '#f87171',
-              backgroundColor: 'rgba(248, 113, 113, 0.2)',
-              fill: true,
-              pointRadius: 0,
-              borderWidth: 1.5,
-            }],
-          });
+          setFullProtonData(proton);
         }
         
         setFlareData(flares);
@@ -67,23 +52,111 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     };
     fetchData();
   }, []);
+  
+  // Use useMemo to efficiently filter data when the time range changes, without re-fetching
+  const chartData = useMemo(() => {
+    const now = Date.now();
+    const startTime = now - timeRange * 60 * 60 * 1000;
 
-  const commonChartOptions = {
+    const filterDataByTime = (data: any[]) => {
+      if (!data) return [];
+      return data.filter(d => new Date(d.time_tag).getTime() >= startTime);
+    };
+
+    const filteredXray = filterDataByTime(fullXrayData);
+    const filteredProton = filterDataByTime(fullProtonData);
+
+    return {
+      xray: {
+        labels: filteredXray.map(d => new Date(d.time_tag).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        datasets: [{
+          label: 'X-Ray Flux (watts/m^2)',
+          data: filteredXray.map(d => d.flux),
+          borderColor: '#facc15',
+          backgroundColor: 'rgba(250, 204, 21, 0.2)',
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 1.5,
+        }],
+      },
+      proton: {
+        labels: filteredProton.map(d => new Date(d.time_tag).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        datasets: [{
+          label: 'Proton Flux (>10 MeV)',
+          data: filteredProton.map(d => d.flux),
+          borderColor: '#f87171',
+          backgroundColor: 'rgba(248, 113, 113, 0.2)',
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 1.5,
+        }],
+      },
+    };
+  }, [fullXrayData, fullProtonData, timeRange]);
+
+  // --- NEW: Custom Chart.js plugin to draw flare class lines ---
+  const xrayAnnotationsPlugin = {
+    id: 'xrayAnnotations',
+    afterDraw: (chart: any) => {
+      const { ctx, chartArea: { left, right }, scales: { y } } = chart;
+      
+      const flareClasses = [
+        { level: 1e-8, label: 'A' },
+        { level: 1e-7, label: 'B' },
+        { level: 1e-6, label: 'C' },
+        { level: 1e-5, label: 'M' },
+        { level: 1e-4, label: 'X' },
+      ];
+      
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      
+      flareClasses.forEach(({ level, label }) => {
+        const yPos = y.getPixelForValue(level);
+        if (yPos >= chart.chartArea.top && yPos <= chart.chartArea.bottom) {
+          ctx.beginPath();
+          ctx.setLineDash([2, 4]);
+          ctx.moveTo(left, yPos);
+          ctx.lineTo(right, yPos);
+          ctx.stroke();
+          ctx.fillText(label, left - 5, yPos);
+        }
+      });
+      ctx.restore();
+    }
+  };
+  
+  const xrayChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      // The annotation plugin is now part of the options
+    },
     scales: {
       x: {
-        ticks: { color: '#a3a3a3', maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+        ticks: { color: '#a3a3a3', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
         grid: { color: '#404040' },
       },
       y: {
         type: 'logarithmic',
-        ticks: { color: '#a3a3a3' },
+        min: 1e-9,
+        max: 1e-2,
+        ticks: { 
+            color: '#a3a3a3',
+            callback: function(value: any) {
+                // This will only show the major class labels on the axis
+                if (value === 1e-8 || value === 1e-7 || value === 1e-6 || value === 1e-5 || value === 1e-4) {
+                    return this.getLabelForValue(value);
+                }
+            }
+        },
         grid: { color: '#404040' },
       },
-    },
-    plugins: {
-      legend: { labels: { color: '#e5e5e5' } },
     },
     interaction: {
         intersect: false,
@@ -91,6 +164,8 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
     },
   };
 
+  const protonChartOptions = { ...xrayChartOptions, scales: { ...xrayChartOptions.scales, y: { ...xrayChartOptions.scales.y, min: 1e-1, max: 1e5 } } };
+  
   const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = flares.reduce((acc, flare) => {
       if (!acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
@@ -155,18 +230,37 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onClose }) => {
             <SunImageViewer />
 
             <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES X-Ray Flux (5-min)</h3>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux</h3>
+                <div className="flex gap-1">
+                  {([1, 6, 12, 24] as TimeRangeHours[]).map(h => (
+                    <button 
+                      key={h}
+                      onClick={() => setTimeRange(h)}
+                      className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                        timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'
+                      }`}
+                    >
+                      {h}H
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="relative h-72">
-                {xrayData ? <DataChart data={xrayData} options={commonChartOptions} /> : <p>No X-Ray data available.</p>}
+                {chartData.xray.datasets[0].data.length > 0 
+                  ? <DataChart data={chartData.xray} options={xrayChartOptions} plugins={[xrayAnnotationsPlugin]} /> 
+                  : <p className="text-center text-neutral-400 pt-10">No X-Ray data available for this time range.</p>}
               </div>
             </div>
 
             <ActiveRegionsList flares={flareData} />
 
             <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES Proton Flux (5-min)</h3>
+              <h3 className="text-lg font-semibold text-neutral-200 mb-2">GOES Proton Flux</h3>
               <div className="relative h-72">
-                {protonData ? <DataChart data={protonData} options={commonChartOptions} /> : <p>No Proton Flux data available.</p>}
+                {chartData.proton.datasets[0].data.length > 0 
+                  ? <DataChart data={chartData.proton} options={protonChartOptions} /> 
+                  : <p className="text-center text-neutral-400 pt-10">No Proton Flux data available for this time range.</p>}
               </div>
             </div>
 
