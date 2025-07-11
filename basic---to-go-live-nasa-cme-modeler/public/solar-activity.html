@@ -213,20 +213,82 @@
             font-weight: bold;
         }
 
+        /* Styles for Sun Imagery Tabs */
+        .sun-imagery-card {
+            grid-column: span 6; /* Occupy same space as previous info-cards */
+            /* Ensure fixed height for consistency with other cards, or set min-height */
+            height: 450px; 
+        }
+
+        .sun-imagery-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            gap: 10px;
+        }
+
+        .sun-imagery-tab-button {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1rem;
+            font-weight: 600;
+            padding: 5px 15px;
+            cursor: pointer;
+            transition: color 0.2s, border-bottom 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .sun-imagery-tab-button:hover {
+            color: var(--text-primary);
+        }
+
+        .sun-imagery-tab-button.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--link-color);
+        }
+
+        .sun-imagery-content {
+            display: none; /* Hidden by default */
+            flex-grow: 1; /* Take remaining space */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding-top: 15px;
+        }
+
+        .sun-imagery-content.active {
+            display: flex; /* Show active content */
+        }
+
+        .sun-imagery-content img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        
+        .sun-imagery-content .loading-message {
+            margin-top: 0; /* Adjust margin for direct message under image */
+        }
+
 
         @media (max-width: 1200px) { 
-            .info-card, .list-card { 
+            .info-card, .list-card, .sun-imagery-card { /* Include new card */
                 grid-column: 1 / -1; /* Full width on smaller screens */
             } 
         }
         @media (max-width: 900px) { 
             h1 { font-size: 1.75rem; } 
             .time-presets { flex-wrap: wrap; }
+            .sun-imagery-tabs { flex-wrap: wrap; }
         }
         @media (max-width: 600px) { 
             body { padding: 10px; } 
             .card { padding: 20px; } 
-            .info-card img { max-height: 250px; object-fit: contain; } /* Limit image height on small screens */
+            .info-card img, .sun-imagery-content img { max-height: 250px; object-fit: contain; } /* Limit image height on small screens */
             .list-card ul { max-height: 200px; }
         }
     </style>
@@ -242,28 +304,30 @@
     </header>
 
     <main class="dashboard-grid">
-        <div class="card info-card">
+        <!-- NEW: Sun Imagery Card with Tabs -->
+        <div class="card sun-imagery-card">
             <div class="card-title-container">
-                <h2 class="card-title">SUVI 131Å</h2>
+                <h2 class="card-title">Latest Sun Imagery</h2>
             </div>
-            <img id="suvi-131" src="/placeholder.png" alt="SUVI 131Å Image">
-            <p class="loading-message" id="loading-suvi-131">Loading image...</p>
+            <div class="sun-imagery-tabs">
+                <button class="sun-imagery-tab-button active" data-tab="suvi-131">SUVI 131Å</button>
+                <button class="sun-imagery-tab-button" data-tab="suvi-304">SUVI 304Å</button>
+                <!-- Removed HMI tab -->
+            </div>
+
+            <div id="suvi-131-content" class="sun-imagery-content active">
+                <img id="suvi-131" src="/placeholder.png" alt="SUVI 131Å Image">
+                <p class="loading-message" id="loading-suvi-131">Loading image...</p>
+            </div>
+            <div id="suvi-304-content" class="sun-imagery-content">
+                <img id="suvi-304" src="/placeholder.png" alt="SUVI 304Å Image">
+                <p class="loading-message" id="loading-suvi-304">Loading image...</p>
+            </div>
+            <!-- Removed HMI content block -->
         </div>
+
+        <!-- Solar Dynamics Iframe - now an info-card (span 6) -->
         <div class="card info-card">
-            <div class="card-title-container">
-                <h2 class="card-title">SUVI 304Å</h2>
-            </div>
-            <img id="suvi-304" src="/placeholder.png" alt="SUVI 304Å Image">
-            <p class="loading-message" id="loading-suvi-304">Loading image...</p>
-        </div>
-        <div class="card info-card">
-            <div class="card-title-container">
-                <h2 class="card-title">SolarHam HMI Magnetogram</h2>
-            </div>
-            <img id="solarham-hmi" src="/placeholder.png" alt="SolarHam HMI Magnetogram Image">
-            <p class="loading-message" id="loading-solarham-hmi">Loading image...</p>
-        </div>
-         <div class="card info-card">
             <div class="card-title-container">
                 <h2 class="card-title">Current Solar Dynamics</h2>
             </div>
@@ -325,15 +389,16 @@
     // Updated Image URLs
     const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
     const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
-    const SOLARHAM_HMI_URL = 'https://www.solarham.com/hmi_mag_1024.jpg'; // Direct image link from inspecting solarham.com
+    // Removed SOLARHAM_HMI_URL
+    // Removed SDO_AIA_131_URL, SDO_AIA_304_URL, SDO_HMI_URL
 
     const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
     const NOAA_ACTIVE_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_cycle/latest_active_regions.json';
     const NOAA_FLARES_URL = 'https://services.swpc.noaa.gov/json/goes/latest_primary_flare_list.json';
 
     let xrayChartInstance = null;
-    let allXrayData = []; // Store the full 6 hours of processed data
-    let currentChartDuration = 2 * 60 * 60 * 1000; // Default to 2 hours in milliseconds
+    let allXrayData = []; 
+    let currentChartDuration = 2 * 60 * 60 * 1000; 
 
     function formatTimestamp(isoString) {
         try {
@@ -348,11 +413,11 @@
         const imgElement = document.getElementById(imgElementId);
         const loadingMessage = document.getElementById(loadingMessageId);
         if (loadingMessage) {
-            loadingMessage.classList.remove('error-message'); // Clear any previous error styling
+            loadingMessage.classList.remove('error-message'); 
             loadingMessage.textContent = 'Loading image...';
             loadingMessage.style.display = 'block';
         }
-        imgElement.src = '/placeholder.png'; // Set a placeholder immediately
+        imgElement.src = '/placeholder.png'; 
         try {
             const response = await fetch(url);
             if (!response.ok) {
@@ -364,7 +429,7 @@
                 if (loadingMessage) loadingMessage.style.display = 'none';
             };
             imgElement.onerror = () => {
-                imgElement.src = '/error.png'; // Fallback error image
+                imgElement.src = '/error.png'; 
                 if (loadingMessage) {
                     loadingMessage.textContent = 'Image failed to load.';
                     loadingMessage.classList.add('error-message');
@@ -372,7 +437,7 @@
             };
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
-            imgElement.src = '/error.png'; // Fallback error image
+            imgElement.src = '/error.png'; 
             if (loadingMessage) {
                 loadingMessage.textContent = `Error: ${error.message || 'Network issue'}`;
                 loadingMessage.classList.add('error-message');
@@ -395,10 +460,9 @@
             }
             const rawData = await response.json();
 
-            // Group data by time_tag to combine short and long flux for each timestamp
             const groupedData = new Map();
             rawData.forEach(d => {
-                const time = new Date(d.time_tag).getTime(); // Use timestamp for map key
+                const time = new Date(d.time_tag).getTime(); 
                 if (!groupedData.has(time)) {
                     groupedData.set(time, { time: new Date(d.time_tag), short: null, long: null });
                 }
@@ -410,19 +474,17 @@
                 }
             });
 
-            // Convert map to array and filter out incomplete entries
             allXrayData = Array.from(groupedData.values()).filter(d => 
                 !isNaN(d.short) && d.short !== null
             );
 
-            // Sort data by time to ensure correct plotting
             allXrayData.sort((a, b) => a.time - b.time);
 
             if (allXrayData.length === 0) {
                  throw new Error('No valid X-ray flux data available to plot.');
             }
 
-            renderChartForDuration(currentChartDuration); // Render with current duration
+            renderChartForDuration(currentChartDuration); 
             if (loadingMessage) loadingMessage.style.display = 'none';
         } catch (error) {
             console.error('Error fetching X-ray flux:', error);
@@ -433,37 +495,16 @@
         }
     }
 
-    // Function to render the chart based on the selected duration
-    function renderChartForDuration(durationMs) {
-        const now = Date.now();
-        const startTime = now - durationMs;
-        const filteredData = allXrayData.filter(d => d.time.getTime() >= startTime);
-        renderXrayFluxChart(filteredData);
-
-        // Update active button styling
-        document.querySelectorAll('.time-preset-button').forEach(button => {
-            if (parseInt(button.dataset.duration) === durationMs) {
-                button.classList.add('active');
-            } else {
-                button.classList.remove('active');
-            }
-        });
-    }
-
-    // Custom Chart.js Plugin for background color bands
     const fluxBackgroundPlugin = {
         id: 'fluxBackground',
         beforeDraw: (chart) => {
             const { ctx, chartArea: { left, top, right, bottom }, scales: { y } } = chart;
             ctx.save();
 
-            // Helper to draw a band
             const drawBand = (color, fromValue, toValue) => {
-                // Ensure values are within the chart's Y-axis range before drawing
                 const y1 = y.getPixelForValue(Math.max(fromValue, y.min));
                 const y2 = y.getPixelForValue(Math.min(toValue, y.max));
                 
-                // Only draw if the band is visible on the chart
                 if (!isNaN(y1) && !isNaN(y2) && Math.abs(y1 - y2) > 0) {
                     ctx.fillStyle = color;
                     ctx.fillRect(left, Math.min(y1, y2), right - left, Math.abs(y2 - y1));
@@ -471,12 +512,11 @@
             };
 
             // Define flux levels and their colors (using static hex values from CSS :root)
-            // Draw from bottom (lowest flux) to top (highest flux) to ensure correct layering
-            drawBand('#22c55e', 1e-9, 1e-7);    // A to B (combined green)
+            drawBand('#22c55e', 1e-9, 1e-7);    // A to B (green)
             drawBand('#f59e0b', 1e-7, 1e-6);    // B to C (yellow)
             drawBand('#ff4500', 1e-6, 1e-5);    // C to M (orange)
-            drawBand('#ef4444', 1e-5, 1e-4);    // M to X (red)
-            drawBand('#9370db', 1e-4, 1e-3);    // X to X10 (purple) - Using 1e-3 as an upper limit for visualization
+            drawBand('#ef4444', 1e-5, 5e-5);    // M to X5 (red) - Adjusted to cover up to X5
+            drawBand('#9370db', 5e-5, 1e-3);    // X5 to X10 (purple) - Starts at X5
 
             ctx.restore();
         }
@@ -502,7 +542,6 @@
                         label: 'Short Flux (0.1-0.8 nm)',
                         data: shortFluxValues,
                         borderColor: 'rgba(75, 192, 192, 1)',
-                        // No background fill on dataset level, plugin handles it
                         fill: false, 
                         pointRadius: 0,
                         tension: 0.1,
@@ -544,7 +583,7 @@
                             }
                         }
                     },
-                    fluxBackground: {} // Enable the custom plugin
+                    fluxBackground: {} 
                 },
                 scales: {
                     x: {
@@ -578,13 +617,12 @@
                         },
                         ticks: {
                             callback: function(value, index, ticks) {
-                                // Adjust labels as requested
-                                if (value === 1e-3) return 'X10.0';
-                                if (value === 1e-4) return 'X1.0';
-                                if (value === 1e-5) return 'M1.0';
-                                if (value === 1e-6) return 'C1.0';
-                                if (value === 1e-7) return 'B1.0';
-                                if (value === 1e-8) return 'A1.0'; // A-class starts here
+                                if (value === 1e-3) return 'X10.0'; // X10.0
+                                if (value === 1e-4) return 'X1.0';  // X1.0
+                                if (value === 1e-5) return 'M1.0';  // M1.0
+                                if (value === 1e-6) return 'C1.0';  // C1.0
+                                if (value === 1e-7) return 'B1.0';  // B1.0
+                                if (value === 1e-8) return 'A1.0';  // A1.0
                                 return null; 
                             },
                             color: '#71717a', 
@@ -601,13 +639,12 @@
                             drawOnChartArea: true,
                             drawTicks: true,
                         },
-                         // Set min/max to ensure all classes are visible by default
-                        min: 1e-9, // Slightly below A-class 1.0 (which is 1e-8)
-                        max: 1e-3 // Up to X10.0
+                        min: 1e-9, 
+                        max: 1e-3 
                     }
                 }
             },
-            plugins: [fluxBackgroundPlugin] // Register the custom plugin
+            plugins: [fluxBackgroundPlugin] 
         });
     }
 
@@ -627,7 +664,7 @@
                 return;
             }
 
-            flareList.innerHTML = ''; // Clear loading message
+            flareList.innerHTML = ''; 
             data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
 
             data.forEach(flare => {
@@ -636,8 +673,7 @@
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
                 const classChar = flare.class ? flare.class[0] : 'U'; 
-                // Determine the correct class for A and B based on the new combined A/B green
-                const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar;
+                const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar; // Use 'A' class for both A and B for CSS styling
                 const classSpan = `<span class="flare-class class-${displayClass}">${flare.class || 'N/A'}</span>`; 
 
                 li.innerHTML = `
@@ -672,7 +708,7 @@
                 return;
             }
 
-            sunspotList.innerHTML = ''; // Clear loading message
+            sunspotList.innerHTML = ''; 
             data.sort((a, b) => parseInt(b.number) - parseInt(a.number));
 
             data.forEach(region => {
@@ -693,12 +729,52 @@
         }
     }
 
+    // Function to handle tab switching for sun imagery
+    function setupSunImageryTabs() {
+        const tabButtons = document.querySelectorAll('.sun-imagery-tab-button');
+        const tabContents = document.querySelectorAll('.sun-imagery-content');
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.dataset.tab;
+
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+
+                tabContents.forEach(content => {
+                    if (content.id === `${targetTab}-content`) {
+                        content.classList.add('active');
+                        // Re-fetch image when its tab becomes active, if it hasn't loaded yet or if you want to ensure freshness
+                        const imgId = content.querySelector('img').id;
+                        const loadingId = content.querySelector('.loading-message').id;
+                        let imageUrl;
+                        if (imgId === 'suvi-131') imageUrl = SUVI_131_URL;
+                        else if (imgId === 'suvi-304') imageUrl = SUVI_304_URL;
+                        
+                        // Only fetch if image source is placeholder or error, or if a global re-fetch is desired
+                        if (imageUrl && (document.getElementById(imgId).src.includes('placeholder.png') || document.getElementById(imgId).src.includes('error.png'))) {
+                             fetchImage(imageUrl, imgId, loadingId);
+                        }
+                    } else {
+                        content.classList.remove('active');
+                    }
+                });
+            });
+        });
+
+        // Load the default active tab image on initial page load
+        // This ensures the 131Å image is loaded even if its tab isn't explicitly clicked first.
+        fetchImage(SUVI_131_URL, 'suvi-131', 'loading-suvi-131');
+        // Preload other images in background to avoid delay when switching
+        fetchImage(SUVI_304_URL, 'suvi-304', 'loading-suvi-304');
+    }
+
+
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
-        fetchImage(SUVI_131_URL, 'suvi-131', 'loading-suvi-131'); 
-        fetchImage(SUVI_304_URL, 'suvi-304', 'loading-suvi-304'); 
-        fetchImage(SOLARHAM_HMI_URL, 'solarham-hmi', 'loading-solarham-hmi'); 
-        fetchXrayFlux(); // This now handles rendering with the current duration
+        // Images are now fetched by setupSunImageryTabs or on tab click
+        // Only trigger initial fetch for the currently active tab (handled by setupSunImageryTabs now)
+        fetchXrayFlux(); 
         fetchFlares();
         fetchSunspots();
     }
@@ -708,7 +784,7 @@
         // Update all data every 5 minutes
         setInterval(runAllUpdates, 5 * 60 * 1000); 
 
-        // Event listeners for time preset buttons
+        // Event listeners for time preset buttons (for X-ray chart)
         document.querySelectorAll('.time-preset-button').forEach(button => {
             button.addEventListener('click', () => {
                 const duration = parseInt(button.dataset.duration);
@@ -718,6 +794,9 @@
                 }
             });
         });
+
+        // Initialize sun imagery tabs
+        setupSunImageryTabs();
     });
 </script>
 
