@@ -4,7 +4,6 @@ import LoadingSpinner from './icons/LoadingSpinner';
 
 interface ChartCardProps {
   title: string;
-  // This config object contains everything Chart.js needs
   chartConfig: { data: any; options: any } | null;
   isLoading: boolean;
   children?: React.ReactNode; // For adding buttons, etc.
@@ -21,8 +20,9 @@ const ChartCard: React.FC<ChartCardProps> = ({ title, chartConfig, isLoading, ch
         {isLoading ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <LoadingSpinner />
+            <p className="mt-16 text-neutral-400 text-sm">Loading chart data...</p>
           </div>
-        ) : chartConfig && chartConfig.data.datasets.some((ds: any) => ds.data.length > 0) ? (
+        ) : chartConfig && chartConfig.data && chartConfig.data.datasets && chartConfig.data.datasets.some((ds: any) => ds.data && ds.data.length > 0) ? (
           <DataChart data={chartConfig.data} options={chartConfig.options} />
         ) : (
           <p className="text-center text-neutral-400 pt-10">

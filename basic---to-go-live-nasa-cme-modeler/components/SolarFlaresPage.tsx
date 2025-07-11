@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
-// Assuming ChartCard.tsx exists in the same directory:
 import ChartCard from './ChartCard';
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
@@ -11,36 +10,28 @@ type TimeRangeHours = 1 | 2 | 4 | 6;
 
 // Helper function to create the X-Ray chart configuration
 const createXrayChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours) => {
-  console.log('createXrayChartConfig: rawData received:', rawData);
-
-  // Ensure rawData is an array and not empty
-  if (!Array.isArray(rawData) || rawData.length === 0) {
-    console.warn('createXrayChartConfig: No raw X-ray data or not an array.');
-    return null; // Return null if no data to prevent chart rendering
-  }
-
-  const now = Date.now();
-  const startTime = now - timeRangeHours * 60 * 60 * 1000;
-  console.log(`createXrayChartConfig: Filtering for data since ${new Date(startTime).toISOString()} (${timeRangeHours} hours)`);
-
-  const filteredData = rawData.filter(d => {
-    // IMPORTANT: Defensive checks for each data point
+  // Defensive checks to ensure rawData is an array and contains valid items
+  const filteredData = (rawData || []).filter(d => {
+    // Ensure data point exists, and its timestamp/flux are valid numbers
     const isValid = d && typeof d.timestamp === 'number' && !isNaN(d.timestamp) &&
-                    typeof d.flux === 'number' && !isNaN(d.flux) &&
-                    d.timestamp >= startTime;
+                    typeof d.flux === 'number' && !isNaN(d.flux);
     if (!isValid) {
       console.warn('createXrayChartConfig: Invalid X-ray data point filtered out:', d);
     }
     return isValid;
   });
 
-  console.log(`createXrayChartConfig: Filtered X-ray data points: ${filteredData.length}`);
-  if (filteredData.length === 0) return null;
+  const now = Date.now();
+  const startTime = now - timeRangeHours * 60 * 60 * 1000;
+  
+  const finalFilteredData = filteredData.filter(d => d.timestamp >= startTime);
+
+  if (finalFilteredData.length === 0) return null; // Return null if no data after filtering
 
   const data = {
     datasets: [{
       label: 'X-Ray Flux (watts/m^2)',
-      data: filteredData.map(d => ({ x: d.timestamp, y: d.flux })),
+      data: finalFilteredData.map(d => ({ x: d.timestamp, y: d.flux })),
       borderColor: '#facc15',
       backgroundColor: 'rgba(250, 204, 21, 0.2)',
       fill: true,
@@ -69,7 +60,6 @@ const createXrayChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours) =
         ticks: {
           color: '#a3a3a3',
           callback: (value: any) => {
-            // Ensure value is a number before comparison
             const numValue = Number(value);
             if (isNaN(numValue)) return null;
 
@@ -85,40 +75,31 @@ const createXrayChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours) =
       },
     },
   };
-  console.log('createXrayChartConfig: Returning X-ray chart config.');
   return { data, options };
 };
 
 // Helper function to create the Proton chart configuration
 const createProtonChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours) => {
-    console.log('createProtonChartConfig: rawData received:', rawData);
-
-    if (!Array.isArray(rawData) || rawData.length === 0) {
-        console.warn('createProtonChartConfig: No raw Proton data or not an array.');
-        return null;
-    }
-
-    const now = Date.now();
-    const startTime = now - timeRangeHours * 60 * 60 * 1000;
-    console.log(`createProtonChartConfig: Filtering for data since ${new Date(startTime).toISOString()} (${timeRangeHours} hours)`);
-
-    const filteredData = rawData.filter(d => {
-        // IMPORTANT: Defensive checks for each data point
+    // Defensive checks for rawData and its items
+    const filteredData = (rawData || []).filter(d => {
         const isValid = d && typeof d.timestamp === 'number' && !isNaN(d.timestamp) &&
                         typeof d.flux === 'number' && !isNaN(d.flux) &&
-                        typeof d.energy === 'string' && d.energy.length > 0 &&
-                        d.timestamp >= startTime;
+                        typeof d.energy === 'string' && d.energy.length > 0;
         if (!isValid) {
             console.warn('createProtonChartConfig: Invalid Proton data point filtered out:', d);
         }
         return isValid;
     });
 
-    console.log(`createProtonChartConfig: Filtered Proton data points: ${filteredData.length}`);
-    if (filteredData.length === 0) return null;
+    const now = Date.now();
+    const startTime = now - timeRangeHours * 60 * 60 * 1000;
+    
+    const finalFilteredData = filteredData.filter(d => d.timestamp >= startTime);
+
+    if (finalFilteredData.length === 0) return null; // Return null if no data after filtering
 
     const dataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
-    filteredData.forEach(p => {
+    finalFilteredData.forEach(p => {
         if (!dataByEnergy[p.energy]) dataByEnergy[p.energy] = [];
         dataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
     });
@@ -159,23 +140,19 @@ const createProtonChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours)
             },
         },
     };
-    console.log('createProtonChartConfig: Returning Proton chart config.');
     return { data, options };
 };
 
 // Component for Active Regions List (extracted for clarity and robustness)
 const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
-    // Memoize the calculation of active regions for performance
     const activeRegions = useMemo(() => {
-        // Ensure flares is an array, provide empty array as fallback
         const allRegions = (flares || []).reduce((acc, flare) => {
-            // Defensive check for flare object and its necessary properties
+            // Defensive checks for flare object and its necessary properties
             if (flare && typeof flare.activeRegionNum === 'number' && !isNaN(flare.activeRegionNum)) {
-                // Use nullish coalescing to ensure properties are never null/undefined if API sends them that way
                 acc.push({
                     activeRegionNum: flare.activeRegionNum,
-                    classType: flare.classType ?? 'Unknown Class', // Provide default
-                    location: flare.sourceLocation ?? 'Unknown Location', // Provide default
+                    classType: flare.classType ?? 'Unknown Class',
+                    location: flare.sourceLocation ?? 'Unknown Location',
                 });
             } else {
                 console.warn('ActiveRegionsList: Invalid flare data point filtered out:', flare);
@@ -183,17 +160,14 @@ const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
             return acc;
         }, [] as { activeRegionNum: number; classType: string; location: string }[]);
 
-        // Filter out duplicate active region numbers (keep the last one in case of updates)
         const uniqueRegionsMap = new Map();
         allRegions.forEach(region => {
             uniqueRegionsMap.set(region.activeRegionNum, region);
         });
 
         const uniqueRegions = Array.from(uniqueRegionsMap.values());
-
-        // Sort by active region number
         return uniqueRegions.sort((a, b) => a.activeRegionNum - b.activeRegionNum);
-    }, [flares]); // Re-calculate only when 'flares' prop changes
+    }, [flares]);
 
     return (
       <div className="bg-neutral-900/80 p-4 rounded-lg">
@@ -215,60 +189,42 @@ const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     );
 };
 
-
 // Main SolarFlaresPage Component
 interface SolarFlaresPageProps {
   onNavChange: (page: 'modeler' | 'forecast') => void;
 }
 
 const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
-  // State to hold the raw data as fetched from the API
   const [rawData, setRawData] = useState<{ xray: any[], proton: any[], flares: SolarFlareData[] }>({ xray: [], proton: [], flares: [] });
-  
-  // State for the selected time range (e.g., 1 hour, 2 hours, etc.)
   const [timeRange, setTimeRange] = useState<TimeRangeHours>(2);
-  
-  // State to manage loading indicator
   const [isLoading, setIsLoading] = useState(true);
-  
-  // State to store any fetch errors
   const [error, setError] = useState<string | null>(null);
 
-  // Effect to fetch initial data from the API. Runs only once on component mount.
   useEffect(() => {
     const doFetch = async () => {
       try {
         setIsLoading(true);
         setError(null);
-        console.log('Fetching solar activity data...');
         const fetchedData = await fetchSolarActivityData();
-        console.log('Solar activity data fetched:', fetchedData);
         setRawData(fetchedData);
       } catch (err) {
         const errorMessage = (err instanceof Error) ? err.message : String(err);
-        console.error('Error fetching solar activity data:', errorMessage);
         setError(`Failed to load data: ${errorMessage}`);
       } finally {
         setIsLoading(false);
       }
     };
     doFetch();
-  }, []); // Empty dependency array means this runs once on mount
+  }, []);
 
-  // Memoized chart configurations, re-calculates only when rawData or timeRange changes
   const chartConfigs = useMemo(() => {
-    if (isLoading) {
-      console.log('chartConfigs: isLoading is true, returning null configs.');
-      return { xray: null, proton: null };
-    }
+    if (isLoading) return { xray: null, proton: null };
     
-    // Create chart configs using the helper functions
     const xray = createXrayChartConfig(rawData.xray, timeRange);
     const proton = createProtonChartConfig(rawData.proton, timeRange);
     
-    console.log('chartConfigs: Generated configs:', { xray, proton });
     return { xray, proton };
-  }, [isLoading, rawData, timeRange]); // Dependencies for useMemo
+  }, [isLoading, rawData, timeRange]);
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300">
@@ -281,7 +237,6 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       </header>
       
       <main className="flex-grow p-4 overflow-y-auto styled-scrollbar">
-        {/* Conditional rendering for loading, error, or content */}
         {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full"><LoadingSpinner /><p className="mt-4 text-lg">Fetching live solar data...</p></div>
         ) : error ? (
@@ -290,38 +245,17 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
           <div className="space-y-6 max-w-7xl mx-auto">
             <SunImageViewer />
 
-            {/* X-Ray Flux Chart Card */}
-            <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux (NZT)</h3>
-                <div className="flex gap-1">
-                  {([1, 2, 4, 6] as TimeRangeHours[]).map(h => (
-                    <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>{h}H</button>
-                  ))}
-                </div>
+            <ChartCard title="GOES X-Ray Flux (NZT)" isLoading={false} chartConfig={chartConfigs.xray}>
+              <div className="flex gap-1">
+                {([1, 2, 4, 6] as TimeRangeHours[]).map(h => (
+                  <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>{h}H</button>
+                ))}
               </div>
-              <div className="relative h-72">
-                {/* Use chartConfigs.xray which is memoized */}
-                {chartConfigs.xray && chartConfigs.xray.data.datasets[0].data.length > 0 ? (
-                  <DataChart data={chartConfigs.xray.data} options={chartConfigs.xray.options} />
-                ) : (<p className="text-center text-neutral-400 pt-10">No X-Ray data available for this time range.</p>)}
-              </div>
-            </div>
+            </ChartCard>
             
-            {/* Active Regions List */}
             <ActiveRegionsList flares={rawData.flares} />
             
-            {/* Proton Flux Chart Card */}
-            <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <div className="flex justify-between items-center mb-2"><h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux (NZT)</h3></div>
-              <div className="relative h-72">
-                {/* Use chartConfigs.proton which is memoized */}
-                {chartConfigs.proton && chartConfigs.proton.data.datasets.some((ds:any) => ds.data.length > 0) ? (
-                    <DataChart data={chartConfigs.proton.data} options={chartConfigs.proton.options} />
-                ) : (<p className="text-center text-neutral-400 pt-10">No Proton Flux data available.</p>)}
-              </div>
-            </div>
-
+            <ChartCard title="GOES Proton Flux (NZT)" isLoading={false} chartConfig={chartConfigs.proton} />
           </div>
         )}
       </main>

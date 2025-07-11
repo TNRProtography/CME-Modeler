@@ -1,4 +1,3 @@
-// solar-data.ts
 interface SolarActivityResponse {
   xrayData: { timestamp: number; flux: number }[];
   protonData: { timestamp: number; flux: number; energy: string }[];
@@ -13,7 +12,6 @@ declare interface Env {
 /**
  * A robust, bulletproof date parser that runs on the server.
  * It correctly handles both "YYYY-MM-DD HH:mm:ss" and "YYYY-MM-DDTHH:mm:ssZ" formats from NOAA.
- * This is the definitive fix for the mobile browser bug.
  * @param dateString The ambiguous date string from NOAA.
  * @returns A numeric timestamp (milliseconds since epoch) or null if invalid.
  */
@@ -21,8 +19,9 @@ const parseNoaaDate = (dateString: string): number | null => {
   if (typeof dateString !== 'string' || dateString.trim() === '') return null;
   
   let parsableString = dateString;
-  // If the string doesn't already end with 'Z' (for Zulu/UTC time), we need to fix it.
+  // If the string doesn't already end with 'Z' (for Zulu/UTC time), add it for ISO compatibility
   if (!parsableString.endsWith('Z')) {
+    // Replace first space with 'T' to create an ISO-like string, then add 'Z'
     parsableString = parsableString.replace(' ', 'T') + 'Z';
   }
 
@@ -37,7 +36,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     return new Response(JSON.stringify({ error: 'Server configuration error: SECRET_NASA_API_KEY not found.' }), { status: 500 });
   }
 
-  // --- MODIFIED ENDPOINTS ---
+  // --- MODIFIED ENDPOINTS TO 6-HOUR DATA ---
   const xrayUrl = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
   const protonUrl = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-6-hour.json';
   
@@ -54,18 +53,18 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       fetch(flareUrl),
     ]);
 
-    // --- All data processing now happens safely on the server ---
     let processedXray = [];
     if (xrayRes.status === 'fulfilled' && xrayRes.value.ok) {
         const rawXrayData = await xrayRes.value.json();
         if (Array.isArray(rawXrayData)) {
+            // Filter for the 0.1-0.8nm energy band and positive flux
             processedXray = rawXrayData
                 .filter(d => d.energy === '0.1-0.8nm' && d.flux > 0)
                 .map(d => ({
                     timestamp: parseNoaaDate(d.time_tag),
                     flux: d.flux,
                 }))
-                .filter(d => d.timestamp !== null);
+                .filter(d => d.timestamp !== null); // Remove any points where timestamp parsing failed
         }
     }
 
@@ -79,7 +78,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
                     flux: d.flux,
                     energy: d.energy,
                 }))
-                .filter(d => d.timestamp !== null && d.flux > 0 && d.energy);
+                .filter(d => d.timestamp !== null && d.flux > 0 && d.energy); // Ensure timestamp, flux, and energy are valid
         }
     }
     
@@ -87,7 +86,12 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     if (flareRes.status === 'fulfilled' && flareRes.value.ok) {
         const rawFlareData = await flareRes.value.json();
         if (Array.isArray(rawFlareData)) {
-            flareData = rawFlareData;
+            // Basic validation for flare data
+            flareData = rawFlareData.filter(flare => 
+                flare && typeof flare.flrID === 'string' &&
+                typeof flare.beginTime === 'string' &&
+                typeof flare.classType === 'string'
+            );
         }
     }
 

@@ -44,7 +44,7 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
 };
 
 const processCMEData = (data: CMEData[]): ProcessedCME[] => {
-  const modelableCMEs: ProcessedCME[] = [];
+  const modelableCMEs: ProcessedCMEs[] = [];
   data.forEach(cme => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
@@ -85,9 +85,9 @@ export interface SolarFlareData {
 
 // Single function to get all solar activity data from our proxy
 export const fetchSolarActivityData = async () => {
-  const response = await fetch('/solar-data');
+  const response = await fetch('/solar-data'); // This calls your Cloudflare Worker endpoint
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
+    const errorBody = await response.json().catch(() => ({ error: `Failed to fetch solar activity data from proxy. Status: ${response.status}` }));
     throw new Error(errorBody.error || `Server responded with status ${response.status}`);
   }
   const data = await response.json();
@@ -95,9 +95,7 @@ export const fetchSolarActivityData = async () => {
     throw new Error(data.error);
   }
   
-  // --- THIS IS THE FIX ---
   // The server now provides clean data. We just pass it through.
-  // The buggy .filter() call has been removed.
   return {
     xray: data.xrayData,
     proton: data.protonData,
