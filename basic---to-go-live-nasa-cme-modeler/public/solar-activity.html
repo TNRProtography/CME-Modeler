@@ -77,6 +77,7 @@
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); 
             display: flex; 
             flex-direction: column;
+            height: 450px; /* Ensure all top-level cards have consistent height */
         }
         .card-title { 
             font-size: 1.1rem; 
@@ -93,11 +94,9 @@
             gap: 8px;
             margin-bottom: 20px;
         }
+        /* Chart Card */
         .chart-card {
             grid-column: span 12; /* Full width for the X-ray chart */
-            height: 450px;
-            display: flex;
-            flex-direction: column;
         }
         .chart-card .card-title-container { 
             justify-content: flex-start; 
@@ -114,9 +113,11 @@
             width: 100%;
             height: 100%;
         }
+        /* List Cards */
         .list-card {
             grid-column: span 6;
-            min-height: 300px;
+            min-height: 300px; /* Lists can be shorter if content is small */
+            height: auto; /* Allow height to adjust */
         }
         .list-card ul {
             list-style: none;
@@ -200,12 +201,13 @@
             font-weight: bold;
         }
 
-        /* Styles for Sun Imagery Tabs */
-        .sun-imagery-card {
-            grid-column: span 6; /* Occupy same space as previous info-cards */
-            height: 450px; 
-        }
+        /* --- Sun Imagery Layouts --- */
 
+        /* Mobile Tabbed Container (default for small screens) */
+        .sun-imagery-card-mobile {
+            grid-column: 1 / -1; /* Always full width on mobile */
+            display: flex; /* Flex column inside card */
+        }
         .sun-imagery-tabs {
             display: flex;
             justify-content: center;
@@ -214,7 +216,6 @@
             padding-bottom: 10px;
             gap: 10px;
         }
-
         .sun-imagery-tab-button {
             background: none;
             border: none;
@@ -226,16 +227,13 @@
             transition: color 0.2s, border-bottom 0.2s;
             border-bottom: 3px solid transparent;
         }
-
         .sun-imagery-tab-button:hover {
             color: var(--text-primary);
         }
-
         .sun-imagery-tab-button.active {
             color: var(--text-primary);
             border-bottom-color: var(--link-color);
         }
-
         .sun-imagery-content {
             display: none; /* Hidden by default */
             flex-grow: 1; /* Take remaining space */
@@ -244,38 +242,68 @@
             align-items: center;
             padding-top: 15px;
         }
-
         .sun-imagery-content.active {
             display: flex; /* Show active content */
         }
-
         .sun-imagery-content img {
             max-width: 100%;
-            max-height: 100%;
+            max-height: 100%; /* Ensure images don't overflow vertically */
             object-fit: contain;
             border-radius: 8px;
         }
-        
         .sun-imagery-content .loading-message {
-            margin-top: 0; /* Adjust margin for direct message under image */
+            margin-top: 0; 
+        }
+
+        /* Desktop Individual Image Cards (hidden by default on mobile) */
+        .sun-imagery-card-desktop {
+            display: none; /* Hidden by default for mobile-first */
+            flex-grow: 1; /* Allow images to expand within */
+            /* Images directly inside this card */
+        }
+        .sun-imagery-card-desktop img {
+            max-width: 100%;
+            max-height: 100%; /* Crucial for desktop image fitting */
+            object-fit: contain;
+            border-radius: 8px;
+            margin-top: 15px; /* Spacing below title */
         }
 
 
-        @media (max-width: 1200px) { 
-            .list-card, .sun-imagery-card { 
-                grid-column: 1 / -1; /* Full width on smaller screens */
-            } 
+        /* --- Media Queries for Desktop Layout --- */
+        @media (min-width: 1200px) { /* Adjust breakpoint as needed */
+            /* Hide mobile tabbed container on desktop */
+            .sun-imagery-card-mobile {
+                display: none; 
+            }
+            /* Show individual image cards on desktop */
+            .sun-imagery-card-desktop {
+                display: flex; /* As column for card content */
+                grid-column: span 6; /* Two columns side-by-side */
+            }
+            /* Ensure images take available space within their desktop cards */
+            .sun-imagery-card-desktop img {
+                 flex-grow: 1; /* Allow image to take available height */
+            }
+
+            /* Adjust list cards to align beside new image cards */
+            .list-card {
+                grid-column: span 6; /* Lists align below images */
+                min-height: 450px; /* Make lists same height as imagery for alignment */
+            }
         }
+
+
+        /* General responsiveness for smaller screens */
         @media (max-width: 900px) { 
             h1 { font-size: 1.75rem; } 
             .time-presets { flex-wrap: wrap; }
             .sun-imagery-tabs { flex-wrap: wrap; }
+            .card { padding: 20px; } /* Slightly less padding on very small screens */
         }
         @media (max-width: 600px) { 
             body { padding: 10px; } 
-            .card { padding: 20px; } 
-            .sun-imagery-content img { max-height: 250px; object-fit: contain; } /* Limit image height on small screens */
-            .list-card ul { max-height: 200px; }
+            .list-card ul { max-height: 200px; } /* Shorter lists on very small screens */
         }
     </style>
 </head>
@@ -290,24 +318,40 @@
     </header>
 
     <main class="dashboard-grid">
-        <!-- Sun Imagery Card with Tabs -->
-        <div class="card sun-imagery-card">
+        <!-- MOBILE: Tabbed Sun Imagery Card -->
+        <div class="card sun-imagery-card-mobile">
             <div class="card-title-container">
                 <h2 class="card-title">Latest Sun Imagery</h2>
             </div>
             <div class="sun-imagery-tabs">
-                <button class="sun-imagery-tab-button active" data-tab="suvi-131">SUVI 131Å</button>
-                <button class="sun-imagery-tab-button" data-tab="suvi-304">SUVI 304Å</button>
+                <button class="sun-imagery-tab-button active" data-tab="suvi-131-mobile">SUVI 131Å</button>
+                <button class="sun-imagery-tab-button" data-tab="suvi-304-mobile">SUVI 304Å</button>
             </div>
 
-            <div id="suvi-131-content" class="sun-imagery-content active">
-                <img id="suvi-131" src="/placeholder.png" alt="SUVI 131Å Image">
-                <p class="loading-message" id="loading-suvi-131">Loading image...</p>
+            <div id="suvi-131-content-mobile" class="sun-imagery-content active">
+                <img id="suvi-131-mobile" src="/placeholder.png" alt="SUVI 131Å Image">
+                <p class="loading-message" id="loading-suvi-131-mobile">Loading image...</p>
             </div>
-            <div id="suvi-304-content" class="sun-imagery-content">
-                <img id="suvi-304" src="/placeholder.png" alt="SUVI 304Å Image">
-                <p class="loading-message" id="loading-suvi-304">Loading image...</p>
+            <div id="suvi-304-content-mobile" class="sun-imagery-content">
+                <img id="suvi-304-mobile" src="/placeholder.png" alt="SUVI 304Å Image">
+                <p class="loading-message" id="loading-suvi-304-mobile">Loading image...</p>
             </div>
+        </div>
+
+        <!-- DESKTOP: Individual Sun Imagery Cards -->
+        <div class="card sun-imagery-card-desktop">
+            <div class="card-title-container">
+                <h2 class="card-title">SUVI 131Å</h2>
+            </div>
+            <img id="suvi-131-desktop" src="/placeholder.png" alt="SUVI 131Å Image">
+            <p class="loading-message" id="loading-suvi-131-desktop">Loading image...</p>
+        </div>
+        <div class="card sun-imagery-card-desktop">
+            <div class="card-title-container">
+                <h2 class="card-title">SUVI 304Å</h2>
+            </div>
+            <img id="suvi-304-desktop" src="/placeholder.png" alt="SUVI 304Å Image">
+            <p class="loading-message" id="loading-suvi-304-desktop">Loading image...</p>
         </div>
 
         <div class="card chart-card">
@@ -364,6 +408,8 @@
     let xrayChartInstance = null;
     let allXrayData = []; 
     let currentChartDuration = 2 * 60 * 60 * 1000; // Default to 2 hours in milliseconds
+
+    const DESKTOP_BREAKPOINT = 1200; // Define your desktop breakpoint here
 
     // Function to get computed style values from CSS :root
     const getCssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -712,54 +758,99 @@
         }
     }
 
-    // Function to handle tab switching for sun imagery
-    function setupSunImageryTabs() {
-        const tabButtons = document.querySelectorAll('.sun-imagery-tab-button');
-        const tabContents = document.querySelectorAll('.sun-imagery-content');
+    // Function to handle tab switching for sun imagery AND layout based on screen size
+    function updateSunImageryLayout() {
+        const isDesktop = window.innerWidth >= DESKTOP_BREAKPOINT;
 
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const targetTab = button.dataset.tab;
+        const mobileContainer = document.querySelector('.sun-imagery-card-mobile');
+        const desktopContainers = document.querySelectorAll('.sun-imagery-card-desktop');
 
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
+        if (isDesktop) {
+            mobileContainer.style.display = 'none';
+            desktopContainers.forEach(card => card.style.display = 'flex'); // Show desktop cards
 
-                tabContents.forEach(content => {
-                    if (content.id === `${targetTab}-content`) {
-                        content.classList.add('active');
-                        const imgId = content.querySelector('img').id;
-                        const loadingId = content.querySelector('.loading-message').id;
-                        let imageUrl;
-                        if (imgId === 'suvi-131') imageUrl = SUVI_131_URL;
-                        else if (imgId === 'suvi-304') imageUrl = SUVI_304_URL;
-                        
-                        // Only fetch if image source is placeholder or error, or if a global re-fetch is desired
-                        if (imageUrl && (document.getElementById(imgId).src.includes('placeholder.png') || document.getElementById(imgId).src.includes('error.png'))) {
-                             fetchImage(imageUrl, imgId, loadingId);
+            // Fetch images for desktop individual cards
+            fetchImage(SUVI_131_URL, 'suvi-131-desktop', 'loading-suvi-131-desktop');
+            fetchImage(SUVI_304_URL, 'suvi-304-desktop', 'loading-suvi-304-desktop');
+
+        } else { // Mobile view
+            mobileContainer.style.display = 'flex'; // Show mobile tabbed card
+            desktopContainers.forEach(card => card.style.display = 'none'); // Hide desktop cards
+
+            // Setup tab logic for mobile
+            // Ensure tab setup only runs once or can be safely re-run
+            const tabButtons = document.querySelectorAll('.sun-imagery-tab-button');
+            const tabContents = document.querySelectorAll('.sun-imagery-content');
+
+            tabButtons.forEach(button => {
+                // Remove old listeners to prevent duplicates if function runs multiple times
+                const oldListener = button._listener; // Custom property to store listener
+                if (oldListener) {
+                    button.removeEventListener('click', oldListener);
+                }
+                const newListener = () => {
+                    const targetTab = button.dataset.tab;
+
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+
+                    tabContents.forEach(content => {
+                        if (content.id === `${targetTab}-content`) {
+                            content.classList.add('active');
+                            const imgId = content.querySelector('img').id;
+                            const loadingId = content.querySelector('.loading-message').id;
+                            let imageUrl;
+                            if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
+                            else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
+                            
+                            // Only fetch if image source is placeholder or error, or if a global re-fetch is desired
+                            if (imageUrl && (document.getElementById(imgId).src.includes('/placeholder.png') || document.getElementById(imgId).src.includes('/error.png'))) {
+                                 fetchImage(imageUrl, imgId, loadingId);
+                            }
+                        } else {
+                            content.classList.remove('active');
                         }
-                    } else {
-                        content.classList.remove('active');
-                    }
-                });
+                    });
+                };
+                button.addEventListener('click', newListener);
+                button._listener = newListener; // Store listener for removal
             });
-        });
 
-        // Load the default active tab image on initial page load
-        fetchImage(SUVI_131_URL, 'suvi-131', 'loading-suvi-131');
-        // Preload other images in background to avoid delay when switching
-        fetchImage(SUVI_304_URL, 'suvi-304', 'loading-suvi-304');
+            // Initial load for the active mobile tab
+            // Check if the mobile-specific image element exists before fetching
+            const activeMobileImg = document.getElementById('suvi-131-mobile');
+            if (activeMobileImg && (activeMobileImg.src.includes('/placeholder.png') || activeMobileImg.src.includes('/error.png'))) {
+                fetchImage(SUVI_131_URL, 'suvi-131-mobile', 'loading-suvi-131-mobile');
+            }
+            // Preload other mobile images if desired, even if not active
+            const otherMobileImg = document.getElementById('suvi-304-mobile');
+            if (otherMobileImg && (otherMobileImg.src.includes('/placeholder.png') || otherMobileImg.src.includes('/error.png'))) {
+                fetchImage(SUVI_304_URL, 'suvi-304-mobile', 'loading-suvi-304-mobile');
+            }
+        }
     }
+
+    // Debounce for resize event
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(updateSunImageryLayout, 200); // Debounce by 200ms
+    });
 
 
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
+        // Sun imagery fetch handled by updateSunImageryLayout based on screen size
         fetchXrayFlux(); 
         fetchFlares();
         fetchSunspots();
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        runAllUpdates();
+        // Initial layout and image fetch
+        updateSunImageryLayout(); 
+
+        runAllUpdates(); // Fetch other data
         setInterval(runAllUpdates, 5 * 60 * 1000); 
 
         // Event listeners for time preset buttons (for X-ray chart)
@@ -772,11 +863,8 @@
                 }
             });
         });
-
-        // Initialize sun imagery tabs
-        setupSunImageryTabs();
     });
 </script>
 
 </body>
-</html>```
+</html>
