@@ -744,8 +744,9 @@
             // Filter for Earth-facing regions (longitude between -90 and +90)
             const earthFacingRegions = recentRegions.filter(region => {
                 const longitude = parseFloat(region.longitude);
-                return !isNaN(longitude) && Math.abs(longitude) <= 90; 
+                return !isNaN(longitude) && longitude >= -90 && longitude <= 90;
             });
+
 
 
             if (earthFacingRegions.length === 0) {
