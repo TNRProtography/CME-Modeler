@@ -1,8 +1,6 @@
-// SolarFlaresPage.tsx
-
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchSolarActivityData, SolarFlareData } from '../services/nasaService';
-import DataChart from './DataChart';
+import ChartCard from './ChartCard'; // Import our new component
 import SunImageViewer from './SunImageViewer';
 import HomeIcon from './icons/HomeIcon';
 import ForecastIcon from './icons/ForecastIcon';
@@ -10,46 +8,18 @@ import LoadingSpinner from './icons/LoadingSpinner';
 
 type TimeRangeHours = 1 | 2 | 4 | 6;
 
-interface SolarFlaresPageProps {
-  onNavChange: (page: 'modeler' | 'forecast') => void;
-}
-
-const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
-  const [fullXrayData, setFullXrayData] = useState<any[]>([]);
-  const [fullProtonData, setFullProtonData] = useState<any[]>([]);
-  const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
-  const [timeRange, setTimeRange] = useState<TimeRangeHours>(2);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const { xray, proton, flares } = await fetchSolarActivityData();
-        setFullXrayData(Array.isArray(xray) ? xray : []);
-        setFullProtonData(Array.isArray(proton) ? proton : []);
-        setFlareData(Array.isArray(flares) ? flares : []);
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+// Helper function to create the X-Ray chart configuration
+const createXrayChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours) => {
+  if (!Array.isArray(rawData) || rawData.length === 0) return null;
 
   const now = Date.now();
-  const startTime = now - timeRange * 60 * 60 * 1000;
-  
-  const filteredXray = fullXrayData.filter(d => d.timestamp >= startTime);
-  const filteredProton = fullProtonData.filter(d => d.timestamp >= startTime);
-  
-  const xrayChartData = {
+  const startTime = now - timeRangeHours * 60 * 60 * 1000;
+  const filteredData = rawData.filter(d => d && typeof d.timestamp === 'number' && d.timestamp >= startTime);
+
+  const data = {
     datasets: [{
       label: 'X-Ray Flux (watts/m^2)',
-      data: filteredXray.map(d => ({ x: d.timestamp, y: d.flux })),
+      data: filteredData.map(d => ({ x: d.timestamp, y: d.flux })),
       borderColor: '#facc15',
       backgroundColor: 'rgba(250, 204, 21, 0.2)',
       fill: true,
@@ -58,7 +28,7 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     }],
   };
 
-  const xrayChartOptions = {
+  const options = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
@@ -93,87 +63,66 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
     },
   };
 
-  const protonDataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
-  filteredProton.forEach(p => {
-    if (!p) return; // Defensive check
-    if (!protonDataByEnergy[p.energy]) protonDataByEnergy[p.energy] = [];
-    protonDataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
-  });
+  return { data, options };
+};
 
-  const protonColors: { [key: string]: string } = {
-    '>=10 MeV': '#f87171', '>=50 MeV': '#fb923c',
-    '>=100 MeV': '#fbbf24', '>=500 MeV': '#a3e635',
-  };
+// Helper function to create the Proton chart configuration
+const createProtonChartConfig = (rawData: any[], timeRangeHours: TimeRangeHours) => {
+    if (!Array.isArray(rawData) || rawData.length === 0) return null;
 
-  const protonChartData = {
-    datasets: Object.keys(protonDataByEnergy).map(energy => ({
-      label: `Proton Flux ${energy.replace('>=', '≥')}`,
-      data: protonDataByEnergy[energy],
-      borderColor: protonColors[energy] || '#a3a3a3',
-      backgroundColor: 'transparent',
-      pointRadius: 0,
-      borderWidth: 1.5,
-    })),
-  };
+    const now = Date.now();
+    const startTime = now - timeRangeHours * 60 * 60 * 1000;
+    const filteredData = rawData.filter(d => d && typeof d.timestamp === 'number' && d.timestamp >= startTime);
 
-  const protonChartOptions = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { labels: { color: '#e5e5e5' } } },
-    interaction: { intersect: false, mode: 'index' as const },
-    scales: {
-      x: {
-        type: 'time' as const,
-        time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
-        adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
-        ticks: { color: '#a3a3a3' },
-        grid: { color: '#404040' },
-      },
-      y: {
-        type: 'logarithmic' as const,
-        min: 1e-1,
-        ticks: { color: '#a3a3a3' },
-        grid: { color: '#404040' },
-      },
-    },
-  };
+    const dataByEnergy: { [key: string]: { x: number, y: number }[] } = {};
+    filteredData.forEach(p => {
+        if (!p.energy) return;
+        if (!dataByEnergy[p.energy]) dataByEnergy[p.energy] = [];
+        dataByEnergy[p.energy].push({ x: p.timestamp, y: p.flux });
+    });
 
-  // The problematic plugin is now defined but NOT used.
-  const xrayAnnotationsPlugin = {
-    id: 'xrayAnnotations',
-    afterDraw: (chart: any) => {
-        if (!chart.chartArea) return;
-        const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
-        if (!ctx || !y) return;
+    const protonColors: { [key: string]: string } = {
+        '>=10 MeV': '#f87171', '>=50 MeV': '#fb923c',
+        '>=100 MeV': '#fbbf24', '>=500 MeV': '#a3e635',
+    };
 
-        const flareClasses = [
-            { level: 1e-8, label: 'A' }, { level: 1e-7, label: 'B' },
-            { level: 1e-6, label: 'C' }, { level: 1e-5, label: 'M' },
-            { level: 1e-4, label: 'X' },
-        ];
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'bottom';
-        flareClasses.forEach(({ level, label }) => {
-            const yPos = y.getPixelForValue(level);
-            if (yPos >= top && yPos <= bottom) {
-                ctx.beginPath();
-                ctx.setLineDash([2, 4]);
-                ctx.moveTo(left, yPos);
-                ctx.lineTo(right, yPos);
-                ctx.stroke();
-                ctx.fillText(label, left - 5, yPos);
-            }
-        });
-        ctx.restore();
-    }
-  };
+    const data = {
+        datasets: Object.keys(dataByEnergy).map(energy => ({
+        label: `Proton Flux ${energy.replace('>=', '≥')}`,
+        data: dataByEnergy[energy],
+        borderColor: protonColors[energy] || '#a3a3a3',
+        backgroundColor: 'transparent',
+        pointRadius: 0,
+        borderWidth: 1.5,
+        })),
+    };
 
-  const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
+    const options = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#e5e5e5' } } },
+        interaction: { intersect: false, mode: 'index' as const },
+        scales: {
+            x: {
+                type: 'time' as const,
+                time: { tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
+                adapters: { date: { locale: 'en-NZ', timeZone: 'Pacific/Auckland' } },
+                ticks: { color: '#a3a3a3' },
+                grid: { color: '#404040' },
+            },
+            y: {
+                type: 'logarithmic' as const,
+                min: 1e-1,
+                ticks: { color: '#a3a3a3' },
+                grid: { color: '#404040' },
+            },
+        },
+    };
+    
+    return { data, options };
+};
+
+const ActiveRegionsList = ({ flares }: { flares: SolarFlareData[] }) => {
     const activeRegions = (flares || []).reduce((acc, flare) => {
-      // Added defensive check for flare object itself.
       if (flare && flare.activeRegionNum && !acc.some(item => item.activeRegionNum === flare.activeRegionNum)) {
         acc.push({
           activeRegionNum: flare.activeRegionNum,
@@ -204,7 +153,49 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
         </div>
       </div>
     );
-  };
+};
+
+const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
+  // State for the raw data from the API
+  const [rawXrayData, setRawXrayData] = useState<any[]>([]);
+  const [rawProtonData, setRawProtonData] = useState<any[]>([]);
+  const [flareData, setFlareData] = useState<SolarFlareData[]>([]);
+
+  // State for the final, processed chart configurations
+  const [xrayChartConfig, setXrayChartConfig] = useState<{ data: any; options: any } | null>(null);
+  const [protonChartConfig, setProtonChartConfig] = useState<{ data: any; options: any } | null>(null);
+  
+  const [timeRange, setTimeRange] = useState<TimeRangeHours>(2);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Effect to fetch data from the API. Runs only once on component mount.
+  useEffect(() => {
+    const doFetch = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const { xray, proton, flares } = await fetchSolarActivityData();
+        setRawXrayData(xray || []);
+        setRawProtonData(proton || []);
+        setFlareData(flares || []);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    doFetch();
+  }, []);
+
+  // Effect to process the data and update chart configs.
+  // Runs whenever the raw data changes or the user selects a new time range.
+  useEffect(() => {
+    if (!isLoading) {
+      setXrayChartConfig(createXrayChartConfig(rawXrayData, timeRange));
+      setProtonChartConfig(createProtonChartConfig(rawProtonData, timeRange));
+    }
+  }, [isLoading, rawXrayData, rawProtonData, timeRange]);
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300">
@@ -223,46 +214,26 @@ const SolarFlaresPage: React.FC<SolarFlaresPageProps> = ({ onNavChange }) => {
       </header>
       
       <main className="flex-grow p-4 overflow-y-auto styled-scrollbar">
-        {isLoading && (
-          <div className="flex flex-col items-center justify-center h-full">
-            <LoadingSpinner />
-            <p className="mt-4 text-lg">Fetching live solar data...</p>
-          </div>
-        )}
         {error && <div className="text-center text-red-400 text-lg p-8">Error: {error.toString()}</div>}
-        {!isLoading && !error && (
+        
+        {/* We no longer need a separate loading check here because the ChartCard handles it */}
+        {!error && (
           <div className="space-y-6 max-w-7xl mx-auto">
             <SunImageViewer />
-            <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-semibold text-neutral-200">GOES X-Ray Flux (NZT)</h3>
-                <div className="flex gap-1">
-                  {([1, 2, 4, 6] as TimeRangeHours[]).map(h => (
-                    <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>
-                      {h}H
-                    </button>
-                  ))}
-                </div>
+
+            <ChartCard title="GOES X-Ray Flux (NZT)" isLoading={isLoading} chartConfig={xrayChartConfig}>
+              <div className="flex gap-1">
+                {([1, 2, 4, 6] as TimeRangeHours[]).map(h => (
+                  <button key={h} onClick={() => setTimeRange(h)} className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${timeRange === h ? 'bg-neutral-200 text-black border-neutral-200' : 'bg-transparent border-neutral-600 hover:bg-neutral-700'}`}>
+                    {h}H
+                  </button>
+                ))}
               </div>
-              <div className="relative h-72">
-                {xrayChartData.datasets[0].data.length > 0 
-                  // --- THIS IS THE FIX ---
-                  // The xrayAnnotationsPlugin has been removed from the plugins array to stop the crash.
-                  ? <DataChart data={xrayChartData} options={xrayChartOptions} plugins={[]} /> 
-                  : <p className="text-center text-neutral-400 pt-10">No X-Ray data available for this time range.</p>}
-              </div>
-            </div>
+            </ChartCard>
+            
             <ActiveRegionsList flares={flareData} />
-            <div className="bg-neutral-900/80 p-4 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
-                 <h3 className="text-lg font-semibold text-neutral-200">GOES Proton Flux (NZT)</h3>
-              </div>
-              <div className="relative h-72">
-                {protonChartData.datasets.length > 0 && protonChartData.datasets.some(ds => ds.data.length > 0)
-                  ? <DataChart data={protonChartData} options={protonChartOptions} /> 
-                  : <p className="text-center text-neutral-400 pt-10">No Proton Flux data available.</p>}
-              </div>
-            </div>
+            
+            <ChartCard title="GOES Proton Flux (NZT)" isLoading={isLoading} chartConfig={protonChartConfig} />
           </div>
         )}
       </main>
