@@ -368,6 +368,20 @@
     // Function to get computed style values from CSS :root
     const getCssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
+    // Helper function to get color based on flux value (used by chart segments)
+    const getColorForFlux = (value, opacity = 1) => {
+        let rgb;
+        // The order matters: check highest values first
+        if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb'); // X5.0+
+        else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb');    // X1.0-X4.9
+        else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb');    // M1.0-M9.9
+        else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb');    // C1.0-C9.9
+        else if (value >= 1e-8) rgb = getCssVar('--solar-flare-ab-rgb');   // A1.0-B9.9
+        else rgb = getCssVar('--solar-flare-ab-rgb'); // Default for values below A1.0, keeps it green
+        
+        return `rgba(${rgb}, ${opacity})`;
+    };
+
     function formatTimestamp(isoString) {
         try {
             const d = new Date(isoString);
@@ -498,32 +512,23 @@
                     {
                         label: 'Short Flux (0.1-0.8 nm)',
                         data: shortFluxValues,
-                        borderColor: (ctx) => {
-                            // Border color (line color) matches fill color of the segment
-                            const value = ctx.p1.parsed.y;
-                            if (value === null) return; // No line for null values
-                            if (value >= 5e-4) return `rgb(${getCssVar('--solar-flare-x5plus-rgb')})`; // X5+
-                            if (value >= 1e-4) return `rgb(${getCssVar('--solar-flare-x-rgb')})`;    // X1.0-X4.9
-                            if (value >= 1e-5) return `rgb(${getCssVar('--solar-flare-m-rgb')})`;    // M
-                            if (value >= 1e-6) return `rgb(${getCssVar('--solar-flare-c-rgb')})`;    // C
-                            if (value >= 1e-8) return `rgb(${getCssVar('--solar-flare-ab-rgb')})`;   // A/B
-                            return `rgb(${getCssVar('--solar-flare-ab-rgb')})`; // Default for <A1.0 (lowest part of A/B)
-                        },
-                        backgroundColor: (ctx) => {
-                            // Background fill color with 20% opacity
-                            const value = ctx.p1.parsed.y;
-                            if (value === null) return; // No fill for null values
-                            if (value >= 5e-4) return `rgba(${getCssVar('--solar-flare-x5plus-rgb')}, 0.2)`;
-                            if (value >= 1e-4) return `rgba(${getCssVar('--solar-flare-x-rgb')}, 0.2)`;
-                            if (value >= 1e-5) return `rgba(${getCssVar('--solar-flare-m-rgb')}, 0.2)`;
-                            if (value >= 1e-6) return `rgba(${getCssVar('--solar-flare-c-rgb')}, 0.2)`;
-                            if (value >= 1e-8) return `rgba(${getCssVar('--solar-flare-ab-rgb')}, 0.2)`;
-                            return `rgba(${getCssVar('--solar-flare-ab-rgb')}, 0.2)`; // Default for <A1.0
-                        },
-                        fill: 'origin', // Fill to the origin (X-axis)
                         pointRadius: 0,
-                        tension: 0.2, // Slightly increased tension for smoother curves
-                        spanGaps: true // Crucial: allows lines to connect across null data points
+                        tension: 0.1, // Reduced tension for smoother transitions
+                        spanGaps: true, 
+                        fill: 'origin', // Fill to the origin (X-axis)
+                        borderWidth: 2, // Slightly thicker line
+                        lineCap: 'round', // Smoother line ends
+                        lineJoin: 'round', // Smoother line corners
+                        segment: { // Apply styling per segment
+                            borderColor: (ctx) => {
+                                const value = ctx.p1.parsed.y; // Color based on the end point of the segment
+                                return getColorForFlux(value, 1); // Full opacity for the line
+                            },
+                            backgroundColor: (ctx) => {
+                                const value = ctx.p1.parsed.y; // Fill color based on the end point of the segment
+                                return getColorForFlux(value, 0.2); // 20% opacity for the fill
+                            },
+                        }
                     }
                 ]
             },
