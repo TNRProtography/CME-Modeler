@@ -79,6 +79,16 @@
             flex-direction: column;
             height: 450px; /* Ensure all top-level cards have consistent height */
         }
+        /* Images directly within any .card (for desktop individual images, or mobile tab content) */
+        .card img { 
+            width: 100%;
+            height: 100%; /* Important for object-fit to work within fixed height parent */
+            max-width: 100%; /* Ensure it doesn't go beyond parent width */
+            max-height: 100%; /* Ensure it doesn't go beyond parent height */
+            object-fit: contain;
+            border-radius: 8px;
+            margin-top: 15px; /* Spacing below title */
+        }
         .card-title { 
             font-size: 1.1rem; 
             text-align: center; 
@@ -113,11 +123,11 @@
             width: 100%;
             height: 100%;
         }
-        /* List Cards */
+        /* List Cards (Flares & Sunspots) */
         .list-card {
-            grid-column: span 6;
-            min-height: 300px; /* Lists can be shorter if content is small */
-            height: auto; /* Allow height to adjust */
+            grid-column: 1 / -1; /* Default to full width on mobile */
+            min-height: 300px; 
+            height: auto; /* Allow height to adjust based on content */
         }
         .list-card ul {
             list-style: none;
@@ -201,10 +211,12 @@
             font-weight: bold;
         }
 
-        /* Styles for Sun Imagery Tabs */
+        /* --- Sun Imagery Layouts --- */
+
+        /* Mobile Tabbed Container (default for small screens) */
         .sun-imagery-card-mobile {
-            grid-column: 1 / -1; 
-            display: flex; 
+            grid-column: 1 / -1; /* Always full width on mobile */
+            display: flex; /* Flex column inside card */
         }
         .sun-imagery-tabs {
             display: flex;
@@ -233,21 +245,19 @@
             border-bottom-color: var(--link-color);
         }
         .sun-imagery-content {
-            display: none; 
-            flex-grow: 1; 
+            display: none; /* Hidden by default */
+            flex-grow: 1; /* Take remaining space */
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding-top: 15px;
+            /* No padding-top here, let the img margin handle it */
         }
         .sun-imagery-content.active {
-            display: flex; 
+            display: flex; /* Show active content */
         }
+        /* Specific image styles within mobile tab content */
         .sun-imagery-content img {
-            max-width: 100%;
-            max-height: 100%; 
-            object-fit: contain;
-            border-radius: 8px;
+            margin-top: 0; /* Remove extra margin from general .card img */
         }
         .sun-imagery-content .loading-message {
             margin-top: 0; 
@@ -255,34 +265,26 @@
 
         /* Desktop Individual Image Cards (hidden by default on mobile) */
         .sun-imagery-card-desktop {
-            display: none; 
+            display: none; /* Hidden by default for mobile-first */
             flex-grow: 1; 
-        }
-        .sun-imagery-card-desktop img {
-            max-width: 100%;
-            max-height: 100%; 
-            object-fit: contain;
-            border-radius: 8px;
-            margin-top: 15px; 
         }
 
 
         /* --- Media Queries for Desktop Layout --- */
-        @media (min-width: 1200px) { 
+        @media (min-width: 1200px) { /* Adjust breakpoint as needed */
+            /* Hide mobile tabbed container on desktop */
             .sun-imagery-card-mobile {
                 display: none; 
             }
+            /* Show individual image cards on desktop */
             .sun-imagery-card-desktop {
-                display: flex; 
-                grid-column: span 6; 
+                display: flex; /* As column for card content */
+                grid-column: span 6; /* Two columns side-by-side */
             }
-            .sun-imagery-card-desktop img {
-                 flex-grow: 1; 
-            }
-
+            /* Adjust list cards to align beside new image cards */
             .list-card {
-                grid-column: span 6; 
-                min-height: 450px; 
+                grid-column: span 6; /* Lists align below images */
+                min-height: 450px; /* Make lists same height as imagery for alignment */
             }
         }
 
@@ -311,7 +313,7 @@
     </header>
 
     <main class="dashboard-grid">
-        <!-- MOBILE: Tabbed Sun Imagery Card -->
+        <!-- MOBILE: Tabbed Sun Imagery Card (Visible on mobile, hidden on desktop) -->
         <div class="card sun-imagery-card-mobile">
             <div class="card-title-container">
                 <h2 class="card-title">Latest Sun Imagery</h2>
@@ -331,7 +333,7 @@
             </div>
         </div>
 
-        <!-- DESKTOP: Individual Sun Imagery Cards -->
+        <!-- DESKTOP: Individual Sun Imagery Cards (Hidden on mobile, visible on desktop) -->
         <div class="card sun-imagery-card-desktop">
             <div class="card-title-container">
                 <h2 class="card-title">SUVI 131Å</h2>
@@ -406,7 +408,7 @@
     const NASA_DONKI_FLARES_URL = (startDate, endDate) => 
         `${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`;
     
-    // NEW: NOAA SWPC Solar Regions Endpoint for Active Regions
+    // NOAA SWPC Solar Regions Endpoint for Active Regions
     const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
 
 
@@ -459,6 +461,7 @@
             loadingMessage.textContent = 'Loading image...';
             loadingMessage.style.display = 'block';
         }
+        // Always reset image src to placeholder to show loading state
         imgElement.src = '/placeholder.png'; 
         try {
             const response = await fetch(url);
@@ -717,7 +720,7 @@
                 const beginTime = new Date(flare.beginTime).toLocaleString();
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
-                const classChar = flare.classType ? flare.classType[0] : 'U'; // Use classType for the first character
+                const classChar = flare.classType ? flare.classType[0] : 'U'; 
                 const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar; 
                 const classSpan = `<span class="flare-class class-${displayClass}">${flare.classType || 'N/A'}</span>`; 
 
@@ -749,6 +752,8 @@
             }
             const data = await response.json();
 
+            console.log("NOAA Sunspots - Raw Data:", data); // Debugging: Log raw data
+
             if (!Array.isArray(data) || data.length === 0) {
                 sunspotList.innerHTML = '<li class="loading-message">No active regions reported by NOAA recently.</li>';
                 return;
@@ -757,8 +762,11 @@
             // Filter for Earth-facing regions (e.g., longitude between -60 and +60)
             const earthFacingRegions = data.filter(region => {
                 const longitude = parseFloat(region.longitude);
-                return !isNaN(longitude) && Math.abs(longitude) <= 60; // +/- 60 degrees longitude
+                // Filter out invalid longitudes as well as non-Earth-facing ones
+                return !isNaN(longitude) && Math.abs(longitude) <= 60; 
             });
+
+            console.log("NOAA Sunspots - Earth-Facing Filtered Data:", earthFacingRegions); // Debugging: Log filtered data
 
 
             if (earthFacingRegions.length === 0) {
@@ -800,13 +808,16 @@
         const desktopContainers = document.querySelectorAll('.sun-imagery-card-desktop');
 
         if (isDesktop) {
+            // Display desktop cards, hide mobile tabs
             mobileContainer.style.display = 'none';
             desktopContainers.forEach(card => card.style.display = 'flex'); 
 
+            // Fetch images for desktop individual cards
             fetchImage(SUVI_131_URL, 'suvi-131-desktop', 'loading-suvi-131-desktop');
             fetchImage(SUVI_304_URL, 'suvi-304-desktop', 'loading-suvi-304-desktop');
 
-        } else { 
+        } else { // Mobile view
+            // Display mobile tabs, hide desktop cards
             mobileContainer.style.display = 'flex'; 
             desktopContainers.forEach(card => card.style.display = 'none'); 
 
@@ -814,6 +825,7 @@
             const tabContents = document.querySelectorAll('.sun-imagery-content');
 
             tabButtons.forEach(button => {
+                // Remove old listeners to prevent duplicates if function runs multiple times
                 const oldListener = button._listener; 
                 if (oldListener) {
                     button.removeEventListener('click', oldListener);
@@ -833,7 +845,8 @@
                             if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
                             else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
                             
-                            if (imageUrl && (document.getElementById(imgId).src.includes('/placeholder.png') || document.getElementById(imgId).src.includes('/error.png'))) {
+                            // Always fetch image when tab is clicked on mobile
+                            if (imageUrl) { // Removed placeholder/error check to force re-fetch
                                  fetchImage(imageUrl, imgId, loadingId);
                             }
                         } else {
@@ -845,13 +858,23 @@
                 button._listener = newListener; 
             });
 
-            const activeMobileImg = document.getElementById('suvi-131-mobile');
-            if (activeMobileImg && (activeMobileImg.src.includes('/placeholder.png') || activeMobileImg.src.includes('/error.png'))) {
-                fetchImage(SUVI_131_URL, 'suvi-131-mobile', 'loading-suvi-131-mobile');
-            }
-            const otherMobileImg = document.getElementById('suvi-304-mobile');
-            if (otherMobileImg && (otherMobileImg.src.includes('/placeholder.png') || otherMobileImg.src.includes('/error.png'))) {
-                fetchImage(SUVI_304_URL, 'suvi-304-mobile', 'loading-suvi-304-mobile');
+            // Trigger initial load for the currently active mobile tab
+            // This is crucial to load the default image if no tab is explicitly clicked after page load
+            const currentActiveMobileTabButton = document.querySelector('.sun-imagery-tab-button.active');
+            if (currentActiveMobileTabButton) {
+                const targetTab = currentActiveMobileTabButton.dataset.tab;
+                const activeContent = document.getElementById(`${targetTab}-content`);
+                if (activeContent) {
+                    const imgId = activeContent.querySelector('img').id;
+                    const loadingId = activeContent.querySelector('.loading-message').id;
+                    let imageUrl;
+                    if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
+                    else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
+                    
+                    if (imageUrl) {
+                        fetchImage(imageUrl, imgId, loadingId);
+                    }
+                }
             }
         }
     }
@@ -865,17 +888,19 @@
 
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
+        // Sun imagery fetch handled by updateSunImageryLayout based on screen size
         fetchXrayFlux(); 
-        fetchFlares(); // Uses NASA DONKI
-        fetchSunspots(); // Now uses NOAA Solar Regions
+        fetchFlares(); 
+        fetchSunspots(); 
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        updateSunImageryLayout(); 
+        updateSunImageryLayout(); // Initial layout and image fetch based on screen size
 
-        runAllUpdates(); 
+        runAllUpdates(); // Fetch other data
         setInterval(runAllUpdates, 5 * 60 * 1000); 
 
+        // Event listeners for time preset buttons (for X-ray chart)
         document.querySelectorAll('.time-preset-button').forEach(button => {
             button.addEventListener('click', () => {
                 const duration = parseInt(button.dataset.duration);
