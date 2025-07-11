@@ -1,10 +1,11 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v13'; // Version incremented to force update
+const CACHE_NAME = 'cme-modeler-cache-v16'; // Version incremented to force update
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
   '/',
   '/index.html',
+  '/manifest.json',
   '/manifest.json',
   '/favicon.ico',
   '/forecast.html',
