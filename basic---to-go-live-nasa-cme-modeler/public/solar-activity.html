@@ -16,10 +16,12 @@
             --text-secondary: #a1a1aa;
             --text-muted: #71717a;
             --link-color: #60a5fa;
-            --solar-flare-b: #64748b; /* Slate */
-            --solar-flare-c: #22c55e; /* Green */
-            --solar-flare-m: #f59e0b; /* Amber */
-            --solar-flare-x: #ef4444; /* Red */
+            --solar-flare-b: #64748b; /* Slate (Used for B-class, as requested green is for A/B combined) */
+            --solar-flare-c: #f59e0b; /* Amber (Used for C-class) */
+            --solar-flare-m: #ff4500; /* OrangeRed (Used for M-class) */
+            --solar-flare-x: #ef4444; /* Red (Used for X-class below X5) */
+            --solar-flare-x5plus: #9370db; /* Medium Purple (Used for X5+ class) */
+            --solar-flare-ab: #22c55e; /* Green (Used for A/B class combined) */
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -165,11 +167,13 @@
             border-radius: 4px;
             margin-left: 8px;
         }
-        .class-B { background-color: var(--solar-flare-b); color: white; }
-        .class-C { background-color: var(--solar-flare-c); color: white; }
-        .class-M { background-color: var(--solar-flare-m); color: black; }
-        .class-X { background-color: var(--solar-flare-x); color: white; }
-        
+        /* Flare class colors (actual values from :root) */
+        .class-A, .class-B { background-color: #22c55e; color: white; } /* A/B Green */
+        .class-C { background-color: #f59e0b; color: black; } /* C Yellow */
+        .class-M { background-color: #ff4500; color: white; } /* M Orange */
+        .class-X { background-color: #ef4444; color: white; } /* X Red */
+        /* Note: X5+ purple is handled by chart plugin, not a CSS class for list items */
+
         .loading-message {
             text-align: center;
             font-style: italic;
@@ -180,6 +184,35 @@
             color: #ef4444; /* Red color for errors */
             font-weight: bold;
         }
+        
+        /* Styles for Time Presets buttons */
+        .time-presets {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            margin-bottom: 20px; /* Space before chart */
+        }
+        .time-preset-button {
+            background-color: #3f3f46;
+            color: #fafafa;
+            border: 1px solid #525252;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .time-preset-button:hover {
+            background-color: #525252;
+        }
+        .time-preset-button.active {
+            background-color: #60a5fa; /* Link color */
+            border-color: #60a5fa;
+            color: white;
+            font-weight: bold;
+        }
+
 
         @media (max-width: 1200px) { 
             .info-card, .list-card { 
@@ -188,6 +221,7 @@
         }
         @media (max-width: 900px) { 
             h1 { font-size: 1.75rem; } 
+            .time-presets { flex-wrap: wrap; }
         }
         @media (max-width: 600px) { 
             body { padding: 10px; } 
@@ -247,7 +281,13 @@
 
         <div class="card chart-card">
             <div class="card-title-container">
-                <h2 class="card-title">GOES X-ray Flux (Past 6 Hours)</h2>
+                <h2 class="card-title">GOES X-ray Flux (Short Wavelength)</h2>
+            </div>
+            <div class="time-presets">
+                <button class="time-preset-button active" data-duration="7200000">2 Hours</button>
+                <button class="time-preset-button" data-duration="3600000">1 Hour</button>
+                <button class="time-preset-button" data-duration="14400000">4 Hours</button>
+                <button class="time-preset-button" data-duration="21600000">6 Hours</button>
             </div>
             <div class="chart-wrapper">
                 <canvas id="xrayFluxChart"></canvas>
@@ -286,13 +326,14 @@
     const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
     const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
     const SOLARHAM_HMI_URL = 'https://www.solarham.com/hmi_mag_1024.jpg'; // Direct image link from inspecting solarham.com
-    // Removed direct SDO links as SUVI/SolarHam are preferred
 
     const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
     const NOAA_ACTIVE_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_cycle/latest_active_regions.json';
     const NOAA_FLARES_URL = 'https://services.swpc.noaa.gov/json/goes/latest_primary_flare_list.json';
 
     let xrayChartInstance = null;
+    let allXrayData = []; // Store the full 6 hours of processed data
+    let currentChartDuration = 2 * 60 * 60 * 1000; // Default to 2 hours in milliseconds
 
     function formatTimestamp(isoString) {
         try {
@@ -354,7 +395,7 @@
             }
             const rawData = await response.json();
 
-            // Group data by time_tag
+            // Group data by time_tag to combine short and long flux for each timestamp
             const groupedData = new Map();
             rawData.forEach(d => {
                 const time = new Date(d.time_tag).getTime(); // Use timestamp for map key
@@ -370,18 +411,18 @@
             });
 
             // Convert map to array and filter out incomplete entries
-            const processedData = Array.from(groupedData.values()).filter(d => 
-                !isNaN(d.short) && d.short !== null && !isNaN(d.long) && d.long !== null
+            allXrayData = Array.from(groupedData.values()).filter(d => 
+                !isNaN(d.short) && d.short !== null
             );
 
             // Sort data by time to ensure correct plotting
-            processedData.sort((a, b) => a.time - b.time);
+            allXrayData.sort((a, b) => a.time - b.time);
 
-            if (processedData.length === 0) {
+            if (allXrayData.length === 0) {
                  throw new Error('No valid X-ray flux data available to plot.');
             }
 
-            renderXrayFluxChart(processedData);
+            renderChartForDuration(currentChartDuration); // Render with current duration
             if (loadingMessage) loadingMessage.style.display = 'none';
         } catch (error) {
             console.error('Error fetching X-ray flux:', error);
@@ -392,12 +433,61 @@
         }
     }
 
+    // Function to render the chart based on the selected duration
+    function renderChartForDuration(durationMs) {
+        const now = Date.now();
+        const startTime = now - durationMs;
+        const filteredData = allXrayData.filter(d => d.time.getTime() >= startTime);
+        renderXrayFluxChart(filteredData);
+
+        // Update active button styling
+        document.querySelectorAll('.time-preset-button').forEach(button => {
+            if (parseInt(button.dataset.duration) === durationMs) {
+                button.classList.add('active');
+            } else {
+                button.classList.remove('active');
+            }
+        });
+    }
+
+    // Custom Chart.js Plugin for background color bands
+    const fluxBackgroundPlugin = {
+        id: 'fluxBackground',
+        beforeDraw: (chart) => {
+            const { ctx, chartArea: { left, top, right, bottom }, scales: { y } } = chart;
+            ctx.save();
+
+            // Helper to draw a band
+            const drawBand = (color, fromValue, toValue) => {
+                // Ensure values are within the chart's Y-axis range before drawing
+                const y1 = y.getPixelForValue(Math.max(fromValue, y.min));
+                const y2 = y.getPixelForValue(Math.min(toValue, y.max));
+                
+                // Only draw if the band is visible on the chart
+                if (!isNaN(y1) && !isNaN(y2) && Math.abs(y1 - y2) > 0) {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(left, Math.min(y1, y2), right - left, Math.abs(y2 - y1));
+                }
+            };
+
+            // Define flux levels and their colors (using static hex values from CSS :root)
+            // Draw from bottom (lowest flux) to top (highest flux) to ensure correct layering
+            drawBand('#22c55e', 1e-9, 1e-7);    // A to B (combined green)
+            drawBand('#f59e0b', 1e-7, 1e-6);    // B to C (yellow)
+            drawBand('#ff4500', 1e-6, 1e-5);    // C to M (orange)
+            drawBand('#ef4444', 1e-5, 1e-4);    // M to X (red)
+            drawBand('#9370db', 1e-4, 1e-3);    // X to X10 (purple) - Using 1e-3 as an upper limit for visualization
+
+            ctx.restore();
+        }
+    };
+
+
     function renderXrayFluxChart(data) {
         const ctx = document.getElementById('xrayFluxChart').getContext('2d');
 
         const labels = data.map(d => d.time);
         const shortFluxValues = data.map(d => d.short);
-        const longFluxValues = data.map(d => d.long);
 
         if (xrayChartInstance) {
             xrayChartInstance.destroy();
@@ -412,17 +502,8 @@
                         label: 'Short Flux (0.1-0.8 nm)',
                         data: shortFluxValues,
                         borderColor: 'rgba(75, 192, 192, 1)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                        fill: false,
-                        pointRadius: 0,
-                        tension: 0.1,
-                    },
-                    {
-                        label: 'Long Flux (0.05-0.4 nm)',
-                        data: longFluxValues,
-                        borderColor: 'rgba(153, 102, 255, 1)',
-                        backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                        fill: false,
+                        // No background fill on dataset level, plugin handles it
+                        fill: false, 
                         pointRadius: 0,
                         tension: 0.1,
                     }
@@ -462,7 +543,8 @@
                                 return label;
                             }
                         }
-                    }
+                    },
+                    fluxBackground: {} // Enable the custom plugin
                 },
                 scales: {
                     x: {
@@ -496,12 +578,13 @@
                         },
                         ticks: {
                             callback: function(value, index, ticks) {
-                                // Only return labels for the main classes
-                                if (value === 1e-3) return 'X1.0';
-                                if (value === 1e-4) return 'M1.0';
-                                if (value === 1e-5) return 'C1.0';
-                                if (value === 1e-6) return 'B1.0';
-                                if (value === 1e-7) return 'A1.0';
+                                // Adjust labels as requested
+                                if (value === 1e-3) return 'X10.0';
+                                if (value === 1e-4) return 'X1.0';
+                                if (value === 1e-5) return 'M1.0';
+                                if (value === 1e-6) return 'C1.0';
+                                if (value === 1e-7) return 'B1.0';
+                                if (value === 1e-8) return 'A1.0'; // A-class starts here
                                 return null; 
                             },
                             color: '#71717a', 
@@ -510,7 +593,7 @@
                             color: '#3f3f46', 
                             lineWidth: (context) => {
                                 // Make grid lines for class boundaries thicker/more prominent
-                                if (context.tick.value === 1e-4 || context.tick.value === 1e-5 || context.tick.value === 1e-6 || context.tick.value === 1e-7) {
+                                if (context.tick.value === 1e-4 || context.tick.value === 1e-5 || context.tick.value === 1e-6 || context.tick.value === 1e-7 || context.tick.value === 1e-8) {
                                     return 1.5;
                                 }
                                 return 0.5;
@@ -519,17 +602,17 @@
                             drawTicks: true,
                         },
                          // Set min/max to ensure all classes are visible by default
-                        min: 1e-8, // Slightly below A-class
-                        max: 1e-3 // Up to X-class, adjust if you expect higher
+                        min: 1e-9, // Slightly below A-class 1.0 (which is 1e-8)
+                        max: 1e-3 // Up to X10.0
                     }
                 }
-            }
+            },
+            plugins: [fluxBackgroundPlugin] // Register the custom plugin
         });
     }
 
     async function fetchFlares() {
         const flareList = document.getElementById('flare-list');
-        // Clear existing list items, add a temporary loading message
         flareList.innerHTML = '<li class="loading-message">Loading solar flares...</li>'; 
         try {
             const response = await fetch(NOAA_FLARES_URL);
@@ -545,7 +628,6 @@
             }
 
             flareList.innerHTML = ''; // Clear loading message
-            // Sort flares by peakTime in descending order (most recent first)
             data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
 
             data.forEach(flare => {
@@ -553,9 +635,10 @@
                 const beginTime = new Date(flare.beginTime).toLocaleString();
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
-                // Rely on existing CSS classes for styling
-                const classChar = flare.class ? flare.class[0] : 'U'; // Handle cases where class might be undefined/null
-                const classSpan = `<span class="flare-class class-${classChar}">${flare.class || 'N/A'}</span>`; 
+                const classChar = flare.class ? flare.class[0] : 'U'; 
+                // Determine the correct class for A and B based on the new combined A/B green
+                const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar;
+                const classSpan = `<span class="flare-class class-${displayClass}">${flare.class || 'N/A'}</span>`; 
 
                 li.innerHTML = `
                     <strong>${flare.class || 'Flare'}</strong> ${classSpan}
@@ -575,7 +658,6 @@
 
     async function fetchSunspots() {
         const sunspotList = document.getElementById('sunspot-list');
-        // Clear existing list items, add a temporary loading message
         sunspotList.innerHTML = '<li class="loading-message">Loading active regions...</li>'; 
         try {
             const response = await fetch(NOAA_ACTIVE_REGIONS_URL);
@@ -591,7 +673,6 @@
             }
 
             sunspotList.innerHTML = ''; // Clear loading message
-            // Sort active regions by number, descending (newest first based on common NOAA patterns)
             data.sort((a, b) => parseInt(b.number) - parseInt(a.number));
 
             data.forEach(region => {
@@ -614,18 +695,29 @@
 
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
-        fetchImage(SUVI_131_URL, 'suvi-131', 'loading-suvi-131'); // Updated ID
-        fetchImage(SUVI_304_URL, 'suvi-304', 'loading-suvi-304'); // Updated ID
-        fetchImage(SOLARHAM_HMI_URL, 'solarham-hmi', 'loading-solarham-hmi'); // Updated ID
-        fetchXrayFlux();
+        fetchImage(SUVI_131_URL, 'suvi-131', 'loading-suvi-131'); 
+        fetchImage(SUVI_304_URL, 'suvi-304', 'loading-suvi-304'); 
+        fetchImage(SOLARHAM_HMI_URL, 'solarham-hmi', 'loading-solarham-hmi'); 
+        fetchXrayFlux(); // This now handles rendering with the current duration
         fetchFlares();
         fetchSunspots();
     }
 
     document.addEventListener('DOMContentLoaded', () => {
         runAllUpdates();
-        // Update every 5 minutes
+        // Update all data every 5 minutes
         setInterval(runAllUpdates, 5 * 60 * 1000); 
+
+        // Event listeners for time preset buttons
+        document.querySelectorAll('.time-preset-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const duration = parseInt(button.dataset.duration);
+                if (!isNaN(duration)) {
+                    currentChartDuration = duration;
+                    renderChartForDuration(currentChartDuration);
+                }
+            });
+        });
     });
 </script>
 
