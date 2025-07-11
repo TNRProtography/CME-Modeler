@@ -30,8 +30,42 @@
             color: var(--text-secondary);
             margin: 0;
             padding: 20px;
+            position: relative; /* Needed for pseudo-elements */
             overflow-x: hidden;
         }
+        /* --- NEW: Sun Glow Background Effect --- */
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            top: -20vh;
+            left: 0;
+            width: 200%;
+            height: 100vh; /* Taller for more vertical coverage */
+            z-index: 0;
+            opacity: 0.8;
+            will-change: transform;
+            mask-image: radial-gradient(circle at center, black 0%, transparent 70%);
+            -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 70%);
+        }
+        body::before {
+            background: 
+                radial-gradient(circle at 25% 50%, rgba(255, 229, 107, 0.2) 0%, transparent 40%),
+                radial-gradient(circle at 75% 40%, rgba(255, 159, 67, 0.25) 0%, transparent 50%);
+            animation: moveSolarGlow 35s linear infinite;
+        }
+        body::after {
+            background: 
+                radial-gradient(circle at 20% 70%, rgba(255, 107, 107, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 80% 60%, rgba(245, 158, 11, 0.2) 0%, transparent 50%);
+            animation: moveSolarGlow 50s linear infinite reverse;
+        }
+        @keyframes moveSolarGlow {
+            from { transform: translateX(-50%) rotate(0deg); }
+            to { transform: translateX(0%) rotate(360deg); }
+        }
+        /* --- End Background Effect --- */
+
         .container { 
             max-width: 1400px; 
             margin: 0 auto; 
@@ -444,7 +478,7 @@
     }
 
     // Helper to get date strings for API calls (mostly for NASA DONKI)
-    function getApiDateRange(daysAgo = 7) { // Default to 7 days for flares
+    function getApiDateRange(daysAgo = 7) { 
         const today = new Date();
         const endDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
         const startDate = new Date(today);
@@ -461,13 +495,16 @@
             console.error(`[fetchImage] Image element not found for ID: ${imgElementId}`);
             return;
         }
+        
+        imgElement.src = '/placeholder.png'; // Always reset image src to placeholder to show loading state
+
         if (loadingMessage) {
             loadingMessage.classList.remove('error-message'); 
             loadingMessage.textContent = 'Loading image...';
             loadingMessage.style.display = 'block';
         }
         console.log(`[fetchImage] Attempting to load ${url} for ${imgElementId}`);
-        imgElement.src = '/placeholder.png'; // Always reset image src to placeholder to show loading state
+        
         try {
             const response = await fetch(url);
             console.log(`[fetchImage] Response for ${url}: status ${response.status}`);
@@ -706,7 +743,7 @@
         const flareList = document.getElementById('flare-list');
         flareList.innerHTML = '<li class="loading-message">Loading solar flares from NASA...</li>'; 
         try {
-            const { startDate, endDate } = getApiDateRange(7); // Fetch last 7 days of flares
+            const { startDate, endDate } = getApiDateRange(7); 
             const response = await fetch(NASA_DONKI_FLARES_URL(startDate, endDate));
             if (!response.ok) {
                  const errorText = `Failed to fetch solar flares from NASA (HTTP ${response.status})`;
@@ -720,7 +757,6 @@
             }
 
             flareList.innerHTML = ''; 
-            // Sort by peakTime in descending order (most recent first)
             data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
 
             data.forEach(flare => {
@@ -752,15 +788,12 @@
         const sunspotList = document.getElementById('sunspot-list');
         sunspotList.innerHTML = '<li class="loading-message">Loading active regions from NOAA...</li>'; 
         try {
-            // Fetching from NOAA_SOLAR_REGIONS_URL
             const response = await fetch(NOAA_SOLAR_REGIONS_URL);
             if (!response.ok) {
                 const errorText = `Failed to fetch active regions from NOAA (HTTP ${response.status})`;
                 throw new Error(errorText);
             }
             const data = await response.json();
-
-            console.log("NOAA Sunspots - Raw Data:", data); // Debugging: Log raw data
 
             if (!Array.isArray(data) || data.length === 0) {
                 sunspotList.innerHTML = '<li class="loading-message">No active regions reported by NOAA recently.</li>';
@@ -773,19 +806,14 @@
 
             const recentRegions = data.filter(region => {
                 const observedDate = new Date(region.observed_date);
-                // Ensure observedDate is valid and within the last 2 weeks
                 return !isNaN(observedDate.getTime()) && observedDate >= twoWeeksAgo;
             });
 
-            // Filter for Earth-facing regions (longitude between -60 and +60)
+            // Filter for Earth-facing regions (longitude between -90 and +90)
             const earthFacingRegions = recentRegions.filter(region => {
                 const longitude = parseFloat(region.longitude);
-                // Filter out invalid longitudes as well as non-Earth-facing ones
-                return !isNaN(longitude) && Math.abs(longitude) <= 60; 
+                return !isNaN(longitude) && Math.abs(longitude) <= 90; 
             });
-
-            console.log("NOAA Sunspots - Recent Data (last 2 weeks):", recentRegions); // Debugging
-            console.log("NOAA Sunspots - Earth-Facing Filtered Data:", earthFacingRegions); // Debugging
 
 
             if (earthFacingRegions.length === 0) {
@@ -799,7 +827,6 @@
 
             earthFacingRegions.forEach(region => {
                 const li = document.createElement('li');
-                // Use observed_date for consistency with the data source
                 const observedDate = new Date(region.observed_date).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
                 
                 li.innerHTML = `
@@ -822,22 +849,18 @@
     // Function to handle tab switching for sun imagery AND layout based on screen size
     function updateSunImageryLayout() {
         const isDesktop = window.innerWidth >= DESKTOP_BREAKPOINT;
-        console.log(`[updateSunImageryLayout] isDesktop: ${isDesktop}, window.innerWidth: ${window.innerWidth}`);
 
         const mobileContainer = document.querySelector('.sun-imagery-card-mobile');
         const desktopContainers = document.querySelectorAll('.sun-imagery-card-desktop');
 
         if (isDesktop) {
-            console.log('[updateSunImageryLayout] Activating Desktop Layout');
             mobileContainer.style.display = 'none';
             desktopContainers.forEach(card => card.style.display = 'flex'); 
 
-            // Fetch images for desktop individual cards
             fetchImage(SUVI_131_URL, 'suvi-131-desktop', 'loading-suvi-131-desktop');
             fetchImage(SUVI_304_URL, 'suvi-304-desktop', 'loading-suvi-304-desktop');
 
-        } else { // Mobile view
-            console.log('[updateSunImageryLayout] Activating Mobile Layout');
+        } else { 
             mobileContainer.style.display = 'flex'; 
             desktopContainers.forEach(card => card.style.display = 'none'); 
 
@@ -851,7 +874,6 @@
                 }
                 const newListener = () => {
                     const targetTab = button.dataset.tab;
-                    console.log(`[updateSunImageryLayout] Mobile Tab Clicked: ${targetTab}`);
 
                     tabButtons.forEach(btn => btn.classList.remove('active'));
                     button.classList.add('active');
@@ -865,7 +887,7 @@
                             if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
                             else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
                             
-                            // CRITICAL FIX: Always fetch image when tab is clicked on mobile
+                            // Always fetch image when tab is clicked on mobile
                             if (imageUrl) { 
                                  fetchImage(imageUrl, imgId, loadingId);
                             }
@@ -890,9 +912,7 @@
                     if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
                     else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
                     
-                    // CRITICAL FIX: Always fetch the initial active tab image on mobile view
                     if (imageUrl) {
-                        console.log(`[updateSunImageryLayout] Initial fetch for active mobile tab: ${imgId}`);
                         fetchImage(imageUrl, imgId, loadingId);
                     }
                 }
@@ -917,10 +937,9 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        runAllUpdates(); // Fetch all data first
+        updateSunImageryLayout(); 
 
-        updateSunImageryLayout(); // Then setup layout and initial image loads based on current size
-
+        runAllUpdates(); 
         setInterval(runAllUpdates, 5 * 60 * 1000); 
 
         // Event listeners for time preset buttons (for X-ray chart)

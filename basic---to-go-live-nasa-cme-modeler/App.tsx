@@ -16,12 +16,12 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
-import FlareIcon from './components/icons/FlareIcon'; // Ensure this import is present
+import FlareIcon from './components/icons/FlareIcon';
 import ForecastModal from './components/ForecastModal';
-import SolarActivityPage from './components/SolarActivityPage'; // Ensure this import is present
+import SolarActivityPage from './components/SolarActivityPage';
 
 const App: React.FC = () => {
-  // CRITICAL FIX: Ensure 'solar-activity' is included in the activePage state type
+  // CRITICAL FIX: Ensure 'solar-activity' is a valid type for the state.
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -131,7 +131,7 @@ const App: React.FC = () => {
   }, [cmeData, cmeFilter]);
 
   useEffect(() => {
-    if (currentlyModeledCMEId && !filteredCmes.find(c => c.id === currentlyModeledCmeId)) {
+    if (currentlyModeledCMEId && !filteredCmes.find(c => c.id === currentlyModeledCMEId)) {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
@@ -244,7 +244,7 @@ const App: React.FC = () => {
           cmeData={filteredCmes}
           activeView={activeView}
           focusTarget={activeFocus}
-          currentlyModeledCmeId={currentlyModeledCmeId}
+          currentlyModeledCmeId={currentlyModeledCMEId}
           onCMEClick={handleCMEClickFromCanvas}
           timelineActive={timelineActive}
           timelinePlaying={timelinePlaying}
