@@ -1,41 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+// src/index.tsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
 
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#171717">
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
-    <link rel="shortcut icon" href="/favicon.ico">
+// --- CRITICAL FIX: GLOBAL CHART.JS REGISTRATION ---
+// All Chart.js components and adapters MUST be registered here once, globally.
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  LogarithmicScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  TimeScale, // Ensure TimeScale is imported
+} from 'chart.js';
+import 'chartjs-adapter-date-fns'; // Ensure the date adapter is imported
 
-    <title>TNR Protography CME Modeler</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
-    <!-- REMOVED: The script tag for Chart.js is no longer needed here -->
-    <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #171717; color: #d4d4d4; overflow: hidden; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #737373; }
-    </style>
-<script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
-    "react": "https://esm.sh/react@^19.1.0",
-    "react/": "https://esm.sh/react@^19.1.0/"
+// Register all Chart.js components and scales
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  LogarithmicScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  TimeScale // Ensure TimeScale is registered
+);
+// --- END CRITICAL FIX ---
+
+
+// Define THREE and gsap on window for TypeScript if not using modules for them
+declare global {
+  interface Window {
+    THREE: any;
+    gsap: any;
   }
 }
-</script>
-</head>
-<body>
-    <div id="root"></div>
-<script type="module" src="/index.tsx"></script>
-</body>
-</html>
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+// --- Service Worker Registration with EXPLICIT SCOPE ---
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // We explicitly set the scope to '/' to ensure it controls the whole site.
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(registration => {
+      console.log('SW registered with scope: ', registration.scope);
+    }).catch(registrationError => {
+      console.log('SW registration failed: ', registrationError);
+    });
+  });
+}
