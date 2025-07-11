@@ -16,12 +16,12 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
-import FlareIcon from './components/icons/FlareIcon'; // RE-ADD this import
+import FlareIcon from './components/icons/FlareIcon'; // Ensure this import is present
 import ForecastModal from './components/ForecastModal';
-import SolarActivityPage from './components/SolarActivityPage'; // NEW import for solar activity page
+import SolarActivityPage from './components/SolarActivityPage'; // Ensure this import is present
 
 const App: React.FC = () => {
-  // MODIFIED: Added 'solar-activity' to activePage state
+  // CRITICAL FIX: Ensure 'solar-activity' is included in the activePage state type
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -131,7 +131,7 @@ const App: React.FC = () => {
   }, [cmeData, cmeFilter]);
 
   useEffect(() => {
-    if (currentlyModeledCMEId && !filteredCmes.find(c => c.id === currentlyModeledCMEId)) {
+    if (currentlyModeledCMEId && !filteredCmes.find(c => c.id === currentlyModeledCmeId)) {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
@@ -206,15 +206,15 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
-  // MODIFIED: Conditional rendering for different active pages
+  // Conditional rendering for different active pages
   if (activePage === 'forecast') {
     return <ForecastModal onNavChange={setActivePage} />;
   }
-  if (activePage === 'solar-activity') { // NEW conditional render
+  if (activePage === 'solar-activity') { 
     return <SolarActivityPage onNavChange={setActivePage} />;
   }
 
-  // This is the 'modeler' page content
+  // This is the 'modeler' page content (default return)
   return (
     <div className="w-screen h-screen bg-black text-neutral-300 overflow-hidden flex">
       <div className={`
@@ -244,7 +244,7 @@ const App: React.FC = () => {
           cmeData={filteredCmes}
           activeView={activeView}
           focusTarget={activeFocus}
-          currentlyModeledCMEId={currentlyModeledCmeId}
+          currentlyModeledCmeId={currentlyModeledCmeId}
           onCMEClick={handleCMEClickFromCanvas}
           timelineActive={timelineActive}
           timelinePlaying={timelinePlaying}
@@ -300,9 +300,8 @@ const App: React.FC = () => {
                 <ForecastIcon className="w-5 h-5" />
                 <span className="text-sm font-semibold">Aurora Forecast</span>
             </button>
-            {/* NEW: Solar Activity button */}
             <button 
-              onClick={() => setActivePage('solar-activity')} // Changed page to 'solar-activity'
+              onClick={() => setActivePage('solar-activity')} 
               className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
               title="View Solar Activity">
                 <FlareIcon className="w-5 h-5" />

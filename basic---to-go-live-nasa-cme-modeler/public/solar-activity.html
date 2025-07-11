@@ -444,7 +444,7 @@
     }
 
     // Helper to get date strings for API calls (mostly for NASA DONKI)
-    function getApiDateRange(daysAgo = 7) {
+    function getApiDateRange(daysAgo = 7) { // Default to 7 days for flares
         const today = new Date();
         const endDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
         const startDate = new Date(today);
@@ -744,7 +744,6 @@
         const sunspotList = document.getElementById('sunspot-list');
         sunspotList.innerHTML = '<li class="loading-message">Loading active regions from NOAA...</li>'; 
         try {
-            // Fetching from NOAA_SOLAR_REGIONS_URL
             const response = await fetch(NOAA_SOLAR_REGIONS_URL);
             if (!response.ok) {
                 const errorText = `Failed to fetch active regions from NOAA (HTTP ${response.status})`;
@@ -759,18 +758,28 @@
                 return;
             }
 
-            // Filter for Earth-facing regions (e.g., longitude between -60 and +60)
-            const earthFacingRegions = data.filter(region => {
+            // Filter for last 2 weeks (14 days)
+            const twoWeeksAgo = new Date();
+            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+            const recentRegions = data.filter(region => {
+                const observedDate = new Date(region.observed_date);
+                return observedDate >= twoWeeksAgo;
+            });
+
+            // Filter for Earth-facing regions (longitude between -60 and +60)
+            const earthFacingRegions = recentRegions.filter(region => {
                 const longitude = parseFloat(region.longitude);
                 // Filter out invalid longitudes as well as non-Earth-facing ones
                 return !isNaN(longitude) && Math.abs(longitude) <= 60; 
             });
 
-            console.log("NOAA Sunspots - Earth-Facing Filtered Data:", earthFacingRegions); // Debugging: Log filtered data
+            console.log("NOAA Sunspots - Recent Data (last 2 weeks):", recentRegions); // Debugging
+            console.log("NOAA Sunspots - Earth-Facing Filtered Data:", earthFacingRegions); // Debugging
 
 
             if (earthFacingRegions.length === 0) {
-                sunspotList.innerHTML = '<li class="loading-message">No Earth-facing active regions found.</li>';
+                sunspotList.innerHTML = '<li class="loading-message">No Earth-facing active regions found in the last 2 weeks.</li>';
                 return;
             }
 
@@ -845,8 +854,8 @@
                             if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
                             else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
                             
-                            // Always fetch image when tab is clicked on mobile
-                            if (imageUrl) { // Removed placeholder/error check to force re-fetch
+                            // CRITICAL FIX: Always fetch image when tab is clicked on mobile
+                            if (imageUrl) { 
                                  fetchImage(imageUrl, imgId, loadingId);
                             }
                         } else {
@@ -859,7 +868,6 @@
             });
 
             // Trigger initial load for the currently active mobile tab
-            // This is crucial to load the default image if no tab is explicitly clicked after page load
             const currentActiveMobileTabButton = document.querySelector('.sun-imagery-tab-button.active');
             if (currentActiveMobileTabButton) {
                 const targetTab = currentActiveMobileTabButton.dataset.tab;
@@ -871,6 +879,7 @@
                     if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
                     else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
                     
+                    // CRITICAL FIX: Always fetch the initial active tab image on mobile view
                     if (imageUrl) {
                         fetchImage(imageUrl, imgId, loadingId);
                     }
@@ -879,6 +888,7 @@
         }
     }
 
+    // Debounce for resize event
     let resizeTimer;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
