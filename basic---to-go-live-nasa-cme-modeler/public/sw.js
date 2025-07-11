@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v11'; // Version incremented for this change
+const CACHE_NAME = 'cme-modeler-cache-v12'; // Version incremented again for solar-activity changes
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -8,8 +8,11 @@ const urlsToCache = [
   '/manifest.json',
   '/favicon.ico',
   '/forecast.html',
+  '/solar-activity.html', // NEW: Add solar-activity.html
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
+  '/placeholder.png', // Add a placeholder image if you create one
+  '/error.png', // Add an error image if you create one
 ];
 
 // List of API domains that should use a network-first strategy
@@ -19,7 +22,8 @@ const API_HOSTS = [
   'hemispheric-power.thenamesrock.workers.dev',
   'tnr-aurora-forecast.thenamesrock.workers.dev',
   'basic-aurora-forecast.thenamesrock.workers.dev',
-  'aurora-sightings.thenamesrock.workers.dev'
+  'aurora-sightings.thenamesrock.workers.dev',
+  'sdo.gsfc.nasa.gov', // NEW: NASA SDO for images
 ];
 
 
@@ -59,8 +63,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   const url = new URL(event.request.url);
-
-  // REMOVED: Specific network-only rule for /solar-data
 
   // Strategy 1: Network First for explicitly listed API hosts.
   // This ensures data is always fresh, with an offline fallback.

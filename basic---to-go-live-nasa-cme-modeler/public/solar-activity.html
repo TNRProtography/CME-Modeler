@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spot The Aurora - Solar Activity</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns"></script>
+    <style>
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-card: #171717;
+            --border-color: #3f3f46;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --link-color: #60a5fa;
+            --solar-flare-b: #64748b; /* Slate */
+            --solar-flare-c: #22c55e; /* Green */
+            --solar-flare-m: #f59e0b; /* Amber */
+            --solar-flare-x: #ef4444; /* Red */
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            background-color: var(--bg-main);
+            color: var(--text-secondary);
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            position: relative;
+            z-index: 1;
+        }
+        .header { 
+            display: flex; 
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 30px; 
+            text-align: center;
+        }
+        .header-logo {
+            max-width: 250px;
+            height: auto;
+            margin-bottom: 15px;
+        }
+        .header .logo-link {
+            display: inline-block;
+            transition: transform 0.2s ease-in-out;
+        }
+        .header .logo-link:hover {
+            transform: scale(1.03);
+        }
+        h1 { 
+            font-size: 2.25rem; 
+            color: var(--text-primary); 
+            margin: 0; 
+        }
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: repeat(12, 1fr); 
+            gap: 20px; 
+        }
+        .card { 
+            background-color: rgba(23, 23, 23, 0.85);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            padding: 25px; 
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); 
+            display: flex; 
+            flex-direction: column;
+        }
+        .card-title { 
+            font-size: 1.1rem; 
+            text-align: center; 
+            font-weight: 600; 
+            color: var(--text-primary); 
+            margin: 0; 
+        }
+        .card-title-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .info-card {
+            grid-column: span 6;
+            height: 450px; /* Standard height for visual consistency */
+            display: flex;
+            flex-direction: column;
+        }
+        .info-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Ensure images fit without cropping */
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .chart-card {
+            grid-column: span 12; /* Full width for the X-ray chart */
+            height: 450px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-card .card-title-container { 
+            justify-content: flex-start; 
+        }
+        .chart-wrapper {
+            position: relative;
+            flex-grow: 1;
+            min-height: 0;
+        }
+        .chart-wrapper canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .list-card {
+            grid-column: span 6;
+            min-height: 300px;
+        }
+        .list-card ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 350px; /* Fixed height for scrollable lists */
+            overflow-y: auto;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+            margin-top: 15px;
+        }
+        .list-card li {
+            background-color: rgba(63, 63, 70, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+        .list-card li:last-child {
+            margin-bottom: 0;
+        }
+        .list-card li span {
+            display: block;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }
+        .list-card li strong {
+            color: var(--text-primary);
+        }
+        .list-card .flare-class {
+            font-weight: bold;
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+        }
+        .class-B { background-color: var(--solar-flare-b); color: white; }
+        .class-C { background-color: var(--solar-flare-c); color: white; }
+        .class-M { background-color: var(--solar-flare-m); color: black; }
+        .class-X { background-color: var(--solar-flare-x); color: white; }
+        
+        .loading-message {
+            text-align: center;
+            font-style: italic;
+            color: var(--text-muted);
+            margin-top: 20px;
+        }
+
+        @media (max-width: 1200px) { 
+            .info-card, .list-card { 
+                grid-column: 1 / -1; /* Full width on smaller screens */
+            } 
+        }
+        @media (max-width: 900px) { 
+            h1 { font-size: 1.75rem; } 
+        }
+        @media (max-width: 600px) { 
+            body { padding: 10px; } 
+            .card { padding: 20px; } 
+            .info-card img { max-height: 250px; object-fit: contain; } /* Limit image height on small screens */
+            .list-card ul { max-height: 200px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header class="header">
+        <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" class="logo-link">
+            <img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" class="header-logo">
+        </a>
+        <h1>Spot The Aurora - Solar Activity Dashboard</h1>
+    </header>
+
+    <main class="dashboard-grid">
+        <div class="card info-card">
+            <div class="card-title-container">
+                <h2 class="card-title">SDO AIA 131Å (SUVI Analogue)</h2>
+            </div>
+            <img id="sdo-aia-131" src="/placeholder.png" alt="SDO AIA 131Å Image">
+            <p class="loading-message" id="loading-131">Loading image...</p>
+        </div>
+        <div class="card info-card">
+            <div class="card-title-container">
+                <h2 class="card-title">SDO AIA 304Å (SUVI Analogue)</h2>
+            </div>
+            <img id="sdo-aia-304" src="/placeholder.png" alt="SDO AIA 304Å Image">
+            <p class="loading-message" id="loading-304">Loading image...</p>
+        </div>
+        <div class="card info-card">
+            <div class="card-title-container">
+                <h2 class="card-title">SDO HMI Magnetogram</h2>
+            </div>
+            <img id="sdo-hmi" src="/placeholder.png" alt="SDO HMI Magnetogram Image">
+            <p class="loading-message" id="loading-hmi">Loading image...</p>
+        </div>
+         <div class="card info-card">
+            <div class="card-title-container">
+                <h2 class="card-title">Current Solar Dynamics</h2>
+            </div>
+            <iframe
+                id="solar-dynamics-iframe"
+                src="https://www.solarsystemscope.com/sun" 
+                title="Live Solar Dynamics"
+                width="100%"
+                height="100%"
+                frameborder="0"
+                style="border-radius: 8px; margin-top: 15px;">
+            </iframe>
+        </div>
+
+
+        <div class="card chart-card">
+            <div class="card-title-container">
+                <h2 class="card-title">GOES X-ray Flux (Past 6 Hours)</h2>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="xrayFluxChart"></canvas>
+            </div>
+            <p class="loading-message" id="loading-xray">Loading X-ray flux data...</p>
+        </div>
+
+        <div class="card list-card">
+            <div class="card-title-container">
+                <h2 class="card-title">Latest Solar Flares</h2>
+            </div>
+            <ul id="flare-list">
+                <li class="loading-message">Loading solar flares...</li>
+            </ul>
+        </div>
+
+        <div class="card list-card">
+            <div class="card-title-container">
+                <h2 class="card-title">Latest Active Regions (Sunspots)</h2>
+            </div>
+            <ul id="sunspot-list">
+                <li class="loading-message">Loading active regions...</li>
+            </ul>
+        </div>
+
+    </main>
+
+    <footer class="page-footer">
+        <p>Data courtesy of <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA SWPC</a> and <a href="https://sdo.gsfc.nasa.gov/" target="_blank" rel="noopener noreferrer">NASA SDO</a></p>
+        <p>Visualization by <a href="https://www.tnrprotography.co.nz/" target="_blank" rel="noopener noreferrer">TNR Protography</a></p>
+    </footer>
+</div>
+
+<script>
+    const SDO_AIA_131_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0131.jpg';
+    const SDO_AIA_304_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0304.jpg';
+    const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMII.jpg';
+    const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
+    const NOAA_ACTIVE_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_cycle/latest_active_regions.json';
+    const NOAA_FLARES_URL = 'https://services.swpc.noaa.gov/json/goes/latest_primary_flare_list.json';
+
+    let xrayChartInstance = null;
+
+    function formatTimestamp(isoString) {
+        try {
+            const d = new Date(isoString);
+            return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+        } catch {
+            return "Invalid Date";
+        }
+    }
+
+    async function fetchImage(url, imgElementId, loadingMessageId) {
+        const imgElement = document.getElementById(imgElementId);
+        const loadingMessage = document.getElementById(loadingMessageId);
+        if (loadingMessage) loadingMessage.style.display = 'block';
+        imgElement.src = '/placeholder.png'; // Set a placeholder immediately
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Failed to load image from ${url}`);
+            imgElement.src = url;
+            imgElement.onload = () => {
+                if (loadingMessage) loadingMessage.style.display = 'none';
+            };
+            imgElement.onerror = () => {
+                imgElement.src = '/error.png'; // Fallback error image
+                if (loadingMessage) loadingMessage.textContent = 'Failed to load image.';
+            };
+        } catch (error) {
+            console.error(`Error fetching ${url}:`, error);
+            imgElement.src = '/error.png'; // Fallback error image
+            if (loadingMessage) loadingMessage.textContent = 'Failed to load image.';
+        }
+    }
+
+    async function fetchXrayFlux() {
+        const loadingMessage = document.getElementById('loading-xray');
+        if (loadingMessage) loadingMessage.style.display = 'block';
+        try {
+            const response = await fetch(NOAA_XRAY_FLUX_URL);
+            if (!response.ok) throw new Error('Failed to fetch X-ray flux data.');
+            const data = await response.json();
+
+            const processedData = data.map(d => ({
+                time: new Date(d.time_tag),
+                short: parseFloat(d.short), // 0.1-0.8 nm
+                long: parseFloat(d.long)    // 0.05-0.4 nm (often used for flares)
+            })).filter(d => !isNaN(d.short) && !isNaN(d.long));
+
+            // Sort data by time to ensure correct plotting
+            processedData.sort((a, b) => a.time - b.time);
+
+            renderXrayFluxChart(processedData);
+            if (loadingMessage) loadingMessage.style.display = 'none';
+        } catch (error) {
+            console.error('Error fetching X-ray flux:', error);
+            if (loadingMessage) loadingMessage.textContent = 'Failed to load X-ray flux data.';
+        }
+    }
+
+    function renderXrayFluxChart(data) {
+        const ctx = document.getElementById('xrayFluxChart').getContext('2d');
+
+        const labels = data.map(d => d.time);
+        const shortFluxValues = data.map(d => d.short);
+        const longFluxValues = data.map(d => d.long);
+
+        if (xrayChartInstance) {
+            xrayChartInstance.destroy();
+        }
+
+        xrayChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Short Flux (0.1-0.8 nm)',
+                        data: shortFluxValues,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        fill: false,
+                        pointRadius: 0,
+                        tension: 0.1,
+                    },
+                    {
+                        label: 'Long Flux (0.05-0.4 nm)',
+                        data: longFluxValues,
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                        fill: false,
+                        pointRadius: 0,
+                        tension: 0.1,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#a1a1aa', // Corrected: var(--text-secondary) -> #a1a1aa
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(context) {
+                                return new Date(context[0].parsed.x).toLocaleString();
+                            },
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    const value = context.parsed.y;
+                                    let fluxClass = '';
+                                    if (value >= 1e-4) fluxClass = 'X';
+                                    else if (value >= 1e-5) fluxClass = 'M';
+                                    else if (value >= 1e-6) fluxClass = 'C';
+                                    else if (value >= 1e-7) fluxClass = 'B';
+                                    else fluxClass = 'A';
+                                    label += value.toExponential(2) + ` (${fluxClass}-class)`;
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'minute',
+                            tooltipFormat: 'MMM dd, HH:mm',
+                            displayFormats: {
+                                minute: 'HH:mm',
+                                hour: 'HH:mm'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Time (UTC)',
+                            color: '#fafafa', // Corrected: var(--text-primary) -> #fafafa
+                        },
+                        ticks: {
+                            color: '#71717a', // Corrected: var(--text-muted) -> #71717a
+                        },
+                        grid: {
+                            color: '#3f3f46', // Corrected: var(--border-color) -> #3f3f46
+                        }
+                    },
+                    y: {
+                        type: 'logarithmic',
+                        title: {
+                            display: true,
+                            text: 'X-ray Flux (W/m²)',
+                            color: '#fafafa', // Corrected: var(--text-primary) -> #fafafa
+                        },
+                        ticks: {
+                            callback: function(value, index, ticks) {
+                                if (value === 1e-3) return 'X1.0';
+                                if (value === 1e-4) return 'M1.0';
+                                if (value === 1e-5) return 'C1.0';
+                                if (value === 1e-6) return 'B1.0';
+                                if (value === 1e-7) return 'A1.0';
+                                return null; // Hide other ticks
+                            },
+                            color: '#71717a', // Corrected: var(--text-muted) -> #71717a
+                        },
+                        grid: {
+                            color: '#3f3f46', // Corrected: var(--border-color) -> #3f3f46
+                            lineWidth: (context) => {
+                                // Make grid lines for class boundaries thicker/more prominent
+                                if (context.tick.value === 1e-4 || context.tick.value === 1e-5 || context.tick.value === 1e-6 || context.tick.value === 1e-7) {
+                                    return 1.5;
+                                }
+                                return 0.5;
+                            },
+                            drawOnChartArea: true,
+                            drawTicks: true,
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function fetchFlares() {
+        const flareList = document.getElementById('flare-list');
+        flareList.innerHTML = '<li class="loading-message">Loading solar flares...</li>';
+        try {
+            const response = await fetch(NOAA_FLARES_URL);
+            if (!response.ok) throw new Error('Failed to fetch solar flares.');
+            const data = await response.json();
+
+            if (data.length === 0) {
+                flareList.innerHTML = '<li class="loading-message">No solar flares reported recently.</li>';
+                return;
+            }
+
+            flareList.innerHTML = ''; // Clear loading message
+            data.forEach(flare => {
+                const li = document.createElement('li');
+                const beginTime = new Date(flare.beginTime).toLocaleString();
+                const peakTime = new Date(flare.peakTime).toLocaleString();
+                const endTime = new Date(flare.endTime).toLocaleString();
+                // Removed inline style construction, relying on CSS classes
+                const classSpan = `<span class="flare-class class-${flare.class[0]}">${flare.class}</span>`; 
+
+                li.innerHTML = `
+                    <strong>${flare.class} Flare</strong> ${classSpan}
+                    <span>Begin: ${beginTime}</span>
+                    <span>Peak: ${peakTime}</span>
+                    <span>End: ${endTime}</span>
+                    <span>Region: ${flare.activeRegionNum || 'N/A'}</span>
+                    <span>Location: ${flare.sourceLocation || 'N/A'}</span>
+                `;
+                flareList.appendChild(li);
+            });
+        } catch (error) {
+            console.error('Error fetching flares:', error);
+            flareList.innerHTML = `<li class="loading-message" style="color:red;">Failed to load solar flares.</li>`;
+        }
+    }
+
+    async function fetchSunspots() {
+        const sunspotList = document.getElementById('sunspot-list');
+        sunspotList.innerHTML = '<li class="loading-message">Loading active regions...</li>';
+        try {
+            const response = await fetch(NOAA_ACTIVE_REGIONS_URL);
+            if (!response.ok) throw new Error('Failed to fetch active regions.');
+            const data = await response.json();
+
+            if (data.length === 0) {
+                sunspotList.innerHTML = '<li class="loading-message">No active regions reported recently.</li>';
+                return;
+            }
+
+            sunspotList.innerHTML = ''; // Clear loading message
+            data.forEach(region => {
+                const li = document.createElement('li');
+                const updated = new Date(region.last_update).toLocaleString();
+                li.innerHTML = `
+                    <strong>Region ${region.number}</strong>
+                    <span>Class: ${region.carr_rot_sys_class || 'N/A'}</span>
+                    <span>Location: ${region.location || 'N/A'}</span>
+                    <span>Area: ${region.area_ext_hem || 'N/A'}</span>
+                    <span>Last Updated: ${updated}</span>
+                `;
+                sunspotList.appendChild(li);
+            });
+        } catch (error) {
+            console.error('Error fetching sunspots:', error);
+            sunspotList.innerHTML = `<li class="loading-message" style="color:red;">Failed to load active regions.</li>`;
+        }
+    }
+
+    function runAllUpdates() {
+        console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
+        fetchImage(SDO_AIA_131_URL, 'sdo-aia-131', 'loading-131');
+        fetchImage(SDO_AIA_304_URL, 'sdo-aia-304', 'loading-304');
+        fetchImage(SDO_HMI_URL, 'sdo-hmi', 'loading-hmi');
+        fetchXrayFlux();
+        fetchFlares();
+        fetchSunspots();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        runAllUpdates();
+        // Update every 5 minutes
+        setInterval(runAllUpdates, 5 * 60 * 1000); 
+    });
+</script>
+
+</body>
+</html>

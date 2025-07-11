@@ -1,7 +1,7 @@
 {
   "short_name": "Spot the Aurora",
-  "name": "Aurora Forecast and Modeler",
-  "description": "A 3D modeler for NASA Coronal Mass Ejections (CMEs) with a live aurora forecast.",
+  "name": "Aurora Forecast and Solar Activity Dashboard",
+  "description": "A 3D modeler for NASA Coronal Mass Ejections (CMEs) with a live aurora forecast and solar activity dashboard.",
   "icons": [
     {
       "src": "/icons/android-chrome-192x192.png",
@@ -28,9 +28,3 @@
   "background_color": "#171717",
   "theme_color": "#171717"
 }
-
-
-
-
-
-

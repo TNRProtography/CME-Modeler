@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
@@ -15,13 +16,13 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
-// REMOVED: import FlareIcon from './components/icons/FlareIcon';
+import FlareIcon from './components/icons/FlareIcon'; // RE-ADD this import
 import ForecastModal from './components/ForecastModal';
-// REMOVED: import SolarFlaresPage from './components/SolarFlaresPage';
+import SolarActivityPage from './components/SolarActivityPage'; // NEW import for solar activity page
 
 const App: React.FC = () => {
-  // MODIFIED: Removed 'flares' from activePage state
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler'>('forecast');
+  // MODIFIED: Added 'solar-activity' to activePage state
+  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -59,7 +60,6 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // --- THIS IS THE FIX: Restore the API key logic for the CME modeler ---
   const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
   
   useEffect(() => {
@@ -91,7 +91,6 @@ const App: React.FC = () => {
     setDataVersion(v => v + 1);
 
     try {
-      // --- THIS IS THE FIX: Pass the apiKey to the fetch function ---
       const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
       if (data.length > 0) {
@@ -118,7 +117,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [resetClock, apiKey]); // --- THIS IS THE FIX: Add apiKey back to the dependency array
+  }, [resetClock, apiKey]);
 
   useEffect(() => {
     if (activePage === 'modeler') {
@@ -207,15 +206,15 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
-  // REMOVED: Conditional rendering for SolarFlaresPage
-  // if (activePage === 'flares') {
-  //   return <SolarFlaresPage onNavChange={setActivePage} />;
-  // }
-
+  // MODIFIED: Conditional rendering for different active pages
   if (activePage === 'forecast') {
     return <ForecastModal onNavChange={setActivePage} />;
   }
+  if (activePage === 'solar-activity') { // NEW conditional render
+    return <SolarActivityPage onNavChange={setActivePage} />;
+  }
 
+  // This is the 'modeler' page content
   return (
     <div className="w-screen h-screen bg-black text-neutral-300 overflow-hidden flex">
       <div className={`
@@ -245,7 +244,7 @@ const App: React.FC = () => {
           cmeData={filteredCmes}
           activeView={activeView}
           focusTarget={activeFocus}
-          currentlyModeledCmeId={currentlyModeledCMEId}
+          currentlyModeledCMEId={currentlyModeledCmeId}
           onCMEClick={handleCMEClickFromCanvas}
           timelineActive={timelineActive}
           timelinePlaying={timelinePlaying}
@@ -301,14 +300,14 @@ const App: React.FC = () => {
                 <ForecastIcon className="w-5 h-5" />
                 <span className="text-sm font-semibold">Aurora Forecast</span>
             </button>
-            {/* REMOVED: Solar Activity button */}
-            {/* <button 
-              onClick={() => setActivePage('flares')}
+            {/* NEW: Solar Activity button */}
+            <button 
+              onClick={() => setActivePage('solar-activity')} // Changed page to 'solar-activity'
               className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
               title="View Solar Activity">
                 <FlareIcon className="w-5 h-5" />
                 <span className="text-sm font-semibold">Solar Activity</span>
-            </button> */}
+            </button>
           </div>
           <div className="flex items-center space-x-2 pointer-events-auto">
             <button 
