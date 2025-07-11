@@ -3,6 +3,39 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+// --- THIS IS THE CRITICAL FIX ---
+// Import all necessary Chart.js components and the date adapter here
+// for global registration at the application's entry point.
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  LogarithmicScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  TimeScale, // Import TimeScale
+} from 'chart.js';
+import 'chartjs-adapter-date-fns'; // Import the date adapter
+
+// Register all necessary components globally, before any React component uses them.
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  LogarithmicScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  TimeScale
+);
+// --- END OF CRITICAL FIX ---
+
 // Define THREE and gsap on window for TypeScript if not using modules for them
 declare global {
   interface Window {
