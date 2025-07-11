@@ -210,24 +210,24 @@
     <main class="dashboard-grid">
         <div class="card info-card">
             <div class="card-title-container">
-                <h2 class="card-title">SDO AIA 131Å (SUVI Analogue)</h2>
+                <h2 class="card-title">SUVI 131Å</h2>
             </div>
-            <img id="sdo-aia-131" src="/placeholder.png" alt="SDO AIA 131Å Image">
-            <p class="loading-message" id="loading-131">Loading image...</p>
+            <img id="suvi-131" src="/placeholder.png" alt="SUVI 131Å Image">
+            <p class="loading-message" id="loading-suvi-131">Loading image...</p>
         </div>
         <div class="card info-card">
             <div class="card-title-container">
-                <h2 class="card-title">SDO AIA 304Å (SUVI Analogue)</h2>
+                <h2 class="card-title">SUVI 304Å</h2>
             </div>
-            <img id="sdo-aia-304" src="/placeholder.png" alt="SDO AIA 304Å Image">
-            <p class="loading-message" id="loading-304">Loading image...</p>
+            <img id="suvi-304" src="/placeholder.png" alt="SUVI 304Å Image">
+            <p class="loading-message" id="loading-suvi-304">Loading image...</p>
         </div>
         <div class="card info-card">
             <div class="card-title-container">
-                <h2 class="card-title">SDO HMI Magnetogram</h2>
+                <h2 class="card-title">SolarHam HMI Magnetogram</h2>
             </div>
-            <img id="sdo-hmi" src="/placeholder.png" alt="SDO HMI Magnetogram Image">
-            <p class="loading-message" id="loading-hmi">Loading image...</p>
+            <img id="solarham-hmi" src="/placeholder.png" alt="SolarHam HMI Magnetogram Image">
+            <p class="loading-message" id="loading-solarham-hmi">Loading image...</p>
         </div>
          <div class="card info-card">
             <div class="card-title-container">
@@ -282,9 +282,12 @@
 </div>
 
 <script>
-    const SDO_AIA_131_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0131.jpg';
-    const SDO_AIA_304_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0304.jpg';
-    const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMII.jpg';
+    // Updated Image URLs
+    const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
+    const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
+    const SOLARHAM_HMI_URL = 'https://www.solarham.com/hmi_mag_1024.jpg'; // Direct image link from inspecting solarham.com
+    // Removed direct SDO links as SUVI/SolarHam are preferred
+
     const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
     const NOAA_ACTIVE_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_cycle/latest_active_regions.json';
     const NOAA_FLARES_URL = 'https://services.swpc.noaa.gov/json/goes/latest_primary_flare_list.json';
@@ -349,19 +352,33 @@
                  const errorText = `Failed to fetch X-ray flux data (HTTP ${response.status})`;
                  throw new Error(errorText);
             }
-            const data = await response.json();
+            const rawData = await response.json();
 
-            const processedData = data.map(d => ({
-                time: new Date(d.time_tag),
-                short: parseFloat(d.short), // 0.1-0.8 nm
-                long: parseFloat(d.long)    // 0.05-0.4 nm (often used for flares)
-            })).filter(d => !isNaN(d.short) && !isNaN(d.long));
+            // Group data by time_tag
+            const groupedData = new Map();
+            rawData.forEach(d => {
+                const time = new Date(d.time_tag).getTime(); // Use timestamp for map key
+                if (!groupedData.has(time)) {
+                    groupedData.set(time, { time: new Date(d.time_tag), short: null, long: null });
+                }
+                const entry = groupedData.get(time);
+                if (d.energy === "0.1-0.8nm") {
+                    entry.short = parseFloat(d.flux);
+                } else if (d.energy === "0.05-0.4nm") {
+                    entry.long = parseFloat(d.flux);
+                }
+            });
+
+            // Convert map to array and filter out incomplete entries
+            const processedData = Array.from(groupedData.values()).filter(d => 
+                !isNaN(d.short) && d.short !== null && !isNaN(d.long) && d.long !== null
+            );
 
             // Sort data by time to ensure correct plotting
             processedData.sort((a, b) => a.time - b.time);
 
             if (processedData.length === 0) {
-                 throw new Error('No valid X-ray flux data available.');
+                 throw new Error('No valid X-ray flux data available to plot.');
             }
 
             renderXrayFluxChart(processedData);
@@ -417,7 +434,7 @@
                 plugins: {
                     legend: {
                         labels: {
-                            color: '#a1a1aa', // Corrected: Used static color
+                            color: '#a1a1aa', 
                         }
                     },
                     tooltip: {
@@ -461,13 +478,13 @@
                         title: {
                             display: true,
                             text: 'Time (UTC)',
-                            color: '#fafafa', // Corrected: Used static color
+                            color: '#fafafa', 
                         },
                         ticks: {
-                            color: '#71717a', // Corrected: Used static color
+                            color: '#71717a', 
                         },
                         grid: {
-                            color: '#3f3f46', // Corrected: Used static color
+                            color: '#3f3f46', 
                         }
                     },
                     y: {
@@ -475,21 +492,22 @@
                         title: {
                             display: true,
                             text: 'X-ray Flux (W/m²)',
-                            color: '#fafafa', // Corrected: Used static color
+                            color: '#fafafa', 
                         },
                         ticks: {
                             callback: function(value, index, ticks) {
+                                // Only return labels for the main classes
                                 if (value === 1e-3) return 'X1.0';
                                 if (value === 1e-4) return 'M1.0';
                                 if (value === 1e-5) return 'C1.0';
                                 if (value === 1e-6) return 'B1.0';
                                 if (value === 1e-7) return 'A1.0';
-                                return null; // Hide other ticks
+                                return null; 
                             },
-                            color: '#71717a', // Corrected: Used static color
+                            color: '#71717a', 
                         },
                         grid: {
-                            color: '#3f3f46', // Corrected: Used static color
+                            color: '#3f3f46', 
                             lineWidth: (context) => {
                                 // Make grid lines for class boundaries thicker/more prominent
                                 if (context.tick.value === 1e-4 || context.tick.value === 1e-5 || context.tick.value === 1e-6 || context.tick.value === 1e-7) {
@@ -499,7 +517,10 @@
                             },
                             drawOnChartArea: true,
                             drawTicks: true,
-                        }
+                        },
+                         // Set min/max to ensure all classes are visible by default
+                        min: 1e-8, // Slightly below A-class
+                        max: 1e-3 // Up to X-class, adjust if you expect higher
                     }
                 }
             }
@@ -518,7 +539,7 @@
             }
             const data = await response.json();
 
-            if (data.length === 0) {
+            if (!Array.isArray(data) || data.length === 0) {
                 flareList.innerHTML = '<li class="loading-message">No solar flares reported recently.</li>';
                 return;
             }
@@ -532,11 +553,12 @@
                 const beginTime = new Date(flare.beginTime).toLocaleString();
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
-                // Rely on existing CSS classes for styling, remove problematic inline style construction
-                const classSpan = `<span class="flare-class class-${flare.class[0]}">${flare.class}</span>`; 
+                // Rely on existing CSS classes for styling
+                const classChar = flare.class ? flare.class[0] : 'U'; // Handle cases where class might be undefined/null
+                const classSpan = `<span class="flare-class class-${classChar}">${flare.class || 'N/A'}</span>`; 
 
                 li.innerHTML = `
-                    <strong>${flare.class} Flare</strong> ${classSpan}
+                    <strong>${flare.class || 'Flare'}</strong> ${classSpan}
                     <span>Begin: ${beginTime}</span>
                     <span>Peak: ${peakTime}</span>
                     <span>End: ${endTime}</span>
@@ -563,7 +585,7 @@
             }
             const data = await response.json();
 
-            if (data.length === 0) {
+            if (!Array.isArray(data) || data.length === 0) {
                 sunspotList.innerHTML = '<li class="loading-message">No active regions reported recently.</li>';
                 return;
             }
@@ -592,9 +614,9 @@
 
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
-        fetchImage(SDO_AIA_131_URL, 'sdo-aia-131', 'loading-131');
-        fetchImage(SDO_AIA_304_URL, 'sdo-aia-304', 'loading-304');
-        fetchImage(SDO_HMI_URL, 'sdo-hmi', 'loading-hmi');
+        fetchImage(SUVI_131_URL, 'suvi-131', 'loading-suvi-131'); // Updated ID
+        fetchImage(SUVI_304_URL, 'suvi-304', 'loading-suvi-304'); // Updated ID
+        fetchImage(SOLARHAM_HMI_URL, 'solarham-hmi', 'loading-solarham-hmi'); // Updated ID
         fetchXrayFlux();
         fetchFlares();
         fetchSunspots();
