@@ -12,6 +12,7 @@
     <link rel="shortcut icon" href="/favicon.ico">
 
     <title>TNR Protography CME Modeler</title>
+    <!-- These CDN scripts are fine, Vite won't bundle them -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -35,7 +36,8 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- THIS IS WHAT THE SCRIPT TAG MUST LOOK LIKE AFTER BUILDING -->
-    <script type="module" crossorigin src="/assets/index-SOME_HASH.js"></script> 
+    <!-- THIS IS THE ONLY SCRIPT TAG FOR YOUR APP'S ENTRY POINT -->
+    <!-- Vite will *automatically* rewrite this to point to the compiled .js bundle during 'npm run build' -->
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
