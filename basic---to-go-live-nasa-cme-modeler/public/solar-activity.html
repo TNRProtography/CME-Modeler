@@ -176,6 +176,10 @@
             color: var(--text-muted);
             margin-top: 20px;
         }
+        .error-message {
+            color: #ef4444; /* Red color for errors */
+            font-weight: bold;
+        }
 
         @media (max-width: 1200px) { 
             .info-card, .list-card { 
@@ -299,32 +303,52 @@
     async function fetchImage(url, imgElementId, loadingMessageId) {
         const imgElement = document.getElementById(imgElementId);
         const loadingMessage = document.getElementById(loadingMessageId);
-        if (loadingMessage) loadingMessage.style.display = 'block';
+        if (loadingMessage) {
+            loadingMessage.classList.remove('error-message'); // Clear any previous error styling
+            loadingMessage.textContent = 'Loading image...';
+            loadingMessage.style.display = 'block';
+        }
         imgElement.src = '/placeholder.png'; // Set a placeholder immediately
         try {
             const response = await fetch(url);
-            if (!response.ok) throw new Error(`Failed to load image from ${url}`);
+            if (!response.ok) {
+                const errorText = `Failed to load image (HTTP ${response.status})`;
+                throw new Error(errorText);
+            }
             imgElement.src = url;
             imgElement.onload = () => {
                 if (loadingMessage) loadingMessage.style.display = 'none';
             };
             imgElement.onerror = () => {
                 imgElement.src = '/error.png'; // Fallback error image
-                if (loadingMessage) loadingMessage.textContent = 'Failed to load image.';
+                if (loadingMessage) {
+                    loadingMessage.textContent = 'Image failed to load.';
+                    loadingMessage.classList.add('error-message');
+                }
             };
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
             imgElement.src = '/error.png'; // Fallback error image
-            if (loadingMessage) loadingMessage.textContent = 'Failed to load image.';
+            if (loadingMessage) {
+                loadingMessage.textContent = `Error: ${error.message || 'Network issue'}`;
+                loadingMessage.classList.add('error-message');
+            }
         }
     }
 
     async function fetchXrayFlux() {
         const loadingMessage = document.getElementById('loading-xray');
-        if (loadingMessage) loadingMessage.style.display = 'block';
+        if (loadingMessage) {
+            loadingMessage.classList.remove('error-message');
+            loadingMessage.textContent = 'Loading X-ray flux data...';
+            loadingMessage.style.display = 'block';
+        }
         try {
             const response = await fetch(NOAA_XRAY_FLUX_URL);
-            if (!response.ok) throw new Error('Failed to fetch X-ray flux data.');
+            if (!response.ok) {
+                 const errorText = `Failed to fetch X-ray flux data (HTTP ${response.status})`;
+                 throw new Error(errorText);
+            }
             const data = await response.json();
 
             const processedData = data.map(d => ({
@@ -336,11 +360,18 @@
             // Sort data by time to ensure correct plotting
             processedData.sort((a, b) => a.time - b.time);
 
+            if (processedData.length === 0) {
+                 throw new Error('No valid X-ray flux data available.');
+            }
+
             renderXrayFluxChart(processedData);
             if (loadingMessage) loadingMessage.style.display = 'none';
         } catch (error) {
             console.error('Error fetching X-ray flux:', error);
-            if (loadingMessage) loadingMessage.textContent = 'Failed to load X-ray flux data.';
+            if (loadingMessage) {
+                loadingMessage.textContent = `Error: ${error.message || 'Failed to load X-ray flux data.'}`;
+                loadingMessage.classList.add('error-message');
+            }
         }
     }
 
@@ -386,7 +417,7 @@
                 plugins: {
                     legend: {
                         labels: {
-                            color: '#a1a1aa', // Corrected: var(--text-secondary) -> #a1a1aa
+                            color: '#a1a1aa', // Corrected: Used static color
                         }
                     },
                     tooltip: {
@@ -430,13 +461,13 @@
                         title: {
                             display: true,
                             text: 'Time (UTC)',
-                            color: '#fafafa', // Corrected: var(--text-primary) -> #fafafa
+                            color: '#fafafa', // Corrected: Used static color
                         },
                         ticks: {
-                            color: '#71717a', // Corrected: var(--text-muted) -> #71717a
+                            color: '#71717a', // Corrected: Used static color
                         },
                         grid: {
-                            color: '#3f3f46', // Corrected: var(--border-color) -> #3f3f46
+                            color: '#3f3f46', // Corrected: Used static color
                         }
                     },
                     y: {
@@ -444,7 +475,7 @@
                         title: {
                             display: true,
                             text: 'X-ray Flux (W/m²)',
-                            color: '#fafafa', // Corrected: var(--text-primary) -> #fafafa
+                            color: '#fafafa', // Corrected: Used static color
                         },
                         ticks: {
                             callback: function(value, index, ticks) {
@@ -455,10 +486,10 @@
                                 if (value === 1e-7) return 'A1.0';
                                 return null; // Hide other ticks
                             },
-                            color: '#71717a', // Corrected: var(--text-muted) -> #71717a
+                            color: '#71717a', // Corrected: Used static color
                         },
                         grid: {
-                            color: '#3f3f46', // Corrected: var(--border-color) -> #3f3f46
+                            color: '#3f3f46', // Corrected: Used static color
                             lineWidth: (context) => {
                                 // Make grid lines for class boundaries thicker/more prominent
                                 if (context.tick.value === 1e-4 || context.tick.value === 1e-5 || context.tick.value === 1e-6 || context.tick.value === 1e-7) {
@@ -477,10 +508,14 @@
 
     async function fetchFlares() {
         const flareList = document.getElementById('flare-list');
-        flareList.innerHTML = '<li class="loading-message">Loading solar flares...</li>';
+        // Clear existing list items, add a temporary loading message
+        flareList.innerHTML = '<li class="loading-message">Loading solar flares...</li>'; 
         try {
             const response = await fetch(NOAA_FLARES_URL);
-            if (!response.ok) throw new Error('Failed to fetch solar flares.');
+            if (!response.ok) {
+                 const errorText = `Failed to fetch solar flares (HTTP ${response.status})`;
+                 throw new Error(errorText);
+            }
             const data = await response.json();
 
             if (data.length === 0) {
@@ -489,12 +524,15 @@
             }
 
             flareList.innerHTML = ''; // Clear loading message
+            // Sort flares by peakTime in descending order (most recent first)
+            data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
+
             data.forEach(flare => {
                 const li = document.createElement('li');
                 const beginTime = new Date(flare.beginTime).toLocaleString();
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
-                // Removed inline style construction, relying on CSS classes
+                // Rely on existing CSS classes for styling, remove problematic inline style construction
                 const classSpan = `<span class="flare-class class-${flare.class[0]}">${flare.class}</span>`; 
 
                 li.innerHTML = `
@@ -509,16 +547,20 @@
             });
         } catch (error) {
             console.error('Error fetching flares:', error);
-            flareList.innerHTML = `<li class="loading-message" style="color:red;">Failed to load solar flares.</li>`;
+            flareList.innerHTML = `<li class="loading-message error-message">Error: ${error.message || 'Failed to load solar flares.'}</li>`;
         }
     }
 
     async function fetchSunspots() {
         const sunspotList = document.getElementById('sunspot-list');
-        sunspotList.innerHTML = '<li class="loading-message">Loading active regions...</li>';
+        // Clear existing list items, add a temporary loading message
+        sunspotList.innerHTML = '<li class="loading-message">Loading active regions...</li>'; 
         try {
             const response = await fetch(NOAA_ACTIVE_REGIONS_URL);
-            if (!response.ok) throw new Error('Failed to fetch active regions.');
+            if (!response.ok) {
+                const errorText = `Failed to fetch active regions (HTTP ${response.status})`;
+                throw new Error(errorText);
+            }
             const data = await response.json();
 
             if (data.length === 0) {
@@ -527,6 +569,9 @@
             }
 
             sunspotList.innerHTML = ''; // Clear loading message
+            // Sort active regions by number, descending (newest first based on common NOAA patterns)
+            data.sort((a, b) => parseInt(b.number) - parseInt(a.number));
+
             data.forEach(region => {
                 const li = document.createElement('li');
                 const updated = new Date(region.last_update).toLocaleString();
@@ -541,7 +586,7 @@
             });
         } catch (error) {
             console.error('Error fetching sunspots:', error);
-            sunspotList.innerHTML = `<li class="loading-message" style="color:red;">Failed to load active regions.</li>`;
+            sunspotList.innerHTML = `<li class="loading-message error-message">Error: ${error.message || 'Failed to load active regions.'}</li>`;
         }
     }
 
