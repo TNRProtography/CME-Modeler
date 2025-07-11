@@ -239,20 +239,21 @@
         .imagery-card {
             grid-column: span 12; /* Default to full width on small screens */
             height: 450px;
-            flex-grow: 1;
         }
-        /* Styles for the clickable image link */
+        /* Styles for the clickable image link container */
         .imagery-link {
             display: flex;
             flex-direction: column;
             flex-grow: 1; /* Allow the link to take up all space */
+            justify-content: center;
+            align-items: center;
             text-decoration: none;
             color: inherit;
+            min-height: 0; /* Flexbox overflow fix */
         }
         .imagery-link img {
-            width: 100%;
-            height: 100%; 
-            max-height: 100%; 
+            max-width: 100%;
+            max-height: 100%; /* Image will now be contained within the growing link */
             object-fit: contain;
             border-radius: 8px;
             margin-top: 15px; 
@@ -305,8 +306,8 @@
             </div>
             <a id="suvi-131-link" href="#" target="_blank" rel="noopener noreferrer" class="imagery-link">
                 <img id="suvi-131-img" src="/placeholder.png" alt="SUVI 131Å Image">
+                <p class="loading-message" id="loading-suvi-131">Loading image...</p>
             </a>
-            <p class="loading-message" id="loading-suvi-131">Loading image...</p>
         </div>
         <div class="card imagery-card">
             <div class="card-title-container">
@@ -314,8 +315,8 @@
             </div>
             <a id="suvi-304-link" href="#" target="_blank" rel="noopener noreferrer" class="imagery-link">
                 <img id="suvi-304-img" src="/placeholder.png" alt="SUVI 304Å Image">
+                <p class="loading-message" id="loading-suvi-304">Loading image...</p>
             </a>
-            <p class="loading-message" id="loading-suvi-304">Loading image...</p>
         </div>
 
         <div class="card chart-card">
@@ -440,13 +441,11 @@
         }
         
         try {
-            // Using a new Image object for preloading and event handling, more reliable than direct src assignment
             const preloader = new Image();
             preloader.src = url;
 
             preloader.onload = () => {
-                console.log(`[fetchImage] Image preloaded successfully: ${url}`);
-                imgElement.src = url; // Now set the actual image element's src
+                imgElement.src = url; 
                 if (loadingMessage) loadingMessage.style.display = 'none';
             };
             preloader.onerror = () => {
@@ -744,9 +743,8 @@
             // Filter for Earth-facing regions (longitude between -90 and +90)
             const earthFacingRegions = recentRegions.filter(region => {
                 const longitude = parseFloat(region.longitude);
-                return !isNaN(longitude) && longitude >= -90 && longitude <= 90;
+                return !isNaN(longitude) && Math.abs(longitude) <= 90; 
             });
-
 
 
             if (earthFacingRegions.length === 0) {
@@ -779,15 +777,10 @@
         }
     }
 
-    // Function to handle tab switching for sun imagery
-    function setupSunImageryListeners() {
-        // This function is now empty as we have a static layout
-    }
-
 
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
-        // Sun imagery fetch is now called directly from DOMContentLoaded
+        // Fetch images for the simplified layout
         fetchImage(SUVI_131_URL, 'suvi-131-img', 'loading-suvi-131', 'suvi-131-link');
         fetchImage(SUVI_304_URL, 'suvi-304-img', 'loading-suvi-304', 'suvi-304-link');
 
@@ -797,7 +790,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        runAllUpdates(); // Fetch all data on initial load
+        runAllUpdates(); 
         setInterval(runAllUpdates, 5 * 60 * 1000); 
 
         // Event listeners for time preset buttons (for X-ray chart)
