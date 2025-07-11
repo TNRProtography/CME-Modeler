@@ -17,12 +17,12 @@
             --text-muted: #71717a;
             --link-color: #60a5fa;
             
-            /* Specific colors for X-ray flux classes */
-            --solar-flare-ab: #22c55e; /* Green for A/B combined */
-            --solar-flare-c: #f59e0b; /* Yellow for C */
-            --solar-flare-m: #ff4500; /* OrangeRed for M */
-            --solar-flare-x: #ef4444; /* Red for X1.0 to X4.9 */
-            --solar-flare-x5plus: #9370db; /* Medium Purple for X5.0+ */
+            /* Specific colors for X-ray flux classes (RGB components for easier RGBA in JS) */
+            --solar-flare-ab-rgb: 34, 197, 94; /* Green for A/B combined */
+            --solar-flare-c-rgb: 245, 158, 11; /* Yellow for C */
+            --solar-flare-m-rgb: 255, 69, 0; /* OrangeRed for M */
+            --solar-flare-x-rgb: 239, 68, 68; /* Red for X1.0 to X4.9 */
+            --solar-flare-x5plus-rgb: 147, 112, 219; /* Medium Purple for X5.0+ */
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -93,7 +93,6 @@
             gap: 8px;
             margin-bottom: 20px;
         }
-        /* Removed .info-card styles as the only one is now removed */
         .chart-card {
             grid-column: span 12; /* Full width for the X-ray chart */
             height: 450px;
@@ -157,10 +156,10 @@
             margin-left: 8px;
         }
         /* Flare class colors (actual values from :root) */
-        .class-A, .class-B { background-color: var(--solar-flare-ab); color: white; } /* A/B Green */
-        .class-C { background-color: var(--solar-flare-c); color: black; } /* C Yellow */
-        .class-M { background-color: var(--solar-flare-m); color: white; } /* M Orange */
-        .class-X { background-color: var(--solar-flare-x); color: white; } /* X Red */
+        .class-A, .class-B { background-color: rgb(var(--solar-flare-ab-rgb)); color: white; } /* A/B Green */
+        .class-C { background-color: rgb(var(--solar-flare-c-rgb)); color: black; } /* C Yellow */
+        .class-M { background-color: rgb(var(--solar-flare-m-rgb)); color: white; } /* M Orange */
+        .class-X { background-color: rgb(var(--solar-flare-x-rgb)); color: white; } /* X Red */
 
         .loading-message {
             text-align: center;
@@ -263,7 +262,7 @@
 
 
         @media (max-width: 1200px) { 
-            .list-card, .sun-imagery-card { /* Removed .info-card */
+            .list-card, .sun-imagery-card { 
                 grid-column: 1 / -1; /* Full width on smaller screens */
             } 
         }
@@ -310,9 +309,6 @@
                 <p class="loading-message" id="loading-suvi-304">Loading image...</p>
             </div>
         </div>
-
-        <!-- Removed the "Current Solar Dynamics" iframe card entirely -->
-
 
         <div class="card chart-card">
             <div class="card-title-container">
@@ -442,7 +438,7 @@
                 if (d.energy === "0.1-0.8nm") {
                     entry.short = parseFloat(d.flux);
                 } else if (d.energy === "0.05-0.4nm") {
-                    entry.long = parseFloat(d.flux);
+                    entry.long = parseFloat(d.flux); 
                 }
             });
 
@@ -488,47 +484,7 @@
         const ctx = document.getElementById('xrayFluxChart').getContext('2d');
 
         const labels = data.map(d => d.time);
-        
-        // Prepare data for multiple datasets based on flux level
-        const a_b_flux = []; 
-        const c_flux = [];   
-        const m_flux = [];   
-        const x_flux = [];   
-        const x5plus_flux = []; 
-
-        data.forEach(d => {
-            const value = d.short;
-            if (value >= 1e-8 && value < 1e-6) { // A-class & B-class (up to C1.0)
-                a_b_flux.push({x: d.time, y: value});
-            } else {
-                a_b_flux.push({x: d.time, y: null}); 
-            }
-
-            if (value >= 1e-6 && value < 1e-5) { // C-class (up to M1.0)
-                c_flux.push({x: d.time, y: value});
-            } else {
-                c_flux.push({x: d.time, y: null});
-            }
-
-            if (value >= 1e-5 && value < 1e-4) { // M-class (up to X1.0)
-                m_flux.push({x: d.time, y: value});
-            } else {
-                m_flux.push({x: d.time, y: null});
-            }
-
-            if (value >= 1e-4 && value < 5e-4) { // X-class (X1.0 to X4.9)
-                x_flux.push({x: d.time, y: value});
-            } else {
-                x_flux.push({x: d.time, y: null});
-            }
-
-            if (value >= 5e-4) { // X5.0+ class
-                x5plus_flux.push({x: d.time, y: value});
-            } else {
-                x5plus_flux.push({x: d.time, y: null});
-            }
-        });
-
+        const shortFluxValues = data.map(d => d.short);
 
         if (xrayChartInstance) {
             xrayChartInstance.destroy();
@@ -540,85 +496,34 @@
                 labels: labels,
                 datasets: [
                     {
-                        label: 'A/B Class',
-                        data: a_b_flux,
-                        borderColor: getCssVar('--solar-flare-ab'),
-                        backgroundColor: getCssVar('--solar-flare-ab'),
-                        fill: 'origin', 
+                        label: 'Short Flux (0.1-0.8 nm)',
+                        data: shortFluxValues,
+                        borderColor: (ctx) => {
+                            // Border color (line color) matches fill color of the segment
+                            const value = ctx.p1.parsed.y;
+                            if (value === null) return; // No line for null values
+                            if (value >= 5e-4) return `rgb(${getCssVar('--solar-flare-x5plus-rgb')})`; // X5+
+                            if (value >= 1e-4) return `rgb(${getCssVar('--solar-flare-x-rgb')})`;    // X1.0-X4.9
+                            if (value >= 1e-5) return `rgb(${getCssVar('--solar-flare-m-rgb')})`;    // M
+                            if (value >= 1e-6) return `rgb(${getCssVar('--solar-flare-c-rgb')})`;    // C
+                            if (value >= 1e-8) return `rgb(${getCssVar('--solar-flare-ab-rgb')})`;   // A/B
+                            return `rgb(${getCssVar('--solar-flare-ab-rgb')})`; // Default for <A1.0 (lowest part of A/B)
+                        },
+                        backgroundColor: (ctx) => {
+                            // Background fill color with 20% opacity
+                            const value = ctx.p1.parsed.y;
+                            if (value === null) return; // No fill for null values
+                            if (value >= 5e-4) return `rgba(${getCssVar('--solar-flare-x5plus-rgb')}, 0.2)`;
+                            if (value >= 1e-4) return `rgba(${getCssVar('--solar-flare-x-rgb')}, 0.2)`;
+                            if (value >= 1e-5) return `rgba(${getCssVar('--solar-flare-m-rgb')}, 0.2)`;
+                            if (value >= 1e-6) return `rgba(${getCssVar('--solar-flare-c-rgb')}, 0.2)`;
+                            if (value >= 1e-8) return `rgba(${getCssVar('--solar-flare-ab-rgb')}, 0.2)`;
+                            return `rgba(${getCssVar('--solar-flare-ab-rgb')}, 0.2)`; // Default for <A1.0
+                        },
+                        fill: 'origin', // Fill to the origin (X-axis)
                         pointRadius: 0,
-                        tension: 0.1,
-                        segment: {
-                            borderColor: (ctx) => {
-                                // Connect segments with the same color
-                                const value = ctx.p1.parsed.y;
-                                if (value >= 1e-8 && value < 1e-6) return getCssVar('--solar-flare-ab');
-                                return undefined; // No explicit border if not in this range
-                            }
-                        }
-                    },
-                    {
-                        label: 'C Class',
-                        data: c_flux,
-                        borderColor: getCssVar('--solar-flare-c'),
-                        backgroundColor: getCssVar('--solar-flare-c'),
-                        fill: 'origin',
-                        pointRadius: 0,
-                        tension: 0.1,
-                        segment: {
-                            borderColor: (ctx) => {
-                                const value = ctx.p1.parsed.y;
-                                if (value >= 1e-6 && value < 1e-5) return getCssVar('--solar-flare-c');
-                                return undefined;
-                            }
-                        }
-                    },
-                    {
-                        label: 'M Class',
-                        data: m_flux,
-                        borderColor: getCssVar('--solar-flare-m'),
-                        backgroundColor: getCssVar('--solar-flare-m'),
-                        fill: 'origin',
-                        pointRadius: 0,
-                        tension: 0.1,
-                        segment: {
-                            borderColor: (ctx) => {
-                                const value = ctx.p1.parsed.y;
-                                if (value >= 1e-5 && value < 1e-4) return getCssVar('--solar-flare-m');
-                                return undefined;
-                            }
-                        }
-                    },
-                    {
-                        label: 'X Class',
-                        data: x_flux,
-                        borderColor: getCssVar('--solar-flare-x'),
-                        backgroundColor: getCssVar('--solar-flare-x'),
-                        fill: 'origin',
-                        pointRadius: 0,
-                        tension: 0.1,
-                        segment: {
-                            borderColor: (ctx) => {
-                                const value = ctx.p1.parsed.y;
-                                if (value >= 1e-4 && value < 5e-4) return getCssVar('--solar-flare-x');
-                                return undefined;
-                            }
-                        }
-                    },
-                    {
-                        label: 'X5+ Class',
-                        data: x5plus_flux,
-                        borderColor: getCssVar('--solar-flare-x5plus'),
-                        backgroundColor: getCssVar('--solar-flare-x5plus'),
-                        fill: 'origin',
-                        pointRadius: 0,
-                        tension: 0.1,
-                        segment: {
-                            borderColor: (ctx) => {
-                                const value = ctx.p1.parsed.y;
-                                if (value >= 5e-4) return getCssVar('--solar-flare-x5plus');
-                                return undefined;
-                            }
-                        }
+                        tension: 0.2, // Slightly increased tension for smoother curves
+                        spanGaps: true // Crucial: allows lines to connect across null data points
                     }
                 ]
             },
