@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v8'; // Version incremented to force update
+const CACHE_NAME = 'cme-modeler-cache-v9'; // Version incremented to force update on all clients
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -19,7 +19,7 @@ const API_HOSTS = [
   'hemispheric-power.thenamesrock.workers.dev',
   'tnr-aurora-forecast.thenamesrock.workers.dev',
   'basic-aurora-forecast.thenamesrock.workers.dev',
-  'aurora-sightings.thenamesrock.workers.dev' // MODIFIED: Added your sightings API
+  'aurora-sightings.thenamesrock.workers.dev'
 ];
 
 
@@ -60,8 +60,28 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // Strategy 1: Network First for API calls.
+  // --- NEW STRATEGY: Network Only for /solar-data ---
+  // This ensures that the /solar-data endpoint always fetches from the network
+  // and is NEVER cached by the Service Worker.
+  if (url.pathname === '/solar-data') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // If the network fails (e.g., user is offline),
+        // we explicitly return a network error. No cached fallback.
+        return new Response('Solar activity data not available offline.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      })
+    );
+    return; // Stop further processing for this request
+  }
+  // --- END NEW STRATEGY ---
+
+
+  // Strategy 1: Network First for explicitly listed API hosts.
   // This ensures data is always fresh, with an offline fallback.
+  // Note: This strategy still caches the response for offline use.
   if (API_HOSTS.includes(url.hostname)) {
     event.respondWith(
       fetch(event.request)
