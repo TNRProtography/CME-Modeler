@@ -44,7 +44,7 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
 };
 
 const processCMEData = (data: CMEData[]): ProcessedCME[] => {
-  const modelableCMEs: ProcessedCMEs[] = [];
+  const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
@@ -70,35 +70,32 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
 
-// --- SOLAR ACTIVITY SECTION ---
+// REMOVED: SolarFlareData interface
+// export interface SolarFlareData {
+//   flrID: string;
+//   beginTime: string;
+//   peakTime: string;
+//   endTime: string | null;
+//   classType: string;
+//   sourceLocation: string;
+//   activeRegionNum: number;
+//   link: string;
+// }
 
-export interface SolarFlareData {
-  flrID: string;
-  beginTime: string;
-  peakTime: string;
-  endTime: string | null;
-  classType: string;
-  sourceLocation: string;
-  activeRegionNum: number;
-  link: string;
-}
-
-// Single function to get all solar activity data from our proxy
-export const fetchSolarActivityData = async () => {
-  const response = await fetch('/solar-data'); // This calls your Cloudflare Worker endpoint
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ error: `Failed to fetch solar activity data from proxy. Status: ${response.status}` }));
-    throw new Error(errorBody.error || `Server responded with status ${response.status}`);
-  }
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error);
-  }
-  
-  // The server now provides clean data. We just pass it through.
-  return {
-    xray: data.xrayData,
-    proton: data.protonData,
-    flares: data.flareData,
-  };
-};
+// REMOVED: fetchSolarActivityData function
+// export const fetchSolarActivityData = async () => {
+//   const response = await fetch('/solar-data');
+//   if (!response.ok) {
+//     const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
+//     throw new Error(errorBody.error || `Server responded with status ${response.status}`);
+//   }
+//   const data = await response.json();
+//   if (data.error) {
+//     throw new Error(data.error);
+//   }
+//   return {
+//     xray: data.xrayData,
+//     proton: data.protonData,
+//     flares: data.flareData,
+//   };
+// };

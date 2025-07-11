@@ -15,12 +15,13 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
-import FlareIcon from './components/icons/FlareIcon';
+// REMOVED: import FlareIcon from './components/icons/FlareIcon';
 import ForecastModal from './components/ForecastModal';
-import SolarFlaresPage from './components/SolarFlaresPage';
+// REMOVED: import SolarFlaresPage from './components/SolarFlaresPage';
 
 const App: React.FC = () => {
-  const [activePage, setActivePage] = useState<'forecast' | 'flares' | 'modeler'>('forecast');
+  // MODIFIED: Removed 'flares' from activePage state
+  const [activePage, setActivePage] = useState<'forecast' | 'modeler'>('forecast');
   
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -206,9 +207,10 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find(info => info.name === 'Sun');
 
-  if (activePage === 'flares') {
-    return <SolarFlaresPage onNavChange={setActivePage} />;
-  }
+  // REMOVED: Conditional rendering for SolarFlaresPage
+  // if (activePage === 'flares') {
+  //   return <SolarFlaresPage onNavChange={setActivePage} />;
+  // }
 
   if (activePage === 'forecast') {
     return <ForecastModal onNavChange={setActivePage} />;
@@ -243,7 +245,7 @@ const App: React.FC = () => {
           cmeData={filteredCmes}
           activeView={activeView}
           focusTarget={activeFocus}
-          currentlyModeledCMEId={currentlyModeledCMEId}
+          currentlyModeledCmeId={currentlyModeledCMEId}
           onCMEClick={handleCMEClickFromCanvas}
           timelineActive={timelineActive}
           timelinePlaying={timelinePlaying}
@@ -299,13 +301,14 @@ const App: React.FC = () => {
                 <ForecastIcon className="w-5 h-5" />
                 <span className="text-sm font-semibold">Aurora Forecast</span>
             </button>
-            <button 
+            {/* REMOVED: Solar Activity button */}
+            {/* <button 
               onClick={() => setActivePage('flares')}
               className="flex items-center space-x-2 px-4 py-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-800/90 transition-colors"
               title="View Solar Activity">
                 <FlareIcon className="w-5 h-5" />
                 <span className="text-sm font-semibold">Solar Activity</span>
-            </button>
+            </button> */}
           </div>
           <div className="flex items-center space-x-2 pointer-events-auto">
             <button 
