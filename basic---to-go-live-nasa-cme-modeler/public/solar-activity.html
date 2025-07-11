@@ -201,12 +201,10 @@
             font-weight: bold;
         }
 
-        /* --- Sun Imagery Layouts --- */
-
-        /* Mobile Tabbed Container (default for small screens) */
+        /* Styles for Sun Imagery Tabs */
         .sun-imagery-card-mobile {
-            grid-column: 1 / -1; /* Always full width on mobile */
-            display: flex; /* Flex column inside card */
+            grid-column: 1 / -1; 
+            display: flex; 
         }
         .sun-imagery-tabs {
             display: flex;
@@ -235,19 +233,19 @@
             border-bottom-color: var(--link-color);
         }
         .sun-imagery-content {
-            display: none; /* Hidden by default */
-            flex-grow: 1; /* Take remaining space */
+            display: none; 
+            flex-grow: 1; 
             flex-direction: column;
             justify-content: center;
             align-items: center;
             padding-top: 15px;
         }
         .sun-imagery-content.active {
-            display: flex; /* Show active content */
+            display: flex; 
         }
         .sun-imagery-content img {
             max-width: 100%;
-            max-height: 100%; /* Ensure images don't overflow vertically */
+            max-height: 100%; 
             object-fit: contain;
             border-radius: 8px;
         }
@@ -257,39 +255,34 @@
 
         /* Desktop Individual Image Cards (hidden by default on mobile) */
         .sun-imagery-card-desktop {
-            display: none; /* Hidden by default for mobile-first */
-            flex-grow: 1; /* Allow images to expand within */
-            /* Images directly inside this card */
+            display: none; 
+            flex-grow: 1; 
         }
         .sun-imagery-card-desktop img {
             max-width: 100%;
-            max-height: 100%; /* Crucial for desktop image fitting */
+            max-height: 100%; 
             object-fit: contain;
             border-radius: 8px;
-            margin-top: 15px; /* Spacing below title */
+            margin-top: 15px; 
         }
 
 
         /* --- Media Queries for Desktop Layout --- */
-        @media (min-width: 1200px) { /* Adjust breakpoint as needed */
-            /* Hide mobile tabbed container on desktop */
+        @media (min-width: 1200px) { 
             .sun-imagery-card-mobile {
                 display: none; 
             }
-            /* Show individual image cards on desktop */
             .sun-imagery-card-desktop {
-                display: flex; /* As column for card content */
-                grid-column: span 6; /* Two columns side-by-side */
+                display: flex; 
+                grid-column: span 6; 
             }
-            /* Ensure images take available space within their desktop cards */
             .sun-imagery-card-desktop img {
-                 flex-grow: 1; /* Allow image to take available height */
+                 flex-grow: 1; 
             }
 
-            /* Adjust list cards to align beside new image cards */
             .list-card {
-                grid-column: span 6; /* Lists align below images */
-                min-height: 450px; /* Make lists same height as imagery for alignment */
+                grid-column: span 6; 
+                min-height: 450px; 
             }
         }
 
@@ -299,11 +292,11 @@
             h1 { font-size: 1.75rem; } 
             .time-presets { flex-wrap: wrap; }
             .sun-imagery-tabs { flex-wrap: wrap; }
-            .card { padding: 20px; } /* Slightly less padding on very small screens */
+            .card { padding: 20px; } 
         }
         @media (max-width: 600px) { 
             body { padding: 10px; } 
-            .list-card ul { max-height: 200px; } /* Shorter lists on very small screens */
+            .list-card ul { max-height: 200px; } 
         }
     </style>
 </head>
@@ -391,25 +384,36 @@
     </main>
 
     <footer class="page-footer">
-        <p>Data courtesy of <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA SWPC</a> and <a href="https://sdo.gsfc.nasa.gov/" target="_blank" rel="noopener noreferrer">NASA SDO</a></p>
+        <p>Data courtesy of <a href="https://api.nasa.gov/DONKI/" target="_blank" rel="noopener noreferrer">NASA DONKI</a> and <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA SWPC</a></p>
         <p>Visualization by <a href="https://www.tnrprotography.co.nz/" target="_blank" rel="noopener noreferrer">TNR Protography</a></p>
     </footer>
 </div>
 
 <script>
-    // Updated Image URLs
+    // NASA API Key - REMINDER: For production, this should be securely loaded, NOT hardcoded.
+    // Replace 'DEMO_KEY' with your actual VITE_NASA_API_KEY when deploying.
+    const NASA_API_KEY = 'DEMO_KEY'; 
+
+    // Updated Image URLs (remain NOAA SUVI)
     const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
     const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 
+    // X-ray Flux data remains from NOAA SWPC
     const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
-    const NOAA_ACTIVE_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_cycle/latest_active_regions.json';
-    const NOAA_FLARES_URL = 'https://services.swpc.noaa.gov/json/goes/latest_primary_flare_list.json';
+    
+    // NEW: NASA DONKI API Endpoints for Flares and Active Regions
+    const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
+    const NASA_DONKI_FLARES_URL = (startDate, endDate) => 
+        `${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`;
+    const NASA_DONKI_ACTIVE_REGIONS_URL = (startDate, endDate) => 
+        `${NASA_DONKI_BASE_URL}AR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`;
+
 
     let xrayChartInstance = null;
     let allXrayData = []; 
     let currentChartDuration = 2 * 60 * 60 * 1000; // Default to 2 hours in milliseconds
 
-    const DESKTOP_BREAKPOINT = 1200; // Define your desktop breakpoint here
+    const DESKTOP_BREAKPOINT = 1200; 
 
     // Function to get computed style values from CSS :root
     const getCssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -417,13 +421,12 @@
     // Helper function to get color based on flux value (used by chart segments)
     const getColorForFlux = (value, opacity = 1) => {
         let rgb;
-        // The order matters: check highest values first
-        if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb'); // X5.0+
-        else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb');    // X1.0-X4.9
-        else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb');    // M1.0-M9.9
-        else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb');    // C1.0-C9.9
-        else if (value >= 1e-8) rgb = getCssVar('--solar-flare-ab-rgb');   // A1.0-B9.9
-        else rgb = getCssVar('--solar-flare-ab-rgb'); // Default for values below A1.0, keeps it green
+        if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb'); 
+        else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb');    
+        else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb');    
+        else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb');    
+        else if (value >= 1e-8) rgb = getCssVar('--solar-flare-ab-rgb');   
+        else rgb = getCssVar('--solar-flare-ab-rgb'); 
         
         return `rgba(${rgb}, ${opacity})`;
     };
@@ -435,6 +438,16 @@
         } catch {
             return "Invalid Date";
         }
+    }
+
+    // Helper to get date strings for API calls
+    function getApiDateRange(daysAgo = 7) {
+        const today = new Date();
+        const endDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
+        const startDate = new Date(today);
+        startDate.setDate(today.getDate() - daysAgo);
+        const startIsoDate = startDate.toISOString().split('T')[0];
+        return { startDate: startIsoDate, endDate: endDate };
     }
 
     async function fetchImage(url, imgElementId, loadingMessageId) {
@@ -679,21 +692,23 @@
 
     async function fetchFlares() {
         const flareList = document.getElementById('flare-list');
-        flareList.innerHTML = '<li class="loading-message">Loading solar flares...</li>'; 
+        flareList.innerHTML = '<li class="loading-message">Loading solar flares from NASA...</li>'; 
         try {
-            const response = await fetch(NOAA_FLARES_URL);
+            const { startDate, endDate } = getApiDateRange(7); // Fetch last 7 days of flares
+            const response = await fetch(NASA_DONKI_FLARES_URL(startDate, endDate));
             if (!response.ok) {
-                 const errorText = `Failed to fetch solar flares (HTTP ${response.status})`;
+                 const errorText = `Failed to fetch solar flares from NASA (HTTP ${response.status})`;
                  throw new Error(errorText);
             }
             const data = await response.json();
 
             if (!Array.isArray(data) || data.length === 0) {
-                flareList.innerHTML = '<li class="loading-message">No solar flares reported recently.</li>';
+                flareList.innerHTML = '<li class="loading-message">No solar flares reported by NASA recently.</li>';
                 return;
             }
 
             flareList.innerHTML = ''; 
+            // Sort by peakTime in descending order (most recent first)
             data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
 
             data.forEach(flare => {
@@ -701,12 +716,12 @@
                 const beginTime = new Date(flare.beginTime).toLocaleString();
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
-                const classChar = flare.class ? flare.class[0] : 'U'; 
+                const classChar = flare.classType ? flare.classType[0] : 'U'; // Use classType for the first character
                 const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar; 
-                const classSpan = `<span class="flare-class class-${displayClass}">${flare.class || 'N/A'}</span>`; 
+                const classSpan = `<span class="flare-class class-${displayClass}">${flare.classType || 'N/A'}</span>`; 
 
                 li.innerHTML = `
-                    <strong>${flare.class || 'Flare'}</strong> ${classSpan}
+                    <strong>${flare.classType || 'Flare'}</strong> ${classSpan}
                     <span>Begin: ${beginTime}</span>
                     <span>Peak: ${peakTime}</span>
                     <span>End: ${endTime}</span>
@@ -723,32 +738,35 @@
 
     async function fetchSunspots() {
         const sunspotList = document.getElementById('sunspot-list');
-        sunspotList.innerHTML = '<li class="loading-message">Loading active regions...</li>'; 
+        sunspotList.innerHTML = '<li class="loading-message">Loading active regions from NASA...</li>'; 
         try {
-            const response = await fetch(NOAA_ACTIVE_REGIONS_URL);
+            const { startDate, endDate } = getApiDateRange(7); // Fetch last 7 days of active regions
+            const response = await fetch(NASA_DONKI_ACTIVE_REGIONS_URL(startDate, endDate));
             if (!response.ok) {
-                const errorText = `Failed to fetch active regions (HTTP ${response.status})`;
+                const errorText = `Failed to fetch active regions from NASA (HTTP ${response.status})`;
                 throw new Error(errorText);
             }
             const data = await response.json();
 
             if (!Array.isArray(data) || data.length === 0) {
-                sunspotList.innerHTML = '<li class="loading-message">No active regions reported recently.</li>';
+                sunspotList.innerHTML = '<li class="loading-message">No active regions reported by NASA recently.</li>';
                 return;
             }
 
             sunspotList.innerHTML = ''; 
-            data.sort((a, b) => parseInt(b.number) - parseInt(a.number));
+            // Sort by region number descending
+            data.sort((a, b) => parseInt(b.regionNum) - parseInt(a.regionNum));
 
             data.forEach(region => {
                 const li = document.createElement('li');
-                const updated = new Date(region.last_update).toLocaleString();
+                const lastUpdatedTime = new Date(region.endTime).toLocaleString(); // DONKI AR often uses endTime as latest update
+                
                 li.innerHTML = `
-                    <strong>Region ${region.number}</strong>
+                    <strong>Region ${region.regionNum}</strong>
                     <span>Class: ${region.carr_rot_sys_class || 'N/A'}</span>
                     <span>Location: ${region.location || 'N/A'}</span>
-                    <span>Area: ${region.area_ext_hem || 'N/A'}</span>
-                    <span>Last Updated: ${updated}</span>
+                    <span>Area: ${region.area || 'N/A'} (approx)</span>
+                    <span>Last Observed: ${lastUpdatedTime}</span>
                 `;
                 sunspotList.appendChild(li);
             });
@@ -767,24 +785,20 @@
 
         if (isDesktop) {
             mobileContainer.style.display = 'none';
-            desktopContainers.forEach(card => card.style.display = 'flex'); // Show desktop cards
+            desktopContainers.forEach(card => card.style.display = 'flex'); 
 
-            // Fetch images for desktop individual cards
             fetchImage(SUVI_131_URL, 'suvi-131-desktop', 'loading-suvi-131-desktop');
             fetchImage(SUVI_304_URL, 'suvi-304-desktop', 'loading-suvi-304-desktop');
 
-        } else { // Mobile view
-            mobileContainer.style.display = 'flex'; // Show mobile tabbed card
-            desktopContainers.forEach(card => card.style.display = 'none'); // Hide desktop cards
+        } else { 
+            mobileContainer.style.display = 'flex'; 
+            desktopContainers.forEach(card => card.style.display = 'none'); 
 
-            // Setup tab logic for mobile
-            // Ensure tab setup only runs once or can be safely re-run
             const tabButtons = document.querySelectorAll('.sun-imagery-tab-button');
             const tabContents = document.querySelectorAll('.sun-imagery-content');
 
             tabButtons.forEach(button => {
-                // Remove old listeners to prevent duplicates if function runs multiple times
-                const oldListener = button._listener; // Custom property to store listener
+                const oldListener = button._listener; 
                 if (oldListener) {
                     button.removeEventListener('click', oldListener);
                 }
@@ -803,7 +817,6 @@
                             if (imgId === 'suvi-131-mobile') imageUrl = SUVI_131_URL;
                             else if (imgId === 'suvi-304-mobile') imageUrl = SUVI_304_URL;
                             
-                            // Only fetch if image source is placeholder or error, or if a global re-fetch is desired
                             if (imageUrl && (document.getElementById(imgId).src.includes('/placeholder.png') || document.getElementById(imgId).src.includes('/error.png'))) {
                                  fetchImage(imageUrl, imgId, loadingId);
                             }
@@ -813,16 +826,13 @@
                     });
                 };
                 button.addEventListener('click', newListener);
-                button._listener = newListener; // Store listener for removal
+                button._listener = newListener; 
             });
 
-            // Initial load for the active mobile tab
-            // Check if the mobile-specific image element exists before fetching
             const activeMobileImg = document.getElementById('suvi-131-mobile');
             if (activeMobileImg && (activeMobileImg.src.includes('/placeholder.png') || activeMobileImg.src.includes('/error.png'))) {
                 fetchImage(SUVI_131_URL, 'suvi-131-mobile', 'loading-suvi-131-mobile');
             }
-            // Preload other mobile images if desired, even if not active
             const otherMobileImg = document.getElementById('suvi-304-mobile');
             if (otherMobileImg && (otherMobileImg.src.includes('/placeholder.png') || otherMobileImg.src.includes('/error.png'))) {
                 fetchImage(SUVI_304_URL, 'suvi-304-mobile', 'loading-suvi-304-mobile');
@@ -830,30 +840,26 @@
         }
     }
 
-    // Debounce for resize event
     let resizeTimer;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(updateSunImageryLayout, 200); // Debounce by 200ms
+        resizeTimer = setTimeout(updateSunImageryLayout, 200); 
     });
 
 
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
-        // Sun imagery fetch handled by updateSunImageryLayout based on screen size
         fetchXrayFlux(); 
-        fetchFlares();
-        fetchSunspots();
+        fetchFlares(); // Now uses NASA DONKI
+        fetchSunspots(); // Now uses NASA DONKI
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        // Initial layout and image fetch
         updateSunImageryLayout(); 
 
-        runAllUpdates(); // Fetch other data
+        runAllUpdates(); 
         setInterval(runAllUpdates, 5 * 60 * 1000); 
 
-        // Event listeners for time preset buttons (for X-ray chart)
         document.querySelectorAll('.time-preset-button').forEach(button => {
             button.addEventListener('click', () => {
                 const duration = parseInt(button.dataset.duration);

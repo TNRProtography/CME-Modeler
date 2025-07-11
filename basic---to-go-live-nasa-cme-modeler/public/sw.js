@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v12'; // Version incremented again for solar-activity changes
+const CACHE_NAME = 'cme-modeler-cache-v13'; // Version incremented to force update
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -8,7 +8,7 @@ const urlsToCache = [
   '/manifest.json',
   '/favicon.ico',
   '/forecast.html',
-  '/solar-activity.html', // NEW: Add solar-activity.html
+  '/solar-activity.html',
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
   '/placeholder.png', // Add a placeholder image if you create one
@@ -17,13 +17,13 @@ const urlsToCache = [
 
 // List of API domains that should use a network-first strategy
 const API_HOSTS = [
-  'api.nasa.gov',
-  'services.swpc.noaa.gov',
+  'api.nasa.gov', // Included as it's used for DONKI API (Flares, Active Regions)
+  'services.swpc.noaa.gov', // Included for X-ray Flux data
   'hemispheric-power.thenamesrock.workers.dev',
   'tnr-aurora-forecast.thenamesrock.workers.dev',
   'basic-aurora-forecast.thenamesrock.workers.dev',
   'aurora-sightings.thenamesrock.workers.dev',
-  'sdo.gsfc.nasa.gov', // NEW: NASA SDO for images
+  // 'sdo.gsfc.nasa.gov', // This was for SDO images; SUVI images now come from services.swpc.noaa.gov
 ];
 
 
