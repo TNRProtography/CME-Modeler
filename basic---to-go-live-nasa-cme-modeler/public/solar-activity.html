@@ -93,19 +93,7 @@
             gap: 8px;
             margin-bottom: 20px;
         }
-        .info-card {
-            grid-column: span 6;
-            height: 450px; /* Standard height for visual consistency */
-            display: flex;
-            flex-direction: column;
-        }
-        .info-card img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain; /* Ensure images fit without cropping */
-            border-radius: 8px;
-            margin-top: 15px;
-        }
+        /* Removed .info-card styles as the only one is now removed */
         .chart-card {
             grid-column: span 12; /* Full width for the X-ray chart */
             height: 450px;
@@ -173,7 +161,6 @@
         .class-C { background-color: var(--solar-flare-c); color: black; } /* C Yellow */
         .class-M { background-color: var(--solar-flare-m); color: white; } /* M Orange */
         .class-X { background-color: var(--solar-flare-x); color: white; } /* X Red */
-        /* Note: X5+ purple is handled by chart plugin, not a CSS class for list items */
 
         .loading-message {
             text-align: center;
@@ -276,7 +263,7 @@
 
 
         @media (max-width: 1200px) { 
-            .info-card, .list-card, .sun-imagery-card { /* Include new card */
+            .list-card, .sun-imagery-card { /* Removed .info-card */
                 grid-column: 1 / -1; /* Full width on smaller screens */
             } 
         }
@@ -288,7 +275,7 @@
         @media (max-width: 600px) { 
             body { padding: 10px; } 
             .card { padding: 20px; } 
-            .info-card img, .sun-imagery-content img { max-height: 250px; object-fit: contain; } /* Limit image height on small screens */
+            .sun-imagery-content img { max-height: 250px; object-fit: contain; } /* Limit image height on small screens */
             .list-card ul { max-height: 200px; }
         }
     </style>
@@ -324,21 +311,7 @@
             </div>
         </div>
 
-        <!-- Solar Dynamics Iframe -->
-        <div class="card info-card">
-            <div class="card-title-container">
-                <h2 class="card-title">Current Solar Dynamics</h2>
-            </div>
-            <iframe
-                id="solar-dynamics-iframe"
-                src="https://www.solarsystemscope.com/sun" 
-                title="Live Solar Dynamics"
-                width="100%"
-                height="100%"
-                frameborder="0"
-                style="border-radius: 8px; margin-top: 15px;">
-            </iframe>
-        </div>
+        <!-- Removed the "Current Solar Dynamics" iframe card entirely -->
 
 
         <div class="card chart-card">
@@ -387,7 +360,6 @@
     // Updated Image URLs
     const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
     const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
-    // Removed SOLARHAM_HMI_URL and SDO links
 
     const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
     const NOAA_ACTIVE_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_cycle/latest_active_regions.json';
@@ -398,7 +370,6 @@
     let currentChartDuration = 2 * 60 * 60 * 1000; // Default to 2 hours in milliseconds
 
     // Function to get computed style values from CSS :root
-    // Used to pass CSS variable values to JavaScript for Chart.js colors
     const getCssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
     function formatTimestamp(isoString) {
@@ -471,7 +442,7 @@
                 if (d.energy === "0.1-0.8nm") {
                     entry.short = parseFloat(d.flux);
                 } else if (d.energy === "0.05-0.4nm") {
-                    entry.long = parseFloat(d.flux); // Still parse long, even if not directly displayed, might be useful for other logic or future use
+                    entry.long = parseFloat(d.flux);
                 }
             });
 
@@ -519,29 +490,27 @@
         const labels = data.map(d => d.time);
         
         // Prepare data for multiple datasets based on flux level
-        const a_b_flux = []; // Green
-        const c_flux = [];   // Yellow
-        const m_flux = [];   // Orange
-        const x_flux = [];   // Red (X1.0 to X4.9)
-        const x5plus_flux = []; // Purple (X5.0+)
+        const a_b_flux = []; 
+        const c_flux = [];   
+        const m_flux = [];   
+        const x_flux = [];   
+        const x5plus_flux = []; 
 
         data.forEach(d => {
             const value = d.short;
-            if (value >= 1e-8 && value < 1e-7) { // A-class
-                a_b_flux.push({x: d.time, y: value});
-            } else if (value >= 1e-7 && value < 1e-6) { // B-class
+            if (value >= 1e-8 && value < 1e-6) { // A-class & B-class (up to C1.0)
                 a_b_flux.push({x: d.time, y: value});
             } else {
-                a_b_flux.push({x: d.time, y: null}); // No data for other classes
+                a_b_flux.push({x: d.time, y: null}); 
             }
 
-            if (value >= 1e-6 && value < 1e-5) { // C-class
+            if (value >= 1e-6 && value < 1e-5) { // C-class (up to M1.0)
                 c_flux.push({x: d.time, y: value});
             } else {
                 c_flux.push({x: d.time, y: null});
             }
 
-            if (value >= 1e-5 && value < 1e-4) { // M-class
+            if (value >= 1e-5 && value < 1e-4) { // M-class (up to X1.0)
                 m_flux.push({x: d.time, y: value});
             } else {
                 m_flux.push({x: d.time, y: null});
@@ -575,7 +544,7 @@
                         data: a_b_flux,
                         borderColor: getCssVar('--solar-flare-ab'),
                         backgroundColor: getCssVar('--solar-flare-ab'),
-                        fill: 'origin', // Fill to the origin (X-axis)
+                        fill: 'origin', 
                         pointRadius: 0,
                         tension: 0.1,
                         segment: {
@@ -660,7 +629,7 @@
                     mode: 'index',
                     intersect: false,
                 },
-                stacked: false, // Ensure layers don't stack visually for fills
+                stacked: false, 
                 plugins: {
                     legend: {
                         labels: {
@@ -675,7 +644,6 @@
                                 return new Date(context[0].parsed.x).toLocaleString();
                             },
                             label: function(context) {
-                                // Find the actual short flux value for the tooltip from original data
                                 const originalDataPoint = data.find(item => item.time.getTime() === context.parsed.x);
                                 if (!originalDataPoint) return '';
 
@@ -724,7 +692,6 @@
                         },
                         ticks: {
                             callback: function(value, index, ticks) {
-                                // Adjust labels as requested
                                 if (value === 1e-3) return 'X10.0'; 
                                 if (value === 1e-4) return 'X1.0';  
                                 if (value === 1e-5) return 'M1.0';  
@@ -738,7 +705,6 @@
                         grid: {
                             color: '#3f3f46', 
                             lineWidth: (context) => {
-                                // Make grid lines for class boundaries thicker/more prominent
                                 if (context.tick.value === 1e-4 || context.tick.value === 1e-5 || context.tick.value === 1e-6 || context.tick.value === 1e-7 || context.tick.value === 1e-8) {
                                     return 1.5;
                                 }
@@ -747,8 +713,8 @@
                             drawOnChartArea: true,
                             drawTicks: true,
                         },
-                        min: 1e-9, // Slightly below A-class 1.0 (which is 1e-8)
-                        max: 1e-3 // Up to X10.0
+                        min: 1e-9, 
+                        max: 1e-3 
                     }
                 }
             }
@@ -780,8 +746,7 @@
                 const peakTime = new Date(flare.peakTime).toLocaleString();
                 const endTime = new Date(flare.endTime).toLocaleString();
                 const classChar = flare.class ? flare.class[0] : 'U'; 
-                // Use 'A' class for both A and B for CSS styling consistency with the chart
-                const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar;
+                const displayClass = (classChar === 'A' || classChar === 'B') ? 'A' : classChar; 
                 const classSpan = `<span class="flare-class class-${displayClass}">${flare.class || 'N/A'}</span>`; 
 
                 li.innerHTML = `
@@ -852,7 +817,6 @@
                 tabContents.forEach(content => {
                     if (content.id === `${targetTab}-content`) {
                         content.classList.add('active');
-                        // Re-fetch image when its tab becomes active, if it hasn't loaded yet or if you want to ensure freshness
                         const imgId = content.querySelector('img').id;
                         const loadingId = content.querySelector('.loading-message').id;
                         let imageUrl;
