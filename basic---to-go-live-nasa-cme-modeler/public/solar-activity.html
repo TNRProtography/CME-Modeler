@@ -394,19 +394,20 @@
     // Replace 'DEMO_KEY' with your actual VITE_NASA_API_KEY when deploying.
     const NASA_API_KEY = 'DEMO_KEY'; 
 
-    // Updated Image URLs (remain NOAA SUVI)
+    // SUVI image URLs remain from NOAA SWPC
     const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
     const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 
     // X-ray Flux data remains from NOAA SWPC
     const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
     
-    // NEW: NASA DONKI API Endpoints for Flares and Active Regions
+    // NASA DONKI API Endpoints for Flares
     const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
     const NASA_DONKI_FLARES_URL = (startDate, endDate) => 
         `${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`;
-    const NASA_DONKI_ACTIVE_REGIONS_URL = (startDate, endDate) => 
-        `${NASA_DONKI_BASE_URL}AR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`;
+    
+    // NEW: NOAA SWPC Solar Regions Endpoint for Active Regions
+    const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
 
 
     let xrayChartInstance = null;
@@ -440,7 +441,7 @@
         }
     }
 
-    // Helper to get date strings for API calls
+    // Helper to get date strings for API calls (mostly for NASA DONKI)
     function getApiDateRange(daysAgo = 7) {
         const today = new Date();
         const endDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -738,35 +739,50 @@
 
     async function fetchSunspots() {
         const sunspotList = document.getElementById('sunspot-list');
-        sunspotList.innerHTML = '<li class="loading-message">Loading active regions from NASA...</li>'; 
+        sunspotList.innerHTML = '<li class="loading-message">Loading active regions from NOAA...</li>'; 
         try {
-            const { startDate, endDate } = getApiDateRange(7); // Fetch last 7 days of active regions
-            const response = await fetch(NASA_DONKI_ACTIVE_REGIONS_URL(startDate, endDate));
+            // Fetching from NOAA_SOLAR_REGIONS_URL
+            const response = await fetch(NOAA_SOLAR_REGIONS_URL);
             if (!response.ok) {
-                const errorText = `Failed to fetch active regions from NASA (HTTP ${response.status})`;
+                const errorText = `Failed to fetch active regions from NOAA (HTTP ${response.status})`;
                 throw new Error(errorText);
             }
             const data = await response.json();
 
             if (!Array.isArray(data) || data.length === 0) {
-                sunspotList.innerHTML = '<li class="loading-message">No active regions reported by NASA recently.</li>';
+                sunspotList.innerHTML = '<li class="loading-message">No active regions reported by NOAA recently.</li>';
+                return;
+            }
+
+            // Filter for Earth-facing regions (e.g., longitude between -60 and +60)
+            const earthFacingRegions = data.filter(region => {
+                const longitude = parseFloat(region.longitude);
+                return !isNaN(longitude) && Math.abs(longitude) <= 60; // +/- 60 degrees longitude
+            });
+
+
+            if (earthFacingRegions.length === 0) {
+                sunspotList.innerHTML = '<li class="loading-message">No Earth-facing active regions found.</li>';
                 return;
             }
 
             sunspotList.innerHTML = ''; 
             // Sort by region number descending
-            data.sort((a, b) => parseInt(b.regionNum) - parseInt(a.regionNum));
+            earthFacingRegions.sort((a, b) => parseInt(b.region) - parseInt(a.region));
 
-            data.forEach(region => {
+            earthFacingRegions.forEach(region => {
                 const li = document.createElement('li');
-                const lastUpdatedTime = new Date(region.endTime).toLocaleString(); // DONKI AR often uses endTime as latest update
+                // Use observed_date for consistency with the data source
+                const observedDate = new Date(region.observed_date).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
                 
                 li.innerHTML = `
-                    <strong>Region ${region.regionNum}</strong>
-                    <span>Class: ${region.carr_rot_sys_class || 'N/A'}</span>
-                    <span>Location: ${region.location || 'N/A'}</span>
+                    <strong>Region ${region.region}</strong> (${region.location || 'N/A'})
+                    <span>Magnetic Class: ${region.mag_class || 'N/A'}</span>
+                    <span>Spot Class: ${region.spot_class || 'N/A'}</span>
                     <span>Area: ${region.area || 'N/A'} (approx)</span>
-                    <span>Last Observed: ${lastUpdatedTime}</span>
+                    <span>Number of Spots: ${region.number_spots || 'N/A'}</span>
+                    <span>Observed: ${observedDate}</span>
+                    <span>C-Flare Prob: ${region.c_flare_probability || 0}% | M-Flare Prob: ${region.m_flare_probability || 0}% | X-Flare Prob: ${region.x_flare_probability || 0}%</span>
                 `;
                 sunspotList.appendChild(li);
             });
@@ -850,8 +866,8 @@
     function runAllUpdates() {
         console.log(`Updating solar activity data at ${new Date().toLocaleTimeString()}...`);
         fetchXrayFlux(); 
-        fetchFlares(); // Now uses NASA DONKI
-        fetchSunspots(); // Now uses NASA DONKI
+        fetchFlares(); // Uses NASA DONKI
+        fetchSunspots(); // Now uses NOAA Solar Regions
     }
 
     document.addEventListener('DOMContentLoaded', () => {
