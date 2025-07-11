@@ -513,20 +513,20 @@
                         label: 'Short Flux (0.1-0.8 nm)',
                         data: shortFluxValues,
                         pointRadius: 0,
-                        tension: 0.1, // Reduced tension for smoother transitions
+                        tension: 0.1, 
                         spanGaps: true, 
-                        fill: 'origin', // Fill to the origin (X-axis)
-                        borderWidth: 2, // Slightly thicker line
-                        lineCap: 'round', // Smoother line ends
-                        lineJoin: 'round', // Smoother line corners
-                        segment: { // Apply styling per segment
+                        fill: 'origin', 
+                        borderWidth: 2, 
+                        lineCap: 'round', 
+                        lineJoin: 'round', 
+                        segment: { 
                             borderColor: (ctx) => {
-                                const value = ctx.p1.parsed.y; // Color based on the end point of the segment
-                                return getColorForFlux(value, 1); // Full opacity for the line
+                                const value = ctx.p1.parsed.y; 
+                                return getColorForFlux(value, 1); 
                             },
                             backgroundColor: (ctx) => {
-                                const value = ctx.p1.parsed.y; // Fill color based on the end point of the segment
-                                return getColorForFlux(value, 0.2); // 20% opacity for the fill
+                                const value = ctx.p1.parsed.y; 
+                                return getColorForFlux(value, 0.2); 
                             },
                         }
                     }
@@ -779,4 +779,4 @@
 </script>
 
 </body>
-</html>
+</html>```
