@@ -4,7 +4,7 @@ import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
 import ToggleSwitch from './ToggleSwitch';
-import GlobeIcon from './icons/GlobeIcon'; // Assuming you have a generic icon for this
+// REMOVED: import GlobeIcon from './icons/GlobeIcon';
 
 interface ControlsPanelProps {
   activeTimeRange: TimeRange;
@@ -15,7 +15,7 @@ interface ControlsPanelProps {
   onFocusChange: (target: FocusTarget) => void;
   isLoading: boolean;
   onOpenGuide: () => void;
-  onOpenForecastModels: () => void; // NEW PROP
+  // REMOVED: onOpenForecastModels prop
   onClose?: () => void;
   showLabels: boolean;
   onShowLabelsChange: (show: boolean) => void;
@@ -58,7 +58,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onFocusChange,
   isLoading,
   onOpenGuide,
-  onOpenForecastModels, // NEW PROP
   onClose,
   showLabels,
   onShowLabelsChange,
@@ -143,18 +142,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <Button onClick={() => onCmeFilterChange(CMEFilter.NOT_EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.NOT_EARTH_DIRECTED}>Not Earth-Directed</Button>
           </div>
         </div>
-
-        {/* NEW: Button for Other Forecast Models */}
-        <div className="pt-3 border-t border-neutral-700/50">
-            <button 
-                onClick={onOpenForecastModels} 
-                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
-                title="View Other CME Forecast Models">
-                {/* You might want a better icon here, using a generic one for now */}
-                <GlobeIcon className="w-5 h-5" /> 
-                <span className="text-sm font-semibold">Other CME Models</span>
-            </button>
-        </div>
+        
+        {/* The "Other CME Models" button has been removed from this component */}
 
         <Disclaimer />
       </div>
