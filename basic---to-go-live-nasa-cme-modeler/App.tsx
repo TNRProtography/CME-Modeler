@@ -17,7 +17,7 @@ import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
-import GlobeIcon from './components/icons/GlobeIcon';
+import GlobeIcon from './components/icons/GlobeIcon'; // Ensure GlobeIcon is imported
 import ForecastModelsModal from './components/ForecastModelsModal';
 import MediaViewerModal from './components/MediaViewerModal'; 
 import SolarActivityPage from './components/SolarActivityPage'; 
