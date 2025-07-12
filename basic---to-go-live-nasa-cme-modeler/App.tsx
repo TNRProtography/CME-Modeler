@@ -16,8 +16,6 @@ import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
-import ForecastModal from './components/ForecastModal';
-import SolarActivityPage from './components/SolarActivityPage';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -204,15 +202,6 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
-  // Conditional rendering for other pages
-  if (activePage === 'forecast') {
-    return <ForecastModal onNavChange={setActivePage} />;
-  }
-  if (activePage === 'solar-activity') { 
-    return <SolarActivityPage onNavChange={setActivePage} />;
-  }
-
-  // CME Modeler Page
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* Unified Header Bar for Navigation */}
@@ -232,135 +221,164 @@ const App: React.FC = () => {
                     <FlareIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
+                 {/* Button to switch back to Modeler */}
+                 <button 
+                onClick={() => setActivePage('modeler')}
+                className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
+                title="View CME Modeler">
+                    <HomeIcon className="w-5 h-5" />
+                    <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
+                </button>
             </div>
         </header>
 
         {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
-            <div className={`
-                flex-shrink-0 lg:p-5
-                lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
-                fixed top-0 left-0 h-full w-4/5 max-w-[320px] z-50 
-                transition-transform duration-300 ease-in-out
-                ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}
-            `}>
-                <ControlsPanel
-                    activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange}
-                    activeView={activeView} onViewChange={handleViewChange}
-                    activeFocus={activeFocus} onFocusChange={handleFocusChange}
-                    isLoading={isLoading}
-                    onClose={() => setIsControlsOpen(false)}
-                    onOpenGuide={() => setIsTutorialOpen(true)}
-                    showLabels={showLabels} onShowLabelsChange={setShowLabels}
-                    showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets}
-                    showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1}
-                    cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter}
-                />
-            </div>
-
-            <main className="flex-1 relative min-w-0 h-full">
-                <SimulationCanvas
-                ref={canvasRef}
-                cmeData={filteredCmes}
-                activeView={activeView}
-                focusTarget={activeFocus}
-                currentlyModeledCmeId={currentlyModeledCMEId}
-                onCMEClick={handleCMEClickFromCanvas}
-                timelineActive={timelineActive}
-                timelinePlaying={timelinePlaying}
-                timelineSpeed={timelineSpeed}
-                timelineValue={timelineScrubberValue}
-                timelineMinDate={timelineMinDate}
-                timelineMaxDate={timelineMaxDate}
-                setPlanetMeshesForLabels={handleSetPlanetMeshes}
-                setRendererDomElement={setRendererDomElement}
-                onCameraReady={setThreeCamera}
-                getClockElapsedTime={getClockElapsedTime}
-                resetClock={resetClock}
-                onScrubberChangeByAnim={handleScrubberChangeByAnim}
-                onTimelineEnd={handleTimelineEnd}
-                showExtraPlanets={showExtraPlanets}
-                showMoonL1={showMoonL1}
-                dataVersion={dataVersion}
-                interactionMode={interactionMode}
-                />
-
-                {showLabels && rendererDomElement && threeCamera && planetLabelInfos
-                .filter((info: PlanetLabelInfo) => {
-                    const name = info.name.toUpperCase();
-                    if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; 
-                    if (['MOON', 'L1'].includes(name)) return showMoonL1;
-                    return true;
-                })
-                .map((info: PlanetLabelInfo) => (
-                    <PlanetLabel 
-                        key={info.id} 
-                        planetMesh={info.mesh} 
-                        camera={threeCamera}
-                        rendererDomElement={rendererDomElement}
-                        label={info.name} 
-                        sunMesh={sunInfo ? sunInfo.mesh : null}
-                    />
-                ))}
-                
-                {/* RESTORED: Floating UI Controls Over Canvas */}
-                <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
-                    <div className="flex items-center space-x-2 pointer-events-auto">
-                        <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
-                            <SettingsIcon className="w-6 h-6" />
-                        </button>
-                        <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-                            <HomeIcon className="w-6 h-6" />
-                        </button>
+            {/* Conditional Rendering for Main Content */}
+            {activePage === 'modeler' && (
+                <> {/* Fragment to return multiple elements */}
+                    <div className={`
+                        flex-shrink-0 lg:p-5
+                        lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
+                        fixed top-0 left-0 h-full w-4/5 max-w-[320px] z-50 
+                        transition-transform duration-300 ease-in-out
+                        ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}
+                    `}>
+                        <ControlsPanel
+                            activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange}
+                            activeView={activeView} onViewChange={handleViewChange}
+                            activeFocus={activeFocus} onFocusChange={handleFocusChange}
+                            isLoading={isLoading}
+                            onClose={() => setIsControlsOpen(false)}
+                            onOpenGuide={() => setIsTutorialOpen(true)}
+                            showLabels={showLabels} onShowLabelsChange={setShowLabels}
+                            showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets}
+                            showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1}
+                            cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter}
+                        />
                     </div>
-                    <div className="flex items-center space-x-2 pointer-events-auto">
-                        <button 
-                            onClick={() => setInteractionMode((prev: InteractionMode) => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
-                            className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
-                            title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
-                        >
-                            {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
-                        </button>
-                        <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
-                            <ListIcon className="w-6 h-6" />
-                        </button>
+
+                    <main className="flex-1 relative min-w-0 h-full">
+                        <SimulationCanvas
+                        ref={canvasRef}
+                        cmeData={filteredCmes}
+                        activeView={activeView}
+                        focusTarget={activeFocus}
+                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        onCMEClick={handleCMEClickFromCanvas}
+                        timelineActive={timelineActive}
+                        timelinePlaying={timelinePlaying}
+                        timelineSpeed={timelineSpeed}
+                        timelineValue={timelineScrubberValue}
+                        timelineMinDate={timelineMinDate}
+                        timelineMaxDate={timelineMaxDate}
+                        setPlanetMeshesForLabels={handleSetPlanetMeshes}
+                        setRendererDomElement={setRendererDomElement}
+                        onCameraReady={setThreeCamera}
+                        getClockElapsedTime={getClockElapsedTime}
+                        resetClock={resetClock}
+                        onScrubberChangeByAnim={handleScrubberChangeByAnim}
+                        onTimelineEnd={handleTimelineEnd}
+                        showExtraPlanets={showExtraPlanets}
+                        showMoonL1={showMoonL1}
+                        dataVersion={dataVersion}
+                        interactionMode={interactionMode}
+                        />
+
+                        {showLabels && rendererDomElement && threeCamera && planetLabelInfos
+                        .filter((info: PlanetLabelInfo) => {
+                            const name = info.name.toUpperCase();
+                            if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; 
+                            if (['MOON', 'L1'].includes(name)) return showMoonL1;
+                            return true;
+                        })
+                        .map((info: PlanetLabelInfo) => (
+                            <PlanetLabel 
+                                key={info.id} 
+                                planetMesh={info.mesh} 
+                                camera={threeCamera}
+                                rendererDomElement={rendererDomElement}
+                                label={info.name} 
+                                sunMesh={sunInfo ? sunInfo.mesh : null}
+                            />
+                        ))}
+                        
+                        {/* RESTORED: Floating UI Controls Over Canvas */}
+                        <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
+                            <div className="flex items-center space-x-2 pointer-events-auto">
+                                <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
+                                    <SettingsIcon className="w-6 h-6" />
+                                </button>
+                                <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
+                                    <HomeIcon className="w-6 h-6" />
+                                </button>
+                            </div>
+                            <div className="flex items-center space-x-2 pointer-events-auto">
+                                <button 
+                                    onClick={() => setInteractionMode((prev: InteractionMode) => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
+                                    className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
+                                    title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}
+                                >
+                                    {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
+                                </button>
+                                <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
+                                    <ListIcon className="w-6 h-6" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <TimelineControls
+                        isVisible={!isLoading && filteredCmes.length > 0}
+                        isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
+                        onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
+                        onStepFrame={handleTimelineStep}
+                        playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed}
+                        minDate={timelineMinDate} maxDate={timelineMaxDate}
+                        />
+                    </main>
+
+                    <div className={`
+                        flex-shrink-0 lg:p-5
+                        lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md
+                        fixed top-0 right-0 h-full w-4/5 max-w-[320px] z-50 
+                        transition-transform duration-300 ease-in-out
+                        ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}
+                    `}>
+                        <CMEListPanel
+                            cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling}
+                            selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo}
+                            isLoading={isLoading} fetchError={fetchError}
+                            onClose={() => setIsCmeListOpen(false)}
+                        />
                     </div>
-                </div>
+                    
+                    {(isControlsOpen || isCmeListOpen) && (
+                        <div 
+                            className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+                            onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }}
+                        />
+                    )}
 
-                <TimelineControls
-                isVisible={!isLoading && filteredCmes.length > 0}
-                isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
-                onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
-                onStepFrame={handleTimelineStep}
-                playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed}
-                minDate={timelineMinDate} maxDate={timelineMaxDate}
-                />
-            </main>
+                    {isLoading && <LoadingOverlay />}
+                    <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+                </>
+            )}
 
-            <div className={`
-                flex-shrink-0 lg:p-5
-                lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md
-                fixed top-0 right-0 h-full w-4/5 max-w-[320px] z-50 
-                transition-transform duration-300 ease-in-out
-                ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}
-            `}>
-                <CMEListPanel
-                    cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling}
-                    selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo}
-                    isLoading={isLoading} fetchError={fetchError}
-                    onClose={() => setIsCmeListOpen(false)}
-                />
-            </div>
-            
-            {(isControlsOpen || isCmeListOpen) && (
-                <div 
-                    className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-                    onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }}
+            {activePage === 'forecast' && (
+                <iframe
+                    src="/forecast.html"
+                    title="Live West Coast Aurora Forecast by TNR Protography"
+                    className="w-full h-full border-none"
                 />
             )}
 
-            {isLoading && <LoadingOverlay />}
-            <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+            {activePage === 'solar-activity' && (
+                <iframe
+                    src="/solar-activity.html"
+                    title="Solar Activity Dashboard"
+                    className="w-full h-full border-none"
+                />
+            )}
         </div>
     </div>
   );
