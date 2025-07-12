@@ -27,7 +27,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
     } else {
       newScale = scale - scaleAmount; // Zoom out
     }
-    setScale(Math.min(Math.max(0.5, newScale), 5)); // Clamp scale
+    setScale(Math.min(Math.max(0.5, newScale), 5)); // Clamp scale between 0.5x and 5x
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {

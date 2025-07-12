@@ -1,19 +1,18 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale, LogarithmicScale, ChartOptions, ChartData } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import { format } from 'date-fns'; // Import date-fns format utility
 
-// Register Chart.js components globally
+// Register Chart.js components globally once
 ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale);
 
-// Define props to communicate with App.tsx for media viewer
 interface SolarActivityPageProps {
   onMediaSelect: (media: { url: string; type: 'image' | 'video' }) => void;
 }
 
 const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) => {
-  // State for all the data and UI elements
+  // States for all the data and UI elements
   const [flares, setFlares] = useState<any[]>([]);
   const [sunspots, setSunspots] = useState<any[]>([]);
   const [xrayChartData, setXrayChartData] = useState<ChartData<'line'>>({ labels: [], datasets: [] });
@@ -21,7 +20,7 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
   const allXrayRawDataRef = useRef<any[]>([]); // Store full raw data for filtering
   const [currentChartDuration, setCurrentChartDuration] = useState(2 * 60 * 60 * 1000); // Default to 2 hours
   
-  // State for image loading messages
+  // State for loading indicators
   const [suvi131Loading, setSuvi131Loading] = useState(true);
   const [suvi304Loading, setSuvi304Loading] = useState(true);
   const [xrayLoading, setXrayLoading] = useState(true);
@@ -35,17 +34,17 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
   const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
   const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
   const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
-  const NASA_DONKI_FLARES_URL = (startDate: string, endDate: string) => 
-      `${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`;
-
+  const NASA_DONKI_FLARES_URL = useCallback((startDate: string, endDate: string) => 
+        `${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${NASA_API_KEY}`, [NASA_API_KEY]);
+  
   // Helper function to get computed style values from CSS :root
-  const getCssVar = (name: string) => {
+  const getCssVar = useCallback((name: string) => {
     // Fallback for cases where getComputedStyle might not be immediately available (e.g., SSR)
     return typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '';
-  };
+  }, []);
 
-  // Helper function to get color based on flux value (used by chart segments)
-  const getColorForFlux = (value: number, opacity = 1) => {
+  // Helper function to get color based on flux value for chart segments
+  const getColorForFlux = useCallback((value: number, opacity = 1) => {
     let rgb;
     if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb'); 
     else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb');    
@@ -54,17 +53,17 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
     else if (value >= 1e-8) rgb = getCssVar('--solar-flare-ab-rgb');   
     else rgb = getCssVar('--solar-flare-ab-rgb'); 
     return `rgba(${rgb || '34, 197, 94'}, ${opacity})`; // Provide a default RGB if CSS var not found
-  };
+  }, [getCssVar]);
 
   // Helper to get date strings for API calls
-  const getApiDateRange = (daysAgo = 7) => {
+  const getApiDateRange = useCallback((daysAgo = 7) => {
     const today = new Date();
     const endDate = format(today, 'yyyy-MM-dd'); 
     const startDate = new Date(today);
     startDate.setDate(today.getDate() - daysAgo);
     const startIsoDate = format(startDate, 'yyyy-MM-dd');
     return { startDate: startIsoDate, endDate: endDate };
-  };
+  }, []);
 
   // --- Image Fetching Logic ---
   const fetchImage = useCallback(async (url: string, imgElementId: string, loadingSetter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -99,14 +98,14 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
     } finally {
         loadingSetter(false);
     }
-  }, []); // No dependencies, as element IDs are stable
+  }, []);
 
 
   // --- X-Ray Flux Chart Logic ---
   const renderXrayFluxChart = useCallback((data: any[]) => {
     if (!document.getElementById('xrayFluxChart')) {
-        console.warn("Chart canvas not found yet.");
-        return;
+        // This can happen if component unmounts before chart is rendered
+        return; 
     }
     const ctx = (document.getElementById('xrayFluxChart') as HTMLCanvasElement).getContext('2d');
     if (!ctx) {
@@ -117,33 +116,8 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
     const labels = data.map((d: any) => d.time);
     const shortFluxValues = data.map((d: any) => d.short);
 
-    if (xrayChartInstanceRef.current) {
-      xrayChartInstanceRef.current.destroy();
-    }
-
-    const newChartInstance = new ChartJS(ctx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Short Flux (0.1-0.8 nm)',
-            data: shortFluxValues,
-            pointRadius: 0,
-            tension: 0.1, 
-            spanGaps: true, 
-            fill: 'origin', 
-            borderWidth: 2, 
-            lineCap: 'round', 
-            lineJoin: 'round', 
-            segment: { 
-                borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
-                backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
-            }
-          }
-        ]
-      },
-      options: {
+    // Chart options are defined here, which are then passed to the Line component
+    const chartOptions: ChartOptions<'line'> = {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
@@ -204,10 +178,34 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
             min: 1e-9, max: 1e-3 
           }
         }
-      }
-    });
-    xrayChartInstanceRef.current = newChartInstance;
-  }, [getColorForFlux]); // Re-render chart if color function changes (unlikely)
+    };
+
+    const chartData: ChartData<'line'> = {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Short Flux (0.1-0.8 nm)',
+                data: shortFluxValues,
+                pointRadius: 0,
+                tension: 0.1, 
+                spanGaps: true, 
+                fill: 'origin', 
+                borderWidth: 2, 
+                lineCap: 'round', 
+                lineJoin: 'round', 
+                segment: { 
+                    borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
+                    backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
+                }
+            }
+        ]
+    };
+    
+    // Update state to trigger Chart.js re-render in JSX
+    setXrayChartData(chartData);
+    setXrayChartOptions(chartOptions);
+
+  }, [getColorForFlux]);
 
 
   const filterAndRenderChart = useCallback((durationMs: number, allData: any[]) => {
@@ -259,14 +257,14 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
     } finally {
       setFlaresLoading(false);
     }
-  }, [NASA_DONKI_FLARES_URL]); // Dependency on the function that generates URL
+  }, [getApiDateRange, NASA_DONKI_FLARES_URL]);
 
   // --- Fetch Sunspots (NOAA SWPC) ---
   const fetchSunspots = useCallback(async () => {
     setSunspotsLoading(true);
     try {
       const response = await fetch(NOAA_SOLAR_REGIONS_URL);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP status: ${response.status}`);
       const data = await response.json();
 
       const twoWeeksAgo = new Date();
@@ -325,7 +323,7 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
   return (
     <div className="w-full h-full bg-black text-neutral-300 styled-scrollbar" style={{overflowY: 'auto'}}>
       <style>{`
-        /* All CSS from solar-activity.html goes here. Note: root variables are defined in App.tsx's parent context if applicable */
+        /* All CSS from solar-activity.html goes here. */
         :root {
             --bg-main: #0a0a0a;
             --bg-card: #171717;
@@ -341,16 +339,15 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
             --solar-flare-x-rgb: 239, 68, 68; 
             --solar-flare-x5plus-rgb: 147, 112, 219; 
         }
-        body { margin: 0; padding: 0; position: relative; overflow-x: hidden; } /* body styles should mostly be applied to parent div */
-        /* Sun Glow Background Effect */
+        /* body styles should mostly be applied to parent div - these are for global context if this component were standalone */
         .solar-activity-background::before,
         .solar-activity-background::after {
             content: '';
             position: fixed;
-            top: 0; /* Changed from -20vh to ensure it's relative to the app div */
+            top: 0; 
             left: 0;
             width: 200%;
-            height: 100%; /* Changed from 100vh to 100% to fill parent */
+            height: 100%; 
             z-index: 0;
             opacity: 0.8;
             will-change: transform;
@@ -373,14 +370,13 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
             from { transform: translateX(-50%) rotate(0deg); }
             to { transform: translateX(0%) rotate(360deg); }
         }
-        /* End Background Effect */
         
         .container { 
             max-width: 1400px; 
             margin: 0 auto; 
             position: relative;
             z-index: 1;
-            padding: 20px; /* Re-added padding */
+            padding: 20px; 
         }
         .header { /* This header is outside this component, so this rule is for general styling consistency */ }
         .header-logo { max-width: 250px; height: auto; margin-bottom: 15px; }
@@ -396,10 +392,10 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
         .card-title { font-size: 1.1rem; text-align: center; font-weight: 600; color: var(--text-primary); margin: 0; }
         .card-title-container { position: relative; display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 20px; }
         
-        .imagery-card { grid-column: span 12; height: 450px; } /* Default full width */
+        .imagery-card { grid-column: span 12; height: 450px; } 
         .imagery-link { 
             display: flex; flex-direction: column; flex-grow: 1; justify-content: center; align-items: center;
-            text-decoration: none; color: inherit; min-height: 0; /* Flexbox overflow fix */
+            text-decoration: none; color: inherit; min-height: 0; 
         }
         .imagery-link img { 
             max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; margin-top: 15px; 
@@ -412,7 +408,7 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
         .chart-wrapper { position: relative; flex-grow: 1; min-height: 0; }
         .chart-wrapper canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
-        .list-card { grid-column: 1 / -1; min-height: 300px; height: auto; } /* Default full width */
+        .list-card { grid-column: 1 / -1; min-height: 300px; height: auto; } 
         .list-card ul { 
             list-style: none; padding: 0; margin: 0; max-height: 350px; overflow-y: auto;
             border-top: 1px solid var(--border-color); padding-top: 15px; margin-top: 15px; 
@@ -456,9 +452,8 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onMediaSelect }) 
             .list-card ul { max-height: 200px; } 
         }
       `}</style>
-      {/* Add a div for the background effect - positioned fixed and then moved behind content with z-index */}
       <div className="solar-activity-background fixed inset-0 z-0"></div> 
-      <div className="container relative z-10"> {/* container now relative and above background */}
+      <div className="container relative z-10"> 
         <header className="header">
           <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" className="logo-link">
             <img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="header-logo" />

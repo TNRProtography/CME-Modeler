@@ -17,7 +17,7 @@ import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
-import GlobeIcon from './components/icons/GlobeIcon'; // Ensure GlobeIcon is imported
+import GlobeIcon from './components/icons/GlobeIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import MediaViewerModal from './components/MediaViewerModal'; 
 import SolarActivityPage from './components/SolarActivityPage'; 
@@ -134,7 +134,7 @@ const App: React.FC = () => {
   }, [cmeData, cmeFilter]);
 
   useEffect(() => {
-    if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCmeId)) {
+    if (currentlyModeledCmeId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCmeId)) {
       setCurrentlyModeledCmeId(null);
       setSelectedCMEForInfo(null);
     }
