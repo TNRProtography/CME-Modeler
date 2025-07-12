@@ -209,22 +209,30 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-2">
                 <button 
                 onClick={() => setActivePage('forecast')}
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-colors
+                            ${activePage === 'forecast' 
+                                ? 'bg-sky-500/30 border border-sky-400' 
+                                : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
                 title="View Live Aurora Forecasts">
                     <ForecastIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">Aurora Forecast</span>
                 </button>
                 <button 
                 onClick={() => setActivePage('solar-activity')} 
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-colors
+                            ${activePage === 'solar-activity' 
+                                ? 'bg-amber-500/30 border border-amber-400' 
+                                : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
                 title="View Solar Activity">
                     <FlareIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
-                 {/* Button to switch back to Modeler */}
                  <button 
                 onClick={() => setActivePage('modeler')}
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-colors
+                            ${activePage === 'modeler' 
+                                ? 'bg-indigo-500/30 border border-indigo-400' 
+                                : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
                 title="View CME Modeler">
                     <HomeIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
