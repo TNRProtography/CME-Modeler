@@ -4,6 +4,7 @@ import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
 import ToggleSwitch from './ToggleSwitch';
+import GlobeIcon from './icons/GlobeIcon'; // Assuming you have a generic icon for this
 
 interface ControlsPanelProps {
   activeTimeRange: TimeRange;
@@ -14,6 +15,7 @@ interface ControlsPanelProps {
   onFocusChange: (target: FocusTarget) => void;
   isLoading: boolean;
   onOpenGuide: () => void;
+  onOpenForecastModels: () => void; // NEW PROP
   onClose?: () => void;
   showLabels: boolean;
   onShowLabelsChange: (show: boolean) => void;
@@ -56,6 +58,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onFocusChange,
   isLoading,
   onOpenGuide,
+  onOpenForecastModels, // NEW PROP
   onClose,
   showLabels,
   onShowLabelsChange,
@@ -67,12 +70,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onCmeFilterChange,
 }) => {
   return (
-    // Added lg:relative so we can position icons absolutely inside it on desktop
     <div className="panel lg:relative lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl space-y-5 lg:max-w-xs w-full h-full flex flex-col">
       
-      {/* --- MODIFIED HEADER SECTION FOR PROMINENT LOGO --- */}
-      
-      {/* Action Icons: Positioned in the corner */}
       <div className="absolute top-4 right-4 flex items-center space-x-1 z-10">
         <button
           onClick={onOpenGuide}
@@ -88,12 +87,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         )}
       </div>
 
-      {/* Branding: Centered and vertical */}
       <div className="flex flex-col items-center border-b border-neutral-700/80 pb-3 mb-3 text-center">
         <img 
           src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
           alt="TNR Protography Logo"
-          // Increased size: takes full width up to a max, and is centered
           className="w-full max-w-[200px] h-auto mb-3" 
         />
         <h1 className="text-xl font-bold text-neutral-100 leading-tight">
@@ -103,7 +100,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         </h1>
       </div>
 
-      {/* --- REST OF THE PANEL REMAINS THE SAME --- */}
       <div className="flex-grow overflow-y-auto pr-2 space-y-5">
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Date Range:</label>
@@ -146,6 +142,18 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <Button onClick={() => onCmeFilterChange(CMEFilter.EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.EARTH_DIRECTED}>Earth-Directed</Button>
             <Button onClick={() => onCmeFilterChange(CMEFilter.NOT_EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.NOT_EARTH_DIRECTED}>Not Earth-Directed</Button>
           </div>
+        </div>
+
+        {/* NEW: Button for Other Forecast Models */}
+        <div className="pt-3 border-t border-neutral-700/50">
+            <button 
+                onClick={onOpenForecastModels} 
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
+                title="View Other CME Forecast Models">
+                {/* You might want a better icon here, using a generic one for now */}
+                <GlobeIcon className="w-5 h-5" /> 
+                <span className="text-sm font-semibold">Other CME Models</span>
+            </button>
         </div>
 
         <Disclaimer />

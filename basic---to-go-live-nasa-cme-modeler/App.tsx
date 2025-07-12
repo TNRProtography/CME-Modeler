@@ -9,6 +9,7 @@ import LoadingOverlay from './components/LoadingOverlay';
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, InteractionMode, SimulationCanvasHandle } from './types';
 
+// Icon and Page Imports
 import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
@@ -16,32 +17,41 @@ import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
+import ForecastModal from './components/ForecastModal';
+import SolarActivityPage from './components/SolarActivityPage';
+import ForecastModelsModal from './components/ForecastModelsModal'; // NEW: Import the new modal
 
 const App: React.FC = () => {
+  // Page and data state
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
-  
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
   
+  // Simulation controls state
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>(TimeRange.D3);
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.TOP);
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   
+  // CME-specific state
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
+  // UI visibility state
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false); // NEW: State for the forecast models modal
 
+  // Display options state
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
 
+  // Timeline state
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
@@ -49,13 +59,16 @@ const App: React.FC = () => {
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
 
+  // Three.js related state
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
 
+  // Refs
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
+  // API Key
   const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
   
   useEffect(() => {
@@ -244,7 +257,7 @@ const App: React.FC = () => {
         <div className="flex flex-grow min-h-0">
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
-                <> {/* Fragment to return multiple elements */}
+                <>
                     <div className={`
                         flex-shrink-0 lg:p-5
                         lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
@@ -259,6 +272,7 @@ const App: React.FC = () => {
                             isLoading={isLoading}
                             onClose={() => setIsControlsOpen(false)}
                             onOpenGuide={() => setIsTutorialOpen(true)}
+                            onOpenForecastModels={() => setIsForecastModelsOpen(true)} // Pass handler to open modal
                             showLabels={showLabels} onShowLabelsChange={setShowLabels}
                             showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets}
                             showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1}
@@ -311,7 +325,7 @@ const App: React.FC = () => {
                             />
                         ))}
                         
-                        {/* RESTORED: Floating UI Controls Over Canvas */}
+                        {/* Floating UI Controls Over Canvas */}
                         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                             <div className="flex items-center space-x-2 pointer-events-auto">
                                 <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
@@ -369,6 +383,8 @@ const App: React.FC = () => {
 
                     {isLoading && <LoadingOverlay />}
                     <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+                    {/* Render the new modal */}
+                    <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} />
                 </>
             )}
 

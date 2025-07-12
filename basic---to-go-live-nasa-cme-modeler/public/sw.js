@@ -1,30 +1,30 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v16'; // Version incremented to force update
+const CACHE_NAME = 'cme-modeler-cache-v29'; // Increment version!
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/manifest.json',
   '/favicon.ico',
   '/forecast.html',
   '/solar-activity.html',
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
-  '/placeholder.png', // Add a placeholder image if you create one
-  '/error.png', // Add an error image if you create one
+  '/placeholder.png', 
+  '/error.png', 
 ];
 
 // List of API domains that should use a network-first strategy
 const API_HOSTS = [
-  'api.nasa.gov', // Included as it's used for DONKI API (Flares, Active Regions)
-  'services.swpc.noaa.gov', // Included for X-ray Flux data
+  'api.nasa.gov', 
+  'services.swpc.noaa.gov', 
   'hemispheric-power.thenamesrock.workers.dev',
   'tnr-aurora-forecast.thenamesrock.workers.dev',
   'basic-aurora-forecast.thenamesrock.workers.dev',
   'aurora-sightings.thenamesrock.workers.dev',
-  // 'sdo.gsfc.nasa.gov', // This was for SDO images; SUVI images now come from services.swpc.noaa.gov
+  // NEW: Add HUXT's S3 bucket to prevent caching of its resources
+  'huxt-bucket.s3.eu-west-2.amazonaws.com',
 ];
 
 
