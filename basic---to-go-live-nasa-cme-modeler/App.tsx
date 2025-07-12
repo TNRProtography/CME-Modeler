@@ -17,10 +17,10 @@ import SelectIcon from './components/icons/SelectIcon';
 import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
-import GlobeIcon from './components/icons/GlobeIcon';
+import GlobeIcon from './components/icons/GlobeIcon'; // Ensure GlobeIcon is imported
 import ForecastModelsModal from './components/ForecastModelsModal';
-import MediaViewerModal from './components/MediaViewerModal';
-import SolarActivityPage from './components/SolarActivityPage';
+import MediaViewerModal from './components/MediaViewerModal'; 
+import SolarActivityPage from './components/SolarActivityPage'; 
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -35,7 +35,7 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   
-  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
+  const [currentlyModeledCMEId, setCurrentlyModeledCmeId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
   const [isControlsOpen, setIsControlsOpen] = useState(false);
@@ -134,11 +134,11 @@ const App: React.FC = () => {
   }, [cmeData, cmeFilter]);
 
   useEffect(() => {
-    if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) {
-      setCurrentlyModeledCMEId(null);
+    if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCmeId)) {
+      setCurrentlyModeledCmeId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, [filteredCmes, currentlyModeledCmeId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -151,7 +151,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
-    setCurrentlyModeledCMEId(cme ? cme.id : null);
+    setCurrentlyModeledCmeId(cme ? cme.id : null);
     setSelectedCMEForInfo(cme);
     if (cme) {
         setTimelineActive(false);
@@ -163,7 +163,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
-    setCurrentlyModeledCMEId(cme.id);
+    setCurrentlyModeledCmeId(cme.id);
     setSelectedCMEForInfo(cme);
     setTimelineActive(false);
     setTimelinePlaying(false);
@@ -174,7 +174,7 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying((prev: boolean) => !prev);
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -183,7 +183,7 @@ const App: React.FC = () => {
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -199,7 +199,7 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes, timelineMinDate, timelineMaxDate]);
 
@@ -291,7 +291,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        currentlyModeledCmeId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
