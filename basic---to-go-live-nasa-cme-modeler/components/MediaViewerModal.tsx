@@ -10,7 +10,6 @@ interface MediaViewerModalProps {
 const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType, onClose }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -28,8 +27,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
     } else {
       newScale = scale - scaleAmount; // Zoom out
     }
-    // CRITICAL FIX: Removed extra parenthesis
-    setScale(Math.min(Math.max(0.5, newScale), 5)); // Clamp scale between 0.5x and 5x
+    setScale(Math.min(Math.max(0.5, newScale), 5)); // Clamp scale
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -52,10 +50,16 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
     document.addEventListener('mouseup', handleMouseUp);
   };
   
-  const handleReset = () => {
+  const handleReset = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent modal from closing
     setScale(1);
     setPosition({ x: 0, y: 0 });
   };
+
+  const handleClose = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onClose();
+  }
 
 
   if (!mediaUrl || !mediaType) return null;
@@ -65,7 +69,6 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
       className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex flex-col justify-center items-center"
       onClick={onClose}
     >
-        {/* Controls */}
         <div className="absolute top-4 right-4 flex items-center gap-4 z-10">
             <button
                 onClick={handleReset}
@@ -75,7 +78,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
                 Reset View
             </button>
             <button 
-                onClick={onClose} 
+                onClick={handleClose} 
                 className="p-2 bg-neutral-800/80 border border-neutral-600 rounded-full text-white hover:bg-neutral-700"
                 title="Close Viewer"
             >
@@ -83,9 +86,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
             </button>
         </div>
 
-        {/* Media Container */}
         <div 
-            ref={containerRef}
             className="w-full h-full flex items-center justify-center overflow-hidden"
             onWheel={handleWheel}
         >
@@ -100,7 +101,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
                         transition: 'transform 0.1s ease-out',
                     }}
                     onMouseDown={handleMouseDown}
-                    onClick={(e) => e.stopPropagation()} // Prevent modal from closing when clicking image
+                    onClick={(e) => e.stopPropagation()} 
                 />
             )}
             {mediaType === 'video' && (
@@ -117,7 +118,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType
                         transition: 'transform 0.1s ease-out',
                     }}
                     onMouseDown={handleMouseDown}
-                    onClick={(e) => e.stopPropagation()} // Prevent modal from closing when clicking video
+                    onClick={(e) => e.stopPropagation()}
                 >
                     Your browser does not support the video tag.
                 </video>
