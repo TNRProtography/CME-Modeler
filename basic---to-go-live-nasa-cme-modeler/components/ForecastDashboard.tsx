@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import L from 'leaflet';
-// CSS files are imported directly
+
+// Import plugins to extend the L object and their CSS
+import 'leaflet.markercluster';
+import 'leaflet.heat';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -163,7 +166,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json())
         ]).then(([forecastData, plasmaData, magData]) => {
-            // Process forecast data
             const { currentForecast, historicalData } = forecastData;
             setAuroraScore(currentForecast.spotTheAuroraForecast);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
@@ -173,17 +175,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 real: (historicalData || []).map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
             });
 
-            // Process gauge data from forecast
-            const {bt, bz} = currentForecast.inputs.magneticField;
+            const { bt, bz } = currentForecast.inputs.magneticField;
             setGaugeData(prev => ({
                 ...prev,
                 power: { ...prev.power, value: currentForecast.inputs.hemisphericPower.toFixed(1), ...getGaugeStyle(currentForecast.inputs.hemisphericPower, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
-                bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') },
-                bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') },
+                bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
+                bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
                 moon: getMoonData(currentForecast.inputs.moonReduction, currentForecast.inputs.owmDataLastFetched)
             }));
-            
-            // Process NOAA plasma data
+
             const plasmaHeaders = plasmaData[0];
             const speedIdx = plasmaHeaders.indexOf('speed');
             const densityIdx = plasmaHeaders.indexOf('density');
@@ -198,7 +198,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` }
             }));
 
-            // Process NOAA mag data for chart
             const magHeaders = magData[0];
             const magBtIdx = magHeaders.indexOf('bt');
             const magBzIdx = magHeaders.indexOf('bz_gsm');
@@ -217,7 +216,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         });
         
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-
     }, []);
 
     const getAuroraBlurb = (score: number) => {
@@ -232,42 +230,29 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const getMoonData = (moonReduction: number, timestamp: number) => {
         const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100);
         let moonEmoji = '🌑';
-        if (moonIllumination > 95) moonEmoji = '🌕';
-        else if (moonIllumination > 55) moonEmoji = '🌖';
-        else if (moonIllumination > 45) moonEmoji = '🌗';
-        else if (moonIllumination > 5) moonEmoji = '🌒';
+        if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒';
         return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' };
     };
     
     useEffect(() => {
         if (allAuroraData.base.length) {
-            setAuroraChartData({
-                datasets: [
-                    { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0 },
-                    { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 2, pointRadius: 0, fill: 'origin', backgroundColor: 'rgba(255, 99, 71, 0.2)' }
-                ]
-            });
+            setAuroraChartData({ datasets: [ { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0 }, { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 2, pointRadius: 0, fill: 'origin', backgroundColor: 'rgba(255, 99, 71, 0.2)' } ] });
         }
     }, [allAuroraData]);
 
     useEffect(() => {
         if (allMagneticData.length) {
-            setMagneticChartData({
-                datasets: [
-                    { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
-                    { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0 }
-                ]
-            });
+            setMagneticChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0 }, { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0 } ] });
         }
     }, [allMagneticData]);
 
     // --- Map and Sighting Logic ---
     const fetchAndDisplaySightings = useCallback(() => {
-        if (!markerClusterGroupRef.current || !heatmapLayerRef.current) { return; }
+        if (!markerClusterGroupRef.current || !heatmapLayerRef.current) return;
         fetch(`${SIGHTING_API_ENDPOINT}?_=${Date.now()}`)
             .then(res => res.ok ? res.json() : Promise.reject(new Error(`API Error ${res.status}`)))
             .then(sightings => {
-                if (!Array.isArray(sightings)) { return; }
+                if (!Array.isArray(sightings)) return;
                 markerClusterGroupRef.current?.clearLayers();
                 const heatPoints: [number, number, number][] = [];
                 const sortedSightings = [...sightings].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -291,7 +276,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) return;
-
         const L = window.L as any;
         const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', maxZoom: 20 }).addTo(map);
@@ -309,61 +293,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 }
             }
         });
-        
         mapRef.current = map;
         fetchAndDisplaySightings();
-        const interval = setInterval(fetchAndDisplaySightings, 60000); // Refresh every minute
-        
-        return () => {
-            map.remove();
-            clearInterval(interval);
-        };
+        const interval = setInterval(fetchAndDisplaySightings, 60000);
+        return () => { map.remove(); clearInterval(interval); };
     }, [fetchAndDisplaySightings, reportingState]);
 
-    const handleStartReporting = () => {
-        if (!reporterName.trim()) { alert("Please enter your name to start reporting."); return; }
-        setReportingState('placing_pin');
-    };
-
-    const handleCancelReporting = () => {
-        if (userPinRef.current && mapRef.current) {
-            mapRef.current.removeLayer(userPinRef.current);
-            userPinRef.current = null;
-        }
-        setReportingState('idle');
-    };
-
-    const handleConfirmLocation = () => {
-        if (!userPinRef.current) { alert("Please place a pin on the map by clicking on your location."); return; }
-        userPinRef.current.dragging?.disable();
-        setReportingState('confirming_location');
-    };
-
-    const handleSubmitSighting = async (sightingType: string) => {
-        if (!userPinRef.current) return;
-        setReportingState('submitting');
-        const { lat, lng } = userPinRef.current.getLatLng();
-
-        try {
-            await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status: sightingType, name: reporterName }) });
-            handleCancelReporting();
-            fetchAndDisplaySightings();
-        } catch (error) {
-            alert("There was an error submitting your report. Please try again.");
-            setReportingState('confirming_location');
-        }
-    };
-    
-    const toggleMapView = () => {
-        const map = mapRef.current;
-        if (!map || !markerClusterGroupRef.current || !heatmapLayerRef.current) return;
-        if (mapViewType === 'markers') {
-            map.removeLayer(markerClusterGroupRef.current); map.addLayer(heatmapLayerRef.current); setMapViewType('heatmap');
-        } else {
-            map.removeLayer(heatmapLayerRef.current); map.addLayer(markerClusterGroupRef.current); setMapViewType('markers');
-        }
-    };
-
+    const handleStartReporting = () => { if (!reporterName.trim()) { alert("Please enter your name to start reporting."); return; } setReportingState('placing_pin'); };
+    const handleCancelReporting = () => { if (userPinRef.current && mapRef.current) { mapRef.current.removeLayer(userPinRef.current); userPinRef.current = null; } setReportingState('idle'); };
+    const handleConfirmLocation = () => { if (!userPinRef.current) { alert("Please place a pin on the map by clicking on your location."); return; } userPinRef.current.dragging?.disable(); setReportingState('confirming_location'); };
+    const handleSubmitSighting = async (sightingType: string) => { if (!userPinRef.current) return; setReportingState('submitting'); const { lat, lng } = userPinRef.current.getLatLng(); try { await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status: sightingType, name: reporterName }) }); handleCancelReporting(); fetchAndDisplaySightings(); } catch (error) { alert("There was an error submitting your report. Please try again."); setReportingState('confirming_location'); } };
+    const toggleMapView = () => { const map = mapRef.current; if (!map || !markerClusterGroupRef.current || !heatmapLayerRef.current) return; if (mapViewType === 'markers') { map.removeLayer(markerClusterGroupRef.current); map.addLayer(heatmapLayerRef.current); setMapViewType('heatmap'); } else { map.removeLayer(heatmapLayerRef.current); map.addLayer(markerClusterGroupRef.current); setMapViewType('markers'); } };
     const centerOnUser = () => mapRef.current?.locate({setView: true, maxZoom: 13});
     const paginatedSightings = allSightings.slice(sightingPage * 5, (sightingPage + 1) * 5);
 
@@ -380,10 +320,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 <main className="grid grid-cols-12 gap-6">
                     <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
                         <div>
-                            <div className="flex items-center mb-4">
-                                <h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2>
-                                <button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                            </div>
+                            <div className="flex items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                             <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
@@ -394,10 +331,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     <div className="col-span-12 grid grid-cols-6 gap-5">
                         {Object.entries(gaugeData).map(([key, data]) => (
                             <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
-                                <div className="flex justify-center items-center">
-                                    <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
-                                    <button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                </div>
+                                <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 <div className="text-3xl font-bold my-2">{data.value} <span className="text-lg">{data.unit}</span></div>
                                 <div className="text-3xl my-2">{data.emoji}</div>
                                 <div className="w-full bg-neutral-700 rounded-full h-2"><div className="h-2 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
@@ -406,7 +340,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         ))}
                     </div>
                     
-                    {/* Sighting Hub */}
                     <div className="col-span-12 card bg-neutral-950/80 p-6">
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                             <div className="lg:col-span-8 relative min-h-[500px] rounded-lg overflow-hidden">
@@ -419,7 +352,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[900]">
                                         <div className="text-center text-white max-w-sm">
                                             <h3 className="text-2xl font-bold">Reporting Sighting</h3>
-                                            {reportingState === 'placing_pin' && <p className="mt-2">Click on the map to place your pin, then click "Confirm Location" in the panel to the right.</p>}
+                                            {reportingState === 'placing_pin' && <p className="mt-2">Click your location on the map, then click "Confirm Location" in the panel to the right.</p>}
                                             {reportingState === 'confirming_location' && <p className="mt-2">Your location is locked. Please select what you saw from the panel on the right.</p>}
                                             {reportingState === 'submitting' && <div className="mt-4"><LoadingSpinner /></div>}
                                         </div>
@@ -429,34 +362,29 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             
                             <div className="lg:col-span-4 flex flex-col gap-4">
                                 <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
-                                
                                 <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
-                                    {reportingState === 'idle' && (
+                                    {reportingState === 'idle' ? (
                                         <>
                                             <h4 className="font-semibold text-center mb-2">File a New Report</h4>
                                             <input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/>
                                             <button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button>
                                         </>
-                                    )}
-
-                                    {reportingState === 'placing_pin' && (
+                                    ) : reportingState === 'placing_pin' ? (
                                         <div className="text-center space-y-3">
                                             <p className="text-sm font-semibold">Step 1: Confirm Your Location</p>
                                             <p className="text-xs text-neutral-400">Drag the 📍 pin to adjust your location if needed.</p>
                                             <button onClick={handleConfirmLocation} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button>
                                             <button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button>
                                         </div>
-                                    )}
-
-                                    {reportingState === 'confirming_location' && (
+                                    ) : ( // confirming_location or submitting
                                         <div className="space-y-2">
                                             <p className="text-sm font-semibold text-center">Step 2: What did you see?</p>
                                             {Object.entries(SIGHTING_TYPES).map(([key, { label, emoji }]) => (
-                                                <button key={key} onClick={() => handleSubmitSighting(key)} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors">
+                                                <button key={key} onClick={() => handleSubmitSighting(key)} disabled={reportingState === 'submitting'} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-50">
                                                     <span className="text-2xl">{emoji}</span><span>{label}</span>
                                                 </button>
                                             ))}
-                                            <button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center">Cancel Report</button>
+                                            <button onClick={handleCancelReporting} disabled={reportingState === 'submitting'} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center disabled:opacity-50">Cancel Report</button>
                                         </div>
                                     )}
                                 </div>
@@ -467,7 +395,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                             <span className="text-3xl">{SIGHTING_TYPES[sighting.status]?.emoji || '❓'}</span>
                                             <div>
                                                 <p className="font-semibold text-neutral-200">{SIGHTING_TYPES[sighting.status]?.label} by <span className="text-sky-400">{sighting.name || 'Anonymous'}</span></p>
-                                                <p className="text-sm text-neutral-400">{sighting.location || 'Unknown Location'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                <p className="text-sm text-neutral-400">{sighting.location || 'Unknown'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                             </div>
                                         </div>
                                     )) : <p className="text-center text-neutral-500 italic pt-8">No recent sightings.</p>}
