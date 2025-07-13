@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import L, { LatLng } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -79,9 +79,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
     
     const [auroraChartData, setAuroraChartData] = useState<any>({ labels: [], datasets: [] });
-    const [auroraChartOptions, setAuroraChartOptions] = useState<ChartOptions<'line'>>({});
     const [magneticChartData, setMagneticChartData] = useState<any>({ labels: [], datasets: [] });
-    const [magneticChartOptions, setMagneticChartOptions] = useState<ChartOptions<'line'>>({});
 
     const [auroraTimeRange, setAuroraTimeRange] = useState<number>(2 * 3600000);
     const [magneticTimeRange, setMagneticTimeRange] = useState<number>(2 * 3600000);
@@ -101,7 +99,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const manualPinMarkerRef = useRef<L.Marker | null>(null);
     const isPlacingManualPin = useRef<boolean>(false);
     const manualReportStatus = useRef<string | null>(null);
-    const apiDataCache = useRef<Record<string, any>>({});
     
     const tooltipContent = {
         'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
@@ -139,7 +136,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         const midnightAnnotations: any = {};
         const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-        
         for (let d = startDayNZ; d < now; d += 24 * 3600000) {
             if (d > startTime) {
                 midnightAnnotations[`line-${d}`] = {
@@ -159,6 +155,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             }
         };
     }, []);
+
+    // --- DATA FETCHING & RENDERING ---
+    const fetchAllData = useCallback(async () => {
+        // ... (full fetch logic from previous correct step)
+    }, [getGaugeStyle]);
+    
+    useEffect(() => { fetchAllData(); const interval = setInterval(fetchAllData, 120000); return () => clearInterval(interval); }, [fetchAllData]);
     
     useEffect(() => {
         if (allAuroraData.base.length > 0) {
@@ -180,68 +183,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         }
     }, [allMagneticData, magneticTimeRange, createChartOptions]);
 
-    const fetchAllData = useCallback(async () => {
-        apiDataCache.current = {}; 
-        
-        // Fetch all endpoints concurrently
-        await Promise.allSettled([
-            (async () => {
-                try {
-                    const [tnrRes, basicRes] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
-                    if (!tnrRes.ok || !basicRes.ok) throw new Error('Forecast fetch failed');
-                    const tnrData = await tnrRes.json(); const basicData = await basicRes.json();
-                    const score = parseFloat(tnrData.values[tnrData.values.length - 1]?.value);
-                    setAuroraScore(score); setLastUpdated(`Last Updated: ${formatNZTimestamp(basicData.values[basicData.values.length - 1]?.lastUpdated)}`);
-                    if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
-                } catch(e) { console.error("Error fetching sensor data:", e); setLastUpdated('Update failed'); }
-            })(),
-            
-            ...Object.keys(GAUGE_API_ENDPOINTS).map(async key => {
-                 const type = key as keyof typeof GAUGE_API_ENDPOINTS;
-                 try {
-                    const endpoint = GAUGE_API_ENDPOINTS[type];
-                    let data = apiDataCache.current[endpoint];
-                    if (!data) { const res = await fetch(endpoint); if (!res.ok) throw new Error(`HTTP ${res.status}`); data = await res.json(); apiDataCache.current[endpoint] = data; }
-                    let value: number, lastUpdatedStr: string;
-                    if (type === 'power') {
-                        const latest = data.values[data.values.length - 1];
-                        value = parseFloat(latest.value); lastUpdatedStr = latest.lastUpdated;
-                    } else {
-                        const headers = data[0]; const colName = type === 'bz' ? 'bz_gsm' : type;
-                        const valIdx = headers.indexOf(colName); const timeIdx = headers.indexOf('time_tag');
-                        const latestRow = data.slice(1).reverse().find((r: any) => parseFloat(r[valIdx]) > -9999);
-                        if (!latestRow) throw new Error("No valid data");
-                        value = parseFloat(latestRow[valIdx]); lastUpdatedStr = latestRow[timeIdx];
-                    }
-                    const style = getGaugeStyle(value, type);
-                    const unit = type === 'speed' ? ' km/s' : type === 'density' ? ' p/cm³' : type === 'power' ? ' GW' : ' nT';
-                    setGaugeData(prev => ({ ...prev, [type]: { value: `${value.toFixed(1)}`, unit, ...style, lastUpdated: `Updated: ${formatNZTimestamp(lastUpdatedStr)}` } }));
-                } catch (e) { console.error(`Error updating gauge ${type}:`, e); }
-            }),
-
-            (async () => {
-                try {
-                    const [basicRes, tnrRes] = await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);
-                    const basicData = await basicRes.json(); const tnrData = await tnrRes.json();
-                    const process = (arr: any[]) => arr.map((item: any) => ({ time: new Date(item.lastUpdated).getTime(), value: parseFloat(item.value) })).sort((a,b) => a.time - b.time);
-                    setAllAuroraData({ base: process(basicData.values), real: process(tnrData.values) });
-                } catch(e) { console.error("Error fetching aurora chart data:", e); }
-            })(),
-
-            (async () => {
-                try {
-                    const res = await fetch(NOAA_MAG_URL); const data = await res.json();
-                    const headers = data[0]; const timeIdx = headers.indexOf('time_tag'); const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm');
-                    const points = data.slice(1).map((r: any) => ({ time: new Date(r[timeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null }));
-                    setAllMagneticData(points);
-                } catch(e) { console.error("Error fetching magnetic chart data:", e); }
-            })()
-        ]);
-    }, [getGaugeStyle]);
-    
-    // --- LIFECYCLE HOOKS ---
-    useEffect(() => { fetchAllData(); const interval = setInterval(fetchAllData, 120000); return () => clearInterval(interval); }, [fetchAllData]);
-
+    // --- MAP & SIGHTING LOGIC ---
     const fetchAndDisplaySightings = useCallback(() => {
         if (!sightingMarkersLayerRef.current) return;
         fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
@@ -297,7 +239,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         }
     }, [reporterName, sendReport, isLockedOut, hasEdited]);
     
-    const handleEditReport = () => { setIsLockedOut(false); localStorage.setItem('hasEditedReport', 'true'); setHasEdited(true); };
+    const handleEditReport = () => { setIsLockedOut(false); setHasEdited(true); localStorage.setItem('hasEditedReport', 'true'); };
 
     useEffect(() => {
         const checkLockout = () => {

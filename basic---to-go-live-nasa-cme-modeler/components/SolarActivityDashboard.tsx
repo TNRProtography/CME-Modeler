@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 
@@ -26,8 +26,8 @@ const getColorForFlux = (value: number, opacity: number = 1): string => {
     return `rgba(${rgb}, ${opacity})`;
 };
 
-const formatTimestamp = (isoString: string) => {
-    try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString(); } catch { return "Invalid Date"; }
+const formatNZTimestamp = (isoString: string) => {
+    try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
 };
 
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
@@ -48,7 +48,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [xrayChartData, setXrayChartData] = useState<any>({ labels: [], datasets: [] });
-    const [xrayChartOptions, setXrayChartOptions] = useState<ChartOptions<'line'>>({});
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
@@ -59,10 +58,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>) => {
         setState({ url: '/placeholder.png', loading: 'Loading image...' });
         try {
-            const preloader = new Image();
-            preloader.src = url;
-            await new Promise((resolve, reject) => { preloader.onload = resolve; preloader.onerror = reject; });
-            setState({ url: url, loading: null });
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const blob = await res.blob();
+            const objectURL = URL.createObjectURL(blob);
+            setState({ url: objectURL, loading: null });
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
             setState({ url: '/error.png', loading: 'Image failed to load.' });
@@ -86,25 +86,37 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
     }, []);
     
+    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - xrayTimeRange;
+        const midnightAnnotations: any = {};
+        const nzOffset = 12 * 3600000;
+        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+        for (let d = startDayNZ; d < now; d += 24 * 3600000) {
+            if (d > startTime) {
+                midnightAnnotations[`line-${d}`] = {
+                    type: 'line', xMin: d, xMax: d,
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
+                };
+            }
+        }
+        
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } }, annotation: { annotations: midnightAnnotations } },
+            scales: { 
+                x: { type: 'time', adapters: { date: { locale: 'en-NZ' } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
+            }
+        };
+    }, [xrayTimeRange]);
+
     useEffect(() => {
         if (allXrayData.length > 0) {
             const now = Date.now();
             const startTime = now - xrayTimeRange;
             const filteredData = allXrayData.filter(d => d.time >= startTime);
-            
-            const midnightAnnotations: any = {};
-            const nzOffset = 12 * 3600000;
-            const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-            for (let d = startDayNZ; d < now; d += 24 * 3600000) {
-                if (d > startTime) {
-                    midnightAnnotations[`line-${d}`] = {
-                        type: 'line', xMin: d, xMax: d,
-                        borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                        label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
-                    };
-                }
-            }
-
             setXrayChartData({
                 labels: filteredData.map(d => d.time),
                 datasets: [{
@@ -115,19 +127,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
                     }
                 }],
-            });
-
-            setXrayChartOptions({
-                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => {
-                    let fluxClass = '';
-                    if (c.parsed.y >= 1e-4) fluxClass = 'X'; else if (c.parsed.y >= 1e-5) fluxClass = 'M'; else if (c.parsed.y >= 1e-6) fluxClass = 'C'; else if (c.parsed.y >= 1e-7) fluxClass = 'B'; else fluxClass = 'A';
-                    return `Flux: ${c.parsed.y.toExponential(2)} (${fluxClass}-class)`;
-                }}}, annotation: { annotations: midnightAnnotations } },
-                scales: { 
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                    y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
-                }
             });
         }
     }, [allXrayData, xrayTimeRange]);
