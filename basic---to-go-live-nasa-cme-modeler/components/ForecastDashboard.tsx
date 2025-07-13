@@ -17,13 +17,6 @@ const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plas
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/';
-const GAUGE_API_ENDPOINTS = {
-  power: 'https://hemispheric-power.thenamesrock.workers.dev/',
-  speed: NOAA_PLASMA_URL,
-  density: NOAA_PLASMA_URL,
-  bt: NOAA_MAG_URL,
-  bz: NOAA_MAG_URL
-};
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
   density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 },
@@ -171,15 +164,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
     
     useEffect(() => {
-        const fetchAndCache = async (url: string) => {
-            const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
-            const res = await fetch(cacheBustedUrl);
-            if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
-            return res.json();
-        };
-
         const fetchAllData = async () => {
+            const fetchAndCache = async (url: string) => {
+                const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
+                const res = await fetch(cacheBustedUrl);
+                if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+                return res.json();
+            };
+
             setIsLoading(true);
+            
+            // This is now a more resilient fetch that won't crash the page if one part fails.
             await Promise.allSettled([
                 (async () => {
                     const data = await fetchAndCache(FORECAST_API_URL);
@@ -201,22 +196,37 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     
                     const powerVal = currentForecast.inputs.hemisphericPower;
                     setGaugeData(prev => ({ ...prev, power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` } }));
-
+                    
                     const {bt, bz} = currentForecast.inputs.magneticField;
                     setGaugeData(prev => ({...prev, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') }}));
                 })().catch(e => { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }),
                 
                 (async () => {
-                    const [plasmaData, magData] = await Promise.all([ fetchAndCache(NOAA_PLASMA_URL), fetchAndCache(NOAA_MAG_URL) ]);
+                    const [plasmaData, magData] = await Promise.all([
+                        fetchAndCache(NOAA_PLASMA_URL),
+                        fetchAndCache(NOAA_MAG_URL)
+                    ]);
                     const magHeaders = magData[0]; const btIdx = magHeaders.indexOf('bt'); const bzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
                     const latestMagRow = magData.slice(1).reverse().find((r: any) => parseFloat(r[bzIdx]) > -9999);
                     const magTimestamp = latestMagRow ? Date.parse(latestMagRow[magTimeIdx]) : Date.now();
                     setGaugeData(prev => ({...prev, bt: {...prev.bt, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` }, bz: {...prev.bz, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` }}));
                     const magPoints = magData.slice(1).map((r: any) => ({ time: new Date(r[magTimeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
                     setAllMagneticData(magPoints);
-                })().catch(e => console.error("Error fetching magnetic data:", e)),
+
+                    const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
+                    const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
+                    const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
+                    const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+                    const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx]) : Date.now();
+                    setGaugeData(prev => ({ ...prev,
+                        speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
+                        density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
+                    }));
+                })().catch(e => console.error("Error fetching gauge/magnetic data:", e)),
                 
-                (async () => { setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`); })()
+                (async () => {
+                    setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
+                })()
             ]);
             setIsLoading(false);
         };
@@ -246,7 +256,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             });
         }
     }, [allMagneticData]);
-
+    
     const fetchAndDisplaySightings = useCallback(() => {
         if (!sightingMarkersLayerRef.current) return;
         fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`).then(res => res.json()).then(sightings => {
@@ -286,7 +296,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     const handleReportSighting = useCallback((status: string) => {
         if (isLockedOut && hasEdited) { alert(`You have already edited your report in this 60-minute window.`); return; }
-        if (isLockedOut && !hasEdited) { handleEditReport(); } // This now just enables edit mode.
+        if (isLockedOut && !hasEdited) { handleEditReport(); }
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
         setSightingStatus({ loading: true, message: "Getting your location..." });
         if ('geolocation' in navigator) {
@@ -420,7 +430,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="flex justify-between items-center mt-4">
                                 <button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="sighting-button disabled:opacity-50">Previous</button>
                                 <span>Page {sightingPage + 1} of {Math.ceil(allSightings.length / SIGHTINGS_PER_PAGE)}</span>
-                                <button onClick={() => setSightingPage(p => Math.min(p + 1, Math.floor(allSightings.length / SIGHTINGS_PER_PAGE) -1))} disabled={(sightingPage + 1) * SIGHTINGS_PER_PAGE >= allSightings.length} className="sighting-button disabled:opacity-50">Next</button>
+                                <button onClick={() => setSightingPage(p => Math.min(p + 1, Math.ceil(allSightings.length / SIGHTINGS_PER_PAGE) - 1))} disabled={(sightingPage + 1) * SIGHTINGS_PER_PAGE >= allSightings.length} className="sighting-button disabled:opacity-50">Next</button>
                             </div>
                         </div>
                     </div>
