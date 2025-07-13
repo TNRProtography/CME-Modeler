@@ -4,7 +4,6 @@ import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
 import ToggleSwitch from './ToggleSwitch';
-// REMOVED: import GlobeIcon from './icons/GlobeIcon';
 
 interface ControlsPanelProps {
   activeTimeRange: TimeRange;
@@ -15,7 +14,6 @@ interface ControlsPanelProps {
   onFocusChange: (target: FocusTarget) => void;
   isLoading: boolean;
   onOpenGuide: () => void;
-  // REMOVED: onOpenForecastModels prop
   onClose?: () => void;
   showLabels: boolean;
   onShowLabelsChange: (show: boolean) => void;
@@ -143,8 +141,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           </div>
         </div>
         
-        {/* The "Other CME Models" button has been removed from this component */}
-
         <Disclaimer />
       </div>
 
