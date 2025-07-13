@@ -49,6 +49,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [xrayChartData, setXrayChartData] = useState<any>({ labels: [], datasets: [] });
+    const [xrayChartOptions, setXrayChartOptions] = useState<ChartOptions<'line'>>({});
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
@@ -93,17 +94,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const filteredData = allXrayData.filter(d => d.time >= startTime);
             
             const midnightAnnotations: any = {};
-            const uniqueDays = [...new Set(filteredData.map(d => new Date(d.time).setUTCHours(0,0,0,0)))];
-            uniqueDays.forEach((day, index) => {
-                const midnight = new Date(day).setUTCHours(24,0,0,0);
-                if (midnight > startTime && midnight < now) {
-                    midnightAnnotations[`line-${index}`] = {
-                        type: 'line', xMin: midnight, xMax: midnight,
+            const nzOffset = 12 * 3600000;
+            const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+            for (let d = startDayNZ; d < now; d += 24 * 3600000) {
+                if (d > startTime) {
+                    midnightAnnotations[`line-${d}`] = {
+                        type: 'line', xMin: d, xMax: d,
                         borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                        label: { content: 'Midnight UTC', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
+                        label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
                     };
                 }
-            });
+            }
 
             setXrayChartData({
                 labels: filteredData.map(d => d.time),
@@ -115,7 +116,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
                     }
                 }],
-                annotations: midnightAnnotations
+            });
+
+            setXrayChartOptions({
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => {
+                    let fluxClass = '';
+                    if (c.parsed.y >= 1e-4) fluxClass = 'X'; else if (c.parsed.y >= 1e-5) fluxClass = 'M'; else if (c.parsed.y >= 1e-6) fluxClass = 'C'; else if (c.parsed.y >= 1e-7) fluxClass = 'B'; else fluxClass = 'A';
+                    return `Flux: ${c.parsed.y.toExponential(2)} (${fluxClass}-class)`;
+                }}}, annotation: { annotations: midnightAnnotations } },
+                scales: { 
+                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                    y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
+                }
             });
         }
     }, [allXrayData, xrayTimeRange]);
@@ -159,19 +172,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const interval = setInterval(runAllUpdates, 5 * 60 * 1000);
         return () => clearInterval(interval);
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
-
-    const xrayChartOptions: ChartOptions<'line'> = {
-        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => {
-            let fluxClass = '';
-            if (c.parsed.y >= 1e-4) fluxClass = 'X'; else if (c.parsed.y >= 1e-5) fluxClass = 'M'; else if (c.parsed.y >= 1e-6) fluxClass = 'C'; else if (c.parsed.y >= 1e-7) return 'B'; else fluxClass = 'A';
-            return `Flux: ${c.parsed.y.toExponential(2)} (${fluxClass}-class)`;
-        }}}, annotation: { annotations: (xrayChartData as any)?.annotations || {} } },
-        scales: { 
-            x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-            y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
-        }
-    };
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">

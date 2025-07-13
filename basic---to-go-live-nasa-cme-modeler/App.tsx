@@ -46,7 +46,6 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
 
-  // NEW: State for the global media viewer
   const [viewerMedia, setViewerMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
