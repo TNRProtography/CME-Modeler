@@ -38,6 +38,19 @@ const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React
   </button>
 );
 
+const APIKeyDisclaimer = () => (
+  <div className="mt-4 p-2 bg-yellow-900/30 border border-yellow-700/60 rounded-lg text-xs text-yellow-300 space-y-1">
+    <p className="font-semibold text-yellow-200">Using NASA's DEMO_KEY</p>
+    <p>
+      Rate limits are often exceeded with the shared demo key. For reliable performance, please 
+      <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-yellow-100 mx-1">
+        get a free NASA API key
+      </a> 
+      and add it to your environment variables (VITE_NASA_API_KEY).
+    </p>
+  </div>
+);
+
 const Disclaimer = () => (
   <div className="mt-6 pt-4 border-t border-neutral-700/80 text-xs text-neutral-500 space-y-1">
     <p className="font-semibold text-neutral-400">Data & Accuracy Disclaimer</p>
@@ -141,6 +154,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           </div>
         </div>
         
+        <APIKeyDisclaimer />
         <Disclaimer />
       </div>
 
