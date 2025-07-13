@@ -40,7 +40,6 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
     return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B/Unknown
 };
 
-
 const formatNZTimestamp = (isoString: string | null) => {
     if (!isoString) return 'N/A';
     try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
@@ -167,10 +166,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         return () => clearInterval(interval);
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
 
-    const xrayChartOptions: ChartOptions<'line'> = useMemo(() => {
+    const xrayChartData = useMemo(() => {
+        if (allXrayData.length === 0) return { datasets: [] };
+        return {
+            datasets: [{
+                label: 'Short Flux (0.1-0.8 nm)', 
+                data: allXrayData.map(d => ({x: d.time, y: d.short})),
+                pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
+                segment: {
+                    borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
+                    backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
+                }
+            }],
+        };
+    }, [allXrayData]);
+    
+    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
+
         const annotations: any = {};
+        
         const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -188,8 +204,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const peakTime = new Date(flare.peakTime).getTime();
             const classType = flare.classType || '';
             const classChar = classType[0];
-            if (classChar === 'M' || classChar === 'X') {
-                if (peakTime > startTime && visibleAnnotations[flare.flareID] !== false) {
+            if ((classChar === 'M' || classChar === 'X') && peakTime > startTime) {
+                if (visibleAnnotations[flare.flareID] !== false) {
                     const magnitude = parseFloat(classType.substring(1));
                     const fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(classChar)) * magnitude;
                     annotations[flare.flareID] = {
@@ -226,20 +242,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }
         };
     }, [xrayTimeRange, solarFlares, visibleAnnotations]);
-    
-    const xrayChartData = useMemo(() => {
-        if (allXrayData.length === 0) return { labels: [], datasets: [] };
-        return {
-            datasets: [{
-                label: 'Short Flux (0.1-0.8 nm)', data: allXrayData.map(d => ({x: d.time, y: d.short})),
-                pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                segment: {
-                    borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
-                    backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
-                }
-            }],
-        };
-    }, [allXrayData]);
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
