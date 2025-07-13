@@ -110,7 +110,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         'bz': { title: 'IMF Bz (N/S)', content: `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>` }
     };
     
-    // --- HELPERS & CALLBACKS ---
     const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
     const closeModal = useCallback(() => setModalState(null), []);
     const formatNZTimestamp = (isoString: string) => { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
@@ -136,16 +135,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         const midnightAnnotations: any = {};
         const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-        for (let d = startDayNZ; d < now; d += 24 * 3600000) {
-            if (d > startTime) {
-                midnightAnnotations[`line-${d}`] = {
-                    type: 'line', xMin: d, xMax: d,
+        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
+            const midnight = new Date(d).setUTCHours(12,0,0,0);
+            if (midnight > startTime && midnight < now) {
+                midnightAnnotations[`line-${midnight}`] = {
+                    type: 'line', xMin: midnight, xMax: midnight,
                     borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
                     label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
                 };
             }
         }
-        
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
             plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false }, annotation: { annotations: midnightAnnotations } },
@@ -156,32 +155,86 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         };
     }, []);
 
-    // --- DATA FETCHING & RENDERING ---
-    const fetchAllData = useCallback(async () => {
-        // ... (full fetch logic from previous correct step)
+    useEffect(() => {
+        const fetchAllData = async () => {
+            const localCache: Record<string, any> = {};
+            const fetchAndCache = async (url: string) => {
+                if (localCache[url]) return localCache[url];
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+                const data = await res.json();
+                localCache[url] = data;
+                return data;
+            };
+
+            // Fetch sensor score
+            try {
+                const [tnrRes, basicRes] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
+                if (!tnrRes.ok || !basicRes.ok) throw new Error('Forecast fetch failed');
+                const tnrData = await tnrRes.json(); const basicData = await basicRes.json();
+                const score = parseFloat(tnrData.values[tnrData.values.length - 1]?.value);
+                setAuroraScore(score); setLastUpdated(`Last Updated: ${formatNZTimestamp(basicData.values[basicData.values.length - 1]?.lastUpdated)}`);
+                if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant auroral substorm.');
+                const process = (arr: any[]) => arr.map((item: any) => ({ x: new Date(item.lastUpdated).getTime(), y: parseFloat(item.value) })).sort((a,b) => a.x - b.x);
+                setAllAuroraData({ base: process(basicData.values), real: process(tnrData.values) });
+            } catch(e) { console.error("Error fetching sensor data:", e); setLastUpdated('Update failed'); }
+
+            // Fetch gauges
+            Object.keys(GAUGE_API_ENDPOINTS).forEach(async key => {
+                const type = key as keyof typeof GAUGE_API_ENDPOINTS;
+                try {
+                    const endpoint = GAUGE_API_ENDPOINTS[type];
+                    const data = await fetchAndCache(endpoint);
+                    let value: number, lastUpdatedStr: string;
+                    if (type === 'power') {
+                        const latest = data.values[data.values.length - 1];
+                        value = parseFloat(latest.value); lastUpdatedStr = latest.lastUpdated;
+                    } else {
+                        const headers = data[0]; const colName = type === 'bz' ? 'bz_gsm' : type;
+                        const valIdx = headers.indexOf(colName); const timeIdx = headers.indexOf('time_tag');
+                        const latestRow = data.slice(1).reverse().find((r: any) => parseFloat(r[valIdx]) > -9999);
+                        if (!latestRow) throw new Error("No valid data");
+                        value = parseFloat(latestRow[valIdx]); lastUpdatedStr = latestRow[timeIdx];
+                    }
+                    const style = getGaugeStyle(value, type);
+                    const unit = type === 'speed' ? ' km/s' : type === 'density' ? ' p/cm³' : type === 'power' ? ' GW' : ' nT';
+                    setGaugeData(prev => ({ ...prev, [type]: { value: `${value.toFixed(1)}`, unit, ...style, lastUpdated: `Updated: ${formatNZTimestamp(lastUpdatedStr)}` } }));
+                } catch (e) { console.error(`Error updating gauge ${type}:`, e); }
+            });
+            
+            // Fetch Magnetic Data
+            try {
+                const data = await fetchAndCache(NOAA_MAG_URL);
+                const headers = data[0]; const timeIdx = headers.indexOf('time_tag'); const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm');
+                const points = data.slice(1).map((r: any) => ({ time: new Date(r[timeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null }));
+                setAllMagneticData(points);
+            } catch(e) { console.error("Error fetching magnetic chart data:", e); }
+        };
+        
+        fetchAllData();
+        const interval = setInterval(fetchAllData, 120000);
+        return () => clearInterval(interval);
     }, [getGaugeStyle]);
     
-    useEffect(() => { fetchAllData(); const interval = setInterval(fetchAllData, 120000); return () => clearInterval(interval); }, [fetchAllData]);
-    
+    // Chart Data and Options Generation
     useEffect(() => {
         if (allAuroraData.base.length > 0) {
-            setAuroraChartOptions(createChartOptions(auroraTimeRange));
             setAuroraChartData({
-                labels: allAuroraData.real.map(d => d.time),
                 datasets: [ { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Real Score', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } ]
             });
         }
-    }, [allAuroraData, auroraTimeRange, createChartOptions]);
+    }, [allAuroraData]);
 
     useEffect(() => {
         if (allMagneticData.length > 0) {
-            setMagneticChartOptions(createChartOptions(magneticTimeRange));
             setMagneticChartData({
-                labels: allMagneticData.map(p => p.time),
-                datasets: [ { label: 'Bt', data: allMagneticData.map(p => p.bt), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Bz', data: allMagneticData.map(p => p.bz), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
+                datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
             });
         }
-    }, [allMagneticData, magneticTimeRange, createChartOptions]);
+    }, [allMagneticData]);
+
+    const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange), [auroraTimeRange, createChartOptions]);
+    const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
 
     // --- MAP & SIGHTING LOGIC ---
     const fetchAndDisplaySightings = useCallback(() => {
