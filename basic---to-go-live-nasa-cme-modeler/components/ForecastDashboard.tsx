@@ -65,7 +65,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
     );
 };
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -164,46 +164,79 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
     
     useEffect(() => {
-        const fetchAndCache = async (url: string) => {
-            const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
-            const res = await fetch(cacheBustedUrl);
-            if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
-            return res.json();
-        };
-
         const fetchAllData = async () => {
-            // This is a robust way to fetch everything independently
-            Promise.allSettled([
-                fetchAndCache(FORECAST_API_URL).then(data => {
-                    const { currentForecast, historicalData } = data;
-                    setAuroraScore(currentForecast.spotTheAuroraForecast);
-                    setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
-                    const score = currentForecast.spotTheAuroraForecast;
-                    if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
-                    const sortedHistory = (historicalData || []).sort((a: any, b: any) => a.timestamp - b.timestamp);
-                    setAllAuroraData({
-                        base: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.baseScore })),
-                        real: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
-                    });
-                }).catch(e => { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }),
+            const apiCache: Record<string, any> = {};
+            const fetchAndCache = async (url: string) => {
+                const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
+                if (apiCache[url]) return apiCache[url];
+                const res = await fetch(cacheBustedUrl);
+                if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+                const data = await res.json();
+                apiCache[url] = data;
+                return data;
+            };
 
-                fetchAndCache(NOAA_MAG_URL).then(data => {
-                    const headers = data[0]; const timeIdx = headers.indexOf('time_tag'); const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm');
-                    const points = data.slice(1).map((r: any) => ({ time: new Date(r[timeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
-                    setAllMagneticData(points);
-                }).catch(e => console.error("Error fetching magnetic chart data:", e)),
+            try {
+                const data = await fetchAndCache(FORECAST_API_URL);
+                const { currentForecast, historicalData } = data;
+                setAuroraScore(currentForecast.spotTheAuroraForecast);
+                setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
+                const score = currentForecast.spotTheAuroraForecast;
+                if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
+                const sortedHistory = (historicalData || []).sort((a: any, b: any) => a.timestamp - b.timestamp);
+                setAllAuroraData({
+                    base: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.baseScore })),
+                    real: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
+                });
+            } catch (e) { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }
 
-                fetch(`${ACE_EPAM_URL}?_=${new Date().getTime()}`).then(() => {
-                    setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
-                }).catch(e => console.error("Error fetching EPAM image:", e))
-            ]);
+            try {
+                const [plasmaData, magData] = await Promise.all([
+                    fetchAndCache(NOAA_PLASMA_URL),
+                    fetchAndCache(NOAA_MAG_URL)
+                ]);
+
+                const magHeaders = magData[0];
+                const btIdx = magHeaders.indexOf('bt'); const bzIdx = magHeaders.indexOf('bz_gsm');
+                const magTimeIdx = magHeaders.indexOf('time_tag');
+                const latestMagRow = magData.slice(1).reverse().find((r: any) => parseFloat(r[bzIdx]) > -9999);
+                const btVal = latestMagRow ? parseFloat(latestMagRow[btIdx]) : null;
+                const bzVal = latestMagRow ? parseFloat(latestMagRow[bzIdx]) : null;
+
+                const plasmaHeaders = plasmaData[0];
+                const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density');
+                const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
+                const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
+                const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
+                const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+
+                setGaugeData(prev => ({ ...prev,
+                    speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestPlasmaRow[plasmaTimeIdx]))}` },
+                    density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestPlasmaRow[plasmaTimeIdx]))}` },
+                    bt: { ...prev.bt, value: btVal ? btVal.toFixed(1) : '...', ...getGaugeStyle(btVal, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestMagRow[magTimeIdx]))}` },
+                    bz: { ...prev.bz, value: bzVal ? bzVal.toFixed(1) : '...', ...getGaugeStyle(bzVal, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestMagRow[magTimeIdx]))}` },
+                }));
+                const magPoints = magData.slice(1).map((r: any) => ({ time: new Date(r[magTimeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
+                setAllMagneticData(magPoints);
+            } catch(e) { console.error("Error fetching gauge/magnetic data:", e); }
+
+            try {
+                const powerData = await fetchAndCache(GAUGE_API_ENDPOINTS.power);
+                const latestPower = powerData.values[powerData.values.length - 1];
+                const powerVal = parseFloat(latestPower.value);
+                setGaugeData(prev => ({ ...prev, power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(latestPower.lastUpdated)}` } }));
+            } catch (e) { console.error("Error fetching power data:", e); }
+
+            try {
+                setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
+            } catch (e) { console.error("Error fetching EPAM image:", e); }
         };
         
         fetchAllData();
         const interval = setInterval(fetchAllData, 120000);
         return () => clearInterval(interval);
-    }, []);
-
+    }, [getGaugeStyle]);
+    
     useEffect(() => {
         if (allAuroraData.base.length > 0) {
             setAuroraChartData({
@@ -292,31 +325,28 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     }, []);
 
     useEffect(() => {
-        if (mapContainerRef.current && !mapRef.current) {
-            const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
-            sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
-            mapRef.current = map;
-
-            map.on('click', (e) => {
-                if (isPlacingManualPin.current) {
-                    if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
-                    manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
-                    const popupNode = document.createElement('div');
-                    popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
-                    popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
-                        const finalLatLng = manualPinMarkerRef.current!.getLatLng();
-                        sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
-                        if (manualPinMarkerRef.current) manualPinMarkerRef.current.closePopup();
-                    });
-                    manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
-                }
-            });
-            
-            fetchAndDisplaySightings();
-            const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
-            return () => { clearInterval(sightingInterval); };
-        }
+        if (!mapContainerRef.current || mapRef.current) return;
+        const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+        sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
+        mapRef.current = map;
+        map.on('click', (e) => {
+            if (isPlacingManualPin.current) {
+                if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
+                manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
+                const popupNode = document.createElement('div');
+                popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
+                popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
+                    const finalLatLng = manualPinMarkerRef.current!.getLatLng();
+                    sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
+                    if (manualPinMarkerRef.current) manualPinMarkerRef.current.closePopup();
+                });
+                manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
+            }
+        });
+        fetchAndDisplaySightings();
+        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
+        return () => { map.remove(); mapRef.current = null; clearInterval(sightingInterval); };
     }, [fetchAndDisplaySightings, sendReport]);
     
     return (
@@ -380,26 +410,50 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
                         <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {auroraChartData.datasets.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {auroraChartData.datasets.length > 0 && auroraChartData.datasets[0]?.data.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Magnetic Field (Last {magneticTimeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => { setMagneticTimeRange(duration); setMagneticTimeLabel(label); }} selected={magneticTimeRange} />
+                        <TimeRangeButtons onSelect={(duration, label) => {setMagneticTimeRange(duration); setMagneticTimeLabel(label)}} selected={magneticTimeRange} />
                          <div className="flex-grow relative mt-2">
-                            {magneticChartData.datasets.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {magneticChartData.datasets.length > 0 && magneticChartData.datasets[0]?.data.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <div className="flex justify-center items-center">
+                     <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <div className="flex justify-center items-center mb-4">
                            <h2 className="text-xl font-semibold text-white text-center">ACE EPAM (Last 3 Days)</h2>
                            <button onClick={() => openModal('epam')} className="ml-2 tooltip-trigger">?</button>
                         </div>
-                         <div className="flex-grow relative mt-2">
+                         <div onClick={() => setViewerMedia && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer">
                             <img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" />
                         </div>
                     </div>
+                    <div className="col-span-12 card bg-neutral-950/80 p-6">
+                        <h3 className="text-xl font-semibold text-center text-white mb-4">Live Satellite and Cloud Imagery</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="responsive-iframe-wrapper" style={{ paddingBottom: '69.23%' }}>
+                                <iframe title="Windy.com Cloud Map" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe>
+                            </div>
+                            <div className="responsive-iframe-wrapper" style={{ paddingBottom: '56.25%' }}>
+                                <iframe title="Live View from Queenstown" src="https://queenstown.roundshot.com/#/"></iframe>
+                            </div>
+                        </div>
+                    </div>
                  </main>
+                 <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
+                    <p className="max-w-3xl mx-auto leading-relaxed">
+                        This dashboard provides a highly localized, 2-hour aurora forecast specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.
+                    </p>
+                    <p className="max-w-3xl mx-auto leading-relaxed mt-4">
+                        <strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.
+                    </p>
+                    <div className="mt-8 text-xs text-neutral-500">
+                        <p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a> | Live Camera by <a href="https://queenstown.roundshot.com/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Roundshot</a></p>
+                        <p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p>
+                    </div>
+                 </footer>
              </div>
             {modalState && <InfoModal {...modalState} onClose={closeModal} />}
         </div>
