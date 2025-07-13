@@ -1,24 +1,26 @@
-// src/components/SolarActivityPage.tsx
+// src/components/ForecastModal.tsx
 import React from 'react';
 import HomeIcon from './icons/HomeIcon';
-import ForecastIcon from './icons/ForecastIcon';
+import FlareIcon from './icons/FlareIcon'; // Import FlareIcon
+import ForecastIcon from './icons/ForecastIcon'; // Keep ForecastIcon
 
-interface SolarActivityPageProps {
-  onNavChange: (page: 'modeler' | 'forecast') => void; // Changed 'flares' to 'solar-activity' internally if using App.tsx directly
+interface ForecastPageProps {
+  onNavChange: (page: 'modeler' | 'solar-activity') => void; // Changed 'flares' to 'solar-activity'
 }
 
-const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onNavChange }) => {
+const ForecastModal: React.FC<ForecastPageProps> = ({ onNavChange }) => {
   return (
     <div className="w-screen h-screen bg-black flex flex-col">
       <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-end items-center gap-4">
         
+        {/* New button to navigate to Solar Activity */}
         <button
-          onClick={() => onNavChange('forecast')}
+          onClick={() => onNavChange('solar-activity')}
           className="flex items-center space-x-2 px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-200 shadow-lg hover:bg-neutral-700/90 transition-colors"
-          title="View Live Aurora Forecasts"
+          title="View Solar Activity Dashboard"
         >
-          <ForecastIcon className="w-5 h-5" />
-          <span className="text-sm font-semibold">Aurora Forecast</span>
+          <FlareIcon className="w-5 h-5" />
+          <span className="text-sm font-semibold">Solar Activity</span>
         </button>
 
         <button
@@ -33,8 +35,8 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onNavChange }) =>
       
       <main className="flex-grow">
         <iframe
-          src="/solar-activity.html"
-          title="Solar Activity Dashboard"
+          src="/forecast.html"
+          title="Live West Coast Aurora Forecast by TNR Protography"
           className="w-full h-full border-none"
         />
       </main>
@@ -42,4 +44,4 @@ const SolarActivityPage: React.FC<SolarActivityPageProps> = ({ onNavChange }) =>
   );
 };
 
-export default SolarActivityPage;
+export default ForecastModal;

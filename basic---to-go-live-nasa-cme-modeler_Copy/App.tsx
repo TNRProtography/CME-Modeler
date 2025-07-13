@@ -18,9 +18,9 @@ import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import ForecastModal from './components/ForecastModal';
-import SolarActivityPage from './components/SolarActivityPage';
 import ForecastModelsModal from './components/ForecastModelsModal';
+import MediaViewerModal from './components/MediaViewerModal'; 
+import SolarActivityPage from './components/SolarActivityPage'; 
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -35,13 +35,14 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   
-  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
+  const [currentlyModeledCMEId, setCurrentlyModeledCmeId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
+  const [viewerMedia, setViewerMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -133,11 +134,11 @@ const App: React.FC = () => {
   }, [cmeData, cmeFilter]);
 
   useEffect(() => {
-    if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) {
-      setCurrentlyModeledCMEId(null);
+    if (currentlyModeledCmeId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCmeId)) {
+      setCurrentlyModeledCmeId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, [filteredCmes, currentlyModeledCmeId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -150,7 +151,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
-    setCurrentlyModeledCMEId(cme ? cme.id : null);
+    setCurrentlyModeledCmeId(cme ? cme.id : null);
     setSelectedCMEForInfo(cme);
     if (cme) {
         setTimelineActive(false);
@@ -162,7 +163,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
-    setCurrentlyModeledCMEId(cme.id);
+    setCurrentlyModeledCmeId(cme.id);
     setSelectedCMEForInfo(cme);
     setTimelineActive(false);
     setTimelinePlaying(false);
@@ -173,7 +174,7 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying((prev: boolean) => !prev);
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -182,7 +183,7 @@ const App: React.FC = () => {
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -198,7 +199,7 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes, timelineMinDate, timelineMaxDate]);
 
@@ -210,6 +211,19 @@ const App: React.FC = () => {
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
+        {/* Render ALL Modals Globally at the top level */}
+        <MediaViewerModal 
+            mediaUrl={viewerMedia?.url || null}
+            mediaType={viewerMedia?.type || null}
+            onClose={() => setViewerMedia(null)}
+        />
+        <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+        <ForecastModelsModal 
+            isOpen={isForecastModelsOpen} 
+            onClose={() => setIsForecastModelsOpen(false)} 
+            onMediaSelect={setViewerMedia} 
+        />
+
         {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
@@ -248,7 +262,6 @@ const App: React.FC = () => {
 
         {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
-            {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
                 <>
                     <div className={`
@@ -278,7 +291,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        currentlyModeledCmeId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -317,7 +330,6 @@ const App: React.FC = () => {
                             />
                         ))}
                         
-                        {/* Floating UI Controls Over Canvas */}
                         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                             <div className="flex items-center space-x-2 pointer-events-auto">
                                 <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
@@ -366,7 +378,7 @@ const App: React.FC = () => {
                     `}>
                         <CMEListPanel
                             cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling}
-                            selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo}
+                            selectedCMEId={currentlyModeledCmeId} selectedCMEForInfo={selectedCMEForInfo}
                             isLoading={isLoading} fetchError={fetchError}
                             onClose={() => setIsCmeListOpen(false)}
                         />
@@ -380,8 +392,6 @@ const App: React.FC = () => {
                     )}
 
                     {isLoading && <LoadingOverlay />}
-                    <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-                    <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} />
                 </>
             )}
 
@@ -394,11 +404,7 @@ const App: React.FC = () => {
             )}
 
             {activePage === 'solar-activity' && (
-                <iframe
-                    src="/solar-activity.html"
-                    title="Solar Activity Dashboard"
-                    className="w-full h-full border-none"
-                />
+                <SolarActivityPage onMediaSelect={setViewerMedia} />
             )}
         </div>
     </div>

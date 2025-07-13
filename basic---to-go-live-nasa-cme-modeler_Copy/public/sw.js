@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v29'; // Increment version!
+const CACHE_NAME = 'cme-modeler-cache-v35'; // Increment version
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -8,7 +8,7 @@ const urlsToCache = [
   '/manifest.json',
   '/favicon.ico',
   '/forecast.html',
-  '/solar-activity.html',
+  // REMOVED: '/solar-activity.html', // This file is now a React component, not a static HTML file
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
   '/placeholder.png', 
@@ -23,8 +23,7 @@ const API_HOSTS = [
   'tnr-aurora-forecast.thenamesrock.workers.dev',
   'basic-aurora-forecast.thenamesrock.workers.dev',
   'aurora-sightings.thenamesrock.workers.dev',
-  // NEW: Add HUXT's S3 bucket to prevent caching of its resources
-  'huxt-bucket.s3.eu-west-2.amazonaws.com',
+  'huxt-bucket.s3.eu-west-2.amazonaws.com', // HUXT assets
 ];
 
 
