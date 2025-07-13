@@ -86,7 +86,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [sunspots, setSunspots] = useState<any[]>([]);
     const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
-    const [visibleAnnotations, setVisibleAnnotations] = useState<Record<string, boolean>>({});
 
     const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>) => {
         setState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -145,8 +144,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-            const earthFacingRegions = data.filter((region: any) => new Date(region.observed_date) >= twoWeeksAgo && Math.abs(parseFloat(region.longitude)) <= 90);
+            const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
             if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); return; }
             setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
             setLoadingSunspots(null);
@@ -166,6 +164,37 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         return () => clearInterval(interval);
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
 
+    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - xrayTimeRange;
+        const midnightAnnotations: any = {};
+        const nzOffset = 12 * 3600000;
+        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
+            const midnight = new Date(d).setUTCHours(12,0,0,0);
+            if (midnight > startTime && midnight < now) {
+                midnightAnnotations[`midnight-${midnight}`] = {
+                    type: 'line', xMin: midnight, xMax: midnight,
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
+                };
+            }
+        }
+        
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } },
+                annotation: { annotations: midnightAnnotations }
+            },
+            scales: { 
+                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
+            }
+        };
+    }, [xrayTimeRange]);
+    
     const xrayChartData = useMemo(() => {
         if (allXrayData.length === 0) return { datasets: [] };
         return {
@@ -180,68 +209,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }],
         };
     }, [allXrayData]);
-    
-    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
-        const now = Date.now();
-        const startTime = now - xrayTimeRange;
-
-        const annotations: any = {};
-        
-        const nzOffset = 12 * 3600000;
-        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
-            const midnight = new Date(d).setUTCHours(12,0,0,0);
-            if (midnight > startTime && midnight < now) {
-                annotations[`midnight-${midnight}`] = {
-                    type: 'line', xMin: midnight, xMax: midnight,
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
-                };
-            }
-        }
-
-        solarFlares.forEach(flare => {
-            const peakTime = new Date(flare.peakTime).getTime();
-            const classType = flare.classType || '';
-            const classChar = classType[0];
-            if ((classChar === 'M' || classChar === 'X') && peakTime > startTime) {
-                if (visibleAnnotations[flare.flareID] !== false) {
-                    const magnitude = parseFloat(classType.substring(1));
-                    const fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(classChar)) * magnitude;
-                    annotations[flare.flareID] = {
-                        type: 'label', xValue: peakTime, yValue: fluxValue,
-                        backgroundColor: 'rgba(30,41,59,0.7)',
-                        borderColor: getColorForFlareClass(flare.classType).background,
-                        borderRadius: 4, borderWidth: 1, content: flare.classType,
-                        color: 'white', font: { size: 10, weight: 'bold' },
-                        yAdjust: -15, callout: { enabled: true, position: 'bottom', side: 5 },
-                        flareId: flare.flareID
-                    };
-                }
-            }
-        });
-
-        return {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: false },
-                tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } },
-                annotation: {
-                    annotations,
-                    onClick: (e: any, elements: any) => {
-                        if (elements[0]) {
-                            const flareId = elements[0].options.flareId;
-                            if (flareId) setVisibleAnnotations(prev => ({...prev, [flareId]: false}));
-                        }
-                    }
-                }
-            },
-            scales: { 
-                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
-            }
-        };
-    }, [xrayTimeRange, solarFlares, visibleAnnotations]);
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
