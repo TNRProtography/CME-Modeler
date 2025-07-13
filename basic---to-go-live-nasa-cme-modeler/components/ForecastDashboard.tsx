@@ -7,7 +7,7 @@ import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 
 interface ForecastDashboardProps {
-  setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
+  setViewerMedia?: (media: { url:string, type: 'image' | 'video' } | null) => void;
 }
 
 // --- CONSTANTS ---
@@ -65,7 +65,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
     );
 };
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -96,6 +96,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [isLockedOut, setIsLockedOut] = useState(false);
     const [hasEdited, setHasEdited] = useState(false);
     const [tempSightingPin, setTempSightingPin] = useState<L.Marker | null>(null);
+
+    const [allSightings, setAllSightings] = useState<any[]>([]);
+    const [sightingPage, setSightingPage] = useState(0);
+    const SIGHTINGS_PER_PAGE = 5;
 
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
@@ -226,7 +230,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 const powerVal = parseFloat(latestPower.value);
                 setGaugeData(prev => ({ ...prev, power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(latestPower.lastUpdated)}` } }));
             } catch (e) { console.error("Error fetching power data:", e); }
-
+            
             try {
                 setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
             } catch (e) { console.error("Error fetching EPAM image:", e); }
@@ -263,6 +267,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`).then(res => res.json()).then(sightings => {
             if (tempSightingPin && mapRef.current) { mapRef.current.removeLayer(tempSightingPin); setTempSightingPin(null); }
             sightingMarkersLayerRef.current?.clearLayers();
+            setAllSightings(sightings.sort((a: any, b: any) => b.timestamp - a.timestamp));
             sightings.forEach((s: any) => {
                 const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
                 L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
@@ -295,7 +300,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     const handleReportSighting = useCallback((status: string) => {
         if (isLockedOut && hasEdited) { alert(`You have already edited your report in this 60-minute window.`); return; }
-        if (isLockedOut && !hasEdited) { handleEditReport(); return; }
+        if (isLockedOut && !hasEdited) { handleEditReport(); }
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
         setSightingStatus({ loading: true, message: "Getting your location..." });
         if ('geolocation' in navigator) {
@@ -349,6 +354,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return () => { map.remove(); mapRef.current = null; clearInterval(sightingInterval); };
     }, [fetchAndDisplaySightings, sendReport]);
     
+    const paginatedSightings = allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE);
+
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
              <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
@@ -391,6 +398,36 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 </button>
                             ))}
                         </div>
+                         <div className="mt-6">
+                            <h3 className="text-lg font-semibold text-white text-center mb-4">Recent Sightings</h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-neutral-400">
+                                    <thead className="text-xs text-neutral-300 uppercase bg-neutral-800">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-2">Name</th>
+                                            <th scope="col" className="px-4 py-2">Report</th>
+                                            <th scope="col" className="px-4 py-2">Location</th>
+                                            <th scope="col" className="px-4 py-2">Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedSightings.map((sighting) => (
+                                            <tr key={sighting.id} className="bg-neutral-900 border-b border-neutral-800">
+                                                <td className="px-4 py-2">{sighting.name || 'Anonymous'}</td>
+                                                <td className="px-4 py-2">{SIGHTING_EMOJIS[sighting.status]} {sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)}</td>
+                                                <td className="px-4 py-2">{sighting.location || 'Unknown'}</td>
+                                                <td className="px-4 py-2">{new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="flex justify-between items-center mt-4">
+                                <button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="sighting-button disabled:opacity-50">Previous</button>
+                                <span>Page {sightingPage + 1} of {Math.ceil(allSightings.length / SIGHTINGS_PER_PAGE)}</span>
+                                <button onClick={() => setSightingPage(p => Math.min(p + 1, Math.floor(allSightings.length / SIGHTINGS_PER_PAGE) -1))} disabled={(sightingPage + 1) * SIGHTINGS_PER_PAGE >= allSightings.length} className="sighting-button disabled:opacity-50">Next</button>
+                            </div>
+                        </div>
                     </div>
                     
                     {Object.entries(gaugeData).map(([key, data]) => (
@@ -415,29 +452,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Magnetic Field (Last {magneticTimeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => {setMagneticTimeRange(duration); setMagneticTimeLabel(label)}} selected={magneticTimeRange} />
+                        <TimeRangeButtons onSelect={(duration, label) => { setMagneticTimeRange(duration); setMagneticTimeLabel(label); }} selected={magneticTimeRange} />
                          <div className="flex-grow relative mt-2">
                             {magneticChartData.datasets.length > 0 && magneticChartData.datasets[0]?.data.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
+                        <div className="relative w-full" style={{paddingBottom: "56.25%"}}>
+                            <iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe>
+                        </div>
+                    </div>
                      <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                        <div className="flex justify-center items-center mb-4">
+                        <h3 className="text-xl font-semibold text-center text-white mb-4">Queenstown Live Camera</h3>
+                        <div className="relative w-full" style={{paddingBottom: "56.25%"}}>
+                            <iframe title="Live View from Queenstown" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://queenstown.roundshot.com/#/"></iframe>
+                        </div>
+                    </div>
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <div className="flex justify-center items-center">
                            <h2 className="text-xl font-semibold text-white text-center">ACE EPAM (Last 3 Days)</h2>
                            <button onClick={() => openModal('epam')} className="ml-2 tooltip-trigger">?</button>
                         </div>
-                         <div onClick={() => setViewerMedia && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer">
+                         <div onClick={() => setViewerMedia && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]">
                             <img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" />
-                        </div>
-                    </div>
-                    <div className="col-span-12 card bg-neutral-950/80 p-6">
-                        <h3 className="text-xl font-semibold text-center text-white mb-4">Live Satellite and Cloud Imagery</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="responsive-iframe-wrapper" style={{ paddingBottom: '69.23%' }}>
-                                <iframe title="Windy.com Cloud Map" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe>
-                            </div>
-                            <div className="responsive-iframe-wrapper" style={{ paddingBottom: '56.25%' }}>
-                                <iframe title="Live View from Queenstown" src="https://queenstown.roundshot.com/#/"></iframe>
-                            </div>
                         </div>
                     </div>
                  </main>
