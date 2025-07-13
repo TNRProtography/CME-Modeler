@@ -6,10 +6,11 @@ import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
 import TutorialModal from './components/TutorialModal';
 import LoadingOverlay from './components/LoadingOverlay';
+import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, InteractionMode, SimulationCanvasHandle } from './types';
 
-// Icon and Page Imports
+// Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
@@ -18,9 +19,11 @@ import HomeIcon from './components/icons/HomeIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import FlareIcon from './components/icons/FlareIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import ForecastModal from './components/ForecastModal';
-import SolarActivityPage from './components/SolarActivityPage';
 import ForecastModelsModal from './components/ForecastModelsModal';
+
+// NEW: Import the refactored dashboard components
+import ForecastDashboard from './components/ForecastDashboard';
+import SolarActivityDashboard from './components/SolarActivityDashboard';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -43,6 +46,9 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
 
+  // NEW: State for the global media viewer
+  const [viewerMedia, setViewerMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
+
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
@@ -62,7 +68,7 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  const apiKey = import.meta.env.VITE_NASA_API_KEY || '';
+  const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
@@ -381,26 +387,28 @@ const App: React.FC = () => {
 
                     {isLoading && <LoadingOverlay />}
                     <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-                    <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} />
+                    <ForecastModelsModal 
+                      isOpen={isForecastModelsOpen} 
+                      onClose={() => setIsForecastModelsOpen(false)} 
+                      setViewerMedia={setViewerMedia}
+                    />
                 </>
             )}
 
             {activePage === 'forecast' && (
-                <iframe
-                    src="/forecast.html"
-                    title="Live West Coast Aurora Forecast by TNR Protography"
-                    className="w-full h-full border-none"
-                />
+                <ForecastDashboard setViewerMedia={setViewerMedia} />
             )}
 
             {activePage === 'solar-activity' && (
-                <iframe
-                    src="/solar-activity.html"
-                    title="Solar Activity Dashboard"
-                    className="w-full h-full border-none"
-                />
+                <SolarActivityDashboard setViewerMedia={setViewerMedia} apiKey={apiKey} />
             )}
         </div>
+        
+        <MediaViewerModal 
+          mediaUrl={viewerMedia?.url || null}
+          mediaType={viewerMedia?.type || null}
+          onClose={() => setViewerMedia(null)}
+        />
     </div>
   );
 };

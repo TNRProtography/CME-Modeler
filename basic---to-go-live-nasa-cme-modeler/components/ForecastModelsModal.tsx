@@ -1,20 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
-import MediaViewerModal from './MediaViewerModal'; // NEW: Import the media viewer
 
 interface ForecastModelsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  setViewerMedia: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
 
-const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose }) => {
+const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia }) => {
   const [enlilImageUrls, setEnlilImageUrls] = useState<string[]>([]);
   const [currentEnlilImageIndex, setCurrentEnlilImageIndex] = useState(0);
   const [isLoadingEnlil, setIsLoadingEnlil] = useState(true);
   const intervalRef = useRef<number | null>(null);
-
-  // NEW: State for the media viewer
-  const [viewerMedia, setViewerMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -98,7 +95,6 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                 </p>
               </div>
               <div className="space-y-4">
-                  {/* CHANGED: Replaced <a> with <div> with onClick */}
                   <div 
                     onClick={() => setViewerMedia({ url: 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png', type: 'image' })}
                     className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
@@ -155,12 +151,6 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           </div>
         </div>
       </div>
-      {/* NEW: Render the media viewer on top of this modal */}
-      <MediaViewerModal 
-        mediaUrl={viewerMedia?.url || null}
-        mediaType={viewerMedia?.type || null}
-        onClose={() => setViewerMedia(null)}
-      />
     </>
   );
 };
