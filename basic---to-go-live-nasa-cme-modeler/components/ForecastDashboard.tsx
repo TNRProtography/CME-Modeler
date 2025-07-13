@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import CloseIcon from './icons/CloseIcon';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
-import LoadingSpinner from './icons/LoadingSpinner'; // Assuming LoadingSpinner is in the icons folder
+import LoadingSpinner from './icons/LoadingSpinner';
 
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
@@ -17,7 +17,13 @@ const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plas
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/';
-
+const GAUGE_API_ENDPOINTS = {
+  power: 'https://hemispheric-power.thenamesrock.workers.dev/',
+  speed: NOAA_PLASMA_URL,
+  density: NOAA_PLASMA_URL,
+  bt: NOAA_MAG_URL,
+  bz: NOAA_MAG_URL
+};
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
   density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 },
@@ -165,8 +171,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
     
     useEffect(() => {
-        setIsLoading(true);
         const fetchAllData = async () => {
+            setIsLoading(true);
             const apiCache: Record<string, any> = {};
             const fetchAndCache = async (url: string) => {
                 const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
@@ -178,64 +184,62 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 return data;
             };
 
-            try {
-                await Promise.allSettled([
-                    (async () => {
-                        const data = await fetchAndCache(FORECAST_API_URL);
-                        const { currentForecast, historicalData } = data;
-                        setAuroraScore(currentForecast.spotTheAuroraForecast);
-                        setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
-                        const score = currentForecast.spotTheAuroraForecast;
-                        if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
-                        const sortedHistory = (historicalData || []).sort((a: any, b: any) => a.timestamp - b.timestamp);
-                        setAllAuroraData({
-                            base: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.baseScore })),
-                            real: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
-                        });
+            await Promise.allSettled([
+                (async () => {
+                    const data = await fetchAndCache(FORECAST_API_URL);
+                    const { currentForecast, historicalData } = data;
+                    setAuroraScore(currentForecast.spotTheAuroraForecast);
+                    setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
+                    const score = currentForecast.spotTheAuroraForecast;
+                    if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
+                    const sortedHistory = (historicalData || []).sort((a: any, b: any) => a.timestamp - b.timestamp);
+                    setAllAuroraData({
+                        base: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.baseScore })),
+                        real: sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
+                    });
+                    const moonReduction = currentForecast.inputs.moonReduction || 0;
+                    const moonIllumination = Math.max(0, (moonReduction / 40) * 100);
+                    let moonEmoji = '🌑';
+                    if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒';
+                    setGaugeData(prev => ({...prev, moon: { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.inputs.owmDataLastFetched)}`, color: '#A9A9A9' }}));
+                    const powerVal = currentForecast.inputs.hemisphericPower;
+                    setGaugeData(prev => ({ ...prev, power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` } }));
+                    const {bt, bz} = currentForecast.inputs.magneticField;
+                    setGaugeData(prev => ({...prev, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') }}));
 
-                        const moonReduction = currentForecast.inputs.moonReduction || 0;
-                        const moonIllumination = Math.max(0, (moonReduction / 40) * 100);
-                        let moonEmoji = '🌑';
-                        if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒';
-                        setGaugeData(prev => ({...prev, moon: { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.inputs.owmDataLastFetched)}`, color: '#A9A9A9' }}));
+                })().catch(e => { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }),
+                
+                (async () => {
+                    const [plasmaData, magData] = await Promise.all([
+                        fetchAndCache(NOAA_PLASMA_URL),
+                        fetchAndCache(NOAA_MAG_URL)
+                    ]);
 
-                        const powerVal = currentForecast.inputs.hemisphericPower;
-                        setGaugeData(prev => ({...prev, power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }}));
+                    const magHeaders = magData[0]; const btIdx = magHeaders.indexOf('bt'); const bzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
+                    const latestMagRow = magData.slice(1).reverse().find((r: any) => parseFloat(r[bzIdx]) > -9999);
+                    const btVal = latestMagRow ? parseFloat(latestMagRow[btIdx]) : null; const bzVal = latestMagRow ? parseFloat(latestMagRow[bzIdx]) : null;
+                    const magTimestamp = latestMagRow ? Date.parse(latestMagRow[magTimeIdx]) : Date.now();
 
-                        const {bt, bz} = currentForecast.inputs.magneticField;
-                        setGaugeData(prev => ({...prev, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') }}));
-                    })(),
+                    const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
+                    const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
+                    const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+                    const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx]) : Date.now();
 
-                    (async () => {
-                        const plasmaData = await fetchAndCache(NOAA_PLASMA_URL);
-                        const plasmaHeaders = plasmaData[0];
-                        const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density');
-                        const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
-                        const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
-                        const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
-                        const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
-                        const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx]) : Date.now();
-                        setGaugeData(prev => ({ ...prev,
-                            speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
-                            density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
-                        }));
-                    })(),
+                    setGaugeData(prev => ({ ...prev,
+                        speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
+                        density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
+                        bt: { ...prev.bt, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` }, bz: { ...prev.bz, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` },
+                    }));
 
-                    (async () => {
-                        const magData = await fetchAndCache(NOAA_MAG_URL);
-                        const headers = magData[0];
-                        const timeIdx = headers.indexOf('time_tag'); const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm');
-                        const points = magData.slice(1).map((r: any) => ({ time: new Date(r[timeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
-                        setAllMagneticData(points);
-                    })(),
-                    
-                    (async () => {
-                        setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
-                    })()
-                ]);
-            } finally {
-                setIsLoading(false);
-            }
+                    const magPoints = magData.slice(1).map((r: any) => ({ time: new Date(r[magTimeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
+                    setAllMagneticData(magPoints);
+                })().catch(e => console.error("Error fetching gauge/magnetic data:", e)),
+                
+                (async () => {
+                    setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
+                })().catch(e => console.error("Error fetching EPAM image:", e))
+            ]);
+            setIsLoading(false);
         };
         
         fetchAllData();
@@ -244,7 +248,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }, [getGaugeStyle]);
     
     useEffect(() => {
-        if (allAuroraData.base && allAuroraData.base.length > 0) {
+        if (allAuroraData.base.length > 0) {
             setAuroraChartData({
                 datasets: [ 
                     { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, 
@@ -278,7 +282,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             </div>
         );
     }
-    
+
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
              <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
@@ -334,8 +338,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE).map((sighting) => (
-                                            <tr key={sighting.id} className="bg-neutral-900 border-b border-neutral-800">
+                                        {allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE).map((sighting:any, index:number) => (
+                                            <tr key={sighting.id || index} className="bg-neutral-900 border-b border-neutral-800">
                                                 <td className="px-4 py-2">{sighting.name || 'Anonymous'}</td>
                                                 <td className="px-4 py-2">{SIGHTING_EMOJIS[sighting.status]} {sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)}</td>
                                                 <td className="px-4 py-2">{sighting.location || 'Unknown'}</td>
@@ -372,14 +376,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
                         <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {auroraChartData.datasets.length > 0 && auroraChartData.datasets[0]?.data.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {auroraChartData.datasets[0]?.data ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Magnetic Field (Last {magneticTimeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => {setMagneticTimeRange(duration); setMagneticTimeLabel(label)}} selected={magneticTimeRange} />
+                        <TimeRangeButtons onSelect={(duration, label) => { setMagneticTimeRange(duration); setMagneticTimeLabel(label); }} selected={magneticTimeRange} />
                          <div className="flex-grow relative mt-2">
-                            {magneticChartData.datasets.length > 0 && magneticChartData.datasets[0]?.data.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {magneticChartData.datasets[0]?.data ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
