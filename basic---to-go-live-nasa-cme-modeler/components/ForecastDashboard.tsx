@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
-import L, { LatLng } from 'leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import CloseIcon from './icons/CloseIcon';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 
+// Type Definitions
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
+}
+
+interface InfoModalProps { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  title: string; 
+  content: string; 
 }
 
 // --- CONSTANTS ---
@@ -30,7 +38,6 @@ const SIGHTING_EMOJIS: {[key: string]: string} = { eye: '👁️', phone: '🤳'
 const LOADING_PUNS = ["Sending your report via carrier pigeon...", "Bouncing signal off the ionosphere...", "Asking the satellite to move a bit to the left..."];
 
 // --- Reusable Components ---
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
@@ -59,7 +66,9 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
     );
 };
 
+
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
+    // State for dashboard data
     const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
@@ -73,35 +82,35 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
     });
     
+    // State for chart data and settings
     const [allAuroraData, setAllAuroraData] = useState<{base: any[], real: any[]}>({base: [], real: []});
     const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
-    const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
-    
     const [auroraChartData, setAuroraChartData] = useState<any>({ datasets: [] });
     const [magneticChartData, setMagneticChartData] = useState<any>({ datasets: [] });
-
     const [auroraTimeRange, setAuroraTimeRange] = useState<number>(2 * 3600000);
     const [auroraTimeLabel, setAuroraTimeLabel] = useState<string>('2 Hr');
     const [magneticTimeRange, setMagneticTimeRange] = useState<number>(2 * 3600000);
     const [magneticTimeLabel, setMagneticTimeLabel] = useState<string>('2 Hr');
 
+    // State for user interactions and modals
     const [sightingStatus, setSightingStatus] = useState<{ loading: boolean; message: string } | null>(null);
     const [reporterName, setReporterName] = useState<string>(() => localStorage.getItem('auroraReporterName') || '');
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
-    
     const [isLockedOut, setIsLockedOut] = useState(false);
     const [hasEdited, setHasEdited] = useState(false);
-    const [tempSightingPin, setTempSightingPin] = useState<L.Marker | null>(null);
-    const [allSightings, setAllSightings] = useState<any[]>([]);
-    const [sightingPage, setSightingPage] = useState(0);
-    const SIGHTINGS_PER_PAGE = 5;
-
+    
+    // State and Refs for Map & Sightings
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const sightingMarkersLayerRef = useRef<L.LayerGroup | null>(null);
     const manualPinMarkerRef = useRef<L.Marker | null>(null);
-    const isPlacingManualPin = useRef<boolean>(false);
-    const manualReportStatus = useRef<string | null>(null);
+    const [isPlacingManualPin, setIsPlacingManualPin] = useState(false);
+    const [manualReportStatus, setManualReportStatus] = useState<string | null>(null);
+    const [allSightings, setAllSightings] = useState<any[]>([]);
+    const [sightingPage, setSightingPage] = useState(0);
+    const SIGHTINGS_PER_PAGE = 5;
+
+    const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     
     const tooltipContent = {
         'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
@@ -115,11 +124,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'moon': { title: 'Moon Illumination', content: `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.` }
     };
     
+    // --- Utility and Data Processing Functions ---
     const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
     const closeModal = useCallback(() => setModalState(null), []);
     const formatNZTimestamp = (timestamp: number) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
-
     const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
         if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 };
         let key: keyof typeof GAUGE_COLORS = 'pink', percentage = 0;
@@ -133,7 +142,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         }
         return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
-
     const createChartOptions = useCallback((rangeMs: number, yConfig: {min?: number, max?: number, type?: 'linear' | 'logarithmic'} = {}): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - rangeMs;
@@ -159,26 +167,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             }
         };
     }, []);
-    
     const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange, { min: 0, max: 100 }), [auroraTimeRange, createChartOptions]);
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
     
+    // --- Data Fetching Effects ---
     useEffect(() => {
         const fetchAllData = async () => {
-            setIsLoading(true);
-            const apiCache: Record<string, any> = {};
-            const fetchAndCache = async (url: string) => {
-                const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
-                if (apiCache[url]) return apiCache[url];
-                const res = await fetch(cacheBustedUrl);
-                if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
-                return res.json();
-            };
-
+            // This now only fetches non-map data
             await Promise.allSettled([
                 (async () => {
                     try {
-                        const data = await fetchAndCache(FORECAST_API_URL);
+                        const res = await fetch(`${FORECAST_API_URL}?_=${new Date().getTime()}`);
+                        if (!res.ok) throw new Error(`Forecast API Error: ${res.status}`);
+                        const data = await res.json();
                         const { currentForecast, historicalData } = data;
                         setAuroraScore(currentForecast.spotTheAuroraForecast);
                         setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
@@ -199,45 +200,50 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         setGaugeData(prev => ({...prev, power: { ...prev.power, value: powerVal.toFixed(1), ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') }}));
                     } catch (e) { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }
                 })(),
-                
                 (async () => {
                     try {
-                        const [plasmaData, magData] = await Promise.all([ fetchAndCache(NOAA_PLASMA_URL), fetchAndCache(NOAA_MAG_URL) ]);
+                        const [plasmaRes, magRes] = await Promise.all([fetch(`${NOAA_PLASMA_URL}?_=${new Date().getTime()}`), fetch(`${NOAA_MAG_URL}?_=${new Date().getTime()}`)]);
+                        if (!plasmaRes.ok || !magRes.ok) throw new Error("NOAA data fetch failed");
+                        const [plasmaData, magData] = await Promise.all([plasmaRes.json(), magRes.json()]);
+                        
                         const magHeaders = magData[0]; const btIdx = magHeaders.indexOf('bt'); const bzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
                         const latestMagRow = magData.slice(1).reverse().find((r: any) => parseFloat(r[bzIdx]) > -9999);
                         const magTimestamp = latestMagRow ? Date.parse(latestMagRow[magTimeIdx]) : Date.now();
+                        
                         const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
                         const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
                         const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
                         const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
                         const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx]) : Date.now();
+                        
                         setGaugeData(prev => ({ ...prev,
                             speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
                             density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
                             bt: { ...prev.bt, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` },
                             bz: { ...prev.bz, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` },
                         }));
+
                         const magPoints = magData.slice(1).map((r: any) => ({ time: new Date(r[magTimeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
                         setAllMagneticData(magPoints);
                     } catch(e) { console.error("Error fetching gauge/magnetic data:", e); }
                 })(),
-                
                 (async () => { setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`); })()
             ]);
             setIsLoading(false);
         };
         
         fetchAllData();
-        const interval = setInterval(fetchAllData, 120000);
+        const interval = setInterval(fetchAllData, 120000); // 2 minutes
         return () => clearInterval(interval);
     }, [getGaugeStyle]);
     
+    // --- Chart Data Processing Effects ---
     useEffect(() => {
         if (allAuroraData.base.length > 0) {
             setAuroraChartData({
                 datasets: [ 
-                    { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, 
-                    { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } 
+                    { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true }, 
+                    { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, fill: 'origin', backgroundColor: 'rgba(255, 99, 71, 0.2)' } 
                 ]
             });
         }
@@ -247,89 +253,106 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (allMagneticData.length > 0) {
             setMagneticChartData({
                 datasets: [ 
-                    { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, 
-                    { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
+                    { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true }, 
+                    { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true }]
             });
         }
     }, [allMagneticData]);
 
-    const fetchAndDisplaySightings = useCallback(() => {
-        if (!sightingMarkersLayerRef.current || !mapRef.current) return;
-    
-        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`)
-            .then(res => {
-                if (!res.ok) throw new Error(`Network response was not ok: ${res.statusText}`);
-                return res.json();
-            })
-            .then(sightings => {
-                if (tempSightingPin && mapRef.current) {
-                    mapRef.current.removeLayer(tempSightingPin);
-                    setTempSightingPin(null);
-                }
-                sightingMarkersLayerRef.current?.clearLayers();
-    
-                if (!Array.isArray(sightings)) {
-                    console.error("Fetched sightings is not an array:", sightings);
-                    return; // Exit if data is not an array
-                }
-    
-                const sortedSightings = sightings.sort((a: any, b: any) => b.timestamp - a.timestamp);
-                setAllSightings(sortedSightings);
-    
-                sortedSightings.forEach((s: any) => {
-                    // Data validation before creating a marker
-                    if (s && typeof s.lat === 'number' && typeof s.lng === 'number' && s.status) {
-                        const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
-                        L.marker([s.lat, s.lng], { icon: emojiIcon })
-                            .addTo(sightingMarkersLayerRef.current!)
-                            .bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-                    } else {
-                        console.warn("Skipping invalid sighting object:", s);
-                    }
-                });
-            })
-            .catch(e => console.error("Error fetching or processing sightings:", e));
-    }, [tempSightingPin]);
-    
+    // --- Sighting Report and Lockout Logic ---
     const sendReport = useCallback(async (lat: number, lng: number, status: string) => {
+        if (!mapRef.current) return;
         setSightingStatus({ loading: true, message: LOADING_PUNS[Math.floor(Math.random() * LOADING_PUNS.length)] });
-        const tempIcon = L.divIcon({ html: SIGHTING_EMOJIS[status] || '❓', className: 'sighting-emoji-icon opacity-50', iconSize: [24,24] });
-        if(mapRef.current) {
-            if(tempSightingPin) mapRef.current.removeLayer(tempSightingPin);
-            setTempSightingPin(L.marker([lat, lng], { icon: tempIcon }).addTo(mapRef.current));
+        
+        // Remove old manual pin if it exists
+        if (manualPinMarkerRef.current) {
+            mapRef.current.removeLayer(manualPinMarkerRef.current);
+            manualPinMarkerRef.current = null;
         }
+
+        const tempIcon = L.divIcon({ html: SIGHTING_EMOJIS[status] || '❓', className: 'sighting-emoji-icon opacity-50', iconSize: [24,24] });
+        const tempMarker = L.marker([lat, lng], { icon: tempIcon }).addTo(mapRef.current);
+    
         try {
             const res = await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status, name: reporterName }) });
             if (!res.ok) throw new Error('Failed to submit report.');
             localStorage.setItem('lastReportTimestamp', Date.now().toString());
             localStorage.setItem('hasEditedReport', hasEdited.toString());
             setSightingStatus({ loading: false, message: "Report sent!" });
-            setTimeout(fetchAndDisplaySightings, 1500);
+            setTimeout(() => {
+                if(mapRef.current) mapRef.current.removeLayer(tempMarker);
+                fetchAndDisplaySightings(); // Refresh sightings list
+            }, 1500);
         } catch(e) { 
             setSightingStatus({ loading: false, message: "Could not send report." }); 
-            if(tempSightingPin && mapRef.current) mapRef.current.removeLayer(tempSightingPin);
-            setTempSightingPin(null);
+            if(mapRef.current) mapRef.current.removeLayer(tempMarker);
         } finally {
-            setTimeout(() => { setSightingStatus(null); isPlacingManualPin.current = false; if(manualPinMarkerRef.current && mapRef.current) mapRef.current.removeLayer(manualPinMarkerRef.current); manualPinMarkerRef.current = null; }, 4000);
+            setIsPlacingManualPin(false); // End manual pin mode
+            setManualReportStatus(null);
+            setTimeout(() => setSightingStatus(null), 4000);
         }
-    }, [reporterName, fetchAndDisplaySightings, hasEdited, tempSightingPin]);
+    }, [reporterName, hasEdited]);
+    
+    const fetchAndDisplaySightings = useCallback(() => {
+        if (!sightingMarkersLayerRef.current || !mapRef.current) return;
+    
+        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`)
+            .then(res => res.ok ? res.json() : Promise.reject(new Error(`API responded with ${res.status}`)))
+            .then(sightings => {
+                sightingMarkersLayerRef.current?.clearLayers();
+    
+                if (!Array.isArray(sightings)) {
+                    console.error("Fetched sightings data is not an array:", sightings);
+                    return;
+                }
+    
+                const sortedSightings = sightings.sort((a: any, b: any) => b.timestamp - a.timestamp);
+                setAllSightings(sortedSightings);
+    
+                sortedSightings.forEach((s: any) => {
+                    if (s && typeof s.lat === 'number' && typeof s.lng === 'number' && s.status) {
+                        const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
+                        L.marker([s.lat, s.lng], { icon: emojiIcon })
+                            .addTo(sightingMarkersLayerRef.current!)
+                            .bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+                    } else {
+                        console.warn("Skipping invalid sighting object from API:", s);
+                    }
+                });
+            })
+            .catch(e => console.error("Error fetching or processing sightings:", e));
+    }, []);
 
     const handleReportSighting = useCallback((status: string) => {
         if (isLockedOut && hasEdited) { alert(`You have already edited your report in this 60-minute window.`); return; }
-        if (isLockedOut && !hasEdited) { handleEditReport(); return; } // Edit and exit
+        if (isLockedOut && !hasEdited) { handleEditReport(); return; }
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
+        
+        setIsPlacingManualPin(false);
         setSightingStatus({ loading: true, message: "Getting your location..." });
+
         if ('geolocation' in navigator) {
             navigator.geolocation.getCurrentPosition(
-                (pos) => sendReport(pos.coords.latitude, pos.coords.longitude, status),
-                () => { alert('Could not get location. Please click on the map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status; }
+                (pos) => {
+                    setSightingStatus(null);
+                    sendReport(pos.coords.latitude, pos.coords.longitude, status);
+                },
+                () => {
+                    alert('Could not get location. Please click on the map to place a pin.'); 
+                    setSightingStatus(null);
+                    setIsPlacingManualPin(true);
+                    setManualReportStatus(status);
+                }
             );
         } else {
-            alert('Geolocation not supported. Please click map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status;
+            alert('Geolocation not supported. Please click on the map to place a pin.');
+            setSightingStatus(null);
+            setIsPlacingManualPin(true);
+            setManualReportStatus(status);
         }
     }, [reporterName, sendReport, isLockedOut, hasEdited]);
     
-    const handleEditReport = () => { setIsLockedOut(false); setHasEdited(true); };
+    const handleEditReport = () => { setIsLockedOut(false); setHasEdited(true); alert("You can now submit a new report."); };
 
     useEffect(() => {
         const checkLockout = () => {
@@ -345,59 +368,62 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return () => clearInterval(interval);
     }, []);
 
-    // ** CORRECTED MAP LOGIC **
-    // This effect runs ONCE to initialize the map instance.
+    // --- MAP INITIALIZATION AND DATA FETCHING LOGIC ---
     useEffect(() => {
-        // Prevent re-initialization
-        if (!mapContainerRef.current || mapRef.current) return;
+        // This effect runs ONCE to initialize the map instance.
+        if (!mapContainerRef.current || mapRef.current) return; // Prevents re-initialization
 
-        const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
-        
+        const map = L.map(mapContainerRef.current, {
+            center: [-41.2, 172.5],
+            zoom: 5,
+            scrollWheelZoom: true,
+            dragging: !L.Browser.touch,
+            touchZoom: true
+        });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© CARTO',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
         sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
-        mapRef.current = map;
+        mapRef.current = map; // Store the map instance in the ref
 
+        // Set up the click handler for placing manual pins
         map.on('click', (e: L.LeafletMouseEvent) => {
-            if (isPlacingManualPin.current) {
-                if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
-                
+            // This logic now relies on state, not a ref, to know if it should run
+            if (isPlacingManualPin) { 
+                if (manualPinMarkerRef.current) {
+                    map.removeLayer(manualPinMarkerRef.current);
+                }
                 manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
-
+                
                 const popupNode = document.createElement('div');
                 popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
                 
                 const confirmBtn = popupNode.querySelector('#confirm-pin-btn');
-                if (confirmBtn) {
-                    confirmBtn.addEventListener('click', () => {
-                        if (manualPinMarkerRef.current) {
-                            const finalLatLng = manualPinMarkerRef.current.getLatLng();
-                            sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
-                            manualPinMarkerRef.current.closePopup();
-                        }
-                    });
-                }
+                confirmBtn?.addEventListener('click', () => {
+                    if (manualPinMarkerRef.current && manualReportStatus) {
+                        const finalLatLng = manualPinMarkerRef.current.getLatLng();
+                        sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus);
+                    }
+                });
                 manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
             }
         });
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Empty dependency array ensures this runs only once.
+    }, [isPlacingManualPin, manualReportStatus]); // This effect now depends on the user interaction state
 
-    // This effect handles data fetching AFTER the map is confirmed to be initialized.
     useEffect(() => {
-        // Wait until the map instance is ready.
-        if (!mapRef.current) return;
+        // This effect handles data fetching AFTER the map is confirmed to be initialized.
+        if (!mapRef.current) return; // Wait until the map instance is ready.
 
-        // Fetch data immediately and then set up the interval.
         fetchAndDisplaySightings();
-        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
+        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000); // 30 seconds
 
-        // Cleanup function to clear the interval when the component unmounts.
-        return () => {
-            clearInterval(sightingInterval);
-        };
+        return () => clearInterval(sightingInterval); // Cleanup on unmount.
     }, [fetchAndDisplaySightings]); // Dependency on the memoized fetch function.
-    
+
     const paginatedSightings = allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE);
     
     if (isLoading) {
@@ -421,7 +447,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <div>
                             <div className="flex items-center mb-4">
                                 <h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2>
-                                <button onClick={() => openModal('forecast')} className="ml-2 tooltip-trigger">?</button>
+                                <button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                             </div>
                             <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="bg-green-500 h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray }}></div></div>
@@ -487,7 +513,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
                                 <div className="flex justify-center items-center">
                                     <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
-                                    <button onClick={() => openModal(key)} className="ml-2 tooltip-trigger">?</button>
+                                    <button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
                                 <div className="text-3xl font-bold my-2">{data.value} <span className="text-lg">{data.unit}</span></div>
                                 <div className="text-3xl my-2">{data.emoji}</div>
@@ -526,7 +552,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                         <div className="flex justify-center items-center">
                            <h2 className="text-xl font-semibold text-white text-center">ACE EPAM (Last 3 Days)</h2>
-                           <button onClick={() => openModal('epam')} className="ml-2 tooltip-trigger">?</button>
+                           <button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                         </div>
                          <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]">
                             <img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" />
