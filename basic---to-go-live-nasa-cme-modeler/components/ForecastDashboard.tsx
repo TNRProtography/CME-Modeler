@@ -171,19 +171,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
     
     useEffect(() => {
+        const fetchAndCache = async (url: string) => {
+            const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
+            const res = await fetch(cacheBustedUrl);
+            if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+            return res.json();
+        };
+
         const fetchAllData = async () => {
             setIsLoading(true);
-            const apiCache: Record<string, any> = {};
-            const fetchAndCache = async (url: string) => {
-                const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
-                if (apiCache[url]) return apiCache[url];
-                const res = await fetch(cacheBustedUrl);
-                if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
-                const data = await res.json();
-                apiCache[url] = data;
-                return data;
-            };
-
             await Promise.allSettled([
                 (async () => {
                     const data = await fetchAndCache(FORECAST_API_URL);
@@ -202,42 +198,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     let moonEmoji = '🌑';
                     if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒';
                     setGaugeData(prev => ({...prev, moon: { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.inputs.owmDataLastFetched)}`, color: '#A9A9A9' }}));
+                    
                     const powerVal = currentForecast.inputs.hemisphericPower;
                     setGaugeData(prev => ({ ...prev, power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` } }));
+
                     const {bt, bz} = currentForecast.inputs.magneticField;
                     setGaugeData(prev => ({...prev, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') }}));
-
                 })().catch(e => { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }),
                 
                 (async () => {
-                    const [plasmaData, magData] = await Promise.all([
-                        fetchAndCache(NOAA_PLASMA_URL),
-                        fetchAndCache(NOAA_MAG_URL)
-                    ]);
-
+                    const [plasmaData, magData] = await Promise.all([ fetchAndCache(NOAA_PLASMA_URL), fetchAndCache(NOAA_MAG_URL) ]);
                     const magHeaders = magData[0]; const btIdx = magHeaders.indexOf('bt'); const bzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
                     const latestMagRow = magData.slice(1).reverse().find((r: any) => parseFloat(r[bzIdx]) > -9999);
-                    const btVal = latestMagRow ? parseFloat(latestMagRow[btIdx]) : null; const bzVal = latestMagRow ? parseFloat(latestMagRow[bzIdx]) : null;
                     const magTimestamp = latestMagRow ? Date.parse(latestMagRow[magTimeIdx]) : Date.now();
-
-                    const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
-                    const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
-                    const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
-                    const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx]) : Date.now();
-
-                    setGaugeData(prev => ({ ...prev,
-                        speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
-                        density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
-                        bt: { ...prev.bt, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` }, bz: { ...prev.bz, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` },
-                    }));
-
+                    setGaugeData(prev => ({...prev, bt: {...prev.bt, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` }, bz: {...prev.bz, lastUpdated: `Updated: ${formatNZTimestamp(magTimestamp)}` }}));
                     const magPoints = magData.slice(1).map((r: any) => ({ time: new Date(r[magTimeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
                     setAllMagneticData(magPoints);
-                })().catch(e => console.error("Error fetching gauge/magnetic data:", e)),
+                })().catch(e => console.error("Error fetching magnetic data:", e)),
                 
-                (async () => {
-                    setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
-                })().catch(e => console.error("Error fetching EPAM image:", e))
+                (async () => { setEpamImageUrl(`${ACE_EPAM_URL}?_=${new Date().getTime()}`); })()
             ]);
             setIsLoading(false);
         };
@@ -268,12 +247,101 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         }
     }, [allMagneticData]);
 
-    const fetchAndDisplaySightings = useCallback(() => { /* ... full implementation ... */ }, [tempSightingPin]);
-    const sendReport = useCallback(async (lat: number, lng: number, status: string) => { /* ... full implementation ... */ }, [reporterName, fetchAndDisplaySightings, hasEdited, tempSightingPin]);
-    const handleReportSighting = useCallback((status: string) => { /* ... full implementation ... */ }, [reporterName, sendReport, isLockedOut, hasEdited]);
+    const fetchAndDisplaySightings = useCallback(() => {
+        if (!sightingMarkersLayerRef.current) return;
+        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`).then(res => res.json()).then(sightings => {
+            if (tempSightingPin && mapRef.current) { mapRef.current.removeLayer(tempSightingPin); setTempSightingPin(null); }
+            sightingMarkersLayerRef.current?.clearLayers();
+            const sortedSightings = sightings.sort((a: any, b: any) => b.timestamp - a.timestamp);
+            setAllSightings(sortedSightings);
+            sortedSightings.forEach((s: any) => {
+                const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
+                L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+            });
+        }).catch(e => console.error("Error fetching sightings:", e));
+    }, [tempSightingPin]);
+    
+    const sendReport = useCallback(async (lat: number, lng: number, status: string) => {
+        setSightingStatus({ loading: true, message: LOADING_PUNS[Math.floor(Math.random() * LOADING_PUNS.length)] });
+        const tempIcon = L.divIcon({ html: SIGHTING_EMOJIS[status] || '❓', className: 'sighting-emoji-icon opacity-50', iconSize: [24,24] });
+        if(mapRef.current) {
+            if(tempSightingPin) mapRef.current.removeLayer(tempSightingPin);
+            setTempSightingPin(L.marker([lat, lng], { icon: tempIcon }).addTo(mapRef.current));
+        }
+        try {
+            const res = await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status, name: reporterName }) });
+            if (!res.ok) throw new Error('Failed to submit report.');
+            localStorage.setItem('lastReportTimestamp', Date.now().toString());
+            localStorage.setItem('hasEditedReport', hasEdited.toString());
+            setSightingStatus({ loading: false, message: "Report sent!" });
+            setTimeout(fetchAndDisplaySightings, 1500);
+        } catch(e) { 
+            setSightingStatus({ loading: false, message: "Could not send report." }); 
+            if(tempSightingPin) mapRef.current?.removeLayer(tempSightingPin);
+            setTempSightingPin(null);
+        } finally {
+            setTimeout(() => { setSightingStatus(null); isPlacingManualPin.current = false; if(manualPinMarkerRef.current) mapRef.current?.removeLayer(manualPinMarkerRef.current); manualPinMarkerRef.current = null; }, 4000);
+        }
+    }, [reporterName, fetchAndDisplaySightings, hasEdited, tempSightingPin]);
+
+    const handleReportSighting = useCallback((status: string) => {
+        if (isLockedOut && hasEdited) { alert(`You have already edited your report in this 60-minute window.`); return; }
+        if (isLockedOut && !hasEdited) { handleEditReport(); } // This now just enables edit mode.
+        if (!reporterName.trim()) { alert('Please enter your name.'); return; }
+        setSightingStatus({ loading: true, message: "Getting your location..." });
+        if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => sendReport(pos.coords.latitude, pos.coords.longitude, status),
+                () => { alert('Could not get location. Please click on the map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status; }
+            );
+        } else {
+            alert('Geolocation not supported. Please click map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status;
+        }
+    }, [reporterName, sendReport, isLockedOut, hasEdited]);
+    
     const handleEditReport = () => { setIsLockedOut(false); setHasEdited(true); };
-    useEffect(() => { /* ... lockout check logic ... */ }, []);
-    useEffect(() => { /* ... map initialization and event listeners ... */ }, [fetchAndDisplaySightings, sendReport]);
+
+    useEffect(() => {
+        const checkLockout = () => {
+            const lastReportTime = parseInt(localStorage.getItem('lastReportTimestamp') || '0');
+            const oneHour = 60 * 60 * 1000;
+            const locked = Date.now() - lastReportTime < oneHour;
+            setIsLockedOut(locked);
+            if (locked) { setHasEdited(localStorage.getItem('hasEditedReport') === 'true'); }
+            else { localStorage.removeItem('hasEditedReport'); setHasEdited(false); }
+        };
+        checkLockout();
+        const interval = setInterval(checkLockout, 10000);
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        if (mapContainerRef.current && !mapRef.current) {
+            const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+            sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
+            mapRef.current = map;
+            map.on('click', (e) => {
+                if (isPlacingManualPin.current) {
+                    if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
+                    manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
+                    const popupNode = document.createElement('div');
+                    popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
+                    popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
+                        const finalLatLng = manualPinMarkerRef.current!.getLatLng();
+                        sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
+                        if (manualPinMarkerRef.current) manualPinMarkerRef.current.closePopup();
+                    });
+                    manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
+                }
+            });
+        }
+        fetchAndDisplaySightings();
+        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
+        return () => { if(sightingInterval) clearInterval(sightingInterval); };
+    }, [fetchAndDisplaySightings, sendReport]);
+    
+    const paginatedSightings = allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE);
     
     if (isLoading) {
         return (
@@ -282,7 +350,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             </div>
         );
     }
-
+    
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
              <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
@@ -338,7 +406,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE).map((sighting:any, index:number) => (
+                                        {paginatedSightings.map((sighting, index) => (
                                             <tr key={sighting.id || index} className="bg-neutral-900 border-b border-neutral-800">
                                                 <td className="px-4 py-2">{sighting.name || 'Anonymous'}</td>
                                                 <td className="px-4 py-2">{SIGHTING_EMOJIS[sighting.status]} {sighting.status.charAt(0).toUpperCase() + sighting.status.slice(1)}</td>
@@ -376,14 +444,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
                         <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {auroraChartData.datasets[0]?.data ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {auroraChartData.datasets.length > 0 && auroraChartData.datasets[0]?.data.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Magnetic Field (Last {magneticTimeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => { setMagneticTimeRange(duration); setMagneticTimeLabel(label); }} selected={magneticTimeRange} />
+                        <TimeRangeButtons onSelect={(duration, label) => {setMagneticTimeRange(duration); setMagneticTimeLabel(label)}} selected={magneticTimeRange} />
                          <div className="flex-grow relative mt-2">
-                            {magneticChartData.datasets[0]?.data ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {magneticChartData.datasets.length > 0 && magneticChartData.datasets[0]?.data.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
