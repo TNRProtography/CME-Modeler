@@ -261,8 +261,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const handleSubmitSighting = async (sightingType: string) => { if (!userPinPosition) return; setReportingState('submitting'); const { lat, lng } = userPinPosition; try { await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status: sightingType, name: reporterName }) }); handleCancelReporting(); fetchAndDisplaySightings(); } catch (error) { alert("There was an error submitting your report. Please try again."); setReportingState('confirming_location'); } };
     const paginatedSightings = allSightings.slice(sightingPage * 5, (sightingPage + 1) * 5);
     const createSightingIcon = (emoji: string) => L.divIcon({ html: `<div class="sighting-emoji-icon">${emoji}</div>`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
-
-    if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
@@ -295,37 +293,39 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         ))}
                     </div>
 
-                    <div className="col-span-12 card bg-neutral-950/80 p-6">
-                        <div className="flex flex-col lg:flex-row gap-6">
-                            <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
-                                <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full">
-                                    <TileLayer
-                                        attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
-                                        url="https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}{r}.png"
-                                    />
-                                    <MarkerClusterGroup chunkedLoading>
-                                        {allSightings.map(s => { const si = SIGHTING_TYPES[s.status]; if (!si || typeof s.lat !== 'number' || typeof s.lng !== 'number') return null; return (<Marker key={s.id} position={[s.lat, s.lng]} icon={createSightingIcon(si.emoji)}><Popup><b>{si.label}</b> by {s.name || 'Anonymous'}<br />at {new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Popup></Marker>); })}
-                                    </MarkerClusterGroup>
-                                    <MapEvents reportingState={reportingState} onPinPlace={setUserPinPosition} />
-                                    {userPinPosition && reportingState !== 'idle' && <UserReportPin position={userPinPosition} onPositionChange={setUserPinPosition} />}
-                                    <ResizeMapOnMount />
-                                </MapContainer>
-                            </div>
-                            
-                            <div className="w-full lg:w-1/3 flex flex-col gap-4">
-                                <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
-                                <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
-                                    {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
-                                    {reportingState === 'placing_pin' && (<div className="text-center space-y-3"><p className="text-sm font-semibold">Step 1: Place Your Pin</p><p className="text-xs text-neutral-400">Click the map to place a pin, then confirm.</p><button onClick={handleConfirmLocation} disabled={!userPinPosition} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button><button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button></div>)}
-                                    {(reportingState === 'confirming_location' || reportingState === 'submitting') && (<div className="space-y-2"><p className="text-sm font-semibold text-center">Step 2: What did you see?</p>{Object.entries(SIGHTING_TYPES).map(([key, { label, emoji }]) => (<button key={key} onClick={() => handleSubmitSighting(key)} disabled={reportingState === 'submitting'} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-50"><span className="text-2xl">{emoji}</span><span>{label}</span></button>))}<button onClick={handleCancelReporting} disabled={reportingState === 'submitting'} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center disabled:opacity-50">Cancel</button></div>)}
+                    {!isLoading && (
+                        <div className="col-span-12 card bg-neutral-950/80 p-6">
+                            <div className="flex flex-col lg:flex-row gap-6">
+                                <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
+                                    <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full">
+                                        <TileLayer
+                                            attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
+                                            url="https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}{r}.png"
+                                        />
+                                        <MarkerClusterGroup chunkedLoading>
+                                            {allSightings.map(s => { const si = SIGHTING_TYPES[s.status]; if (!si || typeof s.lat !== 'number' || typeof s.lng !== 'number') return null; return (<Marker key={s.id} position={[s.lat, s.lng]} icon={createSightingIcon(si.emoji)}><Popup><b>{si.label}</b> by {s.name || 'Anonymous'}<br />at {new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Popup></Marker>); })}
+                                        </MarkerClusterGroup>
+                                        <MapEvents reportingState={reportingState} onPinPlace={setUserPinPosition} />
+                                        {userPinPosition && reportingState !== 'idle' && <UserReportPin position={userPinPosition} onPositionChange={setUserPinPosition} />}
+                                        <ResizeMapOnMount />
+                                    </MapContainer>
                                 </div>
-                                <div className="flex-grow space-y-3 min-h-[200px] max-h-96 overflow-y-auto pr-2">
-                                    {paginatedSightings.length > 0 ? paginatedSightings.map((sighting) => (<div key={sighting.id} className="bg-neutral-900 p-3 rounded-lg flex items-center gap-4"><span className="text-3xl">{SIGHTING_TYPES[sighting.status]?.emoji || '❓'}</span><div><p className="font-semibold text-neutral-200">{SIGHTING_TYPES[sighting.status]?.label} by <span className="text-sky-400">{sighting.name || 'Anonymous'}</span></p><p className="text-sm text-neutral-400">{sighting.location || 'Unknown'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div></div>)) : <p className="text-center text-neutral-500 italic pt-8">No recent sightings.</p>}
+                                
+                                <div className="w-full lg:w-1/3 flex flex-col gap-4">
+                                    <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
+                                    <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
+                                        {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
+                                        {reportingState === 'placing_pin' && (<div className="text-center space-y-3"><p className="text-sm font-semibold">Step 1: Place Your Pin</p><p className="text-xs text-neutral-400">Click the map to place a pin, then confirm.</p><button onClick={handleConfirmLocation} disabled={!userPinPosition} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button><button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button></div>)}
+                                        {(reportingState === 'confirming_location' || reportingState === 'submitting') && (<div className="space-y-2"><p className="text-sm font-semibold text-center">Step 2: What did you see?</p>{Object.entries(SIGHTING_TYPES).map(([key, { label, emoji }]) => (<button key={key} onClick={() => handleSubmitSighting(key)} disabled={reportingState === 'submitting'} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-50"><span className="text-2xl">{emoji}</span><span>{label}</span></button>))}<button onClick={handleCancelReporting} disabled={reportingState === 'submitting'} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center disabled:opacity-50">Cancel</button></div>)}
+                                    </div>
+                                    <div className="flex-grow space-y-3 min-h-[200px] max-h-96 overflow-y-auto pr-2">
+                                        {paginatedSightings.length > 0 ? paginatedSightings.map((sighting) => (<div key={sighting.id} className="bg-neutral-900 p-3 rounded-lg flex items-center gap-4"><span className="text-3xl">{SIGHTING_TYPES[sighting.status]?.emoji || '❓'}</span><div><p className="font-semibold text-neutral-200">{SIGHTING_TYPES[sighting.status]?.label} by <span className="text-sky-400">{sighting.name || 'Anonymous'}</span></p><p className="text-sm text-neutral-400">{sighting.location || 'Unknown'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div></div>)) : <p className="text-center text-neutral-500 italic pt-8">No recent sightings.</p>}
+                                    </div>
+                                    {allSightings.length > 5 && (<div className="flex justify-between items-center mt-2 flex-shrink-0"><button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Prev</button><span className="text-xs">Page {sightingPage + 1} of {Math.ceil(allSightings.length / 5)}</span><button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Next</button></div>)}
                                 </div>
-                                {allSightings.length > 5 && (<div className="flex justify-between items-center mt-2 flex-shrink-0"><button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Prev</button><span className="text-xs">Page {sightingPage + 1} of {Math.ceil(allSightings.length / 5)}</span><button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Next</button></div>)}
                             </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
