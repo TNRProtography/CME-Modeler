@@ -6,14 +6,13 @@ interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
 
-// --- CONSTANTS ---
+// UPDATED: Using 1-day (24-hour) endpoint to satisfy new time range requirements
+const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
-const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
 
-// --- HELPERS ---
 const getCssVar = (name: string): string => {
   try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
   catch(e) { return '' }
@@ -42,7 +41,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [xrayChartData, setXrayChartData] = useState<any>(null);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
-    const [currentChartDuration, setCurrentChartDuration] = useState<number>(2 * 60 * 60 * 1000);
+    // UPDATED: Default chart duration set to 12 hours
+    const [currentChartDuration, setCurrentChartDuration] = useState<number>(12 * 60 * 60 * 1000);
 
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
@@ -157,46 +157,50 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-            <style>{`:root { --solar-flare-ab-rgb: 34, 197, 94; --solar-flare-c-rgb: 245, 158, 11; --solar-flare-m-rgb: 255, 69, 0; --solar-flare-x-rgb: 239, 68, 68; --solar-flare-x5plus-rgb: 147, 112, 219; } body { overflow-y: auto !important; }`}</style>
+            <style>{`:root { --solar-flare-ab-rgb: 34, 197, 94; --solar-flare-c-rgb: 245, 158, 11; --solar-flare-m-rgb: 255, 69, 0; --solar-flare-x-rgb: 239, 68, 68; --solar-flare-x5plus-rgb: 147, 112, 219; } body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
             <div className="container mx-auto">
                 <header className="text-center mb-8">
                     <img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/>
                     <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
                 </header>
                 <main className="grid grid-cols-12 gap-5">
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px]">
-                        <h2 className="text-xl font-semibold text-center text-white mb-2">SUVI 131Å</h2>
-                        <div onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })} className="flex-grow flex justify-center items-center cursor-pointer relative">
+                    {/* LAYOUT FIX: Added flex flex-col to card and min-h-0 to the image container */}
+                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 131Å</h2>
+                        <div onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })} className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0">
                             <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
                             {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
                         </div>
                     </div>
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px]">
-                        <h2 className="text-xl font-semibold text-center text-white mb-2">SUVI 304Å</h2>
-                        <div onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })} className="flex-grow flex justify-center items-center cursor-pointer relative">
+                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 304Å</h2>
+                        <div onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })} className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0">
                             <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
                             {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
                         </div>
                     </div>
+
                     <div className="col-span-12 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                        <div className="flex justify-center gap-2 my-2">
-                            {[1, 2, 4, 6].map(h => <button key={h} onClick={() => setCurrentChartDuration(h * 3600000)} className={`px-3 py-1 text-sm rounded transition-colors ${currentChartDuration === h * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{h} Hour{h>1 && 's'}</button>)}
+                        {/* UPDATED: Added new buttons and changed default */}
+                        <div className="flex justify-center gap-2 my-2 flex-wrap">
+                            {[1, 2, 4, 6, 12, 24].map(h => <button key={h} onClick={() => setCurrentChartDuration(h * 3600000)} className={`px-3 py-1 text-sm rounded transition-colors ${currentChartDuration === h * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{h} Hour{h>1 && 's'}</button>)}
                         </div>
                         <div className="flex-grow relative mt-2">
                             {xrayChartData ? <Line data={xrayChartData} options={xrayChartOptions as any} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                         </div>
                     </div>
+
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares</h2>
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                            {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> : solarFlares.map((flare, i) => <li key={i} className="bg-neutral-800 p-2 rounded text-sm"><strong className={`px-2 py-0.5 rounded text-white class-${flare.classType[0]}`}>{flare.classType}</strong> Peak: {formatTimestamp(flare.peakTime)}</li>)}
+                            {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> : solarFlares.length > 0 ? solarFlares.map((flare, i) => <li key={flare.flareID || i} className="bg-neutral-800 p-2 rounded text-sm"><strong className={`px-2 py-0.5 rounded text-black class-${flare.classType[0]}`}>{flare.classType}</strong> at {formatTimestamp(flare.peakTime)}</li>) : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
                         </ul>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                           {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.map((spot, i) => <li key={i} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>)}
+                           {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot, i) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
                         </ul>
                     </div>
                 </main>

@@ -4,8 +4,6 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import CloseIcon from './icons/CloseIcon';
 
-// This interface is only here to make the setViewerMedia prop optional for now
-// as this specific component does not trigger the media viewer, but others might.
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
@@ -76,14 +74,23 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const isPlacingManualPin = useRef<boolean>(false);
     const manualReportStatus = useRef<string | null>(null);
     const apiDataCache = useRef<Record<string, any>>({});
-
-    // --- HELPERS & CALLBACKS ---
-    const formatTimestamp = (isoString: string) => {
-        try {
-            const d = new Date(isoString);
-            return isNaN(d.getTime()) ? "Invalid Date" : `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-        } catch { return "Invalid Date"; }
+    
+    // --- Tooltip Content ---
+    const tooltipContent = {
+        'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
+        'chart': { title: 'Reading The Visibility Chart', content: `This chart shows the estimated visibility over time.<br><br><strong><span class="inline-block w-3 h-3 rounded-sm mr-2 align-middle" style="background-color: #FF6347;"></span>Real Score:</strong> This is the main forecast, including solar wind data and local factors like moonlight and darkness.<br><br><strong><span class="inline-block w-3 h-3 rounded-sm mr-2 align-middle" style="background-color: #A9A9A9;"></span>Base Score:</strong> This shows the forecast based *only* on solar wind data. It represents the "raw potential" if there were no sun or moon interference.` },
+        'power': { title: 'Hemispheric Power', content: `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.` },
+        'speed': { title: 'Solar Wind Speed', content: `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.` },
+        'density': { title: 'Solar Wind Density', content: `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³.<br><br><strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.` },
+        'bt': { title: 'IMF Bt (Total)', content: `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.` },
+        'bz': { title: 'IMF Bz (N/S)', content: `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>` }
     };
+    
+    // --- HELPERS & CALLBACKS ---
+    const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
+    const closeModal = useCallback(() => setModalState(null), []);
+    const formatTimestamp = (isoString: string) => { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
+    const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
 
     const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
         if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 };
@@ -99,82 +106,89 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
 
-    const openModal = useCallback((id: string) => {
-        const content = tooltipContent[id as keyof typeof tooltipContent];
-        if (content) setModalState({ isOpen: true, ...content });
-    }, []);
-
-    const closeModal = useCallback(() => setModalState(null), []);
-
     // --- DATA FETCHING & RENDERING ---
     const fetchAllData = useCallback(async () => {
-        apiDataCache.current = {}; // Clear cache on each full update
+        apiDataCache.current = {}; 
+        
+        // Fetch all endpoints concurrently
+        const gaugeKeys = Object.keys(GAUGE_API_ENDPOINTS) as (keyof typeof GAUGE_API_ENDPOINTS)[];
+        await Promise.allSettled([
+            // Fetch main sensor score
+            (async () => {
+                const [tnrRes, basicRes] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
+                if (!tnrRes.ok || !basicRes.ok) throw new Error('Forecast fetch failed');
+                const tnrData = await tnrRes.json(); const basicData = await basicRes.json();
+                const score = parseFloat(tnrData.values[tnrData.values.length - 1]?.value);
+                setAuroraScore(score); setLastUpdated(`Last Updated: ${formatTimestamp(basicData.values[basicData.values.length - 1]?.lastUpdated)}`);
+                if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye auroral color.'); else setAuroraBlurb('High probability of a significant auroral substorm.');
+            })().catch(e => console.error("Error fetching sensor data:", e)),
+            
+            // Fetch all gauge data
+            ...gaugeKeys.map(async type => {
+                 try {
+                    const endpoint = GAUGE_API_ENDPOINTS[type];
+                    let data = apiDataCache.current[endpoint];
+                    if (!data) {
+                        const res = await fetch(endpoint); if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        data = await res.json(); apiDataCache.current[endpoint] = data;
+                    }
+                    let value: number, lastUpdatedStr: string;
+                    if (type === 'power') {
+                        const latest = data.values[data.values.length - 1];
+                        value = parseFloat(latest.value); lastUpdatedStr = latest.lastUpdated;
+                    } else {
+                        const headers = data[0]; const colName = type === 'bz' ? 'bz_gsm' : type;
+                        const valIdx = headers.indexOf(colName); const timeIdx = headers.indexOf('time_tag');
+                        const latestRow = data.slice(1).reverse().find((r: any) => parseFloat(r[valIdx]) > -9999);
+                        if (!latestRow) throw new Error("No valid data");
+                        value = parseFloat(latestRow[valIdx]); lastUpdatedStr = latestRow[timeIdx];
+                    }
+                    const style = getGaugeStyle(value, type);
+                    const unit = type === 'speed' ? ' km/s' : type === 'density' ? ' p/cm³' : type === 'power' ? ' GW' : ' nT';
+                    setGaugeData(prev => ({ ...prev, [type]: { value: `${value.toFixed(1)}`, unit, ...style, lastUpdated: `Updated: ${formatTimestamp(lastUpdatedStr)}` } }));
+                } catch (e) { console.error(`Error updating gauge ${type}:`, e); }
+            }),
 
-        // Fetch sensor score
-        try {
-            const [tnrRes, basicRes] = await Promise.all([fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/')]);
-            if (!tnrRes.ok || !basicRes.ok) throw new Error('Forecast fetch failed');
-            const tnrData = await tnrRes.json(); const basicData = await basicRes.json();
-            const score = parseFloat(tnrData.values[tnrData.values.length - 1]?.value);
-            setAuroraScore(score); setLastUpdated(`Last Updated: ${formatTimestamp(basicData.values[basicData.values.length - 1]?.lastUpdated)}`);
-            if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye auroral color.'); else setAuroraBlurb('High probability of a significant auroral substorm.');
-        } catch (e) { console.error("Error fetching sensor data:", e); setLastUpdated('Update failed'); }
+            // Fetch and render charts
+            (async () => {
+                try {
+                    const [basicRes, tnrRes] = await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);
+                    const basicData = await basicRes.json(); const tnrData = await tnrRes.json();
+                    const process = (arr: any[]) => arr.map((item: any) => ({ time: new Date(item.lastUpdated), value: parseFloat(item.value) })).sort((a,b) => a.time.getTime() - b.time.getTime());
+                    const data1 = process(basicData.values); const data2 = process(tnrData.values);
+                    setAuroraChartData({ labels: data2.map(d => d.time), datasets: [ { label: 'Base Score', data: data1.map(d => d.value), borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Real Score', data: data2.map(d => d.value), borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } ] });
+                } catch(e) { console.error("Error rendering aurora chart:", e); }
+            })(),
 
-        // Fetch gauges
-        Object.keys(GAUGE_API_ENDPOINTS).forEach(async key => {
-            const type = key as keyof typeof GAUGE_API_ENDPOINTS;
-            try {
-                const endpoint = GAUGE_API_ENDPOINTS[type];
-                let data = apiDataCache.current[endpoint];
-                if (!data) {
-                    const res = await fetch(endpoint); if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    data = await res.json(); apiDataCache.current[endpoint] = data;
-                }
-                let value: number, lastUpdatedStr: string;
-                if (type === 'power') {
-                    const latest = data.values[data.values.length - 1];
-                    value = parseFloat(latest.value); lastUpdatedStr = latest.lastUpdated;
-                } else {
-                    const headers = data[0]; const colName = type === 'bz' ? 'bz_gsm' : type;
-                    const valIdx = headers.indexOf(colName); const timeIdx = headers.indexOf('time_tag');
-                    const latestRow = data.slice(1).reverse().find((r: any) => parseFloat(r[valIdx]) > -9999);
-                    if (!latestRow) throw new Error("No valid data found");
-                    value = parseFloat(latestRow[valIdx]); lastUpdatedStr = latestRow[timeIdx];
-                }
-                const style = getGaugeStyle(value, type);
-                const unit = type === 'speed' ? ' km/s' : type === 'density' ? ' p/cm³' : type === 'power' ? ' GW' : ' nT';
-                setGaugeData(prev => ({ ...prev, [type]: { value: `${value.toFixed(1)}${unit}`, ...style, lastUpdated: `Last Updated: ${formatTimestamp(lastUpdatedStr)}` } }));
-            } catch (e) { console.error(`Error updating gauge ${type}:`, e); }
-        });
-
-        // Fetch charts
-        // Aurora Chart
-        try {
-            const [basicRes, tnrRes] = await Promise.all([fetch('https://basic-aurora-forecast.thenamesrock.workers.dev/'), fetch('https://tnr-aurora-forecast.thenamesrock.workers.dev/')]);
-            const basicData = await basicRes.json(); const tnrData = await tnrRes.json();
-            const process = (arr: any[]) => arr.map((item: any) => ({ time: new Date(item.lastUpdated), value: parseFloat(item.value) })).sort((a,b) => a.time.getTime() - b.time.getTime());
-            const data1 = process(basicData.values); const data2 = process(tnrData.values);
-            // ... chart data interpolation logic here if needed ...
-            setAuroraChartData({ labels: data2.map(d => d.time), datasets: [ { label: 'Base Score', data: data1.map(d => d.value), borderColor: '#A9A9A9', tension: 0.4 }, { label: 'Real Score', data: data2.map(d => d.value), borderColor: '#FF6347', tension: 0.4 } ] });
-        } catch(e) { console.error("Error rendering aurora chart:", e); }
-
-        // Magnetic Chart
-        try {
-            const res = await fetch(NOAA_MAG_ENDPOINT); const data = await res.json();
-            const headers = data[0]; const timeIdx = headers.indexOf('time_tag'); const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm');
-            const points = data.slice(1).map((r: any) => ({ time: new Date(r[timeIdx]), bt: parseFloat(r[btIdx]) > -9999 ? r[btIdx] : null, bz: parseFloat(r[bzIdx]) > -9999 ? r[bzIdx] : null }));
-            setMagneticChartData({ labels: points.map(p => p.time), datasets: [ { label: 'Bt', data: points.map(p => p.bt), borderColor: '#A9A9A9' }, { label: 'Bz', data: points.map(p => p.bz), borderColor: '#FF6347' }] });
-        } catch(e) { console.error("Error rendering magnetic chart:", e); }
-
+            (async () => {
+                try {
+                    const res = await fetch(NOAA_MAG_ENDPOINT); const data = await res.json();
+                    const headers = data[0]; const timeIdx = headers.indexOf('time_tag'); const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm');
+                    const points = data.slice(1).map((r: any) => ({ time: new Date(r[timeIdx]), bt: parseFloat(r[btIdx]) > -9999 ? r[btIdx] : null, bz: parseFloat(r[bzIdx]) > -9999 ? r[bzIdx] : null }));
+                    setMagneticChartData({ labels: points.map(p => p.time), datasets: [ { label: 'Bt', data: points.map(p => p.bt), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Bz', data: points.map(p => p.bz), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }] });
+                } catch(e) { console.error("Error rendering magnetic chart:", e); }
+            })()
+        ]);
     }, [getGaugeStyle]);
     
     useEffect(() => {
-        fetchAndRenderAllData();
-        const interval = setInterval(fetchAndRenderAllData, 120000);
+        fetchAllData();
+        const interval = setInterval(fetchAllData, 120000);
         return () => clearInterval(interval);
-    }, [fetchAndRenderAllData]);
+    }, [fetchAllData]);
 
     // --- MAP & SIGHTING LOGIC ---
+    const fetchAndDisplaySightings = useCallback(() => {
+        fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
+            if (!sightingMarkersLayerRef.current) return;
+            sightingMarkersLayerRef.current.clearLayers();
+            sightings.forEach((s: any) => {
+                const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon' });
+                L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString()}`);
+            });
+        }).catch(e => console.error("Error fetching sightings:", e));
+    }, []);
+
     useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) return;
         const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
@@ -196,10 +210,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             }
         });
         
-        return () => { map.remove(); mapRef.current = null; };
-    }, []);
+        fetchAndDisplaySightings();
+        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
 
-    const sendReport = useCallback(async (lat, lng, status) => {
+        return () => { map.remove(); mapRef.current = null; clearInterval(sightingInterval); };
+    }, [fetchAndDisplaySightings]);
+
+    const sendReport = useCallback(async (lat: number, lng: number, status: string) => {
         setSightingStatus({ loading: true, message: LOADING_PUNS[Math.floor(Math.random() * LOADING_PUNS.length)] });
         try {
             const res = await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status, name: reporterName }) });
@@ -211,44 +228,39 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         finally {
             setTimeout(() => { setSightingStatus(null); isPlacingManualPin.current = false; if(manualPinMarkerRef.current) mapRef.current?.removeLayer(manualPinMarkerRef.current); }, 4000);
         }
-    }, [reporterName]);
+    }, [reporterName, fetchAndDisplaySightings]);
 
     const handleReportSighting = useCallback((status: string) => {
-        if (Date.now() - parseInt(localStorage.getItem('lastReportTimestamp') || '0') < 60 * 60 * 1000) { alert("You've reported recently. Please wait a bit."); return; }
+        const lastReportTime = parseInt(localStorage.getItem('lastReportTimestamp') || '0');
+        if (Date.now() - lastReportTime < 60 * 60 * 1000) {
+            alert(`You've reported recently. Please wait about ${Math.ceil((60 * 60 * 1000 - (Date.now() - lastReportTime)) / 60000)} more minute(s).`);
+            return;
+        }
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
-        setSightingStatus({ loading: true, message: "Getting location..." });
-        navigator.geolocation.getCurrentPosition(
-            (pos) => sendReport(pos.coords.latitude, pos.coords.longitude, status),
-            () => { alert('Could not get location. Please click on the map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status; }
-        );
+        setSightingStatus({ loading: true, message: "Getting your location..." });
+        if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => sendReport(pos.coords.latitude, pos.coords.longitude, status),
+                () => { alert('Could not get location. Please click on the map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status; }
+            );
+        } else {
+            alert('Geolocation not supported. Please click map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status;
+        }
     }, [reporterName, sendReport]);
-
-    const fetchAndDisplaySightings = useCallback(() => {
-        fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
-            sightingMarkersLayerRef.current?.clearLayers();
-            sightings.forEach((s: any) => {
-                const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [20, 20] });
-                L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString()}`);
-            });
-        }).catch(e => console.error("Error fetching sightings:", e));
-    }, []);
-
-    useEffect(() => {
-        fetchAndDisplaySightings();
-        const interval = setInterval(fetchAndDisplaySightings, 30000);
-        return () => clearInterval(interval);
-    }, [fetchAndDisplaySightings]);
 
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-            <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; }`}</style>
+            {/* Styles and JSX for the dashboard */}
             <div className="container mx-auto">
                 <header className="text-center mb-8">
                     {/* Header */}
                 </header>
                 <main className="grid grid-cols-12 gap-5">
-                    {/* All UI elements go here, using state variables for data */}
+                   {/* Main Content */}
                 </main>
+                <footer className="page-footer">
+                    {/* Footer */}
+                </footer>
             </div>
             {modalState && <InfoModal {...modalState} onClose={closeModal} />}
         </div>
