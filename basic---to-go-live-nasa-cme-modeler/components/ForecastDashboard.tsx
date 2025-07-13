@@ -42,12 +42,12 @@ const GAUGE_EMOJIS = { gray: '😐', yellow: '🙂', orange: '😊', red: '😀'
 
 // --- Reusable UI Components ---
 
-// ** NEW HELPER COMPONENT TO FIX MAP SIZING **
 const ResizeMapOnMount = () => {
     const map = useMap();
     useEffect(() => {
-        // This command forces the map to re-evaluate its size and render the tiles correctly.
-        map.invalidateSize();
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 0);
     }, [map]);
     return null;
 };
@@ -81,7 +81,6 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
 };
 
 
-// A new component to handle map events like clicks for placing a pin
 function MapEvents({ reportingState, onPinPlace }: { reportingState: ReportingState, onPinPlace: (latlng: L.LatLng) => void }) {
   useMapEvents({
     click(e) {
@@ -93,7 +92,6 @@ function MapEvents({ reportingState, onPinPlace }: { reportingState: ReportingSt
   return null;
 }
 
-// A new component for the draggable user pin
 function UserReportPin({ position, onPositionChange }: { position: L.LatLng, onPositionChange: (latlng: L.LatLng) => void }) {
   const markerRef = useRef<L.Marker>(null);
   const eventHandlers = useMemo(() => ({
@@ -298,8 +296,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     </div>
 
                     <div className="col-span-12 card bg-neutral-950/80 p-6">
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            <div className="lg:col-span-8 relative min-h-[500px] rounded-lg overflow-hidden">
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <div className="lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                                 <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full bg-neutral-800">
                                     <TileLayer
                                         attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
@@ -315,7 +313,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 </MapContainer>
                             </div>
                             
-                            <div className="lg:col-span-4 flex flex-col gap-4">
+                            <div className="lg:w-1/3 flex flex-col gap-4">
                                 <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
                                 <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
                                     {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
