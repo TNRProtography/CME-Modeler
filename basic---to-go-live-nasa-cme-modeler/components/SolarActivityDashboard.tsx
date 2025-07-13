@@ -21,14 +21,25 @@ const getCssVar = (name: string): string => {
   try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
 };
 
-const getColorForFlux = (value: number, opacity: number = 1): string => {
-    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Green
-    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '147, 112, 219'; // Hot Pink for X5+
-    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';    // Purple for X1-X4.9
-    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';    // OrangeRed for M
-    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow
-    return `rgba(${rgb}, ${opacity})`;
+const getColorForFlareClass = (classType: string): { background: string, text: string } => {
+    const type = classType[0].toUpperCase();
+    const magnitude = parseFloat(classType.substring(1));
+
+    if (type === 'X') {
+        if (magnitude >= 5) {
+            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' }; // Pink
+        }
+        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' }; // Purple
+    }
+    if (type === 'M') {
+        return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' }; // OrangeRed
+    }
+    if (type === 'C') {
+        return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' }; // Yellow
+    }
+    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B
 };
+
 
 const formatNZTimestamp = (isoString: string | null) => {
     if (!isoString) return 'N/A';
@@ -69,6 +80,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
+    const [xrayChartData, setXrayChartData] = useState<any>({ labels: [], datasets: [] });
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
@@ -81,7 +93,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>) => {
         setState({ url: '/placeholder.png', loading: 'Loading image...' });
         try {
-            const res = await fetch(url);
+            const res = await fetch(`${url}?_=${new Date().getTime()}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const blob = await res.blob();
             const objectURL = URL.createObjectURL(blob);
@@ -94,7 +106,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     const fetchXrayFlux = useCallback(() => {
         setLoadingXray('Loading X-ray flux data...');
-        fetch(NOAA_XRAY_FLUX_URL).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
+        fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
             .then(rawData => {
                 const groupedData = new Map();
                 rawData.forEach((d: any) => {
@@ -108,7 +120,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 setLoadingXray(null);
             }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
     }, []);
-    
+
     const fetchFlares = useCallback(async () => {
         setLoadingFlares('Loading solar flares...');
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -116,7 +128,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const endDate = new Date().toISOString().split('T')[0];
         
         try {
-            const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}`);
+            const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); return; }
@@ -129,7 +141,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, [apiKey]);
 
-    const fetchSunspots = useCallback(async () => { /* ... (implementation is unchanged) ... */ }, []);
+    const fetchSunspots = useCallback(async () => {
+        setLoadingSunspots('Loading active regions...');
+        try {
+            const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+            const earthFacingRegions = data.filter((region: any) => new Date(region.observed_date) >= twoWeeksAgo && Math.abs(parseFloat(region.longitude)) <= 90);
+            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); return; }
+            setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
+            setLoadingSunspots(null);
+        } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
+    }, []);
 
     useEffect(() => {
         const runAllUpdates = () => {
@@ -150,7 +174,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
         const annotations: any = {};
         
-        // Midnight Lines
         const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -164,12 +187,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }
         }
 
-        // Flare Peak Annotations
         solarFlares.forEach(flare => {
             const peakTime = new Date(flare.peakTime).getTime();
-            const fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(flare.classType[0]) * -1);
+            const classType = flare.classType || '';
+            const fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(classType[0]) * -1) * parseFloat(classType.substring(1));
+            
             if (peakTime > startTime && fluxValue >= 1e-5) { // M1 or greater
-                if (visibleAnnotations[flare.flareID] !== false) { // Check if not dismissed
+                if (visibleAnnotations[flare.flareID] !== false) {
                     annotations[flare.flareID] = {
                         type: 'label',
                         xValue: peakTime,
@@ -183,7 +207,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         font: { size: 10, weight: 'bold' },
                         yAdjust: -15,
                         callout: { enabled: true, position: 'bottom', side: 5 },
-                        // Custom property for the click handler
                         flareId: flare.flareID
                     };
                 }
@@ -259,7 +282,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
                         <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {xrayChartData.datasets.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                            {xrayChartData.labels?.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
@@ -267,19 +290,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                             {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> 
                             : solarFlares.length > 0 ? solarFlares.map((flare) => {
-                                const classChar = flare.classType ? flare.classType[0] : 'U';
-                                let fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(classChar) * -1);
-                                if (classChar === 'X' && parseFloat(flare.classType.substring(1)) >= 5) {
-                                    fluxValue = 5e-4; // Assign to X5+ category
-                                }
-                                const badgeColor = getColorForFlux(fluxValue);
-                                const textColor = (classChar === 'C' || classChar === 'B' || classChar === 'A' || classChar === 'U') ? 'text-black' : 'text-white';
+                                const { background, text } = getColorForFlareClass(flare.classType);
                                 const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
                                 return (
                                 <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}>
                                     <div className="flex justify-between items-center">
                                         <span>
-                                            <strong className={`px-2 py-0.5 rounded ${textColor}`} style={{ backgroundColor: badgeColor }}>{flare.classType}</strong>
+                                            <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong>
                                             <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span>
                                         </span>
                                         {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
