@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
+import { ChartOptions } from 'chart.js';
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -27,10 +28,7 @@ const getColorForFlux = (value: number, opacity: number = 1): string => {
 };
 
 const formatTimestamp = (isoString: string) => {
-    try {
-        const d = new Date(isoString);
-        return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString();
-    } catch { return "Invalid Date"; }
+    try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString(); } catch { return "Invalid Date"; }
 };
 
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
@@ -38,7 +36,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-sm rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
                     {label}
                 </button>
             ))}
@@ -50,7 +48,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
-    const [xrayChartOptions, setXrayChartOptions] = useState<any>({});
     const [xrayChartData, setXrayChartData] = useState<any>({ labels: [], datasets: [] });
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
@@ -98,37 +95,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const midnightAnnotations: any = {};
             const uniqueDays = [...new Set(filteredData.map(d => new Date(d.time).setUTCHours(0,0,0,0)))];
             uniqueDays.forEach((day, index) => {
-                midnightAnnotations[`line-${index}`] = {
-                    type: 'line',
-                    xMin: day, xMax: day,
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                    label: { content: 'Midnight UTC', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
-                };
+                const midnight = new Date(day).setUTCHours(24,0,0,0);
+                if (midnight > startTime && midnight < now) {
+                    midnightAnnotations[`line-${index}`] = {
+                        type: 'line', xMin: midnight, xMax: midnight,
+                        borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                        label: { content: 'Midnight UTC', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
+                    };
+                }
             });
 
             setXrayChartData({
                 labels: filteredData.map(d => d.time),
                 datasets: [{
-                    label: 'Short Flux (0.1-0.8 nm)',
-                    data: filteredData.map(d => d.short),
+                    label: 'Short Flux (0.1-0.8 nm)', data: filteredData.map(d => d.short),
                     pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
                     segment: {
                         borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
                         backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
                     }
-                }]
-            });
-            setXrayChartOptions({
-                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index' as const, intersect: false },
-                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => {
-                    let fluxClass = '';
-                    if (c.parsed.y >= 1e-4) fluxClass = 'X'; else if (c.parsed.y >= 1e-5) fluxClass = 'M'; else if (c.parsed.y >= 1e-6) fluxClass = 'C'; else if (c.parsed.y >= 1e-7) fluxClass = 'B'; else fluxClass = 'A';
-                    return `Flux: ${c.parsed.y.toExponential(2)} (${fluxClass}-class)`;
-                }}}, annotation: { annotations: midnightAnnotations } },
-                scales: { 
-                    x: { type: 'time' as const, time: { unit: 'hour' as const, tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
-                    y: { type: 'logarithmic' as const, min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
-                }
+                }],
+                annotations: midnightAnnotations
             });
         }
     }, [allXrayData, xrayTimeRange]);
@@ -172,6 +159,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const interval = setInterval(runAllUpdates, 5 * 60 * 1000);
         return () => clearInterval(interval);
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
+
+    const xrayChartOptions: ChartOptions<'line'> = {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => {
+            let fluxClass = '';
+            if (c.parsed.y >= 1e-4) fluxClass = 'X'; else if (c.parsed.y >= 1e-5) fluxClass = 'M'; else if (c.parsed.y >= 1e-6) fluxClass = 'C'; else if (c.parsed.y >= 1e-7) return 'B'; else fluxClass = 'A';
+            return `Flux: ${c.parsed.y.toExponential(2)} (${fluxClass}-class)`;
+        }}}, annotation: { annotations: (xrayChartData as any)?.annotations || {} } },
+        scales: { 
+            x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+            y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
+        }
+    };
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
@@ -200,7 +200,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
                         <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {xrayChartData ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                            {xrayChartData.labels.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
