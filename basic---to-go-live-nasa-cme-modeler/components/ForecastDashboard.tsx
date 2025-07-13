@@ -254,17 +254,41 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }, [allMagneticData]);
 
     const fetchAndDisplaySightings = useCallback(() => {
-        if (!sightingMarkersLayerRef.current) return;
-        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`).then(res => res.json()).then(sightings => {
-            if (tempSightingPin && mapRef.current) { mapRef.current.removeLayer(tempSightingPin); setTempSightingPin(null); }
-            sightingMarkersLayerRef.current?.clearLayers();
-            const sortedSightings = sightings.sort((a: any, b: any) => b.timestamp - a.timestamp);
-            setAllSightings(sortedSightings);
-            sortedSightings.forEach((s: any) => {
-                const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
-                L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-            });
-        }).catch(e => console.error("Error fetching sightings:", e));
+        if (!sightingMarkersLayerRef.current || !mapRef.current) return;
+    
+        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`)
+            .then(res => {
+                if (!res.ok) throw new Error(`Network response was not ok: ${res.statusText}`);
+                return res.json();
+            })
+            .then(sightings => {
+                if (tempSightingPin && mapRef.current) {
+                    mapRef.current.removeLayer(tempSightingPin);
+                    setTempSightingPin(null);
+                }
+                sightingMarkersLayerRef.current?.clearLayers();
+    
+                if (!Array.isArray(sightings)) {
+                    console.error("Fetched sightings is not an array:", sightings);
+                    return; // Exit if data is not an array
+                }
+    
+                const sortedSightings = sightings.sort((a: any, b: any) => b.timestamp - a.timestamp);
+                setAllSightings(sortedSightings);
+    
+                sortedSightings.forEach((s: any) => {
+                    // Data validation before creating a marker
+                    if (s && typeof s.lat === 'number' && typeof s.lng === 'number' && s.status) {
+                        const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
+                        L.marker([s.lat, s.lng], { icon: emojiIcon })
+                            .addTo(sightingMarkersLayerRef.current!)
+                            .bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+                    } else {
+                        console.warn("Skipping invalid sighting object:", s);
+                    }
+                });
+            })
+            .catch(e => console.error("Error fetching or processing sightings:", e));
     }, [tempSightingPin]);
     
     const sendReport = useCallback(async (lat: number, lng: number, status: string) => {
@@ -283,16 +307,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setTimeout(fetchAndDisplaySightings, 1500);
         } catch(e) { 
             setSightingStatus({ loading: false, message: "Could not send report." }); 
-            if(tempSightingPin) mapRef.current?.removeLayer(tempSightingPin);
+            if(tempSightingPin && mapRef.current) mapRef.current.removeLayer(tempSightingPin);
             setTempSightingPin(null);
         } finally {
-            setTimeout(() => { setSightingStatus(null); isPlacingManualPin.current = false; if(manualPinMarkerRef.current) mapRef.current?.removeLayer(manualPinMarkerRef.current); manualPinMarkerRef.current = null; }, 4000);
+            setTimeout(() => { setSightingStatus(null); isPlacingManualPin.current = false; if(manualPinMarkerRef.current && mapRef.current) mapRef.current.removeLayer(manualPinMarkerRef.current); manualPinMarkerRef.current = null; }, 4000);
         }
     }, [reporterName, fetchAndDisplaySightings, hasEdited, tempSightingPin]);
 
     const handleReportSighting = useCallback((status: string) => {
         if (isLockedOut && hasEdited) { alert(`You have already edited your report in this 60-minute window.`); return; }
-        if (isLockedOut && !hasEdited) { handleEditReport(); }
+        if (isLockedOut && !hasEdited) { handleEditReport(); return; } // Edit and exit
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
         setSightingStatus({ loading: true, message: "Getting your location..." });
         if ('geolocation' in navigator) {
@@ -321,47 +345,58 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return () => clearInterval(interval);
     }, []);
 
-    // Map initialization effect - runs ONLY ONCE
+    // ** CORRECTED MAP LOGIC **
+    // This effect runs ONCE to initialize the map instance.
     useEffect(() => {
-        if (mapContainerRef.current && !mapRef.current) {
-            const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
-            
-            sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
-            mapRef.current = map;
+        // Prevent re-initialization
+        if (!mapContainerRef.current || mapRef.current) return;
 
-            // Set up click handler for manual pin placement
-            map.on('click', (e: L.LeafletMouseEvent) => {
-                if (isPlacingManualPin.current) {
-                    if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
-                    
-                    manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
+        const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+        
+        sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
+        mapRef.current = map;
 
-                    const popupNode = document.createElement('div');
-                    popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
-                    
-                    popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
-                        const finalLatLng = manualPinMarkerRef.current!.getLatLng();
-                        sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
-                        if (manualPinMarkerRef.current) manualPinMarkerRef.current.closePopup();
+        map.on('click', (e: L.LeafletMouseEvent) => {
+            if (isPlacingManualPin.current) {
+                if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
+                
+                manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
+
+                const popupNode = document.createElement('div');
+                popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
+                
+                const confirmBtn = popupNode.querySelector('#confirm-pin-btn');
+                if (confirmBtn) {
+                    confirmBtn.addEventListener('click', () => {
+                        if (manualPinMarkerRef.current) {
+                            const finalLatLng = manualPinMarkerRef.current.getLatLng();
+                            sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
+                            manualPinMarkerRef.current.closePopup();
+                        }
                     });
-                    manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
                 }
-            });
-        }
-    }, [sendReport]);
+                manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
+            }
+        });
 
-    // Data fetching effect - runs when map is ready and periodically
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Empty dependency array ensures this runs only once.
+
+    // This effect handles data fetching AFTER the map is confirmed to be initialized.
     useEffect(() => {
-        if (!mapRef.current) return; // Don't run if map isn't initialized
+        // Wait until the map instance is ready.
+        if (!mapRef.current) return;
 
-        fetchAndDisplaySightings(); // Initial fetch
+        // Fetch data immediately and then set up the interval.
+        fetchAndDisplaySightings();
         const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
 
-        return () => { // Cleanup on unmount
+        // Cleanup function to clear the interval when the component unmounts.
+        return () => {
             clearInterval(sightingInterval);
         };
-    }, [fetchAndDisplaySightings]);
+    }, [fetchAndDisplaySightings]); // Dependency on the memoized fetch function.
     
     const paginatedSightings = allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE);
     
