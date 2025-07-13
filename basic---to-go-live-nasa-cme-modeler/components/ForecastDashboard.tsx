@@ -158,84 +158,73 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange), [auroraTimeRange, createChartOptions]);
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
 
-    const fetchAndDisplaySightings = useCallback(() => {
-        if (!sightingMarkersLayerRef.current) return;
-        fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
-            if (tempSightingPin && mapRef.current) { mapRef.current.removeLayer(tempSightingPin); setTempSightingPin(null); }
-            sightingMarkersLayerRef.current?.clearLayers();
-            sightings.forEach((s: any) => {
-                const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
-                L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-            });
-        }).catch(e => console.error("Error fetching sightings:", e));
-    }, [tempSightingPin]);
-    
     useEffect(() => {
-        const fetchAllData = async () => {
-            try {
-                const forecastResponse = await fetch(FORECAST_API_URL);
-                if (!forecastResponse.ok) throw new Error('Forecast API fetch failed');
-                const forecastData = await forecastResponse.json();
+        const apiCache: Record<string, any> = {};
+        const fetchAndCache = async (url: string) => {
+            const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
+            if (apiCache[cacheBustedUrl]) return apiCache[cacheBustedUrl];
+            const res = await fetch(cacheBustedUrl);
+            if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+            const data = await res.json();
+            apiCache[cacheBustedUrl] = data;
+            return data;
+        };
 
-                const { currentForecast, historicalData } = forecastData;
+        const fetchAllData = async () => {
+            // Fetch main forecast data
+            try {
+                const data = await fetchAndCache(FORECAST_API_URL);
+                const { currentForecast, historicalData } = data;
                 setAuroraScore(currentForecast.spotTheAuroraForecast);
                 setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
                 const score = currentForecast.spotTheAuroraForecast;
                 if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
-                
                 const sortedHistory = (historicalData || []).sort((a: any, b: any) => a.timestamp - b.timestamp);
                 const baseScores = sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.baseScore }));
                 const finalScores = sortedHistory.map((item: any) => ({ x: item.timestamp, y: item.finalScore }));
                 setAllAuroraData({ base: baseScores, real: finalScores });
+            } catch (e) { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }
 
-            } catch (e) {
-                console.error("Error fetching main forecast data:", e);
-                setLastUpdated('Update failed');
-            }
+            // Fetch gauge data
+            Object.keys(GAUGE_API_ENDPOINTS).forEach(async key => {
+                const type = key as keyof typeof GAUGE_API_ENDPOINTS;
+                try {
+                    const endpoint = GAUGE_API_ENDPOINTS[type];
+                    const data = await fetchAndCache(endpoint);
+                    let value: number | null, lastUpdatedStr: string;
+                    if (type === 'power') {
+                        const latest = data.values[data.values.length - 1];
+                        value = parseFloat(latest.value);
+                        lastUpdatedStr = latest.lastUpdated;
+                    } else {
+                        const headers = data[0]; const colName = type === 'bz' ? 'bz_gsm' : type;
+                        const valIdx = headers.indexOf(colName); const timeIdx = headers.indexOf('time_tag');
+                        const latestRow = data.slice(1).reverse().find((r: any) => parseFloat(r[valIdx]) > -9999);
+                        if (!latestRow) { value = null; lastUpdatedStr = new Date().toISOString(); }
+                        else { value = parseFloat(latestRow[valIdx]); lastUpdatedStr = latestRow[timeIdx]; }
+                    }
+                    const style = getGaugeStyle(value, type);
+                    const unit = type === 'speed' ? 'km/s' : type === 'density' ? 'p/cm³' : type === 'power' ? 'GW' : 'nT';
+                    setGaugeData(prev => ({ ...prev, [type]: { value: value ? `${value.toFixed(1)}` : '...', unit, ...style, lastUpdated: `Updated: ${formatNZTimestamp(lastUpdatedStr)}` } }));
+                } catch (e) { console.error(`Error updating gauge ${type}:`, e); }
+            });
+            
+            // Fetch Magnetic Data
+            try {
+                const data = await fetchAndCache(NOAA_MAG_URL);
+                const headers = data[0];
+                const timeIdx = headers.indexOf('time_tag');
+                const btIdx = headers.indexOf('bt');
+                const bzIdx = headers.indexOf('bz_gsm');
+                const points = data.slice(1)
+                    .map((r: any) => ({ time: new Date(r[timeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null }))
+                    .sort((a: any, b: any) => a.time - b.time);
+                setAllMagneticData(points);
+            } catch(e) { console.error("Error fetching magnetic chart data:", e); }
         };
-
+        
         fetchAllData();
         const interval = setInterval(fetchAllData, 120000);
-        return () => clearInterval(interval);
-    }, []);
-
-    useEffect(() => {
-        const fetchGaugeData = async (type: keyof typeof GAUGE_API_ENDPOINTS, url: string) => {
-            try {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                let value: number, lastUpdatedStr: string;
-
-                if (type === 'power') {
-                    const latest = data.values[data.values.length - 1];
-                    value = parseFloat(latest.value);
-                    lastUpdatedStr = latest.lastUpdated;
-                } else {
-                    const headers = data[0];
-                    const colName = type === 'bz' ? 'bz_gsm' : type;
-                    const valIdx = headers.indexOf(colName);
-                    const timeIdx = headers.indexOf('time_tag');
-                    const latestRow = data.slice(1).reverse().find((r: any) => parseFloat(r[valIdx]) > -9999);
-                    if (!latestRow) return;
-                    value = parseFloat(latestRow[valIdx]);
-                    lastUpdatedStr = latestRow[timeIdx];
-                }
-                const style = getGaugeStyle(value, type);
-                const unit = type === 'speed' ? 'km/s' : type === 'density' ? 'p/cm³' : type === 'power' ? 'GW' : 'nT';
-                setGaugeData(prev => ({ ...prev, [type]: { value: `${value.toFixed(1)}`, unit, ...style, lastUpdated: `Updated: ${formatNZTimestamp(lastUpdatedStr)}` } }));
-            } catch (e) {
-                console.error(`Error fetching gauge data for ${type}:`, e);
-            }
-        };
-
-        const fetchAllGauges = () => {
-            Object.entries(GAUGE_API_ENDPOINTS).forEach(([key, url]) => {
-                fetchGaugeData(key as keyof typeof GAUGE_API_ENDPOINTS, url);
-            });
-        };
-        fetchAllGauges();
-        const interval = setInterval(fetchAllGauges, 120000);
         return () => clearInterval(interval);
     }, [getGaugeStyle]);
     
@@ -260,6 +249,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         }
     }, [allMagneticData]);
 
+    const fetchAndDisplaySightings = useCallback(() => {
+        if (!sightingMarkersLayerRef.current) return;
+        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`).then(res => res.json()).then(sightings => {
+            if (tempSightingPin && mapRef.current) { mapRef.current.removeLayer(tempSightingPin); setTempSightingPin(null); }
+            sightingMarkersLayerRef.current?.clearLayers();
+            sightings.forEach((s: any) => {
+                const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
+                L.marker([s.lat, s.lng], { icon: emojiIcon }).addTo(sightingMarkersLayerRef.current!).bindPopup(`<b>${s.status.charAt(0).toUpperCase() + s.status.slice(1)}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+            });
+        }).catch(e => console.error("Error fetching sightings:", e));
+    }, [tempSightingPin]);
+    
     const sendReport = useCallback(async (lat: number, lng: number, status: string) => {
         setSightingStatus({ loading: true, message: LOADING_PUNS[Math.floor(Math.random() * LOADING_PUNS.length)] });
         const tempIcon = L.divIcon({ html: SIGHTING_EMOJIS[status] || '❓', className: 'sighting-emoji-icon opacity-50', iconSize: [24,24] });
