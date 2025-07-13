@@ -22,12 +22,12 @@ const getCssVar = (name: string): string => {
 };
 
 const getColorForFlareClass = (classType: string): { background: string, text: string } => {
-    const type = classType[0].toUpperCase();
+    const type = classType ? classType[0].toUpperCase() : 'U';
     const magnitude = parseFloat(classType.substring(1));
 
     if (type === 'X') {
         if (magnitude >= 5) {
-            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' }; // Pink
+            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' }; // Hot Pink
         }
         return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' }; // Purple
     }
@@ -37,7 +37,7 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
     if (type === 'C') {
         return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' }; // Yellow
     }
-    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B
+    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B/Unknown
 };
 
 
@@ -80,7 +80,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
-    const [xrayChartData, setXrayChartData] = useState<any>({ labels: [], datasets: [] });
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
@@ -120,7 +119,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 setLoadingXray(null);
             }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
     }, []);
-
+    
     const fetchFlares = useCallback(async () => {
         setLoadingFlares('Loading solar flares...');
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -131,7 +130,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); return; }
+            if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); setSolarFlares([]); return; }
             const processedData = data.map((flare: any) => ({
                 ...flare,
                 hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false,
@@ -168,12 +167,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         return () => clearInterval(interval);
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
 
-    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
+    const xrayChartOptions: ChartOptions<'line'> = useMemo(() => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
-
         const annotations: any = {};
-        
         const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -190,23 +187,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         solarFlares.forEach(flare => {
             const peakTime = new Date(flare.peakTime).getTime();
             const classType = flare.classType || '';
-            const fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(classType[0]) * -1) * parseFloat(classType.substring(1));
-            
-            if (peakTime > startTime && fluxValue >= 1e-5) { // M1 or greater
-                if (visibleAnnotations[flare.flareID] !== false) {
+            const classChar = classType[0];
+            if (classChar === 'M' || classChar === 'X') {
+                if (peakTime > startTime && visibleAnnotations[flare.flareID] !== false) {
+                    const magnitude = parseFloat(classType.substring(1));
+                    const fluxValue = 1e-8 * Math.pow(10, "XMCBA".indexOf(classChar)) * magnitude;
                     annotations[flare.flareID] = {
-                        type: 'label',
-                        xValue: peakTime,
-                        yValue: fluxValue,
+                        type: 'label', xValue: peakTime, yValue: fluxValue,
                         backgroundColor: 'rgba(30,41,59,0.7)',
-                        borderColor: getColorForFlux(fluxValue),
-                        borderRadius: 4,
-                        borderWidth: 1,
-                        content: flare.classType,
-                        color: 'white',
-                        font: { size: 10, weight: 'bold' },
-                        yAdjust: -15,
-                        callout: { enabled: true, position: 'bottom', side: 5 },
+                        borderColor: getColorForFlareClass(flare.classType).background,
+                        borderRadius: 4, borderWidth: 1, content: flare.classType,
+                        color: 'white', font: { size: 10, weight: 'bold' },
+                        yAdjust: -15, callout: { enabled: true, position: 'bottom', side: 5 },
                         flareId: flare.flareID
                     };
                 }
@@ -223,9 +215,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     onClick: (e: any, elements: any) => {
                         if (elements[0]) {
                             const flareId = elements[0].options.flareId;
-                            if (flareId) {
-                                setVisibleAnnotations(prev => ({...prev, [flareId]: false}));
-                            }
+                            if (flareId) setVisibleAnnotations(prev => ({...prev, [flareId]: false}));
                         }
                     }
                 }
@@ -239,13 +229,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     
     const xrayChartData = useMemo(() => {
         if (allXrayData.length === 0) return { labels: [], datasets: [] };
-        const now = Date.now();
-        const startTime = now - xrayTimeRange;
-        const filteredData = allXrayData.filter(d => d.time >= startTime);
         return {
-            labels: filteredData.map(d => d.time),
             datasets: [{
-                label: 'Short Flux (0.1-0.8 nm)', data: filteredData.map(d => d.short),
+                label: 'Short Flux (0.1-0.8 nm)', data: allXrayData.map(d => ({x: d.time, y: d.short})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
                 segment: {
                     borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
@@ -253,7 +239,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 }
             }],
         };
-    }, [allXrayData, xrayTimeRange]);
+    }, [allXrayData]);
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
@@ -282,7 +268,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
                         <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {xrayChartData.labels?.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                            {xrayChartData.datasets.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
