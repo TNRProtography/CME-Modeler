@@ -204,7 +204,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
                         <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares</h2>
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                            {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> : solarFlares.length > 0 ? solarFlares.map((flare) => <li key={flare.flareID} className="bg-neutral-800 p-2 rounded text-sm"><strong className={`px-2 py-0.5 rounded text-black class-${flare.classType[0]}`}>{flare.classType}</strong> at {formatTimestamp(flare.peakTime)}</li>) : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
+                            {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> : solarFlares.length > 0 ? solarFlares.map((flare) => <li key={flare.flareID} className="bg-neutral-800 p-2 rounded text-sm"><strong className={`px-2 py-0.5 rounded text-black class-${flare.classType[0]}`}>{flare.classType}</strong> at {formatNZTimestamp(flare.peakTime)}</li>) : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
                         </ul>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
