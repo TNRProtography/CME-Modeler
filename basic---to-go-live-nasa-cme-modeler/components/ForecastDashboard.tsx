@@ -133,7 +133,53 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
 
-    // --- DATA FETCHING ---
+    const createChartOptions = useCallback((rangeMs: number): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - rangeMs;
+        const midnightAnnotations: any = {};
+        const nzOffset = 12 * 3600000;
+        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+        
+        for (let d = startDayNZ; d < now; d += 24 * 3600000) {
+            if (d > startTime) {
+                midnightAnnotations[`line-${d}`] = {
+                    type: 'line', xMin: d, xMax: d,
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
+                };
+            }
+        }
+        
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false }, annotation: { annotations: midnightAnnotations } },
+            scales: { 
+                x: { type: 'time', adapters: { date: { locale: 'en-NZ' } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                y: { ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } } 
+            }
+        };
+    }, []);
+    
+    useEffect(() => {
+        if (allAuroraData.base.length > 0) {
+            setAuroraChartOptions(createChartOptions(auroraTimeRange));
+            setAuroraChartData({
+                labels: allAuroraData.real.map(d => d.time),
+                datasets: [ { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Real Score', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } ]
+            });
+        }
+    }, [allAuroraData, auroraTimeRange, createChartOptions]);
+
+    useEffect(() => {
+        if (allMagneticData.length > 0) {
+            setMagneticChartOptions(createChartOptions(magneticTimeRange));
+            setMagneticChartData({
+                labels: allMagneticData.map(p => p.time),
+                datasets: [ { label: 'Bt', data: allMagneticData.map(p => p.bt), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Bz', data: allMagneticData.map(p => p.bz), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
+            });
+        }
+    }, [allMagneticData, magneticTimeRange, createChartOptions]);
+
     const fetchAllData = useCallback(async () => {
         apiDataCache.current = {}; 
         
@@ -146,7 +192,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                     const tnrData = await tnrRes.json(); const basicData = await basicRes.json();
                     const score = parseFloat(tnrData.values[tnrData.values.length - 1]?.value);
                     setAuroraScore(score); setLastUpdated(`Last Updated: ${formatNZTimestamp(basicData.values[basicData.values.length - 1]?.lastUpdated)}`);
-                    if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant auroral substorm.');
+                    if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
                 } catch(e) { console.error("Error fetching sensor data:", e); setLastUpdated('Update failed'); }
             })(),
             
@@ -196,53 +242,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     // --- LIFECYCLE HOOKS ---
     useEffect(() => { fetchAllData(); const interval = setInterval(fetchAllData, 120000); return () => clearInterval(interval); }, [fetchAllData]);
 
-    const createChartOptions = useCallback((rangeMs: number): ChartOptions<'line'> => {
-        const now = Date.now();
-        const startTime = now - rangeMs;
-        const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000;
-        
-        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-
-        for (let d = startDayNZ; d < now; d += 24 * 3600000) {
-            if (d > startTime) {
-                midnightAnnotations[`line-${d}`] = {
-                    type: 'line', xMin: d, xMax: d,
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
-                };
-            }
-        }
-        
-        return {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false }, annotation: { annotations: midnightAnnotations } },
-            scales: { x: { type: 'time', adapters: { date: { locale: 'en-NZ' } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                      y: { ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } } }
-        };
-    }, []);
-    
-    useEffect(() => {
-        if (allAuroraData.base.length > 0) {
-            setAuroraChartOptions(createChartOptions(auroraTimeRange));
-            setAuroraChartData({
-                labels: allAuroraData.real.map(d => d.time),
-                datasets: [ { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Real Score', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } ]
-            });
-        }
-    }, [allAuroraData, auroraTimeRange, createChartOptions]);
-
-    useEffect(() => {
-        if (allMagneticData.length > 0) {
-            setMagneticChartOptions(createChartOptions(magneticTimeRange));
-            setMagneticChartData({
-                labels: allMagneticData.map(p => p.time),
-                datasets: [ { label: 'Bt', data: allMagneticData.map(p => p.bt), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Bz', data: allMagneticData.map(p => p.bz), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
-            });
-        }
-    }, [allMagneticData, magneticTimeRange, createChartOptions]);
-
-    // --- MAP & SIGHTING LOGIC ---
     const fetchAndDisplaySightings = useCallback(() => {
         if (!sightingMarkersLayerRef.current) return;
         fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
@@ -254,34 +253,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             });
         }).catch(e => console.error("Error fetching sightings:", e));
     }, [tempSightingPin]);
-    
-    useEffect(() => {
-        if (!mapContainerRef.current || mapRef.current) return;
-        const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
-        sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
-        mapRef.current = map;
-
-        map.on('click', (e) => {
-            if (isPlacingManualPin.current) {
-                if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
-                manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
-                const popupNode = document.createElement('div');
-                popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
-                popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
-                    const finalLatLng = manualPinMarkerRef.current!.getLatLng();
-                    sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
-                    if (manualPinMarkerRef.current) manualPinMarkerRef.current.closePopup();
-                });
-                manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
-            }
-        });
-        
-        fetchAndDisplaySightings();
-        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
-
-        return () => { map.remove(); mapRef.current = null; clearInterval(sightingInterval); };
-    }, [fetchAndDisplaySightings, sendReport]);
     
     const sendReport = useCallback(async (lat: number, lng: number, status: string) => {
         setSightingStatus({ loading: true, message: LOADING_PUNS[Math.floor(Math.random() * LOADING_PUNS.length)] });
@@ -342,6 +313,34 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         return () => clearInterval(interval);
     }, []);
 
+    useEffect(() => {
+        if (!mapContainerRef.current || mapRef.current) return;
+        const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+        sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
+        mapRef.current = map;
+
+        map.on('click', (e) => {
+            if (isPlacingManualPin.current) {
+                if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
+                manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
+                const popupNode = document.createElement('div');
+                popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
+                popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
+                    const finalLatLng = manualPinMarkerRef.current!.getLatLng();
+                    sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
+                    if (manualPinMarkerRef.current) manualPinMarkerRef.current.closePopup();
+                });
+                manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
+            }
+        });
+        
+        fetchAndDisplaySightings();
+        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
+
+        return () => { map.remove(); mapRef.current = null; clearInterval(sightingInterval); };
+    }, [fetchAndDisplaySightings, sendReport]);
+    
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
              <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
