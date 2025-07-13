@@ -297,12 +297,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
                     <div className="col-span-12 card bg-neutral-950/80 p-6">
                         <div className="flex flex-col lg:flex-row gap-6">
-                            <div className="lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
-                                <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full bg-neutral-800">
+                            <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
+                                <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full">
                                     <TileLayer
                                         attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
                                         url="https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}{r}.png"
-                                        subdomains="abcd"
                                     />
                                     <MarkerClusterGroup chunkedLoading>
                                         {allSightings.map(s => { const si = SIGHTING_TYPES[s.status]; if (!si || typeof s.lat !== 'number' || typeof s.lng !== 'number') return null; return (<Marker key={s.id} position={[s.lat, s.lng]} icon={createSightingIcon(si.emoji)}><Popup><b>{si.label}</b> by {s.name || 'Anonymous'}<br />at {new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Popup></Marker>); })}
@@ -313,7 +312,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 </MapContainer>
                             </div>
                             
-                            <div className="lg:w-1/3 flex flex-col gap-4">
+                            <div className="w-full lg:w-1/3 flex flex-col gap-4">
                                 <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
                                 <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
                                     {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
