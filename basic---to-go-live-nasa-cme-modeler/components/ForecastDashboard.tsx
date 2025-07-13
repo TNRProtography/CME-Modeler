@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import L from 'leaflet';
-// These are peer dependencies for the plugins loaded via CDN in index.html
-import 'leaflet.markercluster'; 
-import 'leaflet.heat'; 
-
-// Import the CSS for leaflet and plugins
+// CSS files are imported directly
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -46,7 +42,7 @@ const GAUGE_THRESHOLDS = {
 const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
 const GAUGE_EMOJIS = { gray: '😐', yellow: '🙂', orange: '😊', red: '😀', purple: '😍', pink: '🤩', error: '❓' };
 
-// --- Helper Components ---
+// --- Reusable UI Components ---
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
@@ -74,6 +70,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
         </div>
     );
 };
+
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
     // --- State Declarations ---
@@ -104,14 +101,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markerClusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
-    const heatmapLayerRef = useRef<any | null>(null);
+    const heatmapLayerRef = useRef<any | null>(null); // Leaflet.heat types are not standard, so 'any' is pragmatic
     const userPinRef = useRef<L.Marker | null>(null);
     const [allSightings, setAllSightings] = useState<any[]>([]);
     const [sightingPage, setSightingPage] = useState(0);
     const [reporterName, setReporterName] = useState<string>(() => localStorage.getItem('auroraReporterName') || '');
     const [reportingState, setReportingState] = useState<ReportingState>('idle');
     const [mapViewType, setMapViewType] = useState<MapViewType>('markers');
-
+    
     // --- Tooltip Content ---
     const tooltipContent = {
         'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
@@ -124,7 +121,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'epam': { title: 'ACE EPAM', content: `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.` },
         'moon': { title: 'Moon Illumination', content: `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.` }
     };
-
+    
     // --- Utility and Data Processing Functions ---
     const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
     const closeModal = useCallback(() => setModalState(null), []);
@@ -157,59 +154,123 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }, []);
     const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange, { min: 0, max: 100 }), [auroraTimeRange, createChartOptions]);
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
-    
+
     // --- Data Fetching & Processing Effects ---
     useEffect(() => {
+        setIsLoading(true);
         Promise.all([
-          // Main forecast data
-          fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
-          // NOAA data
-          fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
-          fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-          // EPAM Image
-          Promise.resolve(`${ACE_EPAM_URL}?_=${Date.now()}`)
-        ]).then(([forecast, plasma, mag, epamUrl]) => {
-          // Process forecast data
-          // ...
-          setAuroraScore(forecast.currentForecast.spotTheAuroraForecast);
-          setLastUpdated(`Last Updated: ${formatNZTimestamp(forecast.currentForecast.lastUpdated)}`);
-          // ... and so on for all dashboard state
+            fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json())
+        ]).then(([forecastData, plasmaData, magData]) => {
+            // Process forecast data
+            const { currentForecast, historicalData } = forecastData;
+            setAuroraScore(currentForecast.spotTheAuroraForecast);
+            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
+            setAuroraBlurb(getAuroraBlurb(currentForecast.spotTheAuroraForecast));
+            setAllAuroraData({
+                base: (historicalData || []).map((item: any) => ({ x: item.timestamp, y: item.baseScore })),
+                real: (historicalData || []).map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
+            });
 
-          // Process NOAA data
-          // ...
-          
-          setEpamImageUrl(epamUrl);
+            // Process gauge data from forecast
+            const {bt, bz} = currentForecast.inputs.magneticField;
+            setGaugeData(prev => ({
+                ...prev,
+                power: { ...prev.power, value: currentForecast.inputs.hemisphericPower.toFixed(1), ...getGaugeStyle(currentForecast.inputs.hemisphericPower, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
+                bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt') },
+                bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz') },
+                moon: getMoonData(currentForecast.inputs.moonReduction, currentForecast.inputs.owmDataLastFetched)
+            }));
+            
+            // Process NOAA plasma data
+            const plasmaHeaders = plasmaData[0];
+            const speedIdx = plasmaHeaders.indexOf('speed');
+            const densityIdx = plasmaHeaders.indexOf('density');
+            const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
+            const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r[speedIdx]) > -9999);
+            const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
+            const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+            const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx]) : Date.now();
+            setGaugeData(prev => ({
+                ...prev,
+                speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` },
+                density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` }
+            }));
+
+            // Process NOAA mag data for chart
+            const magHeaders = magData[0];
+            const magBtIdx = magHeaders.indexOf('bt');
+            const magBzIdx = magHeaders.indexOf('bz_gsm');
+            const magTimeIdx = magHeaders.indexOf('time_tag');
+            setAllMagneticData(magData.slice(1).map((r: any[]) => ({
+                time: new Date(r[magTimeIdx]).getTime(),
+                bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null,
+                bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null
+            })));
+
         }).catch(error => {
-          console.error("Dashboard data failed to load:", error);
+            console.error("Dashboard data failed to load:", error);
+            setAuroraBlurb("Could not load forecast data.");
         }).finally(() => {
-          setIsLoading(false);
+            setIsLoading(false);
         });
+        
+        setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
+
     }, []);
+
+    const getAuroraBlurb = (score: number) => {
+        if (score < 10) return 'Little to no auroral activity.';
+        if (score < 25) return 'Minimal auroral activity likely.';
+        if (score < 40) return 'Clear auroral activity visible in cameras.';
+        if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.';
+        if (score < 80) return 'Good chance of naked-eye color and structure.';
+        return 'High probability of a significant substorm.';
+    };
+
+    const getMoonData = (moonReduction: number, timestamp: number) => {
+        const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100);
+        let moonEmoji = '🌑';
+        if (moonIllumination > 95) moonEmoji = '🌕';
+        else if (moonIllumination > 55) moonEmoji = '🌖';
+        else if (moonIllumination > 45) moonEmoji = '🌗';
+        else if (moonIllumination > 5) moonEmoji = '🌒';
+        return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' };
+    };
     
     useEffect(() => {
         if (allAuroraData.base.length) {
-            setAuroraChartData({ datasets: [ /* ... */ ] });
+            setAuroraChartData({
+                datasets: [
+                    { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0 },
+                    { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 2, pointRadius: 0, fill: 'origin', backgroundColor: 'rgba(255, 99, 71, 0.2)' }
+                ]
+            });
         }
     }, [allAuroraData]);
 
     useEffect(() => {
         if (allMagneticData.length) {
-            setMagneticChartData({ datasets: [ /* ... */ ] });
+            setMagneticChartData({
+                datasets: [
+                    { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0 },
+                    { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0 }
+                ]
+            });
         }
     }, [allMagneticData]);
 
     // --- Map and Sighting Logic ---
     const fetchAndDisplaySightings = useCallback(() => {
-        if (!markerClusterGroupRef.current || !heatmapLayerRef.current) return;
-
-        fetch(`${SIGHTING_API_ENDPOINT}?_=${new Date().getTime()}`)
+        if (!markerClusterGroupRef.current || !heatmapLayerRef.current) { return; }
+        fetch(`${SIGHTING_API_ENDPOINT}?_=${Date.now()}`)
             .then(res => res.ok ? res.json() : Promise.reject(new Error(`API Error ${res.status}`)))
             .then(sightings => {
-                if (!Array.isArray(sightings)) return;
-                
+                if (!Array.isArray(sightings)) { return; }
                 markerClusterGroupRef.current?.clearLayers();
                 const heatPoints: [number, number, number][] = [];
-                const sortedSightings = [...sightings].sort((a, b) => b.timestamp - a.timestamp);
+                const sortedSightings = [...sightings].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                 setAllSightings(sortedSightings);
 
                 sortedSightings.forEach(s => {
@@ -231,7 +292,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) return;
 
-        const L = window.L as any; // Access Leaflet from global scope
+        const L = window.L as any;
         const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', maxZoom: 20 }).addTo(map);
 
@@ -251,11 +312,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         
         mapRef.current = map;
         fetchAndDisplaySightings();
-        const interval = setInterval(fetchAndDisplaySightings, 60000);
+        const interval = setInterval(fetchAndDisplaySightings, 60000); // Refresh every minute
+        
         return () => {
-          map.remove();
-          clearInterval(interval);
-        }
+            map.remove();
+            clearInterval(interval);
+        };
     }, [fetchAndDisplaySightings, reportingState]);
 
     const handleStartReporting = () => {
@@ -295,15 +357,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const toggleMapView = () => {
         const map = mapRef.current;
         if (!map || !markerClusterGroupRef.current || !heatmapLayerRef.current) return;
-        
         if (mapViewType === 'markers') {
-            map.removeLayer(markerClusterGroupRef.current);
-            map.addLayer(heatmapLayerRef.current);
-            setMapViewType('heatmap');
+            map.removeLayer(markerClusterGroupRef.current); map.addLayer(heatmapLayerRef.current); setMapViewType('heatmap');
         } else {
-            map.removeLayer(heatmapLayerRef.current);
-            map.addLayer(markerClusterGroupRef.current);
-            setMapViewType('markers');
+            map.removeLayer(heatmapLayerRef.current); map.addLayer(markerClusterGroupRef.current); setMapViewType('markers');
         }
     };
 
@@ -321,12 +378,37 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                      <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - West Coast Aurora Forecast</h1>
                 </header>
                 <main className="grid grid-cols-12 gap-6">
-                    {/* ... Top dashboard cards (Forecast, Gauges) go here ... */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
+                        <div>
+                            <div className="flex items-center mb-4">
+                                <h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2>
+                                <button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
+                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray }}></div></div>
+                            <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
+                        </div>
+                        <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
+                    </div>
 
-                    {/* --- Sighting Hub --- */}
+                    <div className="col-span-12 grid grid-cols-6 gap-5">
+                        {Object.entries(gaugeData).map(([key, data]) => (
+                            <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
+                                <div className="flex justify-center items-center">
+                                    <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                    <button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                </div>
+                                <div className="text-3xl font-bold my-2">{data.value} <span className="text-lg">{data.unit}</span></div>
+                                <div className="text-3xl my-2">{data.emoji}</div>
+                                <div className="w-full bg-neutral-700 rounded-full h-2"><div className="h-2 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                                <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {/* Sighting Hub */}
                     <div className="col-span-12 card bg-neutral-950/80 p-6">
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            {/* Map Area */}
                             <div className="lg:col-span-8 relative min-h-[500px] rounded-lg overflow-hidden">
                                 <div ref={mapContainerRef} className="absolute inset-0 w-full h-full bg-neutral-800 border border-neutral-700"></div>
                                 <div className="absolute top-2 right-2 flex flex-col gap-2 z-[1000]">
@@ -337,7 +419,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[900]">
                                         <div className="text-center text-white max-w-sm">
                                             <h3 className="text-2xl font-bold">Reporting Sighting</h3>
-                                            {reportingState === 'placing_pin' && <p className="mt-2">Click your location on the map, then click "Confirm Location" in the panel to the right.</p>}
+                                            {reportingState === 'placing_pin' && <p className="mt-2">Click on the map to place your pin, then click "Confirm Location" in the panel to the right.</p>}
                                             {reportingState === 'confirming_location' && <p className="mt-2">Your location is locked. Please select what you saw from the panel on the right.</p>}
                                             {reportingState === 'submitting' && <div className="mt-4"><LoadingSpinner /></div>}
                                         </div>
@@ -345,7 +427,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 )}
                             </div>
                             
-                            {/* Sighting Panel */}
                             <div className="lg:col-span-4 flex flex-col gap-4">
                                 <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
                                 
@@ -361,7 +442,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                     {reportingState === 'placing_pin' && (
                                         <div className="text-center space-y-3">
                                             <p className="text-sm font-semibold">Step 1: Confirm Your Location</p>
-                                            <p className="text-xs text-neutral-400">Drag the pin to adjust your location if needed.</p>
+                                            <p className="text-xs text-neutral-400">Drag the 📍 pin to adjust your location if needed.</p>
                                             <button onClick={handleConfirmLocation} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button>
                                             <button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button>
                                         </div>
@@ -386,25 +467,73 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                             <span className="text-3xl">{SIGHTING_TYPES[sighting.status]?.emoji || '❓'}</span>
                                             <div>
                                                 <p className="font-semibold text-neutral-200">{SIGHTING_TYPES[sighting.status]?.label} by <span className="text-sky-400">{sighting.name || 'Anonymous'}</span></p>
-                                                <p className="text-sm text-neutral-400">{sighting.location || 'Unknown'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                <p className="text-sm text-neutral-400">{sighting.location || 'Unknown Location'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                             </div>
                                         </div>
                                     )) : <p className="text-center text-neutral-500 italic pt-8">No recent sightings.</p>}
                                 </div>
                                 {allSightings.length > 5 && (
                                     <div className="flex justify-between items-center mt-2 flex-shrink-0">
-                                        <button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 rounded-md disabled:opacity-50">Prev</button>
-                                        <span className="text-xs">Page {sightingPage + 1}</span>
-                                        <button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 rounded-md disabled:opacity-50">Next</button>
+                                        <button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Prev</button>
+                                        <span className="text-xs">Page {sightingPage + 1} of {Math.ceil(allSightings.length / 5)}</span>
+                                        <button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Next</button>
                                     </div>
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    {/* ... Other dashboard cards (Charts, Windy, etc.) go here ... */}
+                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
+                        <div className="flex-grow relative mt-2">
+                            {auroraChartData.datasets.length > 0 && auroraChartData.datasets[0]?.data.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                        </div>
+                    </div>
+                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-white text-center">Magnetic Field (Last {magneticTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => {setMagneticTimeRange(duration); setMagneticTimeLabel(label)}} selected={magneticTimeRange} />
+                         <div className="flex-grow relative mt-2">
+                            {magneticChartData.datasets.length > 0 && magneticChartData.datasets[0]?.data.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                        </div>
+                    </div>
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
+                        <div className="relative w-full" style={{paddingBottom: "56.25%"}}>
+                            <iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe>
+                        </div>
+                    </div>
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <h3 className="text-xl font-semibold text-center text-white mb-4">Queenstown Live Camera</h3>
+                        <div className="relative w-full" style={{paddingBottom: "56.25%"}}>
+                            <iframe title="Live View from Queenstown" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://queenstown.roundshot.com/#/"></iframe>
+                        </div>
+                    </div>
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <div className="flex justify-center items-center">
+                           <h2 className="text-xl font-semibold text-white text-center">ACE EPAM (Last 3 Days)</h2>
+                           <button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                        </div>
+                         <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]">
+                            <img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" />
+                        </div>
+                    </div>
                 </main>
-            </div>
+                <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
+                    <p className="max-w-3xl mx-auto leading-relaxed">
+                        This dashboard provides a highly localized, 2-hour aurora forecast specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.
+                    </p>
+                    <p className="max-w-3xl mx-auto leading-relaxed mt-4">
+                        <strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.
+                    </p>
+                    <div className="mt-8 text-xs text-neutral-500">
+                        <p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a> | Live Camera by <a href="https://queenstown.roundshot.com/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Roundshot</a></p>
+                        <p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p>
+                    </div>
+                </footer>
+             </div>
+            {modalState && <InfoModal {...modalState} onClose={closeModal} />}
         </div>
     );
 };
