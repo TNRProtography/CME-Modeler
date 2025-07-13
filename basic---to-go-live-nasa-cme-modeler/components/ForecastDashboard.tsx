@@ -51,12 +51,12 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
+const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '4 Hr', hours: 4 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000, label)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
                     {label}
                 </button>
             ))}
@@ -83,6 +83,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const [magneticChartData, setMagneticChartData] = useState<any>({ datasets: [] });
 
     const [auroraTimeRange, setAuroraTimeRange] = useState<number>(2 * 3600000);
+    const [auroraTimeLabel, setAuroraTimeLabel] = useState<string>('2 Hr');
     const [magneticTimeRange, setMagneticTimeRange] = useState<number>(2 * 3600000);
 
     const [sightingStatus, setSightingStatus] = useState<{ loading: boolean; message: string } | null>(null);
@@ -129,7 +130,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
 
-    const createChartOptions = useCallback((rangeMs: number): ChartOptions<'line'> => {
+    const createChartOptions = useCallback((rangeMs: number, yMin?: number, yMax?: number): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - rangeMs;
         const midnightAnnotations: any = {};
@@ -150,27 +151,31 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false }, annotation: { annotations: midnightAnnotations } },
             scales: { 
                 x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                y: { ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } } 
+                y: { min: yMin, max: yMax, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } } 
             }
         };
     }, []);
     
-    const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange), [auroraTimeRange, createChartOptions]);
+    const auroraOptions = useMemo(() => {
+        const options = createChartOptions(auroraTimeRange, 0, 100);
+        return options;
+    }, [auroraTimeRange, createChartOptions]);
+
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
 
     useEffect(() => {
-        const apiCache: Record<string, any> = {};
-        const fetchAndCache = async (url: string) => {
-            const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
-            if (apiCache[cacheBustedUrl]) return apiCache[cacheBustedUrl];
-            const res = await fetch(cacheBustedUrl);
-            if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
-            const data = await res.json();
-            apiCache[cacheBustedUrl] = data;
-            return data;
-        };
-
         const fetchAllData = async () => {
+            const apiCache: Record<string, any> = {};
+            const fetchAndCache = async (url: string) => {
+                const cacheBustedUrl = `${url}?_=${new Date().getTime()}`;
+                if (apiCache[cacheBustedUrl]) return apiCache[cacheBustedUrl];
+                const res = await fetch(cacheBustedUrl);
+                if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+                const data = await res.json();
+                apiCache[cacheBustedUrl] = data;
+                return data;
+            };
+
             // Fetch main forecast data
             try {
                 const data = await fetchAndCache(FORECAST_API_URL);
@@ -205,7 +210,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                     }
                     const style = getGaugeStyle(value, type);
                     const unit = type === 'speed' ? 'km/s' : type === 'density' ? 'p/cm³' : type === 'power' ? 'GW' : 'nT';
-                    setGaugeData(prev => ({ ...prev, [type]: { value: value ? `${value.toFixed(1)}` : '...', unit, ...style, lastUpdated: `Updated: ${formatNZTimestamp(lastUpdatedStr)}` } }));
+                    setGaugeData(prev => ({ ...prev, [type]: { value: value ? `${value.toFixed(1)}` : '...', unit, ...style, lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(lastUpdatedStr))}` } }));
                 } catch (e) { console.error(`Error updating gauge ${type}:`, e); }
             });
             
@@ -395,8 +400,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                     ))}
                     
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Aurora Visibility</h2>
-                        <TimeRangeButtons onSelect={setAuroraTimeRange} selected={auroraTimeRange} />
+                        <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
                         <div className="flex-grow relative mt-2">
                             {auroraChartData.datasets[0]?.data ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
