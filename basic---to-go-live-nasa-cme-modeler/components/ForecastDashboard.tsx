@@ -154,10 +154,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         };
     }, []);
     
-    const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange), [auroraTimeRange, createChartOptions]);
-    const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
-    
-    // --- DATA FETCHING & RENDERING ---
     useEffect(() => {
         const apiCache: Record<string, any> = {};
         const fetchAndCache = async (url: string) => {
@@ -190,7 +186,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                 const score = parseFloat(tnrJson.values[tnrJson.values.length - 1]?.value);
                 setAuroraScore(score);
                 setLastUpdated(`Last Updated: ${formatNZTimestamp(basicJson.values[basicJson.values.length - 1]?.lastUpdated)}`);
-                if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant auroral substorm.');
+                if (score < 10) setAuroraBlurb('Little to no auroral activity.'); else if (score < 25) setAuroraBlurb('Minimal auroral activity likely.'); else if (score < 40) setAuroraBlurb('Clear auroral activity visible in cameras.'); else if (score < 50) setAuroraBlurb('Faint auroral glow potentially visible to the naked eye.'); else if (score < 80) setAuroraBlurb('Good chance of seeing naked-eye color and structure.'); else setAuroraBlurb('High probability of a significant substorm.');
                 
                 const process = (arr: any[]) => arr.map((item: any) => ({ x: new Date(item.lastUpdated).getTime(), y: parseFloat(item.value) })).sort((a,b) => a.x - b.x);
                 setAllAuroraData({ base: process(basicJson.values), real: process(tnrJson.values) });
@@ -237,6 +233,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         return () => clearInterval(interval);
     }, [getGaugeStyle]);
     
+    const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange), [auroraTimeRange, createChartOptions]);
+    const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
+
     useEffect(() => {
         if (allAuroraData.base.length > 0) {
             setAuroraChartData({
@@ -257,7 +256,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             });
         }
     }, [allMagneticData]);
-    
+
+    // --- MAP & SIGHTING LOGIC ---
     const fetchAndDisplaySightings = useCallback(() => {
         if (!sightingMarkersLayerRef.current) return;
         fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
