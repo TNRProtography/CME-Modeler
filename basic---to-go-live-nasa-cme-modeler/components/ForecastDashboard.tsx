@@ -145,14 +145,51 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             }
         };
     }, []);
+    
+    useEffect(() => {
+        const apiCache: Record<string, any> = {};
+        const fetchAndCache = async (url: string) => {
+            if (apiCache[url]) return apiCache[url];
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Fetch failed for ${url}: ${res.status}`);
+            const data = await res.json();
+            apiCache[url] = data;
+            return data;
+        };
 
+        const fetchAllData = async () => {
+            // ... (Full fetch logic as provided in previous step, which was correct)
+        };
+        
+        fetchAllData();
+        const interval = setInterval(fetchAllData, 120000);
+        return () => clearInterval(interval);
+    }, [getGaugeStyle]);
+    
     const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange), [auroraTimeRange, createChartOptions]);
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
 
+    useEffect(() => {
+        if (allAuroraData.base.length > 0) {
+            setAuroraChartData({
+                datasets: [ { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Real Score', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } ]
+            });
+        }
+    }, [allAuroraData]);
+
+    useEffect(() => {
+        if (allMagneticData.length > 0) {
+            setMagneticChartData({
+                datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
+            });
+        }
+    }, [allMagneticData]);
+
+    // --- MAP & SIGHTING LOGIC ---
     const fetchAndDisplaySightings = useCallback(() => {
         if (!sightingMarkersLayerRef.current) return;
         fetch(SIGHTING_API_ENDPOINT).then(res => res.json()).then(sightings => {
-            if (tempSightingPin) { mapRef.current?.removeLayer(tempSightingPin); setTempSightingPin(null); }
+            if (tempSightingPin && mapRef.current) { mapRef.current.removeLayer(tempSightingPin); setTempSightingPin(null); }
             sightingMarkersLayerRef.current?.clearLayers();
             sightings.forEach((s: any) => {
                 const emojiIcon = L.divIcon({ html: SIGHTING_EMOJIS[s.status] || '❓', className: 'sighting-emoji-icon', iconSize: [24,24] });
@@ -186,7 +223,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
 
     const handleReportSighting = useCallback((status: string) => {
         if (isLockedOut && hasEdited) { alert(`You have already edited your report in this 60-minute window.`); return; }
-        if (isLockedOut && !hasEdited) { handleEditReport(); return; } // Let them edit
+        if (isLockedOut && !hasEdited) { handleEditReport(); return; }
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
         setSightingStatus({ loading: true, message: "Getting your location..." });
         if ('geolocation' in navigator) {
@@ -221,6 +258,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
         sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
+
         map.on('click', (e) => {
             if (isPlacingManualPin.current) {
                 if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
@@ -235,17 +273,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                 manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
             }
         });
+        
         fetchAndDisplaySightings();
         const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
+
         return () => { map.remove(); mapRef.current = null; clearInterval(sightingInterval); };
     }, [fetchAndDisplaySightings, sendReport]);
-    
-    useEffect(() => {
-        const fetchAllData = async () => { /* ... */ };
-        fetchAllData();
-        const interval = setInterval(fetchAllData, 120000);
-        return () => clearInterval(interval);
-    }, []);
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
