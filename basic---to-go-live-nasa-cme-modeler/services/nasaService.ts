@@ -33,8 +33,13 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
   const shockEvent = cme.linkedEvents.find(e => e.activityID.includes("-GST"));
   if (shockEvent) {
     try {
-      const dateTimeString = shockEvent.activityID.substring(0, shockEvent.activityID.indexOf("-GST"));
-      return new Date(dateTimeString + "Z");
+      // The format is YYYYMMDD-HHMM-GST-NNN
+      const dateTimeString = shockEvent.activityID.substring(0, 13); // "YYYYMMDD-HHMM"
+      const parsedDate = new Date(
+        `${dateTimeString.substring(0,4)}-${dateTimeString.substring(4,6)}-${dateTimeString.substring(6,8)}T${dateTimeString.substring(9,11)}:${dateTimeString.substring(11,13)}:00Z`
+      );
+      if (isNaN(parsedDate.getTime())) return null;
+      return parsedDate;
     } catch (e) {
       console.warn(`Could not parse predicted arrival time from: ${shockEvent.activityID}`, e);
       return null;
@@ -49,7 +54,9 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
       if (analysis.speed != null && analysis.longitude != null && analysis.latitude != null) {
-        const isEarthDirected = Math.abs(analysis.longitude) < 45 && Math.abs(analysis.latitude) < 30;
+        // A CME is considered potentially Earth-directed if its source longitude is within ~45 degrees of Earth's center line (0 degrees)
+        const isEarthDirected = Math.abs(analysis.longitude) < 45;
+        
         modelableCMEs.push({
           id: cme.activityID,
           startTime: new Date(cme.startTime),
@@ -69,33 +76,3 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   });
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
-
-// REMOVED: SolarFlareData interface
-// export interface SolarFlareData {
-//   flrID: string;
-//   beginTime: string;
-//   peakTime: string;
-//   endTime: string | null;
-//   classType: string;
-//   sourceLocation: string;
-//   activeRegionNum: number;
-//   link: string;
-// }
-
-// REMOVED: fetchSolarActivityData function
-// export const fetchSolarActivityData = async () => {
-//   const response = await fetch('/solar-data');
-//   if (!response.ok) {
-//     const errorBody = await response.json().catch(() => ({ error: 'Failed to fetch solar activity data from proxy.' }));
-//     throw new Error(errorBody.error || `Server responded with status ${response.status}`);
-//   }
-//   const data = await response.json();
-//   if (data.error) {
-//     throw new Error(data.error);
-//   }
-//   return {
-//     xray: data.xrayData,
-//     proton: data.protonData,
-//     flares: data.flareData,
-//   };
-// };
