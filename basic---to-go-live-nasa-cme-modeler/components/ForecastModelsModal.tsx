@@ -22,7 +22,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     const fetchEnlilImages = async () => {
       setIsLoadingEnlil(true);
       try {
-        const response = await fetch('https://services.swpc.noaa.gov/products/animations/enlil/enlil_images.txt'); 
+        const response = await fetch(`https://services.swpc.noaa.gov/products/animations/enlil/enlil_images.txt?_=${new Date().getTime()}`);
         if (!response.ok) throw new Error('Failed to fetch Enlil image list');
         
         const text = await response.text();
@@ -55,7 +55,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
   useEffect(() => {
     if (enlilImageUrls.length > 0) {
       intervalRef.current = window.setInterval(() => {
-        setCurrentEnlilImageIndex(prevIndex => (prevIndex + 1) % enlilImageUrls.length);
+        setCurrentEnlilImageIndex((prevIndex: number) => (prevIndex + 1) % enlilImageUrls.length);
       }, 100); 
     }
     return () => {
@@ -73,7 +73,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
       >
         <div 
           className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] text-neutral-300 flex flex-col"
-          onClick={e => e.stopPropagation()}
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
         >
           <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
             <h2 className="text-2xl font-bold text-neutral-200">Other CME Forecast Models</h2>

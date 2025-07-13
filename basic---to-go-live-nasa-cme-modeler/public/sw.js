@@ -1,5 +1,5 @@
 // sw.js - More Robust Version
-const CACHE_NAME = 'cme-modeler-cache-v30'; // Increment version!
+const CACHE_NAME = 'cme-modeler-cache-v31'; // Increment version!
 
 // App Shell: The minimal set of files to get the app running.
 const urlsToCache = [
@@ -7,8 +7,6 @@ const urlsToCache = [
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
-  // '/forecast.html', // REMOVED: Now a React component
-  // '/solar-activity.html', // REMOVED: Now a React component
   '/icons/android-chrome-192x192.png',
   '/icons/android-chrome-512x512.png',
   '/placeholder.png', 
@@ -19,9 +17,8 @@ const urlsToCache = [
 const API_HOSTS = [
   'api.nasa.gov', 
   'services.swpc.noaa.gov', 
+  'spottheaurora.thenamesrock.workers.dev', // CORRECTED: Added the primary forecast API host
   'hemispheric-power.thenamesrock.workers.dev',
-  'tnr-aurora-forecast.thenamesrock.workers.dev',
-  'basic-aurora-forecast.thenamesrock.workers.dev',
   'aurora-sightings.thenamesrock.workers.dev',
   'huxt-bucket.s3.eu-west-2.amazonaws.com',
 ];
@@ -65,13 +62,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Strategy 1: Network First for explicitly listed API hosts.
-  // This ensures data is always fresh, with an offline fallback.
   if (API_HOSTS.includes(url.hostname)) {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {
-          // If fetch is successful, cache the new response for offline use
-          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'opaque') {
+          if (!networkResponse || networkResponse.status !== 200) {
             return networkResponse;
           }
           const responseToCache = networkResponse.clone();
@@ -81,7 +76,6 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         })
         .catch(() => {
-          // If fetch fails (offline), serve the cached version if it exists
           console.warn(`[Service Worker] Network-first fetch failed for ${url.hostname}, serving from cache.`);
           return caches.match(event.request);
         })
@@ -89,42 +83,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // --- Fallback to original logic for non-API requests ---
-
-  // Strategy 2: Network-first for the main HTML page (`index.html`) to get app updates.
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((networkResponse) => {
-          // If fetch is successful, cache the new version
-          if (!networkResponse || networkResponse.status !== 200) {
-            return networkResponse;
-          }
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
-          });
-          return networkResponse;
-        })
-        .catch(() => {
-          // If fetch fails (offline), serve the cached version of the main page
-          console.warn(`[Service Worker] Navigation fetch failed for ${url.pathname}, serving from cache.`);
-          return caches.match(event.request);
-        })
-    );
-    return;
-  }
-
-  // Strategy 3: Cache-first for all other static assets (JS bundles, CSS, images, etc.).
+  // Strategy 2: Cache-first for all other requests.
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
+      // Return cached response if found
       if (cachedResponse) {
         return cachedResponse;
       }
       
-      // Not in cache, fetch from network
+      // Otherwise, fetch from network
       return fetch(event.request).then((networkResponse) => {
-        // Don't cache opaque responses (from third-party CDNs without CORS) or errors
+        // Don't cache opaque responses or errors
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'opaque') {
           return networkResponse;
         }
@@ -136,9 +105,6 @@ self.addEventListener('fetch', (event) => {
         });
         
         return networkResponse;
-      }).catch((error) => {
-        console.error(`[Service Worker] Cache-first network fetch failed for ${url.pathname}:`, error);
-        return new Response('Network error for asset.', { status: 503 });
       });
     })
   );

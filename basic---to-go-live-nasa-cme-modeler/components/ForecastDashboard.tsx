@@ -17,13 +17,6 @@ const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plas
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/';
-const GAUGE_API_ENDPOINTS = {
-  power: 'https://hemispheric-power.thenamesrock.workers.dev/',
-  speed: NOAA_PLASMA_URL,
-  density: NOAA_PLASMA_URL,
-  bt: NOAA_MAG_URL,
-  bz: NOAA_MAG_URL
-};
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
   density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 },
@@ -328,18 +321,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return () => clearInterval(interval);
     }, []);
 
+    // Map initialization effect - runs ONLY ONCE
     useEffect(() => {
         if (mapContainerRef.current && !mapRef.current) {
             const map = L.map(mapContainerRef.current, { center: [-41.2, 172.5], zoom: 5, scrollWheelZoom: true, dragging: !L.Browser.touch, touchZoom: true });
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+            
             sightingMarkersLayerRef.current = L.layerGroup().addTo(map);
             mapRef.current = map;
-            map.on('click', (e) => {
+
+            // Set up click handler for manual pin placement
+            map.on('click', (e: L.LeafletMouseEvent) => {
                 if (isPlacingManualPin.current) {
                     if (manualPinMarkerRef.current) map.removeLayer(manualPinMarkerRef.current);
+                    
                     manualPinMarkerRef.current = L.marker(e.latlng, { draggable: true }).addTo(map);
+
                     const popupNode = document.createElement('div');
                     popupNode.innerHTML = `<p class="text-neutral-300">Confirm & Send Report?</p><button id="confirm-pin-btn" class="sighting-button bg-green-700 w-full mt-2">Confirm</button>`;
+                    
                     popupNode.querySelector('#confirm-pin-btn')?.addEventListener('click', () => {
                         const finalLatLng = manualPinMarkerRef.current!.getLatLng();
                         sendReport(finalLatLng.lat, finalLatLng.lng, manualReportStatus.current!);
@@ -348,11 +348,20 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     manualPinMarkerRef.current.bindPopup(popupNode).openPopup();
                 }
             });
-            fetchAndDisplaySightings();
-            const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
-            return () => { clearInterval(sightingInterval); };
         }
-    }, [fetchAndDisplaySightings, sendReport]);
+    }, [sendReport]);
+
+    // Data fetching effect - runs when map is ready and periodically
+    useEffect(() => {
+        if (!mapRef.current) return; // Don't run if map isn't initialized
+
+        fetchAndDisplaySightings(); // Initial fetch
+        const sightingInterval = setInterval(fetchAndDisplaySightings, 30000);
+
+        return () => { // Cleanup on unmount
+            clearInterval(sightingInterval);
+        };
+    }, [fetchAndDisplaySightings]);
     
     const paginatedSightings = allSightings.slice(sightingPage * SIGHTINGS_PER_PAGE, (sightingPage + 1) * SIGHTINGS_PER_PAGE);
     
