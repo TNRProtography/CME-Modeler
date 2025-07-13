@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
+import { enNZ } from 'date-fns/locale';
 
 interface SolarActivityDashboardProps {
   apiKey: string;
   setViewerMedia: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
 
+// --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
@@ -47,7 +49,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
-    const [xrayChartData, setXrayChartData] = useState<any>({ labels: [], datasets: [] });
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
@@ -85,51 +86,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 setLoadingXray(null);
             }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
     }, []);
-    
-    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
-        const now = Date.now();
-        const startTime = now - xrayTimeRange;
-        const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000;
-        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-        for (let d = startDayNZ; d < now; d += 24 * 3600000) {
-            if (d > startTime) {
-                midnightAnnotations[`line-${d}`] = {
-                    type: 'line', xMin: d, xMax: d,
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
-                };
-            }
-        }
-        
-        return {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } }, annotation: { annotations: midnightAnnotations } },
-            scales: { 
-                x: { type: 'time', adapters: { date: { locale: 'en-NZ' } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
-            }
-        };
-    }, [xrayTimeRange]);
-
-    useEffect(() => {
-        if (allXrayData.length > 0) {
-            const now = Date.now();
-            const startTime = now - xrayTimeRange;
-            const filteredData = allXrayData.filter(d => d.time >= startTime);
-            setXrayChartData({
-                labels: filteredData.map(d => d.time),
-                datasets: [{
-                    label: 'Short Flux (0.1-0.8 nm)', data: filteredData.map(d => d.short),
-                    pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                    segment: {
-                        borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
-                        backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
-                    }
-                }],
-            });
-        }
-    }, [allXrayData, xrayTimeRange]);
 
     const fetchFlares = useCallback(async () => {
         setLoadingFlares('Loading solar flares...');
@@ -170,6 +126,51 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const interval = setInterval(runAllUpdates, 5 * 60 * 1000);
         return () => clearInterval(interval);
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
+
+    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - xrayTimeRange;
+        const midnightAnnotations: any = {};
+        const nzOffset = 12 * 3600000;
+        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
+            const midnight = new Date(d).setUTCHours(12,0,0,0);
+            if (midnight > startTime && midnight < now) {
+                midnightAnnotations[`line-${midnight}`] = {
+                    type: 'line', xMin: midnight, xMax: midnight,
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
+                };
+            }
+        }
+        
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } }, annotation: { annotations: midnightAnnotations } },
+            scales: { 
+                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
+            }
+        };
+    }, [xrayTimeRange]);
+    
+    const xrayChartData = useMemo(() => {
+        if (allXrayData.length === 0) return { labels: [], datasets: [] };
+        const now = Date.now();
+        const startTime = now - xrayTimeRange;
+        const filteredData = allXrayData.filter(d => d.time >= startTime);
+        return {
+            labels: filteredData.map(d => d.time),
+            datasets: [{
+                label: 'Short Flux (0.1-0.8 nm)', data: filteredData.map(d => d.short),
+                pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
+                segment: {
+                    borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
+                    backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
+                }
+            }],
+        };
+    }, [allXrayData, xrayTimeRange]);
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
@@ -198,7 +199,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
                         <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {xrayChartData.labels.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                            {xrayChartData.datasets.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
