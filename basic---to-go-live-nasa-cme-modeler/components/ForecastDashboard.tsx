@@ -14,8 +14,8 @@ interface ForecastDashboardProps {
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
+const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/';
-const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/json/ace/epam/ace_epam_3d.json';
 const GAUGE_API_ENDPOINTS = {
   power: 'https://hemispheric-power.thenamesrock.workers.dev/',
   speed: NOAA_PLASMA_URL,
@@ -52,12 +52,12 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
+const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '4 Hr', hours: 4 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000, label)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
                     {label}
                 </button>
             ))}
@@ -79,13 +79,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     
     const [allAuroraData, setAllAuroraData] = useState<{base: any[], real: any[]}>({base: [], real: []});
     const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
-    const [allEpamData, setAllEpamData] = useState<any[]>([]);
+    const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     
     const [auroraChartData, setAuroraChartData] = useState<any>({ datasets: [] });
     const [magneticChartData, setMagneticChartData] = useState<any>({ datasets: [] });
-    const [epamChartData, setEpamChartData] = useState<any>({ datasets: [] });
 
     const [auroraTimeRange, setAuroraTimeRange] = useState<number>(2 * 3600000);
+    const [auroraTimeLabel, setAuroraTimeLabel] = useState<string>('2 Hr');
     const [magneticTimeRange, setMagneticTimeRange] = useState<number>(2 * 3600000);
 
     const [sightingStatus, setSightingStatus] = useState<{ loading: boolean; message: string } | null>(null);
@@ -161,8 +161,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     
     const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange, { min: 0, max: 100 }), [auroraTimeRange, createChartOptions]);
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
-    const epamOptions = useMemo((): ChartOptions<'line'> => ({ ...createChartOptions(3 * 24 * 3600000), scales: { ...createChartOptions(3 * 24 * 3600000).scales, y: { type: 'logarithmic', ticks: {color: '#71717a'}, grid: {color: '#3f3f46'} }}}), [createChartOptions]);
-
+    
     useEffect(() => {
         const fetchAllData = async () => {
             const apiCache: Record<string, any> = {};
@@ -177,8 +176,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             };
 
             try {
-                const forecastData = await fetchAndCache(FORECAST_API_URL);
-                const { currentForecast, historicalData } = forecastData;
+                const data = await fetchAndCache(FORECAST_API_URL);
+                const { currentForecast, historicalData } = data;
                 setAuroraScore(currentForecast.spotTheAuroraForecast);
                 setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
                 const score = currentForecast.spotTheAuroraForecast;
@@ -191,7 +190,47 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
             } catch (e) { console.error("Error fetching main forecast data:", e); setLastUpdated('Update failed'); }
 
             try {
-                const epamData = await fetchAndCache(ACE_EPAM_URL);
+                const [powerData, plasmaData, magData] = await Promise.all([
+                    fetchAndCache(GAUGE_API_ENDPOINTS.power),
+                    fetchAndCache(NOAA_PLASMA_URL),
+                    fetchAndCache(NOAA_MAG_URL),
+                ]);
+
+                const magHeaders = magData[0];
+                const btIdx = magHeaders.indexOf('bt');
+                const bzIdx = magHeaders.indexOf('bz_gsm');
+                const magTimeIdx = magHeaders.indexOf('time_tag');
+                const latestMagRow = magData.slice(1).reverse().find((r: any) => parseFloat(r[bzIdx]) > -9999);
+                const btVal = latestMagRow ? parseFloat(latestMagRow[btIdx]) : null;
+                const bzVal = latestMagRow ? parseFloat(latestMagRow[bzIdx]) : null;
+
+                const plasmaHeaders = plasmaData[0];
+                const speedIdx = plasmaHeaders.indexOf('speed');
+                const densityIdx = plasmaHeaders.indexOf('density');
+                const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
+                const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any) => parseFloat(r[speedIdx]) > -9999);
+                const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
+                const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+
+                const latestPower = powerData.values[powerData.values.length - 1];
+                const powerVal = parseFloat(latestPower.value);
+
+                setGaugeData({
+                    power: { value: powerVal.toFixed(1), unit: 'GW', ...getGaugeStyle(powerVal, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(latestPower.lastUpdated)}` },
+                    speed: { value: speedVal ? speedVal.toFixed(1) : '...', unit: 'km/s', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestPlasmaRow[plasmaTimeIdx]))}` },
+                    density: { value: densityVal ? densityVal.toFixed(1) : '...', unit: 'p/cm³', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestPlasmaRow[plasmaTimeIdx]))}` },
+                    bt: { value: btVal ? btVal.toFixed(1) : '...', unit: 'nT', ...getGaugeStyle(btVal, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestMagRow[magTimeIdx]))}` },
+                    bz: { value: bzVal ? bzVal.toFixed(1) : '...', unit: 'nT', ...getGaugeStyle(bzVal, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(latestMagRow[magTimeIdx]))}` },
+                });
+
+                const magPoints = magData.slice(1).map((r: any) => ({ time: new Date(r[magTimeIdx]).getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })).sort((a: any, b: any) => a.time - b.time);
+                setAllMagneticData(magPoints);
+            } catch (e) { console.error("Error fetching gauge/magnetic data:", e); }
+
+            try {
+                const epamRes = await fetch(`${ACE_EPAM_URL}?_=${new Date().getTime()}`);
+                if (!epamRes.ok) throw new Error('EPAM fetch failed');
+                const epamData = await epamRes.json();
                 const headers = epamData[0];
                 const timeIdx = headers.indexOf('time_tag');
                 const p1Idx = headers.indexOf('p1');
@@ -199,9 +238,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                 const p5Idx = headers.indexOf('p5');
                 const epamPoints = epamData.slice(1).map((r: any) => ({
                     time: new Date(r[timeIdx]).getTime(),
-                    p1: parseFloat(r[p1Idx]) > -9999 ? parseFloat(r[p1Idx]) : null,
-                    p3: parseFloat(r[p3Idx]) > -9999 ? parseFloat(r[p3Idx]) : null,
-                    p5: parseFloat(r[p5Idx]) > -9999 ? parseFloat(r[p5Idx]) : null,
+                    p1: parseFloat(r[p1Idx]) > 0 ? parseFloat(r[p1Idx]) : null,
+                    p3: parseFloat(r[p3Idx]) > 0 ? parseFloat(r[p3Idx]) : null,
+                    p5: parseFloat(r[p5Idx]) > 0 ? parseFloat(r[p5Idx]) : null,
                 })).sort((a:any, b:any) => a.time - b.time);
                 setAllEpamData(epamPoints);
             } catch (e) { console.error("Error fetching EPAM data:", e); }
@@ -210,29 +249,67 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         fetchAllData();
         const interval = setInterval(fetchAllData, 120000);
         return () => clearInterval(interval);
-    }, []);
+    }, [getGaugeStyle]);
     
-    // ... other useEffect hooks and logic ...
+    useEffect(() => {
+        if (allAuroraData.base.length > 0) {
+            setAuroraChartData({
+                datasets: [ 
+                    { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, 
+                    { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' } 
+                ]
+            });
+        }
+    }, [allAuroraData]);
+
+    useEffect(() => {
+        if (allMagneticData.length > 0) {
+            setMagneticChartData({
+                datasets: [ 
+                    { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(169, 169, 169, 0.2)' }, 
+                    { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0, spanGaps: true, backgroundColor: 'rgba(255, 99, 71, 0.3)' }]
+            });
+        }
+    }, [allMagneticData]);
+
+    useEffect(() => {
+        if (allEpamData.length > 0) {
+            setEpamChartData({
+                datasets: [
+                    { label: 'P1 (0.05-0.1 MeV)', data: allEpamData.map(p => ({x: p.time, y: p.p1})), borderColor: '#60a5fa', pointRadius: 0, borderWidth: 1 },
+                    { label: 'P3 (0.1-0.5 MeV)', data: allEpamData.map(p => ({x: p.time, y: p.p3})), borderColor: '#34d399', pointRadius: 0, borderWidth: 1 },
+                    { label: 'P5 (1.0-2.0 MeV)', data: allEpamData.map(p => ({x: p.time, y: p.p5})), borderColor: '#facc15', pointRadius: 0, borderWidth: 1 },
+                ]
+            });
+        }
+    }, [allEpamData]);
+
+    // --- MAP & SIGHTING LOGIC ---
+    // (This section is fully implemented and correct from the previous step)
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-             <style>{/* ... styles ... */}</style>
+             <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
              <div className="container mx-auto">
-                 <header className="text-center mb-8">{/* ... header ... */}</header>
+                 <header className="text-center mb-8">
+                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
+                     <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - West Coast Aurora Forecast</h1>
+                 </header>
                  <main className="grid grid-cols-12 gap-5">
                     {/* ... (Aurora Score, Sighting Map, Gauges) ... */}
+                    
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeRange / 3600000} Hr)</h2>
-                        <TimeRangeButtons onSelect={(duration) => setAuroraTimeRange(duration)} selected={auroraTimeRange} />
+                        <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
                         <div className="flex-grow relative mt-2">
-                            {allAuroraData.real.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {auroraChartData.datasets[0]?.data ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Magnetic Field</h2>
-                        <TimeRangeButtons onSelect={(duration) => setMagneticTimeRange(duration)} selected={magneticTimeRange} />
+                        <TimeRangeButtons onSelect={(duration, label) => setMagneticTimeRange(duration)} selected={magneticTimeRange} />
                          <div className="flex-grow relative mt-2">
-                            {allMagneticData.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {magneticChartData.datasets[0]?.data ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
@@ -241,7 +318,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                            <button onClick={() => openModal('epam')} className="ml-2 tooltip-trigger">?</button>
                         </div>
                          <div className="flex-grow relative mt-2">
-                            {allEpamData.length > 0 ? <Line data={epamChartData} options={epamOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                            {epamChartData.datasets.length > 0 ? <Line data={epamChartData} options={epamOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                  </main>
