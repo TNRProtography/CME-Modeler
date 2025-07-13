@@ -103,8 +103,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     const manualReportStatus = useRef<string | null>(null);
     const apiDataCache = useRef<Record<string, any>>({});
     
-    const tooltipContent = { /* ... full tooltip content ... */ };
+    const tooltipContent = {
+        'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
+        'chart': { title: 'Reading The Visibility Chart', content: `This chart shows the estimated visibility over time.<br><br><strong><span class="inline-block w-3 h-3 rounded-sm mr-2 align-middle" style="background-color: #FF6347;"></span>Real Score:</strong> This is the main forecast, including solar wind data and local factors like moonlight and darkness.<br><br><strong><span class="inline-block w-3 h-3 rounded-sm mr-2 align-middle" style="background-color: #A9A9A9;"></span>Base Score:</strong> This shows the forecast based *only* on solar wind data. It represents the "raw potential" if there were no sun or moon interference.` },
+        'power': { title: 'Hemispheric Power', content: `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.` },
+        'speed': { title: 'Solar Wind Speed', content: `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.` },
+        'density': { title: 'Solar Wind Density', content: `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³.<br><br><strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.` },
+        'bt': { title: 'IMF Bt (Total)', content: `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.` },
+        'bz': { title: 'IMF Bz (N/S)', content: `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>` }
+    };
     
+    // --- HELPERS & CALLBACKS ---
     const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
     const closeModal = useCallback(() => setModalState(null), []);
     const formatNZTimestamp = (isoString: string) => { try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
@@ -208,7 +217,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
             plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false }, annotation: { annotations: midnightAnnotations } },
-            scales: { x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+            scales: { x: { type: 'time', adapters: { date: { locale: 'en-NZ' } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
                       y: { ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } } }
         };
     }, []);
@@ -300,9 +309,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
     }, [reporterName, fetchAndDisplaySightings, hasEdited, tempSightingPin]);
 
     const handleReportSighting = useCallback((status: string) => {
-        const lastReportTime = parseInt(localStorage.getItem('lastReportTimestamp') || '0');
-        if (Date.now() - lastReportTime < 60 * 60 * 1000 && !hasEdited) {
-            alert(`You've reported recently. Please wait about ${Math.ceil((60 * 60 * 1000 - (Date.now() - lastReportTime)) / 60000)} more minute(s).`);
+        if (isLockedOut && !hasEdited) {
+            alert(`You've reported recently. Please wait about ${Math.ceil((60 * 60 * 1000 - (Date.now() - parseInt(localStorage.getItem('lastReportTimestamp') || '0'))) / 60000)} more minute(s).`);
             return;
         }
         if (!reporterName.trim()) { alert('Please enter your name.'); return; }
@@ -316,7 +324,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
         } else {
             alert('Geolocation not supported. Please click map to place a pin.'); setSightingStatus(null); isPlacingManualPin.current = true; manualReportStatus.current = status;
         }
-    }, [reporterName, sendReport, hasEdited]);
+    }, [reporterName, sendReport, isLockedOut, hasEdited]);
     
     const handleEditReport = () => { setIsLockedOut(false); localStorage.setItem('hasEditedReport', 'true'); setHasEdited(true); };
 
@@ -336,13 +344,34 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
 
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-            <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
-            <div className="container mx-auto">
-                {/* ... Header and Main Content */}
-                <main className="grid grid-cols-12 gap-5">
-                    {/* ... other components */}
+             <style>{`.leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #171717; color: #fafafa; border: 1px solid #3f3f46; } .sighting-emoji-icon { font-size: 1.2rem; text-align: center; line-height: 1; text-shadow: 0 0 5px rgba(0,0,0,0.8); background: none; border: none; } .sighting-button { padding: 10px 15px; font-size: 0.9rem; font-weight: 600; border-radius: 10px; border: 1px solid #4b5563; cursor: pointer; transition: all 0.2s ease-in-out; color: #fafafa; } .sighting-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); } .sighting-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }`}</style>
+             <div className="container mx-auto">
+                 <header className="text-center mb-8">
+                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
+                     <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - West Coast Aurora Forecast</h1>
+                 </header>
+                 <main className="grid grid-cols-12 gap-5">
+                    <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
+                        <div>
+                            <div className="flex items-center mb-4">
+                                <h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2>
+                                <button onClick={() => openModal('forecast')} className="ml-2 tooltip-trigger">?</button>
+                            </div>
+                            <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
+                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="bg-green-500 h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray }}></div></div>
+                            <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
+                        </div>
+                        <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
+                    </div>
+
                     <div className="col-span-12 card bg-neutral-950/80 p-6">
-                        {/* ... map and sighting controls ... */}
+                        <h2 className="text-xl font-semibold text-center text-white mb-4">Live Sighting Map</h2>
+                        <div ref={mapContainerRef} className="h-[450px] w-full rounded-lg bg-neutral-800 border border-neutral-700"></div>
+                        <div className="text-center mt-4">
+                            <label htmlFor="reporter-name" className="mr-2">Your Name:</label>
+                            <input type="text" id="reporter-name" value={reporterName} onChange={e => {setReporterName(e.target.value); localStorage.setItem('auroraReporterName', e.target.value)}} placeholder="Enter your name" className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1"/>
+                        </div>
+                        {sightingStatus && <div className="text-center italic mt-2">{sightingStatus.message}</div>}
                         <div className="flex justify-center gap-2 flex-wrap mt-4">
                             {isLockedOut && !hasEdited && (
                                 <button onClick={handleEditReport} className="sighting-button bg-yellow-600 hover:bg-yellow-500 border-yellow-700">
@@ -356,6 +385,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                             ))}
                         </div>
                     </div>
+                    
+                    {Object.entries(gaugeData).map(([key, data]) => (
+                        <div key={key} className="col-span-6 md:col-span-4 lg:col-span-2 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
+                            <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key.replace('_', ' ').toUpperCase()}</h3>
+                            <div className="text-3xl font-bold my-2">{data.value} <span className="text-lg">{data.unit}</span></div>
+                            <div className="text-3xl my-2">{data.emoji}</div>
+                            <div className="w-full bg-neutral-700 rounded-full h-2"><div className="h-2 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                            <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                        </div>
+                    ))}
+                    
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Aurora Visibility</h2>
                         <TimeRangeButtons onSelect={setAuroraTimeRange} selected={auroraTimeRange} />
@@ -370,8 +410,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = () => {
                             {magneticChartData.labels.length > 0 ? <Line data={magneticChartData} options={magneticChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
-                </main>
-            </div>
+                 </main>
+             </div>
             {modalState && <InfoModal {...modalState} onClose={closeModal} />}
         </div>
     );

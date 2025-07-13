@@ -14,8 +14,7 @@ const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
 
 const getCssVar = (name: string): string => {
-  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-  catch(e) { return '' }
+  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
 };
 
 const getColorForFlux = (value: number, opacity: number = 1): string => {
