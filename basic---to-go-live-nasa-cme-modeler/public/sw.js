@@ -17,9 +17,8 @@ const urlsToCache = [
 const API_HOSTS = [
   'api.nasa.gov', 
   'services.swpc.noaa.gov', 
-  'spottheaurora.thenamesrock.workers.dev', // CORRECTED: Added the primary forecast API host
-  'hemispheric-power.thenamesrock.workers.dev',
-  'aurora-sightings.thenamesrock.workers.dev',
+  'spottheaurora.thenamesrock.workers.dev',
+  'aurora-sightings.thenamesrock.workers.dev', // Added new sightings API
   'huxt-bucket.s3.eu-west-2.amazonaws.com',
 ];
 
@@ -66,6 +65,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {
+          // A quick check to not cache errors from the API
           if (!networkResponse || networkResponse.status !== 200) {
             return networkResponse;
           }
@@ -77,13 +77,17 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => {
           console.warn(`[Service Worker] Network-first fetch failed for ${url.hostname}, serving from cache.`);
-          return caches.match(event.request);
+          // For APIs, if network fails, try to get from cache.
+          // If you'd rather it just fails, you can remove this.
+          return caches.match(event.request).then(response => {
+            return response || new Response(JSON.stringify({error: "Network error"}), { status: 500, headers: { 'Content-Type': 'application/json' } });
+          });
         })
     );
     return;
   }
 
-  // Strategy 2: Cache-first for all other requests.
+  // Strategy 2: Cache-first for all other requests (App Shell, fonts, etc.).
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       // Return cached response if found
@@ -93,7 +97,7 @@ self.addEventListener('fetch', (event) => {
       
       // Otherwise, fetch from network
       return fetch(event.request).then((networkResponse) => {
-        // Don't cache opaque responses or errors
+        // Don't cache opaque responses or errors from non-API sources
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'opaque') {
           return networkResponse;
         }

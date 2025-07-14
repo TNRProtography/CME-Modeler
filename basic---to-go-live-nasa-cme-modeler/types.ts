@@ -114,3 +114,17 @@ export interface PlanetLabelInfo {
 export interface SimulationCanvasHandle {
   resetView: () => void;
 }
+
+// --- NEW TYPES FOR AURORA SIGHTINGS ---
+
+export type SightingStatus = 'eye' | 'phone' | 'dslr' | 'cloudy' | 'nothing';
+
+export interface SightingReport {
+  lat: number;
+  lng: number;
+  status: SightingStatus;
+  name: string;
+  timestamp: number;
+  key?: string; // a unique key from the KV store
+  isPending?: boolean; // For client-side state
+}

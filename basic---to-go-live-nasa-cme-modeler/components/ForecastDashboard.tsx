@@ -4,6 +4,7 @@ import CloseIcon from './icons/CloseIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
+import AuroraSightings from './AuroraSightings'; // NEW: Import the sightings component
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -310,6 +311,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         </div>
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
+                    
+                    {/* --- NEW: AURORA SIGHTINGS COMPONENT --- */}
+                    <AuroraSightings />
 
                     <div className="col-span-12 grid grid-cols-6 gap-5">
                         {Object.entries(gaugeData).map(([key, data]) => (
