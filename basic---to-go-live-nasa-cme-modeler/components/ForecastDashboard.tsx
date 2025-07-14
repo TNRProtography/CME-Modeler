@@ -45,9 +45,14 @@ const GAUGE_EMOJIS = { gray: '😐', yellow: '🙂', orange: '😊', red: '😀'
 const ResizeMapOnMount = () => {
     const map = useMap();
     useEffect(() => {
-        setTimeout(() => {
+        // Use a timeout to ensure the DOM has settled before invalidating the map size.
+        const timer = setTimeout(() => {
             map.invalidateSize();
-        }, 0);
+        }, 100);
+
+        return () => {
+            clearTimeout(timer);
+        };
     }, [map]);
     return null;
 };
@@ -296,7 +301,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     {!isLoading && (
                         <div className="col-span-12 card bg-neutral-950/80 p-6">
                             <div className="flex flex-col lg:flex-row gap-6">
-                                <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
+                                {/* Explicitly Sized Map Container */}
+                                <div className="w-full lg:w-2/3 rounded-lg overflow-hidden border border-neutral-700" style={{ height: '500px' }}>
                                     <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full">
                                         <TileLayer
                                             attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
@@ -326,6 +332,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             </div>
                         </div>
                     )}
+                    
+                    {isLoading && (
+                        <div className="col-span-12 card bg-neutral-950/80 p-6 flex justify-center items-center min-h-[500px]">
+                            <LoadingSpinner />
+                        </div>
+                    )}
+
 
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
