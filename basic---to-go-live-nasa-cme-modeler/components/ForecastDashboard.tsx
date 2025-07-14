@@ -62,6 +62,7 @@ const createGradient = (ctx: CanvasRenderingContext2D, chartArea: any, colorKey:
     return gradient;
 };
 
+
 // --- Reusable UI Components ---
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
@@ -90,6 +91,147 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
         </div>
     );
 };
+
+// NEW: Camera Settings Helper Function - MODIFIED LOGIC
+const getSuggestedCameraSettings = (score: number | null) => {
+    // Determine the base settings based on score tiers
+    let baseSettings: any;
+    if (score === null || score < 10) { // Unlikely to get any visibility on camera
+        baseSettings = {
+            overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.",
+            phone: {
+                android: {
+                    iso: "3200-6400 (Max)",
+                    shutter: "20-30s",
+                    aperture: "Lowest f-number",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Might pick up an extremely faint, indiscernible glow."],
+                    cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."],
+                },
+                apple: {
+                    iso: "Auto (max Night Mode)",
+                    shutter: "Longest Night Mode auto-exposure (10-30s)",
+                    aperture: "N/A (fixed)",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Simple to try with Night Mode."],
+                    cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."],
+                },
+            },
+            dslr: {
+                iso: "6400-12800", // Pushing ISO higher for faint conditions
+                shutter: "20-30s",
+                aperture: "f/2.8-f/4 (widest)",
+                focus: "Manual to Infinity",
+                wb: "3500K-4500K",
+                pros: ["Maximizes light gathering for extremely faint conditions."],
+                cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."],
+            },
+        };
+    } else if (score < 20) { // Below 20% - phone unlikely to get photos
+         baseSettings = {
+            overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle to show anything.",
+            phone: {
+                android: {
+                    iso: "3200-6400 (Max)",
+                    shutter: "15-30s",
+                    aperture: "Lowest f-number",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Might detect very faint light not visible to the eye."],
+                    cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."],
+                },
+                apple: {
+                    iso: "Auto (max Night Mode)",
+                    shutter: "Longest Night Mode auto-exposure (10-30s)",
+                    aperture: "N/A (fixed)",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Simple to attempt using Night Mode."],
+                    cons: ["Limited manual control. Photos will be very noisy and may not show discernible aurora."],
+                },
+            },
+            dslr: {
+                iso: "3200-6400",
+                shutter: "15-25s",
+                aperture: "f/2.8-f/4 (widest)",
+                focus: "Manual to Infinity",
+                wb: "3500K-4500K",
+                pros: ["Better light gathering than phones, higher chance for a faint detection."],
+                cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."],
+            },
+        };
+    } else if (score >= 80) { // High probability of a significant substorm (80%+)
+        baseSettings = {
+            overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.",
+            phone: {
+                android: {
+                    iso: "400-800",
+                    shutter: "1-5s",
+                    aperture: "Lowest f-number",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."],
+                    cons: ["May still struggle with extreme brightness or very fast movement."],
+                },
+                apple: {
+                    iso: "Auto or 500-1500 (in third-party app)",
+                    shutter: "1-3s (or what auto-selects)",
+                    aperture: "N/A (fixed)",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."],
+                    cons: ["Less manual control than Android Pro mode for precise settings."],
+                },
+            },
+            dslr: {
+                iso: "800-1600",
+                shutter: "1-5s",
+                aperture: "f/2.8 (or your widest)",
+                focus: "Manual to Infinity",
+                wb: "3500K-4500K",
+                pros: ["Stunning detail, vibrant colors.", "Can capture movement without blur.", "Minimal noise."],
+                cons: ["May need quick adjustments for fluctuating brightness."],
+            },
+        };
+    } else { // All other cases (20-80%) - general activity, phones likely can capture
+        baseSettings = {
+            overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
+            phone: {
+                android: {
+                    iso: "800-1600",
+                    shutter: "5-10s",
+                    aperture: "Lowest f-number",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."],
+                    cons: ["Still limited dynamic range compared to DSLR."],
+                },
+                apple: {
+                    iso: "Auto (let it choose), or 1000-2000 (in manual app)",
+                    shutter: "3-7s (or what auto selects)",
+                    aperture: "N/A (fixed)",
+                    focus: "Infinity",
+                    wb: "Auto or 3500K-4000K",
+                    pros: ["Good balance, easier to get usable shots.", "Built-in processing helps with noise."],
+                    cons: ["Less control over very fast-moving aurora."],
+                },
+            },
+            dslr: {
+                iso: "1600-3200",
+                shutter: "5-15s",
+                aperture: "f/2.8-f/4 (widest)",
+                focus: "Manual to Infinity",
+                wb: "3500K-4500K",
+                pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."],
+                cons: ["Can still get light pollution if exposure is too long."],
+            },
+        };
+    }
+    return baseSettings;
+};
+
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
     // --- State Declarations ---
@@ -129,15 +271,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'moon': { title: 'Moon Illumination', content: `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.` }
     };
     
+    // --- Utility and Data Processing Functions ---
     const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
     const closeModal = useCallback(() => setModalState(null), []);
-    const formatNZTimestamp = (timestamp: number) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
+    const formatNZTimestamp = (timestamp: number) => { 
+        try { 
+            const d = new Date(timestamp); 
+            return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); 
+        } catch { return "Invalid Date"; } 
+    };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
     
     const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
-        if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+        if (v == null || isNaN(v)) {
+            return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+        }
+
         let key: keyof typeof GAUGE_COLORS = 'gray';
         let percentage = 0;
+
         if (type === 'bz') {
             key = getBzScaleColorKey(v, GAUGE_THRESHOLDS.bz);
             percentage = v < 0 ? Math.min(100, Math.abs(v / GAUGE_THRESHOLDS.bz.maxNegativeExpected) * 100) : 0;
@@ -146,6 +298,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             key = getPositiveScaleColorKey(v, thresholds);
             percentage = Math.min(100, (v / thresholds.maxExpected) * 100);
         }
+
         return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
     
@@ -233,20 +386,32 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const getMoonData = (moonReduction: number | null, timestamp: number | null) => { const moonIllumination = Math.max(0, (moonReduction ?? 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp ?? 0)}`, color: '#A9A9A9' }; };
     
     useEffect(() => {
-        if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)), } } ] }); }
-        if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)), } } ] }); }
+        if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); }
+        if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); }
     }, [allPlasmaData, allMagneticData]);
 
     const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - rangeMs;
-        const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
-        if (isDualAxis) { options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } }; } else { options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } } }; }
+        const options: ChartOptions<'line'> = {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
+            plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false } },
+            scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } }
+        };
+
+        if (isDualAxis) {
+            options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
+        } else {
+             options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } } };
+        }
         return options;
     }, []);
     
     const solarWindOptions = useMemo(() => createChartOptions(timeRange, true), [timeRange, createChartOptions]);
     const magneticFieldOptions = useMemo(() => createChartOptions(timeRange, false), [timeRange, createChartOptions]);
+
+    const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore), [auroraScore]);
+
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
@@ -269,7 +434,80 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         </div>
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
-                    
+
+                    {/* NEW: Suggested Camera Settings Section */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-6">
+                        <h2 className="text-xl font-bold text-neutral-100 mb-4 text-center">Suggested Camera Settings</h2>
+                        <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Phone Settings */}
+                            <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                <h3 className="text-lg font-semibold text-neutral-200 mb-3">📸 Phone Camera</h3>
+                                <p className="text-neutral-400 text-sm mb-4">
+                                    **General Phone Tips:** Use a tripod! Manual focus to infinity (look for a "mountain" or "star" icon in Pro/Night mode). Turn off flash.
+                                </p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Android */}
+                                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                        <h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
+                                        <ul className="text-xs space-y-1.5 text-neutral-400">
+                                            <li>**ISO:** {cameraSettings.phone.android.iso}</li>
+                                            <li>**Shutter Speed:** {cameraSettings.phone.android.shutter}</li>
+                                            <li>**Aperture:** {cameraSettings.phone.android.aperture}</li>
+                                            <li>**Focus:** {cameraSettings.phone.android.focus}</li>
+                                            <li>**White Balance:** {cameraSettings.phone.android.wb}</li>
+                                        </ul>
+                                        <div className="mt-2 text-xs">
+                                            <p className="text-green-400">**Pros:** {cameraSettings.phone.android.pros.join(' ')}</p>
+                                            <p className="text-red-400">**Cons:** {cameraSettings.phone.android.cons.join(' ')}</p>
+                                        </div>
+                                    </div>
+                                    {/* Apple */}
+                                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                        <h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode / Third-Party Apps)</h4>
+                                        <ul className="text-xs space-y-1.5 text-neutral-400">
+                                            <li>**ISO:** {cameraSettings.phone.apple.iso}</li>
+                                            <li>**Shutter Speed:** {cameraSettings.phone.apple.shutter}</li>
+                                            <li>**Aperture:** {cameraSettings.phone.apple.aperture}</li>
+                                            <li>**Focus:** {cameraSettings.phone.apple.focus}</li>
+                                            <li>**White Balance:** {cameraSettings.phone.apple.wb}</li>
+                                        </ul>
+                                        <div className="mt-2 text-xs">
+                                            <p className="text-green-400">**Pros:** {cameraSettings.phone.apple.pros.join(' ')}</p>
+                                            <p className="text-red-400">**Cons:** {cameraSettings.phone.apple.cons.join(' ')}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* DSLR/Mirrorless Settings */}
+                            <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
+                                <p className="text-neutral-400 text-sm mb-4">
+                                    **General DSLR Tips:** Use a sturdy tripod. Manual focus to infinity (use live view and magnify a distant star). Shoot in RAW for best quality.
+                                </p>
+                                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                    <h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
+                                    <ul className="text-xs space-y-1.5 text-neutral-400">
+                                        <li>**ISO:** {cameraSettings.dslr.iso}</li>
+                                        <li>**Shutter Speed:** {cameraSettings.dslr.shutter}</li>
+                                        <li>**Aperture:** {cameraSettings.dslr.aperture} (as wide as your lens allows)</li>
+                                        <li>**Focus:** {cameraSettings.dslr.focus}</li>
+                                        <li>**White Balance:** {cameraSettings.dslr.wb}</li>
+                                    </ul>
+                                    <div className="mt-2 text-xs">
+                                        <p className="text-green-400">**Pros:** {cameraSettings.dslr.pros.join(' ')}</p>
+                                        <p className="text-red-400">**Cons:** {cameraSettings.dslr.cons.join(' ')}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p className="text-neutral-500 text-xs italic mt-6 text-center">
+                            **Disclaimer:** These are starting points. Aurora activity, light pollution, moon phase, and your specific camera/lens will influence optimal settings. Experimentation is key!
+                        </p>
+                    </div>
+                    {/* END NEW SECTION */}
+
                     <AuroraSightings />
 
                     <div className="col-span-12 grid grid-cols-6 gap-5">
@@ -278,7 +516,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 <div className="text-3xl font-bold my-2">{data.value} <span className="text-lg">{data.unit}</span></div>
                                 <div className="text-3xl my-2">{data.emoji}</div>
-                                <div className="w-full bg-neutral-700 rounded-full h-2"><div className="h-2 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                                <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
                                 <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
                             </div>
                         ))}
