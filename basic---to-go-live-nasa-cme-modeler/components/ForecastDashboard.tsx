@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
-import { ChartOptions } from 'chart.js';
+import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 
@@ -18,14 +18,33 @@ const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-d
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 
 const GAUGE_THRESHOLDS = {
-  speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
-  density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 70 },
-  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity, maxExpected: 250 },
-  bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity, maxExpected: 60 },
-  bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }
+  speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity },
+  density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity },
+  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity },
+  bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity },
+  bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50 }
 };
-const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
+const GAUGE_COLORS = { gray: 'rgba(128, 128, 128, 0.6)', yellow: 'rgba(255, 215, 0, 0.6)', orange: 'rgba(255, 165, 0, 0.6)', red: 'rgba(255, 69, 0, 0.6)', purple: 'rgba(128, 0, 128, 0.6)', pink: 'rgba(255, 20, 147, 0.6)' };
 const GAUGE_EMOJIS = { gray: '😐', yellow: '🙂', orange: '😊', red: '😀', purple: '😍', pink: '🤩', error: '❓' };
+
+// --- Helper functions for dynamic graph colors ---
+const getPositiveScaleColor = (value: number, thresholds: { [key: string]: number }) => {
+    if (value >= thresholds.pink) return GAUGE_COLORS.pink;
+    if (value >= thresholds.purple) return GAUGE_COLORS.purple;
+    if (value >= thresholds.red) return GAUGE_COLORS.red;
+    if (value >= thresholds.orange) return GAUGE_COLORS.orange;
+    if (value >= thresholds.yellow) return GAUGE_COLORS.yellow;
+    return GAUGE_COLORS.gray;
+};
+
+const getBzScaleColor = (value: number, thresholds: { [key: string]: number }) => {
+    if (value <= thresholds.pink) return GAUGE_COLORS.pink;
+    if (value <= thresholds.purple) return GAUGE_COLORS.purple;
+    if (value <= thresholds.red) return GAUGE_COLORS.red;
+    if (value <= thresholds.orange) return GAUGE_COLORS.orange;
+    if (value <= thresholds.yellow) return GAUGE_COLORS.yellow;
+    return GAUGE_COLORS.gray;
+};
 
 // --- Reusable UI Components ---
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -77,15 +96,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [solarWindChartData, setSolarWindChartData] = useState<any>({ datasets: [] });
     const [magneticFieldChartData, setMagneticFieldChartData] = useState<any>({ datasets: [] });
     
-    const [auroraTimeRange, setAuroraTimeRange] = useState<number>(2 * 3600000);
-    const [auroraTimeLabel, setAuroraTimeLabel] = useState<string>('2 Hr');
+    const [timeRange, setTimeRange] = useState<number>(6 * 3600000);
+    const [timeLabel, setTimeLabel] = useState<string>('6 Hr');
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     
     // --- Tooltip Content ---
     const tooltipContent = {
         'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
-        'chart': { title: 'Reading The Visibility Chart', content: `This chart shows the estimated visibility over time.<br><br><strong><span class="inline-block w-3 h-3 rounded-sm mr-2 align-middle" style="background-color: #FF6347;"></span>Spot The Aurora Forecast:</strong> This is the main forecast, including solar wind data and local factors like moonlight and darkness.<br><br><strong><span class="inline-block w-3 h-3 rounded-sm mr-2 align-middle" style="background-color: #A9A9A9;"></span>Base Score:</strong> This shows the forecast based *only* on solar wind data. It represents the "raw potential" if there were no sun or moon interference.` },
         'power': { title: 'Hemispheric Power', content: `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.` },
         'speed': { title: 'Solar Wind Speed', content: `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.` },
         'density': { title: 'Solar Wind Density', content: `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³.<br><br><strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.` },
@@ -109,16 +127,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 };
         let key: keyof typeof GAUGE_COLORS = 'pink', percentage = 0;
         if (type === 'bz') {
-            key = v <= -50 ? 'pink' : v <= -20 ? 'purple' : v <= -15 ? 'red' : v <= -10 ? 'orange' : v <= -5 ? 'yellow' : 'gray';
-            percentage = v < 0 ? Math.min(100, Math.max(0, (v / GAUGE_THRESHOLDS.bz.maxNegativeExpected) * 100)) : 0;
+            key = v <= GAUGE_THRESHOLDS.bz.pink ? 'pink' : v <= GAUGE_THRESHOLDS.bz.purple ? 'purple' : v <= GAUGE_THRESHOLDS.bz.red ? 'red' : v <= GAUGE_THRESHOLDS.bz.orange ? 'orange' : v <= GAUGE_THRESHOLDS.bz.yellow ? 'yellow' : 'gray';
         } else {
-            const th = GAUGE_THRESHOLDS[type];
-            key = v <= th.gray ? 'gray' : v <= th.yellow ? 'yellow' : v <= th.orange ? 'orange' : v <= th.red ? 'red' : v <= th.purple ? 'purple' : 'pink';
-            percentage = Math.min(100, Math.max(0, (v / th.maxExpected) * 100));
+            const th = GAUGE_THRESHOLDS[type as 'speed' | 'density' | 'bt'];
+            key = v >= th.purple ? 'purple' : v >= th.red ? 'red' : v >= th.orange ? 'orange' : v >= th.yellow ? 'yellow' : 'gray';
         }
-        return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage };
+        return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage: 0 };
     }, []);
-
+    
     // --- Data Fetching & Processing Effects ---
     useEffect(() => {
         setIsLoading(true);
@@ -174,52 +190,46 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     const getMoonData = (moonReduction: number, timestamp: number) => { const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' }; };
     
-    // --- Combined Chart Logic ---
+    // --- Chart Generation Logic ---
     useEffect(() => {
         if (allPlasmaData.length > 0) {
             setSolarWindChartData({
                 datasets: [
-                    { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), borderColor: '#34d399', tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y' },
-                    { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), borderColor: '#fbbf24', tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y1' }
+                    { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), fill: 'origin', borderWidth: 0, pointRadius: 0, 
+                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getPositiveScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed) }
+                    },
+                    { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), fill: 'origin', borderWidth: 0, pointRadius: 0,
+                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getPositiveScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density) }
+                    }
                 ]
             });
         }
         if (allMagneticData.length > 0) {
             setMagneticFieldChartData({
                 datasets: [
-                    { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), borderColor: '#a3a3a3', tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y' },
-                    { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), borderColor: '#f87171', tension: 0.3, borderWidth: 2, pointRadius: 0, yAxisID: 'y' }
+                    { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), fill: 'origin', borderWidth: 0, pointRadius: 0, 
+                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getPositiveScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt) }
+                    },
+                    { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), fill: 'origin', borderWidth: 0, pointRadius: 0,
+                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getBzScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz) }
+                    }
                 ]
             });
         }
     }, [allPlasmaData, allMagneticData]);
 
-    const createCombinedChartOptions = useCallback((rangeMs: number, topChart: boolean): ChartOptions<'line'> => {
+    const createChartOptions = useCallback((rangeMs: number, title: string): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - rangeMs;
-        const baseOptions: ChartOptions<'line'> = {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
             plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false } },
-            scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' }, display: !topChart }, }
+            scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { ticks: { color: '#a1a1aa' }, grid: { color: '#3f3f46' } } }
         };
-
-        if (topChart) {
-            baseOptions.scales = {
-                ...baseOptions.scales,
-                y: { type: 'linear', position: 'left', ticks: { color: '#34d399' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#34d399' } },
-                y1: { type: 'linear', position: 'right', ticks: { color: '#fbbf24' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#fbbf24' } }
-            };
-        } else {
-             baseOptions.scales = {
-                ...baseOptions.scales,
-                y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } }
-            };
-        }
-        return baseOptions;
     }, []);
     
-    const solarWindOptions = useMemo(() => createCombinedChartOptions(auroraTimeRange, true), [auroraTimeRange, createCombinedChartOptions]);
-    const magneticFieldOptions = useMemo(() => createCombinedChartOptions(auroraTimeRange, false), [auroraTimeRange, createCombinedChartOptions]);
+    const solarWindOptions = useMemo(() => createChartOptions(timeRange, 'Solar Wind'), [timeRange, createChartOptions]);
+    const magneticFieldOptions = useMemo(() => createChartOptions(timeRange, 'IMF'), [timeRange, createChartOptions]);
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
@@ -256,14 +266,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         ))}
                     </div>
 
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind & IMF Data (Last {auroraTimeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
-                        <div className="flex-grow relative mt-2 h-48">
+                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind (Last {timeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setTimeRange(duration); setTimeLabel(label); }} selected={timeRange} />
+                        <div className="flex-grow relative mt-2">
                             {solarWindChartData.datasets.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
-                        <div className="flex-grow relative h-48">
-                           {magneticFieldChartData.datasets.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                    </div>
+                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field (Last {timeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setTimeRange(duration); setTimeLabel(label); }} selected={timeRange} />
+                         <div className="flex-grow relative mt-2">
+                            {magneticFieldChartData.datasets.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
                         </div>
                     </div>
                     
