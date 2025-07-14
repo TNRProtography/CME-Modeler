@@ -17,12 +17,8 @@ type ReportingState = 'idle' | 'placing_pin' | 'confirming_location' | 'submitti
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-// ** Using the final production worker URL **
-const WORKER_BASE_URL = 'https://solarwinddata.thenamesrock.workers.dev'; 
-
-const NOAA_PLASMA_URL = `${WORKER_BASE_URL}/plasma`;
-const NOAA_MAG_URL = `${WORKER_BASE_URL}/mag`;
-
+const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
+const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const SIGHTING_TYPES: { [key: string]: { label: string; emoji: string; } } = {
@@ -125,7 +121,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     // --- Utility and Data Processing Functions ---
     const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, ...content }); }, []);
     const closeModal = useCallback(() => setModalState(null), []);
-    const formatNZTimestamp = (timestamp: number | string) => { 
+    const formatNZTimestamp = (timestamp: number) => { 
         try { 
             const d = new Date(timestamp); 
             return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); 
@@ -182,14 +178,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
             const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r[speedIdx]) > -9999);
             const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null; 
-            const plasmaTimestamp = latestPlasmaRow ? latestPlasmaRow[plasmaTimeIdx] : null;
+            const rawPlasmaTime = latestPlasmaRow ? latestPlasmaRow[plasmaTimeIdx] : null;
+            const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
             setGaugeData(prev => ({ ...prev, speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` }, density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` } }));
 
             const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
             const magPoints = magData.slice(1).map((r: any[]) => {
                 const rawTime = r[magTimeIdx];
+                const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
                 return {
-                    time: new Date(rawTime).getTime(),
+                    time: cleanTime,
                     bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null,
                     bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null
                 };
