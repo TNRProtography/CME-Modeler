@@ -298,11 +298,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         ))}
                     </div>
 
-                    {!isLoading && (
+                    {isLoading ? (
+                         <div className="col-span-12 card bg-neutral-950/80 p-6 flex justify-center items-center min-h-[500px]">
+                            <LoadingSpinner />
+                        </div>
+                    ) : (
                         <div className="col-span-12 card bg-neutral-950/80 p-6">
                             <div className="flex flex-col lg:flex-row gap-6">
-                                {/* Explicitly Sized Map Container */}
-                                <div className="w-full lg:w-2/3 rounded-lg overflow-hidden border border-neutral-700" style={{ height: '500px' }}>
+                                <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                                     <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full">
                                         <TileLayer
                                             attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
@@ -330,12 +333,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                     {allSightings.length > 5 && (<div className="flex justify-between items-center mt-2 flex-shrink-0"><button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Prev</button><span className="text-xs">Page {sightingPage + 1} of {Math.ceil(allSightings.length / 5)}</span><button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Next</button></div>)}
                                 </div>
                             </div>
-                        </div>
-                    )}
-                    
-                    {isLoading && (
-                        <div className="col-span-12 card bg-neutral-950/80 p-6 flex justify-center items-center min-h-[500px]">
-                            <LoadingSpinner />
                         </div>
                     )}
 
