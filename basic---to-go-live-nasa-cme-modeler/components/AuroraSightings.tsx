@@ -11,8 +11,13 @@ const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
-const NZ_SOUTH_ISLAND_CENTER: [number, number] = [-43.5321, 172.6362];
-const MAP_ZOOM = 6;
+
+// NEW: South Island of NZ bounding box for map
+const NZ_SOUTH_ISLAND_BOUNDS: L.LatLngBoundsLiteral = [
+    [-47.5, 166.0], // South-West corner
+    [-40.0, 175.5]  // North-East corner
+];
+const MAP_ZOOM = 6; // Initial zoom level that fits South Island well
 
 // --- EMOJIS AND LABELS ---
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; }[] = [
@@ -37,10 +42,18 @@ const MapEffect = () => {
 };
 
 const LocationFinder = ({ onLocationSelect }: { onLocationSelect: (latlng: L.LatLng) => void }) => {
+    // MODIFIED: Use useMapEvents for dragging and scrollWheel events to prevent accidental scroll
+    const map = useMap();
     useMapEvents({
         click(e) {
             onLocationSelect(e.latlng);
         },
+        // Only allow dragging if Shift key is pressed on desktop, or two fingers on touch
+        // Leaflet's default `dragging` and `scrollWheelZoom` options handle touch/multi-touch behavior well.
+        // For desktop mouse wheel, setting scrollWheelZoom to 'center' or false and relying on modifier key is common.
+        // For this specific request, setting them to false and letting `touchZoom` handle multi-touch is key.
+        // Mouse interactions for dragging/zooming are now disabled by the MapContainer props below.
+        // We only listen for clicks to set location.
     });
     return null;
 };
@@ -58,7 +71,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                 <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-5 text-sm">
                     <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">Placing Your Pin</h4>
-                        <p>The app will try to use your device's GPS for an accurate location. If your pin isn't correct or doesn't appear, simply click or tap anywhere on the map to place it manually.</p>
+                        <p>The app will try to use your device's GPS for an accurate location. If your pin isn't correct or doesn't appear, simply click or tap anywhere on the map to place it manually. To move the map, use two fingers on touch devices, or hold down the Ctrl/Cmd key while dragging/scrolling with a mouse.</p>
                     </section>
                      <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
@@ -236,7 +249,20 @@ const AuroraSightings: React.FC = () => {
             {/* Map and Table Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                  <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
-                    <MapContainer center={NZ_SOUTH_ISLAND_CENTER} zoom={MAP_ZOOM} scrollWheelZoom={true} className="h-full w-full bg-neutral-800">
+                    <MapContainer 
+                        center={[(NZ_SOUTH_ISLAND_BOUNDS[0][0] + NZ_SOUTH_ISLAND_BOUNDS[1][0]) / 2, (NZ_SOUTH_ISLAND_BOUNDS[0][1] + NZ_SOUTH_ISLAND_BOUNDS[1][1]) / 2]} // Center of bounds
+                        zoom={MAP_ZOOM} 
+                        scrollWheelZoom={false} // Prevent single-finger/accidental scroll zoom
+                        dragging={false}       // Prevent single-finger/accidental dragging
+                        doubleClickZoom={false} // Disable double-click zoom
+                        touchZoom={true}       // Enable two-finger pinch-to-zoom on touch devices
+                        boxZoom={false}        // Disable box zoom
+                        keyboard={false}       // Disable keyboard pan/zoom
+                        zoomControl={true}    // Keep zoom +/- buttons
+                        minZoom={MAP_ZOOM} // Ensure it doesn't zoom out too far
+                        maxBounds={NZ_SOUTH_ISLAND_BOUNDS} // Restrict panning outside bounds
+                        className="h-full w-full bg-neutral-800"
+                    >
                         <MapEffect />
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />

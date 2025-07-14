@@ -256,7 +256,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         density: { value: '...', unit: 'p/cm³', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
         bt: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
         bz: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
-        moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
+        moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' }, // Initial default for moon
     });
     
     const [allPlasmaData, setAllPlasmaData] = useState<any[]>([]);
@@ -346,7 +346,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
                 bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt ?? null, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
                 bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz ?? null, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
-                moon: getMoonData(currentForecast?.inputs?.moonReduction ?? null, currentForecast?.inputs?.owmDataLastFetched ?? null)
+                // MODIFIED: Use moon object from currentForecast
+                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null)
             }));
 
             // NEW: Set historical data for graph
@@ -418,12 +419,73 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }, [fetchAllData]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
-    const getMoonData = (moonReduction: number | null, timestamp: number | null) => { const moonIllumination = Math.max(0, (moonReduction ?? 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp ?? 0)}`, color: '#A9A9A9' }; };
+    
+    // MODIFIED: Updated to accept rise, set, illumination and format
+    const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => { 
+        const moonIllumination = Math.max(0, (illumination ?? 0) ); // Direct illumination value
+        let moonEmoji = '🌑'; 
+        if (moonIllumination > 95) moonEmoji = '🌕'; 
+        else if (moonIllumination > 55) moonEmoji = '🌖'; 
+        else if (moonIllumination > 45) moonEmoji = '🌗'; 
+        else if (moonIllumination > 5) moonEmoji = '🌒'; 
+        
+        const riseStr = riseTime ? new Date(riseTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        const setStr = setTime ? new Date(setTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        
+        const displayValue = `${moonIllumination.toFixed(0)}% Illum.<br/>Rise: ${riseStr}<br/>Set: ${setStr}`;
+        const lastUpdated = `Updated: ${formatNZTimestamp(Date.now())}`; // Use current time for update as moon data changes slowly
+
+        return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: lastUpdated, color: '#A9A9A9' }; 
+    };
     
     useEffect(() => {
-        if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); }
-        if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); }
-    }, [allPlasmaData, allMagneticData]);
+        const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; // Lower tension for 12hr+ ranges
+
+        if (allPlasmaData.length > 0) { 
+            setSolarWindChartData({ 
+                datasets: [ 
+                    { 
+                        label: 'Speed', 
+                        data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), 
+                        yAxisID: 'y', order: 1, fill: 'origin', 
+                        borderWidth: 1.5, pointRadius: 0, 
+                        tension: lineTension(timeRange), // Conditional tension
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } 
+                    }, 
+                    { 
+                        label: 'Density', 
+                        data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), 
+                        yAxisID: 'y1', order: 0, fill: 'origin', 
+                        borderWidth: 1.5, pointRadius: 0, 
+                        tension: lineTension(timeRange), // Conditional tension
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } 
+                    } 
+                ] 
+            }); 
+        }
+        if (allMagneticData.length > 0) { 
+            setMagneticFieldChartData({ 
+                datasets: [ 
+                    { 
+                        label: 'Bt', 
+                        data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), 
+                        order: 1, fill: 'origin', 
+                        borderWidth: 1.5, pointRadius: 0, 
+                        tension: lineTension(timeRange), // Conditional tension
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } 
+                    }, 
+                    { 
+                        label: 'Bz', 
+                        data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), 
+                        order: 0, fill: 'origin', 
+                        borderWidth: 1.5, pointRadius: 0, 
+                        tension: lineTension(timeRange), // Conditional tension
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } 
+                    } 
+                ] 
+            }); 
+        }
+    }, [allPlasmaData, allMagneticData, timeRange]); // Add timeRange to dependency array
 
     const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean): ChartOptions<'line'> => {
         const now = Date.now();
@@ -508,7 +570,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             if (!chartArea) return undefined;
 
             const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-            // Iterate over points to create color stops based on score
             // Safely get scores, default to 0 if not available
             const score0 = ctx.p0?.parsed?.y ?? 0;
             const score1 = ctx.p1?.parsed?.y ?? 0;
@@ -576,7 +637,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
-                        <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
+                        {/* Moon Gauge Display - MODIFIED to use innerHTML */}
+                        <div className="text-neutral-300 mt-4 md:mt-0">
+                           <span className="text-5xl">{gaugeData.moon.emoji}</span>
+                           <div className="text-sm font-semibold text-neutral-200 mt-1" dangerouslySetInnerHTML={{ __html: gaugeData.moon.value }}></div>
+                           <p className="text-xs text-neutral-500 mt-1">{gaugeData.moon.lastUpdated}</p>
+                        </div>
                     </div>
 
                     {/* NEW: Collapsible Camera Settings Section */}
@@ -690,7 +756,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         {Object.entries(gaugeData).map(([key, data]) => (
                             <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
                                 <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                <div className="text-3xl font-bold my-2">{data.value} <span className="text-lg">{data.unit}</span></div>
+                                {/* Moon value uses dangerouslySetInnerHTML because it contains <br/> tags */}
+                                <div className="text-3xl font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
                                 <div className="text-3xl my-2">{data.emoji}</div>
                                 <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
                                 <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
