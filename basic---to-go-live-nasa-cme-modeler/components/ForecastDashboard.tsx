@@ -421,23 +421,42 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     
     // MODIFIED: Updated to accept rise, set, illumination and format with emojis
-    const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => { 
+// --- ONLY THE RELEVANT SNIPPET FOR ForecastDashboard.tsx ---
+
+// Add this import at the top of ForecastDashboard.tsx, alongside other icon imports
+import CaretIcon from './icons/CaretIcon'; // The single caret icon
+
+// ... (rest of the ForecastDashboard.tsx code)
+
+// MODIFIED getMoonData function
+    const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => {
         const moonIllumination = Math.max(0, (illumination ?? 0) ); // Direct illumination value
-        let moonEmoji = '🌑'; 
-        if (moonIllumination > 95) moonEmoji = '🌕'; 
-        else if (moonIllumination > 55) moonEmoji = '🌖'; 
-        else if (moonIllumination > 45) moonEmoji = '🌗'; 
-        else if (moonIllumination > 5) moonEmoji = '🌒'; 
-        
+        let moonEmoji = '🌑';
+        if (moonIllumination > 95) moonEmoji = '🌕';
+        else if (moonIllumination > 55) moonEmoji = '🌖';
+        else if (moonIllumination > 45) moonEmoji = '🌗';
+        else if (moonIllumination > 5) moonEmoji = '🌒';
+
         const riseStr = riseTime ? new Date(riseTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
         const setStr = setTime ? new Date(setTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
-        
-        // Use emojis for rise/set
-        const displayValue = `${moonIllumination.toFixed(0)}% Illum.<br/>🌅: ${riseStr}<br/>🌇: ${setStr}`;
-        const lastUpdated = `Updated: ${formatNZTimestamp(Date.now())}`; // Use current time for update as moon data changes slowly
 
-        return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: lastUpdated, color: '#A9A9A9' }; 
+        // Get the SVG path from the CaretIcon (assuming it's a simple path)
+        // Note: In a real-world scenario, you might have a utility to extract SVG path from a React component,
+        // or just have the raw SVG string directly accessible if you control the icon component.
+        // For this task, I'll extract the path directly from the given CaretIcon.tsx structure.
+        const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`;
+
+        // Construct the SVG strings with inline styles for rotation
+        const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-4 h-4 inline-block align-middle ml-1" style="transform: rotate(180deg); transform-origin: center;"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+        const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-4 h-4 inline-block align-middle ml-1"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+
+
+        const displayValue = `${moonIllumination.toFixed(0)}% Illum.<br/>Rise: ${riseStr}${CaretUpSvg}<br/>Set: ${setStr}${CaretDownSvg}`;
+        const lastUpdated = `Updated: ${formatNZTimestamp(Date.now())}`;
+
+        return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: lastUpdated, color: '#A9A9A9' };
     };
+
     
     useEffect(() => {
         // NEW: Conditional tension based on timeRange
