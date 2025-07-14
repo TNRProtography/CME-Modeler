@@ -666,7 +666,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto">
-            <div className="container mx-auto">
+            {/* The background will now correctly sit behind all content */}
+            <AuroraBackground /> 
+            <div className="container mx-auto relative z-10">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                     <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - West Coast Aurora Forecast</h1>
