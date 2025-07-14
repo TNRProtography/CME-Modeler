@@ -3,6 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 're
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
+import GuideIcon from './icons/GuideIcon'; // For the info button
+import CloseIcon from './icons/CloseIcon'; // For the modal close button
 
 // --- CONSTANTS & CONFIG ---
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
@@ -13,12 +15,12 @@ const NZ_SOUTH_ISLAND_CENTER: [number, number] = [-43.5321, 172.6362];
 const MAP_ZOOM = 6;
 
 // --- EMOJIS AND LABELS ---
-const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string }[] = [
-    { status: 'eye', emoji: '👁️', label: 'Naked Eye' },
-    { status: 'phone', emoji: '📱', label: 'Phone Camera' },
-    { status: 'dslr', emoji: '📷', label: 'DSLR/Mirrorless' },
-    { status: 'cloudy', emoji: '☁️', label: 'Cloudy' },
-    { status: 'nothing', emoji: '❌', label: 'Nothing' },
+const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; }[] = [
+    { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.' },
+    { status: 'phone', emoji: '📱', label: 'Phone Camera', description: 'Not visible to your eyes, but shows up clearly in a modern smartphone photo (e.g., a 3-second night mode shot).' },
+    { status: 'dslr', emoji: '📷', label: 'DSLR/Mirrorless', description: 'Only visible with a dedicated camera (DSLR/Mirrorless) on a tripod using a long exposure (e.g., >5 seconds).' },
+    { status: 'cloudy', emoji: '☁️', label: 'Cloudy', description: 'Your view of the sky is mostly or completely obscured by clouds, preventing any possible sighting.' },
+    { status: 'nothing', emoji: '❌', label: 'Nothing', description: 'The sky is clear, but no aurora is visible in any form (neither by eye nor by camera). Reporting nothing is very important data!' },
 ];
 
 const getEmojiForStatus = (status: SightingStatus) => STATUS_OPTIONS.find(opt => opt.status === status)?.emoji || '❓';
@@ -43,12 +45,50 @@ const LocationFinder = ({ onLocationSelect }: { onLocationSelect: (latlng: L.Lat
     return null;
 };
 
+// A simple, local modal component for the guide
+const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1000] flex justify-center items-center p-4" onClick={onClose}>
+            <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+                    <h3 className="text-xl font-bold text-neutral-200">How to Report a Sighting</h3>
+                    <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+                </div>
+                <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-5 text-sm">
+                    <section>
+                        <h4 className="font-semibold text-base text-neutral-200 mb-2">Placing Your Pin</h4>
+                        <p>The app will try to use your device's GPS for an accurate location. If your pin isn't correct or doesn't appear, simply click or tap anywhere on the map to place it manually.</p>
+                    </section>
+                     <section>
+                        <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
+                        <p>Honest reports are crucial for everyone! Please use the following guide to choose the best option for your situation.</p>
+                        <ul className="mt-3 space-y-3">
+                            {STATUS_OPTIONS.map(({ emoji, label, description }) => (
+                                <li key={label} className="flex items-start gap-4">
+                                    <span className="text-3xl mt-[-4px]">{emoji}</span>
+                                    <div>
+                                        <strong className="font-semibold text-neutral-200">{label}</strong>
+                                        <p className="text-neutral-400">{description}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 // The main component for this file
 const AuroraSightings: React.FC = () => {
     // --- STATE MANAGEMENT ---
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
 
     const [userName, setUserName] = useState<string>('');
     const [userPosition, setUserPosition] = useState<L.LatLng | null>(null);
@@ -165,8 +205,13 @@ const AuroraSightings: React.FC = () => {
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
             <div className="text-center">
-                <h2 className="text-2xl font-bold text-white">Live Aurora Sightings</h2>
-                <p className="text-neutral-400">See what others are reporting and add your own sighting.</p>
+                <div className="flex justify-center items-center gap-2">
+                     <h2 className="text-2xl font-bold text-white">Spotting The Aurora</h2>
+                     <button onClick={() => setIsInfoModalOpen(true)} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the sightings map">
+                        <GuideIcon className="w-6 h-6" />
+                     </button>
+                </div>
+                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!). Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
             </div>
 
             {/* Reporting UI */}
@@ -196,22 +241,10 @@ const AuroraSightings: React.FC = () => {
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
 
-                        {userPosition && <Marker position={userPosition} icon={userMarkerIcon}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
+                        {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
                         
                         <>
-                             {sightings.map(sighting => ( 
-                                 <Marker 
-                                     key={sighting.timestamp + sighting.name} 
-                                     position={[sighting.lat, sighting.lng]} 
-                                     icon={createSightingIcon(sighting)}
-                                     zIndexOffset={sighting.timestamp} // Higher value is on top
-                                 >
-                                     <Popup> 
-                                         <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> 
-                                         Reported at {new Date(sighting.timestamp).toLocaleTimeString()} 
-                                     </Popup>
-                                 </Marker> 
-                             ))}
+                             {sightings.map(sighting => ( <Marker key={sighting.timestamp + sighting.name} position={[sighting.lat, sighting.lng]} icon={createSightingIcon(sighting)} zIndexOffset={sighting.timestamp}> <Popup> <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> Reported at {new Date(sighting.timestamp).toLocaleTimeString()} </Popup> </Marker> ))}
                         </>
                         
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
@@ -231,6 +264,7 @@ const AuroraSightings: React.FC = () => {
                      </div>
                 </div>
             </div>
+            <InfoModal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} />
         </div>
     );
 };
