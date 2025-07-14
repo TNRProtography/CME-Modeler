@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 
@@ -26,7 +25,6 @@ const getEmojiForStatus = (status: SightingStatus) => STATUS_OPTIONS.find(opt =>
 
 // --- HELPER & CHILD COMPONENTS ---
 
-// FIX: This component ensures the map resizes correctly when its container changes.
 const MapEffect = () => {
     const map = useMap();
     useEffect(() => {
@@ -36,7 +34,6 @@ const MapEffect = () => {
     return null;
 };
 
-// Component to handle user clicks on the map for manual pin placement
 const LocationFinder = ({ onLocationSelect }: { onLocationSelect: (latlng: L.LatLng) => void }) => {
     useMapEvents({
         click(e) {
@@ -64,7 +61,7 @@ const AuroraSightings: React.FC = () => {
 
     const fetchSightings = useCallback(async () => {
         try {
-            setError(null); // Clear previous errors
+            setError(null);
             const response = await fetch(API_URL);
             if (!response.ok) throw new Error('Failed to fetch sightings data.');
             const data: SightingReport[] = await response.json();
@@ -149,20 +146,17 @@ const AuroraSightings: React.FC = () => {
 
     const userMarkerIcon = L.divIcon({
         html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`,
-        className: '', // Let Tailwind handle it all
+        className: '',
         iconSize: [20, 20],
         iconAnchor: [10, 10],
     });
 
     const createSightingIcon = (sighting: SightingReport) => {
         const emoji = getEmojiForStatus(sighting.status);
-        const sendingAnimation = sighting.isPending ? `
-            <div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div>
-            <div class="absolute inset-0 bg-black rounded-full opacity-60"></div>
-        ` : '';
+        const sendingAnimation = sighting.isPending ? `<div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div><div class="absolute inset-0 bg-black rounded-full opacity-60"></div>` : '';
         return L.divIcon({
             html: `<div class="relative">${sendingAnimation}<div>${emoji}</div></div>`,
-            className: 'emoji-marker', // Use the custom class from index.html
+            className: 'emoji-marker',
             iconSize: [32, 32],
             iconAnchor: [16, 16],
         });
@@ -204,11 +198,23 @@ const AuroraSightings: React.FC = () => {
 
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
                         
-                        <MarkerClusterGroup chunkedLoading>
-                             {sightings.map(sighting => ( <Marker key={sighting.timestamp + sighting.name} position={[sighting.lat, sighting.lng]} icon={createSightingIcon(sighting)}> <Popup> <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> Reported at {new Date(sighting.timestamp).toLocaleTimeString()} </Popup> </Marker> ))}
-                        </MarkerClusterGroup>
+                        <>
+                             {sightings.map(sighting => ( 
+                                 <Marker 
+                                     key={sighting.timestamp + sighting.name} 
+                                     position={[sighting.lat, sighting.lng]} 
+                                     icon={createSightingIcon(sighting)}
+                                     zIndexOffset={sighting.timestamp} // Higher value is on top
+                                 >
+                                     <Popup> 
+                                         <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> 
+                                         Reported at {new Date(sighting.timestamp).toLocaleTimeString()} 
+                                     </Popup>
+                                 </Marker> 
+                             ))}
+                        </>
                         
-                        {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} />}
+                        {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
                     </MapContainer>
                 </div>
 
