@@ -6,7 +6,7 @@ import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
-import AuroraBackground from './AuroraBackground'; // NEW: Import the background
+import AuroraBackground from './AuroraBackground'; // Import the background
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -636,8 +636,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }
 
     return (
-        <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-            <div className="container mx-auto">
+        <div className="w-full h-full bg-transparent text-neutral-300 p-5">
+            <AuroraBackground />
+            <div className="container mx-auto bg-neutral-950/50 backdrop-blur-sm p-4 rounded-lg">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                     <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - West Coast Aurora Forecast</h1>
@@ -653,7 +654,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
-                    {/* Collapsible Camera Settings Section */}
+                    {/* NEW: Collapsible Camera Settings Section */}
                     <div className="col-span-12 card bg-neutral-950/80 p-4">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}>
                             <h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2>
