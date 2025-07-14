@@ -1,5 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
+import PlayIcon from './icons/PlayIcon';
+import PauseIcon from './icons/PauseIcon';
+import NextIcon from './icons/NextIcon';
+import PrevIcon from './icons/PrevIcon';
+import LoadingSpinner from './icons/LoadingSpinner';
+
+// A simple Download Icon component to be used locally
+const DownloadIcon: React.FC<{className?: string}> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+);
+
 
 interface ForecastModelsModalProps {
   isOpen: boolean;
@@ -8,38 +21,59 @@ interface ForecastModelsModalProps {
 }
 
 const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia }) => {
+  // --- ENLIL Animation State ---
   const [enlilImageUrls, setEnlilImageUrls] = useState<string[]>([]);
-  const [currentEnlilImageIndex, setCurrentEnlilImageIndex] = useState(0);
+  const [currentEnlilFrame, setCurrentEnlilFrame] = useState(0);
   const [isLoadingEnlil, setIsLoadingEnlil] = useState(true);
+  const [enlilError, setEnlilError] = useState<string | null>(null);
+  const [isEnlilPlaying, setIsEnlilPlaying] = useState(false);
   const intervalRef = useRef<number | null>(null);
+  const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
+  const MAX_FRAMES_TO_CHECK = 400; // Check for up to 400 frames
 
+  // --- Fetching Logic for ENLIL Frames ---
   useEffect(() => {
     if (!isOpen) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setIsEnlilPlaying(false);
+        return;
     }
 
     const fetchEnlilImages = async () => {
       setIsLoadingEnlil(true);
+      setEnlilError(null);
+      setEnlilImageUrls([]);
+
       try {
-        const response = await fetch(`https://services.swpc.noaa.gov/products/animations/enlil/enlil_images.txt?_=${new Date().getTime()}`);
-        if (!response.ok) throw new Error('Failed to fetch Enlil image list');
+        // Create an array of potential URLs
+        const potentialFrameNumbers = Array.from({ length: MAX_FRAMES_TO_CHECK }, (_, i) => i + 1);
+        const potentialUrls = potentialFrameNumbers.map(num => `${ENLIL_BASE_URL}${num}`);
         
-        const text = await response.text();
-        const filenames = text.split('\n').map(line => line.trim()).filter(line => line.endsWith('.png') && !line.includes('thumb'));
+        // Use Promise.allSettled to fetch all images and see which ones succeed
+        const results = await Promise.allSettled(potentialUrls.map(url => 
+            fetch(url).then(res => {
+                if (!res.ok) throw new Error(`Failed to load ${url}`);
+                return res.blob(); // We get the blob to preload
+            })
+        ));
         
-        const baseUrl = "https://services.swpc.noaa.gov/images/animations/enlil/";
-        const urls = filenames.map(filename => `${baseUrl}${filename}`);
-        
-        if (urls.length > 0) {
-          setEnlilImageUrls(urls);
-          urls.forEach(url => { const img = new Image(); img.src = url; });
+        const successfulUrls: string[] = [];
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            const blobUrl = URL.createObjectURL(result.value);
+            successfulUrls.push(blobUrl);
+          }
+        });
+
+        if (successfulUrls.length > 0) {
+          setEnlilImageUrls(successfulUrls);
         } else {
-          throw new Error('No Enlil images found in the directory list.');
+          throw new Error('No ENLIL images could be loaded from the proxy.');
         }
 
       } catch (error) {
-        console.error("Error fetching Enlil images:", error);
+        console.error("Error fetching ENLIL images:", error);
+        setEnlilError(error instanceof Error ? error.message : "An unknown error occurred.");
         setEnlilImageUrls([]);
       } finally {
         setIsLoadingEnlil(false);
@@ -47,21 +81,55 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     };
 
     fetchEnlilImages();
+    
+    // Cleanup blobs on component unmount
     return () => {
+        enlilImageUrls.forEach(url => URL.revokeObjectURL(url));
         if (intervalRef.current) clearInterval(intervalRef.current);
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (enlilImageUrls.length > 0) {
+  // --- Animation Playback Logic ---
+   useEffect(() => {
+    if (isEnlilPlaying && enlilImageUrls.length > 0) {
       intervalRef.current = window.setInterval(() => {
-        setCurrentEnlilImageIndex((prevIndex: number) => (prevIndex + 1) % enlilImageUrls.length);
-      }, 100); 
+        setCurrentEnlilFrame((prevFrame) => (prevFrame + 1) % enlilImageUrls.length);
+      }, 1000 / 12); // 12 FPS
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [enlilImageUrls]);
+  }, [isEnlilPlaying, enlilImageUrls]);
+
+  const handlePlayPause = () => {
+    setIsEnlilPlaying(prev => !prev);
+  };
+  
+  const handleStep = (direction: 1 | -1) => {
+    setIsEnlilPlaying(false);
+    setCurrentEnlilFrame(prev => (prev + direction + enlilImageUrls.length) % enlilImageUrls.length);
+  };
+
+  const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setIsEnlilPlaying(false);
+    setCurrentEnlilFrame(Number(e.target.value));
+  };
+  
+  const handleDownload = () => {
+      const url = enlilImageUrls[currentEnlilFrame];
+      if(!url) return;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `enlil_frame_${currentEnlilFrame + 1}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+  };
+
 
   if (!isOpen) return null;
 
@@ -122,30 +190,53 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
             </section>
 
             {/* WSA-ENLIL Model Section */}
-            <section className="space-y-4">
+            <section className="space-y-4 flex flex-col">
               <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">WSA-ENLIL (NOAA)</h3>
                <div className="text-sm text-neutral-400 leading-relaxed">
                   <p>
                     The Wang-Sheeley-Arge (WSA)-ENLIL model is the primary operational space weather forecasting model used by the U.S. National Oceanic and Atmospheric Administration (NOAA). It provides a comprehensive, large-scale prediction of solar wind conditions throughout the heliosphere.
                   </p>
                   <p className="mt-2">
-                    The model works in two parts: <strong>WSA</strong> uses observations of the Sun's magnetic field to estimate the speed and structure of the solar wind near the Sun. <strong>ENLIL</strong> (named after the Sumerian god of wind) is a complex physics model that takes the WSA output and simulates its evolution as it travels out to Earth and beyond, predicting the arrival and impact of major solar events.
+                    This animation shows the model's prediction of solar wind density. Watch for dense clouds (red/yellow) erupting from the Sun (center) and traveling outwards past the planets (colored dots).
                   </p>
               </div>
-              <div 
-                onClick={() => enlilImageUrls.length > 0 && setViewerMedia({ url: enlilImageUrls[currentEnlilImageIndex], type: 'image' })}
-                className="bg-neutral-900 p-2 rounded-lg relative min-h-[300px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
-              >
-                  <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">WSA-ENLIL Animation</h4>
-                  {isLoadingEnlil && <p className="text-neutral-400 italic">Loading ENLIL animation...</p>}
+              <div className="bg-neutral-900 p-3 rounded-lg flex-grow flex flex-col justify-center items-center">
+                  {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Loading ENLIL animation frames...</p></div>}
+                  {enlilError && <p className="text-red-400 text-center">Could not load ENLIL animation.<br/>{enlilError}</p>}
                   {!isLoadingEnlil && enlilImageUrls.length > 0 && (
-                    <img
-                      src={enlilImageUrls[currentEnlilImageIndex]}
-                      alt="ENLIL Forecast Animation"
-                      className="rounded w-full"
-                    />
+                    <div className='w-full'>
+                      <div className='relative w-full aspect-square'>
+                          <img
+                            src={enlilImageUrls[currentEnlilFrame]}
+                            alt="ENLIL Forecast Animation"
+                            className="rounded w-full h-full object-contain"
+                          />
+                      </div>
+                      <div className='space-y-3 mt-3'>
+                        <input
+                            type="range"
+                            min="0"
+                            max={enlilImageUrls.length - 1}
+                            value={currentEnlilFrame}
+                            onChange={handleScrub}
+                            className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                        <div className="flex justify-center items-center gap-3">
+                            <button onClick={() => handleStep(-1)} className="p-2 bg-neutral-800 rounded-full hover:bg-neutral-700"><PrevIcon className="w-5 h-5"/></button>
+                            <button onClick={handlePlayPause} className="p-3 bg-sky-600 rounded-full hover:bg-sky-500">
+                                {isEnlilPlaying ? <PauseIcon className="w-6 h-6"/> : <PlayIcon className="w-6 h-6"/>}
+                            </button>
+                            <button onClick={() => handleStep(1)} className="p-2 bg-neutral-800 rounded-full hover:bg-neutral-700"><NextIcon className="w-5 h-5"/></button>
+                            <button onClick={handleDownload} className="p-2 bg-neutral-800 rounded-full hover:bg-neutral-700" title="Download Current Frame">
+                                <DownloadIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+                         <div className="text-center text-xs text-neutral-400">
+                            Frame: {currentEnlilFrame + 1} / {enlilImageUrls.length}
+                        </div>
+                      </div>
+                    </div>
                   )}
-                  {!isLoadingEnlil && enlilImageUrls.length === 0 && <p className="text-red-400">Could not load ENLIL animation.</p>}
               </div>
             </section>
           </div>
