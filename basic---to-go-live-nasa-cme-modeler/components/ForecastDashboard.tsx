@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
-import CaretIcon from './icons/CaretIcon'; // NEW: Import CaretIcon
+import CaretIcon from './icons/CaretIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -48,7 +48,7 @@ const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: nu
     return 'gray';
 };
 
-// NEW: Get Forecast Score Color Key based on the score description tiers
+// Get Forecast Score Color Key based on the score description tiers
 const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
     if (score >= 80) return 'pink'; // 80%+ 🤩
     if (score >= 50) return 'red';  // 50-80% 😀
@@ -420,7 +420,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     
-    // MODIFIED: Updated to accept rise, set, illumination and format
+    // MODIFIED: Updated to accept rise, set, illumination and format with emojis
     const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => { 
         const moonIllumination = Math.max(0, (illumination ?? 0) ); // Direct illumination value
         let moonEmoji = '🌑'; 
@@ -432,13 +432,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         const riseStr = riseTime ? new Date(riseTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
         const setStr = setTime ? new Date(setTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
         
-        const displayValue = `${moonIllumination.toFixed(0)}% Illum.<br/>Rise: ${riseStr}<br/>Set: ${setStr}`;
+        // Use emojis for rise/set
+        const displayValue = `${moonIllumination.toFixed(0)}% Illum.<br/>🌅: ${riseStr}<br/>🌇: ${setStr}`;
         const lastUpdated = `Updated: ${formatNZTimestamp(Date.now())}`; // Use current time for update as moon data changes slowly
 
         return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: lastUpdated, color: '#A9A9A9' }; 
     };
     
     useEffect(() => {
+        // NEW: Conditional tension based on timeRange
         const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; // Lower tension for 12hr+ ranges
 
         if (allPlasmaData.length > 0) { 
@@ -637,15 +639,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
-                        {/* Moon Gauge Display - MODIFIED to use innerHTML */}
-                        <div className="text-neutral-300 mt-4 md:mt-0">
-                           <span className="text-5xl">{gaugeData.moon.emoji}</span>
-                           <div className="text-sm font-semibold text-neutral-200 mt-1" dangerouslySetInnerHTML={{ __html: gaugeData.moon.value }}></div>
-                           <p className="text-xs text-neutral-500 mt-1">{gaugeData.moon.lastUpdated}</p>
-                        </div>
+                        {/* MODIFIED: Removed moon details from this top section */}
+                        <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
-                    {/* NEW: Collapsible Camera Settings Section */}
+                    {/* Collapsible Camera Settings Section */}
                     <div className="col-span-12 card bg-neutral-950/80 p-4">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}>
                             <h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2>
