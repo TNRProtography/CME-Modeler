@@ -439,7 +439,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-4 h-4 inline-block align-middle ml-1"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
 
 
-        const displayValue = `${moonIllumination.toFixed(0)}% Illum.<br/>Rise: ${riseStr}${CaretUpSvg}<br/>Set: ${setStr}${CaretDownSvg}`;
+        const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`;
         const lastUpdated = `Updated: ${formatNZTimestamp(Date.now())}`;
 
         return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: lastUpdated, color: '#A9A9A9' }; 
@@ -649,7 +649,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
-                    {/* Collapsible Camera Settings Section */}
+                    {/* NEW: Collapsible Camera Settings Section */}
                     <div className="col-span-12 card bg-neutral-950/80 p-4">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}>
                             <h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2>
@@ -665,9 +665,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             </div>
                         </div>
                         
-                        <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-screen opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                            <p className="text-neutral-400 text-center mb-6 hidden sm:block">{cameraSettings.overall}</p> {/* Visible when open, hidden on small screens */}
-                            <p className="text-neutral-400 text-center mb-6 sm:hidden">{cameraSettings.overall}</p> {/* Always visible on small screens when open */}
+                        <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                            <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Phone Settings */}
@@ -761,7 +760,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
                                 <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 {/* Moon value uses dangerouslySetInnerHTML because it contains <br/> tags */}
-                                <div className="text-3xl font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                                <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
                                 <div className="text-3xl my-2">{data.emoji}</div>
                                 <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
                                 <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
