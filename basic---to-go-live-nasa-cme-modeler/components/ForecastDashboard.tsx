@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
+import 'leaflet.markercluster';
+
+// CSS imports are now in index.tsx, but we keep this for reference.
+// import 'leaflet/dist/leaflet.css';
+// import 'leaflet.markercluster/dist/MarkerCluster.css';
+// import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 import CloseIcon from './icons/CloseIcon';
 import { ChartOptions } from 'chart.js';
@@ -39,24 +43,7 @@ const GAUGE_THRESHOLDS = {
 const GAUGE_COLORS = { gray: '#808080', yellow: '#FFD700', orange: '#FFA500', red: '#FF4500', purple: '#800080', pink: '#FF1493' };
 const GAUGE_EMOJIS = { gray: '😐', yellow: '🙂', orange: '😊', red: '😀', purple: '😍', pink: '🤩', error: '❓' };
 
-
 // --- Reusable UI Components ---
-
-const ResizeMapOnMount = () => {
-    const map = useMap();
-    useEffect(() => {
-        // Use a timeout to ensure the DOM has settled before invalidating the map size.
-        const timer = setTimeout(() => {
-            map.invalidateSize();
-        }, 100);
-
-        return () => {
-            clearTimeout(timer);
-        };
-    }, [map]);
-    return null;
-};
-
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
@@ -85,51 +72,6 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
     );
 };
 
-
-function MapEvents({ reportingState, onPinPlace }: { reportingState: ReportingState, onPinPlace: (latlng: L.LatLng) => void }) {
-  useMapEvents({
-    click(e) {
-      if (reportingState === 'placing_pin') {
-        onPinPlace(e.latlng);
-      }
-    },
-  });
-  return null;
-}
-
-function UserReportPin({ position, onPositionChange }: { position: L.LatLng, onPositionChange: (latlng: L.LatLng) => void }) {
-  const markerRef = useRef<L.Marker>(null);
-  const eventHandlers = useMemo(() => ({
-    dragend() {
-      const marker = markerRef.current;
-      if (marker != null) {
-        onPositionChange(marker.getLatLng());
-      }
-    },
-  }), [onPositionChange]);
-
-  const pinIcon = L.divIcon({
-    html: '📍',
-    className: 'sighting-emoji-icon !text-4xl',
-    iconSize: [40, 40],
-    iconAnchor: [20, 40]
-  });
-
-  return (
-    <Marker
-      draggable={true}
-      eventHandlers={eventHandlers}
-      position={position}
-      ref={markerRef}
-      icon={pinIcon}
-      zIndexOffset={1000}
-    >
-        <Popup>Drag this pin to your exact location.</Popup>
-    </Marker>
-  );
-}
-
-
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
     // --- State Declarations ---
     const [isLoading, setIsLoading] = useState(true);
@@ -156,12 +98,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     
     // --- Map and Sighting State ---
+    const mapContainerRef = useRef<HTMLDivElement>(null);
+    const mapRef = useRef<L.Map | null>(null);
+    const sightingMarkersLayerRef = useRef<L.MarkerClusterGroup | null>(null);
+    const userPinRef = useRef<L.Marker | null>(null);
+
     const [reporterName, setReporterName] = useState<string>(() => localStorage.getItem('auroraReporterName') || '');
     const [allSightings, setAllSightings] = useState<any[]>([]);
     const [sightingPage, setSightingPage] = useState(0);
     const [reportingState, setReportingState] = useState<ReportingState>('idle');
-    const [userPinPosition, setUserPinPosition] = useState<L.LatLng | null>(null);
-
+    
     // --- Tooltip Content ---
     const tooltipContent = {
         'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
@@ -208,17 +154,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange, { min: 0, max: 100 }), [auroraTimeRange, createChartOptions]);
     const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
     
-    const fetchAndDisplaySightings = useCallback(() => {
-        fetch(`${SIGHTING_API_ENDPOINT}?_=${Date.now()}`)
-            .then(res => res.ok ? res.json() : Promise.reject(new Error(`API Error ${res.status}`)))
-            .then(sightings => {
-                if (Array.isArray(sightings)) {
-                    setAllSightings([...sightings].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-                }
-            })
-            .catch(e => console.error("Failed to fetch sightings:", e));
-    }, []);
-
     // --- Data Fetching & Processing Effects ---
     useEffect(() => {
         setIsLoading(true);
@@ -226,7 +161,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetchAndDisplaySightings()
         ]).then(([forecastData, plasmaData, magData]) => {
             const { currentForecast, historicalData } = forecastData;
             setAuroraScore(currentForecast.spotTheAuroraForecast);
@@ -250,9 +184,78 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         }).finally(() => { setIsLoading(false); });
         
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
+    }, []);
+
+    // --- Map Initialization and Sightings Logic ---
+    useEffect(() => {
+        if (isLoading || !mapContainerRef.current || mapRef.current) return;
+
+        mapRef.current = L.map(mapContainerRef.current, {
+            center: [-41.2, 172.5],
+            zoom: 5,
+            scrollWheelZoom: true,
+        });
+
+        L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+        }).addTo(mapRef.current);
+
+        sightingMarkersLayerRef.current = L.markerClusterGroup();
+        mapRef.current.addLayer(sightingMarkersLayerRef.current);
+
+        mapRef.current.on('click', (e: L.LeafletMouseEvent) => {
+            if (reportingStateRef.current === 'placing_pin') {
+                if (userPinRef.current) {
+                    userPinRef.current.setLatLng(e.latlng);
+                } else {
+                    const pinIcon = L.divIcon({ html: '📍', className: 'sighting-emoji-icon !text-4xl', iconAnchor: [16, 32] });
+                    userPinRef.current = L.marker(e.latlng, { draggable: true, icon: pinIcon }).addTo(mapRef.current!);
+                }
+            }
+        });
+
+        return () => {
+            mapRef.current?.remove();
+            mapRef.current = null;
+        };
+    }, [isLoading]);
+
+    const reportingStateRef = useRef(reportingState);
+    useEffect(() => { reportingStateRef.current = reportingState }, [reportingState]);
+
+    useEffect(() => {
+        if (!sightingMarkersLayerRef.current) return;
+
+        const fetchAndDisplaySightings = () => {
+            fetch(`${SIGHTING_API_ENDPOINT}?_=${Date.now()}`)
+            .then(res => res.ok ? res.json() : Promise.reject(new Error(`API Error ${res.status}`)))
+            .then(sightings => {
+                if (Array.isArray(sightings) && sightingMarkersLayerRef.current) {
+                    sightingMarkersLayerRef.current.clearLayers();
+                    const sortedSightings = [...sightings].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                    setAllSightings(sortedSightings);
+
+                    sortedSightings.forEach(s => {
+                        const sightingInfo = SIGHTING_TYPES[s.status];
+                        if (sightingInfo && typeof s.lat === 'number' && typeof s.lng === 'number') {
+                            const emojiIcon = L.divIcon({ html: sightingInfo.emoji, className: 'sighting-emoji-icon', iconSize: [24, 24] });
+                            const marker = L.marker([s.lat, s.lng], { icon: emojiIcon });
+                            marker.bindPopup(`<b>${sightingInfo.label}</b> by ${s.name || 'Anonymous'}<br>at ${new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+                            sightingMarkersLayerRef.current?.addLayer(marker);
+                        }
+                    });
+                }
+            })
+            .catch(e => console.error("Failed to fetch sightings:", e));
+        };
+        
+        fetchAndDisplaySightings();
         const interval = setInterval(fetchAndDisplaySightings, 60000);
         return () => clearInterval(interval);
-    }, [fetchAndDisplaySightings, getGaugeStyle]);
+
+    }, [isLoading]);
+
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     const getMoonData = (moonReduction: number, timestamp: number) => { const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' }; };
@@ -261,11 +264,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     useEffect(() => { if (allMagneticData.length) { setMagneticChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0 }, { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0 } ] }); } }, [allMagneticData]);
 
     const handleStartReporting = () => { if (!reporterName.trim()) { alert("Please enter your name to start reporting."); return; } setReportingState('placing_pin'); };
-    const handleCancelReporting = () => { setUserPinPosition(null); setReportingState('idle'); };
-    const handleConfirmLocation = () => { if (!userPinPosition) { alert("Please place a pin on the map by clicking your location."); return; } setReportingState('confirming_location'); };
-    const handleSubmitSighting = async (sightingType: string) => { if (!userPinPosition) return; setReportingState('submitting'); const { lat, lng } = userPinPosition; try { await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status: sightingType, name: reporterName }) }); handleCancelReporting(); fetchAndDisplaySightings(); } catch (error) { alert("There was an error submitting your report. Please try again."); setReportingState('confirming_location'); } };
+    const handleCancelReporting = () => { 
+        if(userPinRef.current && mapRef.current) {
+            mapRef.current.removeLayer(userPinRef.current);
+            userPinRef.current = null;
+        }
+        setReportingState('idle'); 
+    };
+    const handleConfirmLocation = () => { if (!userPinRef.current) { alert("Please place a pin on the map by clicking your location."); return; } userPinRef.current.dragging?.disable(); setReportingState('confirming_location'); };
+    const handleSubmitSighting = async (sightingType: string) => { if (!userPinRef.current) return; setReportingState('submitting'); const { lat, lng } = userPinRef.current.getLatLng(); try { await fetch(SIGHTING_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng, status: sightingType, name: reporterName }) }); handleCancelReporting(); } catch (error) { alert("There was an error submitting your report. Please try again."); setReportingState('confirming_location'); } };
     const paginatedSightings = allSightings.slice(sightingPage * 5, (sightingPage + 1) * 5);
-    const createSightingIcon = (emoji: string) => L.divIcon({ html: `<div class="sighting-emoji-icon">${emoji}</div>`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
     
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
@@ -305,26 +313,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     ) : (
                         <div className="col-span-12 card bg-neutral-950/80 p-6">
                             <div className="flex flex-col lg:flex-row gap-6">
-                                <div className="w-full lg:w-2/3 rounded-lg overflow-hidden border border-neutral-700" style={{ height: '500px' }}>
-                                    <MapContainer center={[-41.2, 172.5]} zoom={5} scrollWheelZoom={true} className="w-full h-full">
-                                        <TileLayer
-                                            attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
-                                            url="https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}{r}.png"
-                                        />
-                                        <MarkerClusterGroup chunkedLoading>
-                                            {allSightings.map(s => { const si = SIGHTING_TYPES[s.status]; if (!si || typeof s.lat !== 'number' || typeof s.lng !== 'number') return null; return (<Marker key={s.timestamp} position={[s.lat, s.lng]} icon={createSightingIcon(si.emoji)}><Popup><b>{si.label}</b> by {s.name || 'Anonymous'}<br />at {new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Popup></Marker>); })}
-                                        </MarkerClusterGroup>
-                                        <MapEvents reportingState={reportingState} onPinPlace={setUserPinPosition} />
-                                        {userPinPosition && reportingState !== 'idle' && <UserReportPin position={userPinPosition} onPositionChange={setUserPinPosition} />}
-                                        <ResizeMapOnMount />
-                                    </MapContainer>
+                                <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700" ref={mapContainerRef}>
+                                    {/* Map is rendered here by the useEffect hook */}
                                 </div>
                                 
                                 <div className="w-full lg:w-1/3 flex flex-col gap-4">
                                     <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
                                     <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
                                         {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
-                                        {reportingState === 'placing_pin' && (<div className="text-center space-y-3"><p className="text-sm font-semibold">Step 1: Place Your Pin</p><p className="text-xs text-neutral-400">Click the map to place a pin, then confirm.</p><button onClick={handleConfirmLocation} disabled={!userPinPosition} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button><button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button></div>)}
+                                        {reportingState === 'placing_pin' && (<div className="text-center space-y-3"><p className="text-sm font-semibold">Step 1: Place Your Pin</p><p className="text-xs text-neutral-400">Click the map to place a pin, then confirm.</p><button onClick={handleConfirmLocation} disabled={!userPinRef.current} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button><button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button></div>)}
                                         {(reportingState === 'confirming_location' || reportingState === 'submitting') && (<div className="space-y-2"><p className="text-sm font-semibold text-center">Step 2: What did you see?</p>{Object.entries(SIGHTING_TYPES).map(([key, { label, emoji }]) => (<button key={key} onClick={() => handleSubmitSighting(key)} disabled={reportingState === 'submitting'} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-50"><span className="text-2xl">{emoji}</span><span>{label}</span></button>))}<button onClick={handleCancelReporting} disabled={reportingState === 'submitting'} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center disabled:opacity-50">Cancel</button></div>)}
                                     </div>
                                     <div className="flex-grow space-y-3 min-h-[200px] max-h-96 overflow-y-auto pr-2">
