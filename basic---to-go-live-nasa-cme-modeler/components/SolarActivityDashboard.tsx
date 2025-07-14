@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
-import { ChartOptions, ScriptableContext } from 'chart.js';
+import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import LoadingSpinner from './icons/LoadingSpinner'; // Assuming this is imported for other loading states
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -16,51 +15,20 @@ const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
-// UPDATED: Changed to 1-day data source for protons
-const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
-// Proton S-Scale thresholds and labels
-const PROTON_THRESHOLDS = {
-    S0: { min: 0.0, max: 10, rgb_var: '--proton-s0-rgb', label: 'S0' },
-    S1: { min: 10.0, max: 100, rgb_var: '--proton-s1-rgb', label: 'S1' },
-    S2: { min: 100.0, max: 1000, rgb_var: '--proton-s2-rgb', label: 'S2' },
-    S3: { min: 1000.0, max: 10000, rgb_var: '--proton-s3-rgb', label: 'S3' },
-    S4: { min: 10000.0, max: 100000, rgb_var: '--proton-s4-rgb', label: 'S4' },
-    S5: { min: 100000.0, max: Infinity, rgb_var: '--proton-s5-rgb', label: 'S5' },
-};
-
 // --- HELPERS ---
-// Modified getCssVar to return a full rgba string as a fallback
-const getCssVar = (name: string, fallback: string = '128, 128, 128'): string => {
-  try {
-    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    // Ensure it's a valid RGB string, otherwise return fallback
-    return value.split(',').length === 3 ? value : fallback;
-  } catch (e) {
-    return fallback;
-  }
+const getCssVar = (name: string): string => {
+  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
 };
 
 const getColorForFlux = (value: number, opacity: number = 1): string => {
-    let rgb = getCssVar('--solar-flare-ab-rgb', '34, 197, 94'); // Default to Green
-    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb', '255, 105, 180');
-    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb', '147, 112, 219');
-    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb', '255, 69, 0');
-    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb', '245, 158, 11');
+    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Green
+    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Hot Pink for X5+
+    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';    // Purple for X1-X4.9
+    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';    // OrangeRed for M
+    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow
     return `rgba(${rgb}, ${opacity})`;
-};
-
-// Get color for proton flux based on S-scale
-const getProtonColor = (flux: number, opacity: number = 1): string => {
-    let rgb_var = PROTON_THRESHOLDS.S0.rgb_var; // Default to S0 (Green)
-    if (flux >= PROTON_THRESHOLDS.S5.min) rgb_var = PROTON_THRESHOLDS.S5.rgb_var;
-    else if (flux >= PROTON_THRESHOLDS.S4.min) rgb_var = PROTON_THRESHOLDS.S4.rgb_var;
-    else if (flux >= PROTON_THRESHOLDS.S3.min) rgb_var = PROTON_THRESHOLDS.S3.rgb_var;
-    else if (flux >= PROTON_THRESHOLDS.S2.min) rgb_var = PROTON_THRESHOLDS.S2.rgb_var;
-    else if (flux >= PROTON_THRESHOLDS.S1.min) rgb_var = PROTON_THRESHOLDS.S1.rgb_var;
-    
-    return `rgba(${getCssVar(rgb_var, '34, 197, 94')}, ${opacity})`; // Default fallback for proton colors
 };
 
 const getColorForFlareClass = (classType: string): { background: string, text: string } => {
@@ -69,18 +37,19 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
 
     if (type === 'X') {
         if (magnitude >= 5) {
-            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb', '255, 105, 180')}, 1)`, text: 'text-white' };
+            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' }; // Hot Pink
         }
-        return { background: `rgba(${getCssVar('--solar-flare-x-rgb', '147, 112, 219')}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' }; // Purple
     }
     if (type === 'M') {
-        return { background: `rgba(${getCssVar('--solar-flare-m-rgb', '255, 69, 0')}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' }; // OrangeRed
     }
     if (type === 'C') {
-        return { background: `rgba(${getCssVar('--solar-flare-c-rgb', '245, 158, 11')}, 1)`, text: 'text-black' };
+        return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' }; // Yellow
     }
-    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb', '34, 197, 94')}, 1)`, text: 'text-white' };
+    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B/Unknown
 };
+
 
 const formatNZTimestamp = (isoString: string | null) => {
     if (!isoString) return 'N/A';
@@ -129,12 +98,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
-    // Proton Data States
-    // MODIFIED: Only store >=10 MeV data directly, or keep a map if other channels might be needed for debugging/future
-    const [proton10MeVData, setProton10MeVData] = useState<{ time: number; flux: number; }[]>([]);
-    const [loadingProtons, setLoadingProtons] = useState<string | null>('Loading proton flux data...');
-    const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000); // Default to 24 hours
-
     const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>) => {
         setState({ url: '/placeholder.png', loading: 'Loading image...' });
         try {
@@ -149,29 +112,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         }
     }, []);
 
-    const fetchXrayFlux = useCallback(async () => {
+    const fetchXrayFlux = useCallback(() => {
         setLoadingXray('Loading X-ray flux data...');
-        try {
-            const res = await fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const rawData = await res.json(); // Ensure rawData is an array
-            const groupedData = new Map();
-            if (Array.isArray(rawData)) { // Add array check
-                rawData.forEach((d: any) => {
-                    const time = new Date(d.time_tag).getTime();
-                    if (!groupedData.has(time)) groupedData.set(time, { time, short: null });
-                    if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux);
-                });
-            }
-            const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
-            if (!processedData.length && rawData.length > 0) throw new Error('No valid X-ray data points after filtering.');
-            setAllXrayData(processedData);
-            setLoadingXray(null);
-        } catch (e: any) {
-            console.error('Error fetching X-ray flux:', e);
-            setLoadingXray(`Error: ${e.message}`);
-            setAllXrayData([]); // Clear previous data on error
-        }
+        fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
+            .then(rawData => {
+                const groupedData = new Map();
+                rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
+                const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
+                if (!processedData.length) throw new Error('No valid X-ray data.');
+                setAllXrayData(processedData);
+                setLoadingXray(null);
+            }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
     }, []);
     
     const fetchFlares = useCallback(async () => {
@@ -183,20 +134,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         try {
             const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json(); // Ensure data is an array
-            if (!Array.isArray(data) || data.length === 0) { // Add array check
-                setLoadingFlares('No solar flares in the last 24 hours.');
-                setSolarFlares([]);
-                return;
-            }
+            const data = await response.json();
+            if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); setSolarFlares([]); return; }
             const processedData = data.map((flare: any) => ({ ...flare, hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false, }));
             setSolarFlares(processedData.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime()));
             setLoadingFlares(null);
-        } catch (error: any) {
-            console.error('Error fetching flares:', error);
-            setLoadingFlares(`Error: ${error.message}`);
-            setSolarFlares([]); // Clear previous data on error
-        }
+        } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, [apiKey]);
 
     const fetchSunspots = useCallback(async () => {
@@ -204,61 +147,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         try {
             const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json(); // Ensure data is an array
-            if (!Array.isArray(data) || data.length === 0) { // Add array check
-                setLoadingSunspots('No Earth-facing active regions found.');
-                setSunspots([]);
-                return;
-            }
+            const data = await response.json();
             const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
             if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
             setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
             setLoadingSunspots(null);
-        } catch (error: any) {
-            console.error('Error fetching sunspots:', error);
-            setLoadingSunspots(`Error: ${error.message}`);
-            setSunspots([]); // Clear previous data on error
-        }
-    }, []);
-
-    // Fetch Proton Data
-    const fetchProtonData = useCallback(async () => {
-        setLoadingProtons('Loading proton flux data...');
-        try {
-            const response = await fetch(`${NOAA_PROTON_FLUX_URL}?_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const rawData = await response.json(); // Ensure rawData is an array
-
-            const tempProtonData: { time: number; flux: number; }[] = [];
-            if (Array.isArray(rawData)) { // Add array check
-                rawData.forEach((d: any) => {
-                    const energy = d.energy;
-                    const time = new Date(d.time_tag).getTime();
-                    const flux = parseFloat(d.flux);
-
-                    // Filter out invalid or placeholder flux values (-1.00e+05 or less)
-                    if (isNaN(flux) || flux < -1e4) { 
-                        return; 
-                    }
-                    
-                    // MODIFIED: Only collect >=10 MeV data
-                    if (energy === '>=10 MeV') {
-                        tempProtonData.push({ time, flux });
-                    }
-                });
-            }
-
-            tempProtonData.sort((a, b) => a.time - b.time); // Sort data points by time
-            setProton10MeVData(tempProtonData);
-            if (tempProtonData.length === 0 && rawData.length > 0) {
-                 throw new Error('No valid >=10 MeV proton data points after filtering.');
-            }
-            setLoadingProtons(null);
-        } catch (e: any) {
-            console.error('Error fetching proton flux:', e);
-            setLoadingProtons(`Error: ${e.message}`);
-            setProton10MeVData([]); // Clear previous data on error
-        }
+        } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, []);
 
     useEffect(() => {
@@ -268,46 +162,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchXrayFlux();
             fetchFlares();
             fetchSunspots();
-            fetchProtonData(); // Fetch proton data
         };
         runAllUpdates(); // Initial fetch
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS); // Refresh every minute
         return () => clearInterval(interval); // Cleanup on unmount
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchProtonData]);
+    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
-        // Calculate NZT midnight based on browser's local time, then convert to UTC timestamp for chart
-        const localDateAtStart = new Date(startTime);
-        const utcMidnightForNZT = new Date(localDateAtStart.getFullYear(), localDateAtStart.getMonth(), localDateAtStart.getDate(), 0, 0, 0);
-        // Adjust for NZT (UTC+12, or UTC+13 for NZDT). This is a simple approximation.
-        // For precise NZT, a library like `date-fns-tz` or `moment-timezone` would be better.
-        // For now, we'll assume the browser's date object gives us the correct local interpretation of "midnight today".
-        // The key is to find the timestamp of 00:00 NZ local time.
-        // We'll iterate through days.
-        const oneDayMs = 24 * 60 * 60 * 1000;
-        
-        // Find the timestamp for the current NZ day's midnight (00:00 NZT)
-        // Get current date, set to 00:00:00, then adjust for current NZ timezone offset relative to UTC
-        const currentNZDay = new Date();
-        currentNZDay.setHours(0, 0, 0, 0); // This sets to 00:00:00 in local timezone (which will be NZT on a NZ machine)
-        const currentNZMidnightTimestamp = currentNZDay.getTime(); // This is the local time in ms
-        
-        // Iterate for a few days around the current time range
-        for (let d = currentNZMidnightTimestamp - (7 * oneDayMs); d < now + (7 * oneDayMs); d += oneDayMs) {
-            if (d >= startTime && d <= now + oneDayMs) { // Show annotations only within visible range +/- one day
-                midnightAnnotations[`midnight-${d}`] = { 
-                    type: 'line', xMin: d, xMax: d, 
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], 
-                    label: { 
-                        content: new Date(d).toLocaleDateString('en-NZ', { day: '2-digit', month: 'short' }), 
-                        display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 },
-                        xAdjust: 0, yAdjust: 0,
-                    } 
-                };
+        const nzOffset = 12 * 3600000;
+        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
+            const midnight = new Date(d).setUTCHours(12,0,0,0);
+            if (midnight > startTime && midnight < now) {
+                midnightAnnotations[`midnight-${midnight}`] = { type: 'line', xMin: midnight, xMax: midnight, borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } };
             }
         }
         
@@ -325,178 +196,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 label: 'Short Flux (0.1-0.8 nm)', 
                 data: allXrayData.map(d => ({x: d.time, y: d.short})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1?.parsed?.y ?? 1e-9, 1), backgroundColor: (ctx: any) => {
-                    const chart = ctx.chart;
-                    const { ctx: chartCtx, chartArea } = chart;
-                    if (!chartArea) return undefined;
-                    const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-                    const flux0 = ctx.p0?.parsed?.y ?? 1e-9; 
-                    const flux1 = ctx.p1?.parsed?.y ?? 1e-9;
-                    gradient.addColorStop(0, getColorForFlux(flux0, 0.1));
-                    gradient.addColorStop(1, getColorForFlux(flux1, 0.4));
-                    return gradient;
-                }},
+                segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2), }
             }],
         };
     }, [allXrayData]);
-
-    // Proton Chart Options
-    const protonChartOptions = useMemo((): ChartOptions<'line'> => {
-        const now = Date.now();
-        const startTime = now - protonTimeRange;
-
-        // Define S-level annotations
-        const sLevelAnnotations: any = {};
-        // Iterate only through relevant S-levels for annotations
-        [PROTON_THRESHOLDS.S1, PROTON_THRESHOLDS.S2, PROTON_THRESHOLDS.S3, PROTON_THRESHOLDS.S4, PROTON_THRESHOLDS.S5].forEach((threshold) => {
-            sLevelAnnotations[`s-level-${threshold.label}`] = {
-                type: 'line',
-                yMin: threshold.min,
-                yMax: threshold.min,
-                borderColor: getProtonColor(threshold.min, 0.6), // Use flux value for color
-                borderWidth: 1,
-                borderDash: [6, 4],
-                label: {
-                    content: threshold.label,
-                    display: true,
-                    position: 'start',
-                    color: getProtonColor(threshold.min, 1), // Use flux value for color
-                    font: { size: 10, weight: 'bold' },
-                    xAdjust: 10,
-                    yAdjust: -5,
-                }
-            };
-        });
-
-        return {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: false }, // MODIFIED: No legend needed for single line
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    callbacks: {
-                        label: (context) => {
-                            let label = context.dataset.label || '';
-                            if (label) { label += ': '; }
-                            if (context.parsed.y !== null) { label += context.parsed.y.toExponential(2); }
-                            // Only apply S-class if it's the 10 MeV line
-                            if (context.dataset.label === '>=10 MeV') { 
-                                const flux = context.parsed.y;
-                                let sClass = 'S0';
-                                if (flux >= PROTON_THRESHOLDS.S5.min) sClass = 'S5';
-                                else if (flux >= PROTON_THRESHOLDS.S4.min) sClass = 'S4';
-                                else if (flux >= PROTON_THRESHOLDS.S3.min) sClass = 'S3';
-                                else if (flux >= PROTON_THRESHOLDS.S2.min) sClass = 'S2';
-                                else if (flux >= PROTON_THRESHOLDS.S1.min) sClass = 'S1';
-                                label += ` (${sClass})`;
-                            }
-                            return label;
-                        }
-                    }
-                },
-                annotation: {
-                    annotations: sLevelAnnotations
-                }
-            },
-            scales: {
-                x: {
-                    type: 'time',
-                    adapters: { date: { locale: enNZ } },
-                    time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
-                    min: startTime,
-                    max: now,
-                    ticks: { color: '#71717a', source: 'auto' },
-                    grid: { color: '#3f3f46' }
-                },
-                y: {
-                    type: 'logarithmic',
-                    min: 0.1, // Adjusted to make S0 visible and align with scale
-                    max: 200000, // Slightly above S5 (10^5) for better top padding
-                    ticks: {
-                        color: '#71717a',
-                        callback: (value: any) => {
-                            // Only label major S-levels that align with powers of 10
-                            // Explicitly check for exact min values to prevent floating point issues with strict equality
-                            if (value === PROTON_THRESHOLDS.S1.min) return 'S1';
-                            if (value === PROTON_THRESHOLDS.S2.min) return 'S2';
-                            if (value === PROTON_THRESHOLDS.S3.min) return 'S3';
-                            if (value === PROTON_THRESHOLDS.S4.min) return 'S4';
-                            if (value === PROTON_THRESHOLDS.S5.min) return 'S5';
-                            // Label for S0 near the bottom of the scale
-                            if (value === 0.1) return 'S0';
-                            return null;
-                        }
-                    },
-                    grid: { color: '#3f3f46' },
-                    title: { display: true, text: 'Flux (p/cm²/s/sr)', color: '#a3a3a3' }
-                }
-            }
-        };
-    }, [protonTimeRange]);
-
-    // Proton Chart Data - MODIFIED to only include >=10 MeV
-    const protonChartData = useMemo(() => {
-        if (proton10MeVData.length === 0) return { datasets: [] };
-
-        const datasets = [];
-        const dataPoints = proton10MeVData;
-        
-        datasets.push({
-            label: '>=10 MeV',
-            data: dataPoints.map(d => ({ x: d.time, y: d.flux })),
-            borderColor: (ctx: ScriptableContext<'line'>) => {
-                 const flux = ctx.p1?.parsed?.y ?? PROTON_THRESHOLDS.S0.min; // Safely get flux
-                 return getProtonColor(flux, 1);
-            },
-            backgroundColor: (ctx: ScriptableContext<'line'>) => {
-                const chart = ctx.chart;
-                const { ctx: chartCtx, chartArea } = chart;
-                if (!chartArea) return undefined; // Return undefined if chartArea is not ready
-                const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-                const flux0 = ctx.p0?.parsed?.y ?? PROTON_THRESHOLDS.S0.min; 
-                const flux1 = ctx.p1?.parsed?.y ?? PROTON_THRESHOLDS.S0.min;
-                gradient.addColorStop(0, getProtonColor(flux0, 0.1));
-                gradient.addColorStop(1, getProtonColor(flux1, 0.4));
-                return gradient;
-            },
-            fill: 'origin',
-            tension: 0.1,
-            pointRadius: 0,
-            borderWidth: 2,
-            spanGaps: true,
-        });
-        
-        return { datasets };
-    }, [proton10MeVData]);
-
-
+    
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-            <style>{`
-                /* Ensure CSS variables for solar flare and proton colors are defined here for direct access by Chart.js */
-                /* This block can typically be moved to a global CSS file (e.g., index.css or App.css) if you have one, 
-                   to avoid inline <style> tags and ensure variables are loaded early.
-                   However, for self-contained component updates, keeping it here ensures all context is provided. */
-                :root { 
-                    --solar-flare-ab-rgb: ${getCssVar('--solar-flare-ab-rgb', '34, 197, 94')};
-                    --solar-flare-c-rgb: ${getCssVar('--solar-flare-c-rgb', '245, 158, 11')};
-                    --solar-flare-m-rgb: ${getCssVar('--solar-flare-m-rgb', '255, 69, 0')};
-                    --solar-flare-x-rgb: ${getCssVar('--solar-flare-x-rgb', '147, 112, 219')};
-                    --solar-flare-x5plus-rgb: ${getCssVar('--solar-flare-x5plus-rgb', '255, 105, 180')};
-                    
-                    --proton-s0-rgb: ${getCssVar('--proton-s0-rgb', '34, 197, 94')};
-                    --proton-s1-rgb: ${getCssVar('--proton-s1-rgb', '255, 215, 0')};
-                    --proton-s2-rgb: ${getCssVar('--proton-s2-rgb', '255, 165, 0')};
-                    --proton-s3-rgb: ${getCssVar('--proton-s3-rgb', '255, 69, 0')};
-                    --proton-s4-rgb: ${getCssVar('--proton-s4-rgb', '128, 0, 128')};
-                    --proton-s5-rgb: ${getCssVar('--proton-s5-rgb', '255, 20, 147')};
-                }
-                body { overflow-y: auto !important; } /* This might be better handled globally or moved to index.css if exists */
-                .styled-scrollbar::-webkit-scrollbar { width: 8px; }
-                .styled-scrollbar::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-                .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
-            `}</style>
+            <style>{`:root { --solar-flare-ab-rgb: 34, 197, 94; --solar-flare-c-rgb: 245, 158, 11; --solar-flare-m-rgb: 255, 69, 0; --solar-flare-x-rgb: 147, 112, 219; --solar-flare-x5plus-rgb: 255, 105, 180; } body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
             <div className="container mx-auto">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
@@ -540,27 +247,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                            {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
                         </ul>
-                    </div>
-                    {/* Proton Flux Graph */}
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux</h2>
-                        <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
-                        <div className="flex-grow relative mt-2">
-                            {protonChartData.datasets.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingProtons}</p>}
-                        </div>
-                    </div>
-                    
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                        <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
-                        <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
-                    </div>
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                        <h3 className="text-xl font-semibold text-center text-white mb-4">Queenstown Live Camera</h3>
-                        <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Live View from Queenstown" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://queenstown.roundshot.com/#/"></iframe></div>
-                    </div>
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                        <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-white text-center">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                         <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
                     </div>
                 </main>
             </div>
