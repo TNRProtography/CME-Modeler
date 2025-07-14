@@ -5,12 +5,14 @@ import PauseIcon from './icons/PauseIcon';
 import NextIcon from './icons/NextIcon';
 import PrevIcon from './icons/PrevIcon';
 
+// A simple Download Icon component to be used locally
 const DownloadIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
     </svg>
 );
 
+// Define the types of media the viewer can handle
 type MediaObject = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
@@ -22,15 +24,18 @@ interface MediaViewerModalProps {
 }
 
 const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) => {
+  // --- Generic Viewer State (Zoom/Pan) ---
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
 
+  // --- Animation-Specific State ---
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const intervalRef = useRef<number | null>(null);
 
+  // --- Reset state when new media is opened ---
   useEffect(() => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
@@ -39,10 +44,11 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
     setIsPlaying(media?.type === 'animation');
   }, [media]);
 
+  // --- Animation Playback Logic ---
   useEffect(() => {
     if (media?.type === 'animation' && isPlaying && media.urls.length > 0) {
       intervalRef.current = window.setInterval(() => {
-        setCurrentFrame((prevFrame) => (prevFrame + 1) % media.urls.length);
+        setCurrentFrame((prevFrame) => (prevFrame + 1) % (media.urls.length));
       }, 1000 / 12); // 12 FPS
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -52,6 +58,8 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
     };
   }, [isPlaying, media]);
 
+
+  // --- Event Handlers ---
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const scaleAmount = 0.1;
@@ -108,11 +116,16 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
       className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex flex-col justify-center items-center"
       onClick={onClose}
     >
-        <div className="absolute top-4 right-4 flex items-center gap-4 z-10">
+        {/* Top Controls */}
+        <div 
+            className="absolute top-4 right-4 flex items-center gap-4 z-10"
+            onClick={(e) => e.stopPropagation()} // Stop click from closing the modal
+        >
             <button onClick={handleReset} className="px-3 py-1 bg-neutral-800/80 border border-neutral-600 rounded-md text-white hover:bg-neutral-700" title="Reset Zoom & Pan">Reset View</button>
             <button onClick={onClose} className="p-2 bg-neutral-800/80 border border-neutral-600 rounded-full text-white hover:bg-neutral-700" title="Close Viewer"><CloseIcon className="w-6 h-6" /></button>
         </div>
 
+        {/* Media Container */}
         <div ref={containerRef} className="w-full h-full flex items-center justify-center overflow-hidden" onWheel={handleWheel}>
             {media.type === 'image' && (
                 <img ref={contentRef as React.RefObject<HTMLImageElement>} src={media.url} alt="Full screen media" className="max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()} />
@@ -125,8 +138,12 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
             )}
         </div>
 
+        {/* Bottom Controls for Animation */}
         {media.type === 'animation' && media.urls.length > 0 && (
-            <div className="absolute bottom-5 w-11/12 max-w-xl bg-neutral-900/80 backdrop-blur-sm p-4 rounded-lg shadow-2xl z-10 space-y-3">
+            <div 
+                className="absolute bottom-5 w-11/12 max-w-xl bg-neutral-900/80 backdrop-blur-sm p-4 rounded-lg shadow-2xl z-10 space-y-3"
+                onClick={(e) => e.stopPropagation()} // ** THE FIX: Stop clicks inside the player from closing the modal **
+            >
                  <input type="range" min="0" max={media.urls.length - 1} value={currentFrame} onChange={handleScrub} className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer" />
                  <div className="flex justify-between items-center">
                     <span className="text-xs text-neutral-400">Frame: {currentFrame + 1} / {media.urls.length}</span>
