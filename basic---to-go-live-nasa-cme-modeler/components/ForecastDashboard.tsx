@@ -13,6 +13,12 @@ interface ForecastDashboardProps {
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
+// NEW: Type for Sun/Moon data
+interface CelestialTimeData {
+    moon?: { rise: number | null, set: number | null };
+    sun?: { rise: number | null, set: number | null };
+}
+
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
@@ -259,6 +265,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' }, // Initial default for moon
     });
     
+    // NEW: State for celestial times
+    const [celestialTimes, setCelestialTimes] = useState<CelestialTimeData>({});
+
     const [allPlasmaData, setAllPlasmaData] = useState<any[]>([]);
     const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
     
@@ -339,6 +348,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         // --- Process Forecast Data ---
         if (forecastResult.status === 'fulfilled' && forecastResult.value) { // Check for value existence
             const { currentForecast, historicalData } = forecastResult.value;
+            
+            setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun }); // NEW: Store sun/moon times
 
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
@@ -424,7 +435,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     
-    // MODIFIED: Updated to accept rise, set, illumination and format with emojis
+    // MODIFIED: Updated to accept rise, set, illumination and format with carets
     const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => { 
         const moonIllumination = Math.max(0, (illumination ?? 0) ); // Direct illumination value
         let moonEmoji = '🌑'; 
@@ -439,8 +450,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         // Extract the path from CaretIcon.tsx for embedding as a string
         const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`; // Path for a downward caret
 
-        const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle ml-1" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
-        const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle ml-1"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+        const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+        const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
 
         // NEW: Smaller font size and no text for rise/set
         const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`;
@@ -525,6 +536,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - auroraScoreChartTimeRange;
+        
+        const annotations: any = {};
+        const caretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" style="width:10px;height:10px;transform:rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>`;
+        const caretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" style="width:10px;height:10px;"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>`;
+
+        if (celestialTimes.sun?.rise && celestialTimes.sun.rise > startTime && celestialTimes.sun.rise < now) {
+            annotations['sunrise'] = { type: 'line', xMin: celestialTimes.sun.rise, xMax: celestialTimes.sun.rise, borderColor: 'rgba(252, 211, 77, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `☀️${caretUpSvg}`, display: true, position: 'start', color: '#fcd34d' } };
+        }
+        if (celestialTimes.sun?.set && celestialTimes.sun.set > startTime && celestialTimes.sun.set < now) {
+            annotations['sunset'] = { type: 'line', xMin: celestialTimes.sun.set, xMax: celestialTimes.sun.set, borderColor: 'rgba(252, 211, 77, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `☀️${caretDownSvg}`, display: true, position: 'end', color: '#fcd34d' } };
+        }
+        if (celestialTimes.moon?.rise && celestialTimes.moon.rise > startTime && celestialTimes.moon.rise < now) {
+            annotations['moonrise'] = { type: 'line', xMin: celestialTimes.moon.rise, xMax: celestialTimes.moon.rise, borderColor: 'rgba(209, 213, 219, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `🌕${caretUpSvg}`, display: true, position: 'start', color: '#d1d5db' } };
+        }
+        if (celestialTimes.moon?.set && celestialTimes.moon.set > startTime && celestialTimes.moon.set < now) {
+            annotations['moonset'] = { type: 'line', xMin: celestialTimes.moon.set, xMax: celestialTimes.moon.set, borderColor: 'rgba(209, 213, 219, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `🌕${caretDownSvg}`, display: true, position: 'end', color: '#d1d5db' } };
+        }
+
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
             plugins: {
@@ -550,7 +579,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             return label;
                         }
                     }
-                }
+                },
+                annotation: { annotations }
             },
             scales: {
                 x: {
@@ -570,7 +600,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 }
             }
         };
-    }, [auroraScoreChartTimeRange]);
+    }, [auroraScoreChartTimeRange, celestialTimes]); // Added celestialTimes dependency
 
     // NEW: Aurora Score Chart Data
     const auroraScoreChartData = useMemo(() => {
@@ -635,7 +665,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }
 
     return (
-        <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
+        <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto">
             <div className="container mx-auto">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
@@ -649,7 +679,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
-                        {/* MODIFIED: Removed moon details from this top section */}
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
