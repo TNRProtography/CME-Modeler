@@ -170,16 +170,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             const { bt, bz } = currentForecast.inputs.magneticField;
             setGaugeData(prev => ({ ...prev, power: { ...prev.power, value: currentForecast.inputs.hemisphericPower.toFixed(1), ...getGaugeStyle(currentForecast.inputs.hemisphericPower, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, moon: getMoonData(currentForecast.inputs.moonReduction, currentForecast.inputs.owmDataLastFetched) }));
             
-            // ** FIX: Appending 'Z' to plasma timestamp to ensure it's parsed as UTC **
             const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
             const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r[speedIdx]) > -9999);
             const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null; 
-            const plasmaTimestamp = latestPlasmaRow ? Date.parse(latestPlasmaRow[plasmaTimeIdx] + 'Z') : Date.now();
+            const rawPlasmaTime = latestPlasmaRow ? latestPlasmaRow[plasmaTimeIdx] : null;
+            const plasmaTimestamp = rawPlasmaTime ? Date.parse(rawPlasmaTime.replace(' ', 'T') + 'Z') : Date.now();
             setGaugeData(prev => ({ ...prev, speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` }, density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` } }));
 
-            // ** FIX: Appending 'Z' to magnetic field timestamps to ensure they are parsed as UTC **
             const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
-            setAllMagneticData(magData.slice(1).map((r: any[]) => ({ time: new Date(r[magTimeIdx] + 'Z').getTime(), bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null })));
+            const magPoints = magData.slice(1).map((r: any[]) => {
+                const rawTime = r[magTimeIdx];
+                const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
+                return {
+                    time: cleanTime,
+                    bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null,
+                    bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null
+                };
+            });
+            setAllMagneticData(magPoints);
         
         }).catch(error => { console.error("Dashboard data failed to load:", error); setAuroraBlurb("Could not load forecast data.");
         }).finally(() => { setIsLoading(false); });
