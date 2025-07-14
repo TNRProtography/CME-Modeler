@@ -18,11 +18,11 @@ const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-d
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 
 const GAUGE_THRESHOLDS = {
-  speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800 },
-  density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50 },
-  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200 },
-  bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50 },
-  bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50 }
+  speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, maxExpected: 1000 },
+  density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, maxExpected: 70 },
+  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, maxExpected: 250 },
+  bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, maxExpected: 60 },
+  bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, maxNegativeExpected: -60 }
 };
 
 const GAUGE_COLORS = {
@@ -138,15 +138,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         } catch { return "Invalid Date"; } 
     };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
+    
     const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
-        if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
-        let key: keyof typeof GAUGE_COLORS = 'pink';
+        if (v == null || isNaN(v)) {
+            return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+        }
+
+        let key: keyof typeof GAUGE_COLORS = 'gray';
+        let percentage = 0;
+
         if (type === 'bz') {
             key = getBzScaleColorKey(v, GAUGE_THRESHOLDS.bz);
+            percentage = v < 0 ? Math.min(100, Math.abs(v / GAUGE_THRESHOLDS.bz.maxNegativeExpected) * 100) : 0;
         } else {
-            key = getPositiveScaleColorKey(v, GAUGE_THRESHOLDS[type as 'speed' | 'density' | 'bt' | 'power']);
+            const thresholds = GAUGE_THRESHOLDS[type as 'speed' | 'density' | 'bt' | 'power'];
+            key = getPositiveScaleColorKey(v, thresholds);
+            percentage = Math.min(100, (v / thresholds.maxExpected) * 100);
         }
-        return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage: 0 };
+
+        return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
     
     // --- Data Fetching & Processing Effects ---
@@ -157,7 +167,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
         ]).then(([forecastData, plasmaData, magData]) => {
-            const { currentForecast, historicalData } = forecastData;
+            const { currentForecast } = forecastData;
             setAuroraScore(currentForecast.spotTheAuroraForecast);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
             setAuroraBlurb(getAuroraBlurb(currentForecast.spotTheAuroraForecast));
@@ -210,7 +220,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setSolarWindChartData({
                 datasets: [
                     { 
-                        label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y',
+                        label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
                         segment: {
                             borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)].solid,
@@ -218,7 +228,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         }
                     },
                     { 
-                        label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1',
+                        label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
                         segment: {
                             borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)].solid,
@@ -232,7 +242,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setMagneticFieldChartData({
                 datasets: [
                     { 
-                        label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), 
+                        label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
                         segment: {
                             borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)].solid,
@@ -240,7 +250,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         }
                     },
                     { 
-                        label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), 
+                        label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
                         segment: {
                             borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)].solid,
@@ -264,8 +274,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (isDualAxis) {
             options.scales = {
                 ...options.scales,
-                y: { type: 'linear', position: 'left', ticks: { color: '#86efac' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#86efac' } },
-                y1: { type: 'linear', position: 'right', ticks: { color: '#fcd34d' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#fcd34d' } }
+                y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } },
+                y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } }
             };
         } else {
              options.scales = {
@@ -285,7 +295,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
-            <style>{`.sighting-emoji-icon { font-size: 1.5rem; text-align: center; line-height: 1; text-shadow: 0 0 8px rgba(0,0,0,0.9); background: none; border: none; } .sighting-emoji-icon.\\!text-4xl { font-size: 2.5rem !important; } .leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: #262626; color: #fafafa; }`}</style>
             <div className="container mx-auto">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
@@ -296,7 +305,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <div>
                             <div className="flex items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                             <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
-                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
+                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
