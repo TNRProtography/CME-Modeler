@@ -21,25 +21,31 @@ const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
 // NEW: Proton S-Scale thresholds and labels
 const PROTON_THRESHOLDS = {
-    S0: { min: 0, max: 10, rgb_var: '--proton-s0-rgb', label: 'S0' },
-    S1: { min: 10, max: 100, rgb_var: '--proton-s1-rgb', label: 'S1' },
-    S2: { min: 100, max: 1000, rgb_var: '--proton-s2-rgb', label: 'S2' },
-    S3: { min: 1000, max: 10000, rgb_var: '--proton-s3-rgb', label: 'S3' },
-    S4: { min: 10000, max: 100000, rgb_var: '--proton-s4-rgb', label: 'S4' },
-    S5: { min: 100000, max: Infinity, rgb_var: '--proton-s5-rgb', label: 'S5' },
+    S0: { min: 0.0, max: 10, rgb_var: '--proton-s0-rgb', label: 'S0' }, // Changed min to 0.0 for consistency
+    S1: { min: 10.0, max: 100, rgb_var: '--proton-s1-rgb', label: 'S1' },
+    S2: { min: 100.0, max: 1000, rgb_var: '--proton-s2-rgb', label: 'S2' },
+    S3: { min: 1000.0, max: 10000, rgb_var: '--proton-s3-rgb', label: 'S3' },
+    S4: { min: 10000.0, max: 100000, rgb_var: '--proton-s4-rgb', label: 'S4' },
+    S5: { min: 100000.0, max: Infinity, rgb_var: '--proton-s5-rgb', label: 'S5' },
 };
 
 // --- HELPERS ---
-const getCssVar = (name: string): string => {
-  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
+// Modified getCssVar to return a fallback color string if the variable is not found or invalid
+const getCssVar = (name: string, fallback: string = '128,128,128'): string => {
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+  } catch (e) {
+    return fallback;
+  }
 };
 
 const getColorForFlux = (value: number, opacity: number = 1): string => {
-    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Green for A/B
-    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Hot Pink for X5+
-    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219'; // Purple for X1-X4.9
-    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0'; // OrangeRed for M
-    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow
+    let rgb = getCssVar('--solar-flare-ab-rgb', '34, 197, 94'); // Default to Green
+    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb', '255, 105, 180');
+    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb', '147, 112, 219');
+    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb', '255, 69, 0');
+    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb', '245, 158, 11');
     return `rgba(${rgb}, ${opacity})`;
 };
 
@@ -52,7 +58,7 @@ const getProtonColor = (flux: number, opacity: number = 1): string => {
     else if (flux >= PROTON_THRESHOLDS.S2.min) rgb_var = PROTON_THRESHOLDS.S2.rgb_var;
     else if (flux >= PROTON_THRESHOLDS.S1.min) rgb_var = PROTON_THRESHOLDS.S1.rgb_var;
     
-    return `rgba(${getCssVar(rgb_var)}, ${opacity})`;
+    return `rgba(${getCssVar(rgb_var, '34, 197, 94')}, ${opacity})`; // Default fallback for proton colors
 };
 
 const getColorForFlareClass = (classType: string): { background: string, text: string } => {
@@ -61,19 +67,18 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
 
     if (type === 'X') {
         if (magnitude >= 5) {
-            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' };
+            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb', '255, 105, 180')}, 1)`, text: 'text-white' };
         }
-        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-x-rgb', '147, 112, 219')}, 1)`, text: 'text-white' };
     }
     if (type === 'M') {
-        return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-m-rgb', '255, 69, 0')}, 1)`, text: 'text-white' };
     }
     if (type === 'C') {
-        return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' };
+        return { background: `rgba(${getCssVar('--solar-flare-c-rgb', '245, 158, 11')}, 1)`, text: 'text-black' };
     }
-    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
+    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb', '34, 197, 94')}, 1)`, text: 'text-white' };
 };
-
 
 const formatNZTimestamp = (isoString: string | null) => {
     if (!isoString) return 'N/A';
@@ -216,7 +221,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 const time = new Date(d.time_tag).getTime();
                 const flux = parseFloat(d.flux);
 
-                if (isNaN(flux) || flux < -99999) return; // Filter invalid flux values
+                // Filter out invalid or placeholder flux values (-1.00e+05 or less)
+                if (isNaN(flux) || flux < -1e4) { // NOAA uses -1.00e+05 for missing data
+                    return; 
+                }
 
                 if (!groupedData[energy]) {
                     groupedData[energy] = [];
@@ -257,12 +265,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000;
-        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
-            const midnight = new Date(d).setUTCHours(12,0,0,0);
-            if (midnight > startTime && midnight < now) {
-                midnightAnnotations[`midnight-${midnight}`] = { type: 'line', xMin: midnight, xMax: midnight, borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } };
+        // NZ is UTC+12, so local midnight is 12:00 UTC of the next day.
+        // We want to find midnight *in NZ local time* and plot a line there.
+        // Get the current date in NZT, then find its midnight, then convert back to UTC timestamp.
+        const currentNZDate = new Date(); // Gets current time in local timezone of browser
+        const nzOffsetHours = -currentNZDate.getTimezoneOffset() / 60 + 12; // Calculate difference from UTC to NZST/NZDT (12 or 13)
+        
+        const startOfNZDayUTC = new Date(currentNZDate.getFullYear(), currentNZDate.getMonth(), currentNZDate.getDate(), 0, 0, 0).getTime() - (nzOffsetHours * 3600000);
+
+        for (let d = startOfNZDayUTC; d < now + (24 * 3600000); d += (24 * 3600000)) {
+            if (d > startTime && d < now + (24 * 3600000)) { // Ensure within extended range for labels
+                midnightAnnotations[`midnight-${d}`] = { 
+                    type: 'line', xMin: d, xMax: d, 
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], 
+                    label: { 
+                        content: new Date(d).toLocaleDateString('en-NZ', { day: '2-digit', month: 'short' }), // Just date for midnight
+                        display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 },
+                        xAdjust: 0, yAdjust: 0,
+                    } 
+                };
             }
         }
         
@@ -280,7 +301,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 label: 'Short Flux (0.1-0.8 nm)', 
                 data: allXrayData.map(d => ({x: d.time, y: d.short})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2), }
+                segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => {
+                    const chart = ctx.chart;
+                    const { ctx: chartCtx, chartArea } = chart;
+                    if (!chartArea) return undefined;
+                    const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+                    // Safely access p0 and p1 parsed values for color, provide defaults if needed
+                    const flux0 = ctx.p0?.parsed?.y ?? 1e-9; 
+                    const flux1 = ctx.p1?.parsed?.y ?? 1e-9;
+                    gradient.addColorStop(0, getColorForFlux(flux0, 0.1)); // Adjusted to p0 for gradient start
+                    gradient.addColorStop(1, getColorForFlux(flux1, 0.4)); // Adjusted to p1 for gradient end
+                    return gradient;
+                }},
             }],
         };
     }, [allXrayData]);
@@ -292,20 +324,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
         // Define S-level annotations
         const sLevelAnnotations: any = {};
-        Object.values(PROTON_THRESHOLDS).forEach((threshold, index) => {
-            if (index > 0) { // Skip S0 as it's the baseline
+        Object.values(PROTON_THRESHOLDS).forEach((threshold) => {
+            if (threshold.min !== 0.0 && threshold.min !== Infinity) { // Skip S0 min (0) and Infinity
                  sLevelAnnotations[`s-level-${threshold.label}`] = {
                     type: 'line',
                     yMin: threshold.min,
                     yMax: threshold.min,
-                    borderColor: `rgba(${getCssVar(threshold.rgb_var)}, 0.6)`,
+                    borderColor: getProtonColor(threshold.min, 0.6), // Use flux value for color
                     borderWidth: 1,
                     borderDash: [6, 4],
                     label: {
                         content: threshold.label,
                         display: true,
                         position: 'start',
-                        color: `rgb(${getCssVar(threshold.rgb_var)})`,
+                        color: getProtonColor(threshold.min, 1), // Use flux value for color
                         font: { size: 10, weight: 'bold' },
                         xAdjust: 10,
                         yAdjust: -5,
@@ -356,17 +388,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 },
                 y: {
                     type: 'logarithmic',
-                    min: 1e-1, // Slightly below S1 start to show S0
-                    max: 2e5, // Slightly above S5 start for visibility
+                    min: 0.1, // Minimum flux for S0
+                    max: 200000, // Slightly above S5 (10^5) for better top padding
                     ticks: {
                         color: '#71717a',
                         callback: (value: any) => {
-                            if (value === 1e-1) return 'S0'; // Custom label for very low flux
-                            if (value === 1e1) return 'S1';
-                            if (value === 1e2) return 'S2';
-                            if (value === 1e3) return 'S3';
-                            if (value === 1e4) return 'S4';
-                            if (value === 1e5) return 'S5';
+                            // Only label major S-levels that align with powers of 10
+                            if (value === PROTON_THRESHOLDS.S1.min) return 'S1';
+                            if (value === PROTON_THRESHOLDS.S2.min) return 'S2';
+                            if (value === PROTON_THRESHOLDS.S3.min) return 'S3';
+                            if (value === PROTON_THRESHOLDS.S4.min) return 'S4';
+                            if (value === PROTON_THRESHOLDS.S5.min) return 'S5';
+                            // Custom label for the very bottom of the graph to indicate S0
+                            if (value === 0.1) return 'S0'; 
                             return null;
                         }
                     },
@@ -382,24 +416,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         if (Object.keys(allProtonData).length === 0) return { datasets: [] };
 
         const datasets = [];
-        const energyLevels = ['>=10 MeV', '>=50 MeV', '>=100 MeV', '>=500 MeV']; // Order them for plotting
+        const energyLevels = ['>=10 MeV', '>=50 MeV', '>=100 MeV', '>=500 MeV']; // Consistent order for plotting
 
         energyLevels.forEach((energy) => {
-            const dataPoints = allProtonData[energy];
-            if (!dataPoints || dataPoints.length === 0) return;
+            // Safely get dataPoints, default to empty array if undefined/null
+            const dataPoints = allProtonData[energy] || []; 
+            if (dataPoints.length === 0) return;
 
             if (energy === '>=10 MeV') {
                 datasets.push({
                     label: energy,
                     data: dataPoints.map(d => ({ x: d.time, y: d.flux })),
-                    borderColor: (ctx: ScriptableContext<'line'>) => getProtonColor(ctx.p1.parsed.y, 1),
+                    borderColor: (ctx: ScriptableContext<'line'>) => {
+                         // Safely get flux for color, defaulting to S0 min if data is not available
+                         const flux = ctx.p1?.parsed?.y ?? PROTON_THRESHOLDS.S0.min;
+                         return getProtonColor(flux, 1);
+                    },
                     backgroundColor: (ctx: ScriptableContext<'line'>) => {
                         const chart = ctx.chart;
                         const { ctx: chartCtx, chartArea } = chart;
+                        // Ensure chartArea is available before creating gradient
                         if (!chartArea) return undefined;
                         const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-                        gradient.addColorStop(0, getProtonColor(ctx.p0.parsed.y, 0.1)); // Bottom of segment
-                        gradient.addColorStop(1, getProtonColor(ctx.p1.parsed.y, 0.4)); // Top of segment
+                        // Safely access p0 and p1 parsed values for color, provide defaults if needed
+                        const flux0 = ctx.p0?.parsed?.y ?? PROTON_THRESHOLDS.S0.min; 
+                        const flux1 = ctx.p1?.parsed?.y ?? PROTON_THRESHOLDS.S0.min;
+                        gradient.addColorStop(0, getProtonColor(flux0, 0.1));
+                        gradient.addColorStop(1, getProtonColor(flux1, 0.4));
                         return gradient;
                     },
                     fill: 'origin',
@@ -412,10 +455,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 datasets.push({
                     label: energy,
                     data: dataPoints.map(d => ({ x: d.time, y: d.flux })),
+                    // Fixed colors for other lines
                     borderColor: energy === '>=50 MeV' ? 'rgba(100, 149, 237, 0.8)' : // CornflowerBlue
                                  energy === '>=100 MeV' ? 'rgba(152, 251, 152, 0.8)' : // PaleGreen
                                  'rgba(255, 192, 203, 0.8)', // Pink (for 500 MeV)
-                    borderWidth: 1,
+                    borderWidth: 1, // Thin line
                     fill: false,
                     tension: 0.1,
                     pointRadius: 0,
@@ -429,6 +473,30 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     return (
         <div className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5">
+            <style>{`
+                /* Ensure CSS variables for solar flare and proton colors are defined here for direct access by Chart.js */
+                /* This block can typically be moved to a global CSS file (e.g., index.css or App.css) if you have one, 
+                   to avoid inline <style> tags and ensure variables are loaded early.
+                   However, for self-contained component updates, keeping it here ensures all context is provided. */
+                :root { 
+                    --solar-flare-ab-rgb: ${getCssVar('--solar-flare-ab-rgb', '34, 197, 94')};
+                    --solar-flare-c-rgb: ${getCssVar('--solar-flare-c-rgb', '245, 158, 11')};
+                    --solar-flare-m-rgb: ${getCssVar('--solar-flare-m-rgb', '255, 69, 0')};
+                    --solar-flare-x-rgb: ${getCssVar('--solar-flare-x-rgb', '147, 112, 219')};
+                    --solar-flare-x5plus-rgb: ${getCssVar('--solar-flare-x5plus-rgb', '255, 105, 180')};
+                    
+                    --proton-s0-rgb: ${getCssVar('--proton-s0-rgb', '34, 197, 94')};
+                    --proton-s1-rgb: ${getCssVar('--proton-s1-rgb', '255, 215, 0')};
+                    --proton-s2-rgb: ${getCssVar('--proton-s2-rgb', '255, 165, 0')};
+                    --proton-s3-rgb: ${getCssVar('--proton-s3-rgb', '255, 69, 0')};
+                    --proton-s4-rgb: ${getCssVar('--proton-s4-rgb', '128, 0, 128')};
+                    --proton-s5-rgb: ${getCssVar('--proton-s5-rgb', '255, 20, 147')};
+                }
+                body { overflow-y: auto !important; } /* This might be better handled globally or moved to index.css if exists */
+                .styled-scrollbar::-webkit-scrollbar { width: 8px; }
+                .styled-scrollbar::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
+                .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
+            `}</style>
             <div className="container mx-auto">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
