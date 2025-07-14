@@ -636,9 +636,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }
 
     return (
-        <div className="w-full h-full bg-transparent text-neutral-300 p-5">
+        <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 relative">
             <AuroraBackground />
-            <div className="container mx-auto bg-neutral-950/50 backdrop-blur-sm p-4 rounded-lg">
+            <div className="container mx-auto relative z-10">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                     <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - West Coast Aurora Forecast</h1>
@@ -651,7 +651,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
-                        {/* MODIFIED: Removed moon details from this top section */}
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
