@@ -1,129 +1,124 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
+import LoadingSpinner from './icons/LoadingSpinner';
 
-interface MediaViewerModalProps {
-  mediaUrl: string | null;
-  mediaType: 'image' | 'video' | null;
+interface ForecastModelsModalProps {
+  isOpen: boolean;
   onClose: () => void;
+  setViewerMedia: (media: { url?: string, urls?: string[], type: 'image' | 'video' | 'animation' } | null) => void;
 }
 
-const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaUrl, mediaType, onClose }) => {
-  const [scale, setScale] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
+const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia }) => {
+  const [enlilImageUrls, setEnlilImageUrls] = useState<string[]>([]);
+  const [isLoadingEnlil, setIsLoadingEnlil] = useState(true);
+  const [enlilError, setEnlilError] = useState<string | null>(null);
+
+  const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
+  const MAX_FRAMES_TO_CHECK = 400;
 
   useEffect(() => {
-    // Reset zoom and pan when a new media item is opened
-    setScale(1);
-    setPosition({ x: 0, y: 0 });
-  }, [mediaUrl]);
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const scaleAmount = 0.1;
-    let newScale = scale;
-    if (e.deltaY < 0) {
-      newScale = scale + scaleAmount; // Zoom in
-    } else {
-      newScale = scale - scaleAmount; // Zoom out
+    if (!isOpen) {
+      return;
     }
-    setScale(Math.min(Math.max(0.5, newScale), 5)); // Clamp scale between 0.5x and 5x
-  };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startPos = { x: e.clientX - position.x, y: e.clientY - position.y };
+    const fetchEnlilImages = async () => {
+      setIsLoadingEnlil(true);
+      setEnlilError(null);
+      
+      const potentialUrls = Array.from({ length: MAX_FRAMES_TO_CHECK }, (_, i) => `${ENLIL_BASE_URL}${i + 1}`);
+      const results = await Promise.allSettled(
+        potentialUrls.map(url => fetch(url).then(res => {
+          if (!res.ok) throw new Error(`Frame load failed: ${res.status}`);
+          return res.blob();
+        }))
+      );
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      setPosition({
-        x: moveEvent.clientX - startPos.x,
-        y: moveEvent.clientY - startPos.y,
-      });
+      const successfulUrls = results
+        .map(r => r.status === 'fulfilled' ? URL.createObjectURL(r.value) : null)
+        .filter((url): url is string => url !== null);
+
+      if (successfulUrls.length > 0) {
+        setEnlilImageUrls(successfulUrls);
+      } else {
+        setEnlilError('No ENLIL images could be loaded.');
+      }
+      setIsLoadingEnlil(false);
     };
 
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+    fetchEnlilImages();
+
+    // Cleanup blob URLs on unmount or when modal closes
+    return () => {
+      enlilImageUrls.forEach(url => URL.revokeObjectURL(url));
     };
+  }, [isOpen]);
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-  
-  const handleReset = () => {
-    setScale(1);
-    setPosition({ x: 0, y: 0 });
-  };
-
-
-  if (!mediaUrl || !mediaType) return null;
+  if (!isOpen) return null;
 
   return (
     <div 
-      className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex flex-col justify-center items-center"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
       onClick={onClose}
     >
-        {/* Controls */}
-        <div className="absolute top-4 right-4 flex items-center gap-4 z-10">
-            <button
-                onClick={handleReset}
-                className="px-3 py-1 bg-neutral-800/80 border border-neutral-600 rounded-md text-white hover:bg-neutral-700"
-                title="Reset Zoom & Pan"
-            >
-                Reset View
-            </button>
-            <button 
-                onClick={onClose} 
-                className="p-2 bg-neutral-800/80 border border-neutral-600 rounded-full text-white hover:bg-neutral-700"
-                title="Close Viewer"
-            >
-                <CloseIcon className="w-6 h-6" />
-            </button>
+      <div 
+        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] text-neutral-300 flex flex-col"
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h2 className="text-2xl font-bold text-neutral-200">Other CME Forecast Models</h2>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
+            <CloseIcon className="w-6 h-6" />
+          </button>
         </div>
+        
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* HUXT Model Section */}
+          <section className="space-y-4">
+            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">HUXT (Met Office)</h3>
+            <div className="text-sm text-neutral-400 leading-relaxed">
+               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed by the UK's Met Office Space Weather Operations Centre (MOSWOC). It simulates the propagation of solar wind structures, like Coronal Mass Ejections (CMEs), through the inner heliosphere.</p>
+               <p className="mt-2">Unlike more complex models, HUXT simplifies the physics to run very quickly, making it ideal for real-time forecasting. It takes data from models like WSA (which provides the initial solar wind structure at the Sun) and "pushes" it outwards to predict the arrival time and speed of CMEs at Earth and other planets.</p>
+            </div>
+            <div className="space-y-4">
+                <div onClick={() => setViewerMedia({ url: 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png', type: 'image' })} className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
+                    <h4 className="font-semibold text-center mb-2">Latest HUXT Forecast</h4>
+                    <img src="https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png" alt="HUXT Forecast" className="rounded border border-neutral-700 w-full" />
+                </div>
+                <div onClick={() => setViewerMedia({ url: 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4', type: 'video' })} className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
+                    <h4 className="font-semibold text-center mb-2">HUXT Animation</h4>
+                    <video src="https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4" autoPlay loop muted playsInline className="rounded w-full">Your browser does not support the video tag.</video>
+                </div>
+            </div>
+          </section>
 
-        {/* Media Container */}
-        <div 
-            ref={containerRef}
-            className="w-full h-full flex items-center justify-center overflow-hidden"
-            onWheel={handleWheel}
-        >
-            {mediaType === 'image' && (
-                <img
-                    ref={contentRef as React.RefObject<HTMLImageElement>}
-                    src={mediaUrl}
-                    alt="Full screen media"
-                    className="max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing"
-                    style={{
-                        transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                        transition: 'transform 0.1s ease-out',
-                    }}
-                    onMouseDown={handleMouseDown}
-                    onClick={(e) => e.stopPropagation()} // Prevent modal from closing when clicking image
-                />
-            )}
-            {mediaType === 'video' && (
-                <video
-                    ref={contentRef as React.RefObject<HTMLVideoElement>}
-                    src={mediaUrl}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing"
-                    style={{
-                        transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                        transition: 'transform 0.1s ease-out',
-                    }}
-                    onMouseDown={handleMouseDown}
-                    onClick={(e) => e.stopPropagation()} // Prevent modal from closing when clicking video
-                >
-                    Your browser does not support the video tag.
-                </video>
-            )}
+          {/* WSA-ENLIL Model Section */}
+          <section className="space-y-4">
+            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">WSA-ENLIL (NOAA)</h3>
+             <div className="text-sm text-neutral-400 leading-relaxed">
+                <p>The Wang-Sheeley-Arge (WSA)-ENLIL model is the primary operational space weather forecasting model used by the U.S. National Oceanic and Atmospheric Administration (NOAA). It provides a comprehensive, large-scale prediction of solar wind conditions throughout the heliosphere.</p>
+                <p className="mt-2">This animation shows the model's prediction of solar wind density. Watch for dense clouds (red/yellow) erupting from the Sun (center) and traveling outwards past the planets (colored dots).</p>
+            </div>
+            <div 
+              onClick={() => enlilImageUrls.length > 0 && setViewerMedia({ urls: enlilImageUrls, type: 'animation' })}
+              className="bg-neutral-900 p-2 rounded-lg relative min-h-[300px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
+            >
+                <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">WSA-ENLIL Animation</h4>
+                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Loading ENLIL animation frames...</p></div>}
+                {enlilError && <p className="text-red-400 text-center">{enlilError}</p>}
+                {!isLoadingEnlil && enlilImageUrls.length > 0 && (
+                  <>
+                    <img src={enlilImageUrls[0]} alt="ENLIL Forecast Preview" className="rounded w-full" />
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                      <p className="text-white text-lg font-bold">Click to Play Animation</p>
+                    </div>
+                  </>
+                )}
+            </div>
+          </section>
         </div>
+      </div>
     </div>
   );
 };
 
-export default MediaViewerModal;
+export default ForecastModelsModal;

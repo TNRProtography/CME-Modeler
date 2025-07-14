@@ -25,6 +25,12 @@ import ForecastModelsModal from './components/ForecastModelsModal';
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 
+// Define the new media type for the viewer state
+type ViewerMedia = 
+    | { type: 'image', url: string }
+    | { type: 'video', url: string }
+    | { type: 'animation', urls: string[] };
+
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
@@ -46,7 +52,8 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
 
-  const [viewerMedia, setViewerMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
+  // Use the new ViewerMedia type for the state
+  const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -404,8 +411,7 @@ const App: React.FC = () => {
         </div>
         
         <MediaViewerModal 
-          mediaUrl={viewerMedia?.url || null}
-          mediaType={viewerMedia?.type || null}
+          media={viewerMedia}
           onClose={() => setViewerMedia(null)}
         />
     </div>
