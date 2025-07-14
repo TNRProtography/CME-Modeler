@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
-import CameraIcon from './icons/CameraIcon'; // NEW: Import CameraIcon
+import CaretIcon from './icons/CaretIcon'; // NEW: Import CaretIcon
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -46,6 +46,16 @@ const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: nu
     if (value >= thresholds.orange) return 'orange';
     if (value >= thresholds.yellow) return 'yellow';
     return 'gray';
+};
+
+// NEW: Get Forecast Score Color Key based on the score description tiers
+const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
+    if (score >= 80) return 'pink'; // 80%+ 🤩
+    if (score >= 50) return 'red';  // 50-80% 😀
+    if (score >= 40) return 'orange'; // 40-50% 🙂
+    if (score >= 25) return 'yellow'; // 25-40% 😊
+    if (score >= 10) return 'gray'; // 10-25% 😐 (Using gray for minimal, as yellow is for 25-40)
+    return 'gray'; // < 10% 😞 (Default gray)
 };
 
 const getBzScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
@@ -444,8 +454,29 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
             plugins: {
-                legend: { labels: { color: '#a1a1aa' }},
-                tooltip: { callbacks: { label: (c: any) => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}%` } } // Label for both lines
+                legend: { labels: { color: '#a1a1aa' }}, // Enable legend for both lines
+                tooltip: {
+                    callbacks: {
+                        title: (context) => {
+                            if (context.length > 0) {
+                                return `Time: ${new Date(context[0].parsed.x).toLocaleTimeString('en-NZ')}`;
+                            }
+                            return '';
+                        },
+                        label: (context) => {
+                            let label = context.dataset.label || '';
+                            if (label) { label += ': '; }
+                            if (context.parsed.y !== null) { label += `${context.parsed.y.toFixed(1)}%`; }
+                            // Add distinction for the tooltip
+                            if (context.dataset.label === 'Spot The Aurora Forecast') {
+                                label += ' (Final Score)';
+                            } else if (context.dataset.label === 'Base Score') {
+                                label += ' (Raw Calculation)';
+                            }
+                            return label;
+                        }
+                    }
+                }
             },
             scales: {
                 x: {
@@ -470,30 +501,54 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     // NEW: Aurora Score Chart Data
     const auroraScoreChartData = useMemo(() => {
         if (auroraScoreHistory.length === 0) return { datasets: [] };
+
+        const getForecastGradient = (ctx: ScriptableContext<'line'>) => {
+            const chart = ctx.chart;
+            const { ctx: chartCtx, chartArea } = chart;
+            if (!chartArea) return undefined;
+
+            const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+            // Iterate over points to create color stops based on score
+            // Safely get scores, default to 0 if not available
+            const score0 = ctx.p0?.parsed?.y ?? 0;
+            const score1 = ctx.p1?.parsed?.y ?? 0;
+
+            const colorKey0 = getForecastScoreColorKey(score0);
+            const colorKey1 = getForecastScoreColorKey(score1);
+
+            // Add color stops for segment
+            // This is a simplified linear interpolation between two point colors
+            gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi); // Start color of the segment
+            gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi); // End color of the segment
+
+            return gradient;
+        };
+
+
         return {
             datasets: [
                 {
-                    label: 'Forecast Score', // Corresponds to finalScore
+                    label: 'Spot The Aurora Forecast', // Corresponds to finalScore
                     data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
-                    borderColor: '#818CF8', // Indigo-400
-                    backgroundColor: 'rgba(129, 140, 248, 0.2)',
+                    borderColor: 'transparent', // No line for the main forecast
+                    backgroundColor: getForecastGradient, // Dynamic gradient fill
                     fill: 'origin',
                     tension: 0.2,
                     pointRadius: 0,
-                    borderWidth: 2,
+                    borderWidth: 0, // Ensure no border line
                     spanGaps: true,
                     order: 1, // Ensure this is on top
                 },
                 {
                     label: 'Base Score',
                     data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })),
-                    borderColor: '#34D399', // Emerald-400 (or another distinct color)
+                    borderColor: 'rgba(255, 255, 255, 1)', // Opaque white
                     backgroundColor: 'transparent',
                     fill: false,
                     tension: 0.2,
                     pointRadius: 0,
-                    borderWidth: 1, // Thinner line
-                    borderDash: [5, 5], // Dashed line
+                    borderWidth: 1, // Thin line
+                    borderDash: [5, 5], // Dotted line
                     spanGaps: true,
                     order: 2, // Behind forecast score
                 }
@@ -535,7 +590,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                     </p>
                                 )}
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                    <CameraIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-0' : 'rotate-180'}`} />
+                                    <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} />
                                 </button>
                             </div>
                         </div>
