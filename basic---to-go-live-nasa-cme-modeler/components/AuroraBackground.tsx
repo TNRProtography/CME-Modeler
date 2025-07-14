@@ -97,7 +97,7 @@ const AuroraBackground: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!mountRef.current) return;
+    if (!mountRef.current || !window.THREE) return;
 
     const scene = new window.THREE.Scene();
     const camera = new window.THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -142,7 +142,9 @@ const AuroraBackground: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
-      mountNode.removeChild(renderer.domElement);
+      if(mountNode.contains(renderer.domElement)){
+         mountNode.removeChild(renderer.domElement);
+      }
       renderer.dispose();
       geometry.dispose();
       material.dispose();
