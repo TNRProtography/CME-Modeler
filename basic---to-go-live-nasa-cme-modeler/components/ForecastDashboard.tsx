@@ -18,33 +18,48 @@ const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-d
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 
 const GAUGE_THRESHOLDS = {
-  speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity },
-  density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity },
-  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, pink: Infinity },
-  bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, pink: Infinity },
-  bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, pink: -50 }
+  speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800 },
+  density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50 },
+  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200 },
+  bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50 },
+  bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50 }
 };
-const GAUGE_COLORS = { gray: 'rgba(128, 128, 128, 0.6)', yellow: 'rgba(255, 215, 0, 0.6)', orange: 'rgba(255, 165, 0, 0.6)', red: 'rgba(255, 69, 0, 0.6)', purple: 'rgba(128, 0, 128, 0.6)', pink: 'rgba(255, 20, 147, 0.6)' };
+
+const GAUGE_COLORS = {
+    gray: { solid: 'rgb(128, 128, 128)', semi: 'rgba(128, 128, 128, 0.5)', trans: 'rgba(128, 128, 128, 0)' },
+    yellow: { solid: 'rgb(255, 215, 0)', semi: 'rgba(255, 215, 0, 0.5)', trans: 'rgba(255, 215, 0, 0)' },
+    orange: { solid: 'rgb(255, 165, 0)', semi: 'rgba(255, 165, 0, 0.5)', trans: 'rgba(255, 165, 0, 0)' },
+    red: { solid: 'rgb(255, 69, 0)', semi: 'rgba(255, 69, 0, 0.5)', trans: 'rgba(255, 69, 0, 0)' },
+    purple: { solid: 'rgb(128, 0, 128)', semi: 'rgba(128, 0, 128, 0.5)', trans: 'rgba(128, 0, 128, 0)' },
+    pink: { solid: 'rgb(255, 20, 147)', semi: 'rgba(255, 20, 147, 0.5)', trans: 'rgba(255, 20, 147, 0)' }
+};
+
 const GAUGE_EMOJIS = { gray: '😐', yellow: '🙂', orange: '😊', red: '😀', purple: '😍', pink: '🤩', error: '❓' };
 
 // --- Helper functions for dynamic graph colors ---
-const getPositiveScaleColor = (value: number, thresholds: { [key: string]: number }) => {
-    if (value >= thresholds.pink) return GAUGE_COLORS.pink;
-    if (value >= thresholds.purple) return GAUGE_COLORS.purple;
-    if (value >= thresholds.red) return GAUGE_COLORS.red;
-    if (value >= thresholds.orange) return GAUGE_COLORS.orange;
-    if (value >= thresholds.yellow) return GAUGE_COLORS.yellow;
-    return GAUGE_COLORS.gray;
+const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
+    if (value >= thresholds.purple) return 'purple';
+    if (value >= thresholds.red) return 'red';
+    if (value >= thresholds.orange) return 'orange';
+    if (value >= thresholds.yellow) return 'yellow';
+    return 'gray';
 };
 
-const getBzScaleColor = (value: number, thresholds: { [key: string]: number }) => {
-    if (value <= thresholds.pink) return GAUGE_COLORS.pink;
-    if (value <= thresholds.purple) return GAUGE_COLORS.purple;
-    if (value <= thresholds.red) return GAUGE_COLORS.red;
-    if (value <= thresholds.orange) return GAUGE_COLORS.orange;
-    if (value <= thresholds.yellow) return GAUGE_COLORS.yellow;
-    return GAUGE_COLORS.gray;
+const getBzScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
+    if (value <= thresholds.purple) return 'purple';
+    if (value <= thresholds.red) return 'red';
+    if (value <= thresholds.orange) return 'orange';
+    if (value <= thresholds.yellow) return 'yellow';
+    return 'gray';
 };
+
+const createGradient = (ctx: CanvasRenderingContext2D, chartArea: any, colorKey: keyof typeof GAUGE_COLORS) => {
+    const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    gradient.addColorStop(0, GAUGE_COLORS[colorKey].semi);
+    gradient.addColorStop(1, GAUGE_COLORS[colorKey].trans);
+    return gradient;
+};
+
 
 // --- Reusable UI Components ---
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -124,15 +139,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
     const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
-        if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray, emoji: GAUGE_EMOJIS.error, percentage: 0 };
-        let key: keyof typeof GAUGE_COLORS = 'pink', percentage = 0;
+        if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+        let key: keyof typeof GAUGE_COLORS = 'pink';
         if (type === 'bz') {
-            key = v <= GAUGE_THRESHOLDS.bz.pink ? 'pink' : v <= GAUGE_THRESHOLDS.bz.purple ? 'purple' : v <= GAUGE_THRESHOLDS.bz.red ? 'red' : v <= GAUGE_THRESHOLDS.bz.orange ? 'orange' : v <= GAUGE_THRESHOLDS.bz.yellow ? 'yellow' : 'gray';
+            key = getBzScaleColorKey(v, GAUGE_THRESHOLDS.bz);
         } else {
-            const th = GAUGE_THRESHOLDS[type as 'speed' | 'density' | 'bt'];
-            key = v >= th.purple ? 'purple' : v >= th.red ? 'red' : v >= th.orange ? 'orange' : v >= th.yellow ? 'yellow' : 'gray';
+            key = getPositiveScaleColorKey(v, GAUGE_THRESHOLDS[type as 'speed' | 'density' | 'bt' | 'power']);
         }
-        return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage: 0 };
+        return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage: 0 };
     }, []);
     
     // --- Data Fetching & Processing Effects ---
@@ -195,11 +209,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (allPlasmaData.length > 0) {
             setSolarWindChartData({
                 datasets: [
-                    { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), fill: 'origin', borderWidth: 0, pointRadius: 0, 
-                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getPositiveScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed) }
+                    { 
+                        label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), 
+                        fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+                        segment: {
+                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)].solid,
+                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)),
+                        }
                     },
-                    { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), fill: 'origin', borderWidth: 0, pointRadius: 0,
-                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getPositiveScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density) }
+                    { 
+                        label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), 
+                        fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+                        segment: {
+                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)].solid,
+                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)),
+                        }
                     }
                 ]
             });
@@ -207,18 +231,28 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (allMagneticData.length > 0) {
             setMagneticFieldChartData({
                 datasets: [
-                    { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), fill: 'origin', borderWidth: 0, pointRadius: 0, 
-                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getPositiveScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt) }
+                    { 
+                        label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), 
+                        fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+                        segment: {
+                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)].solid,
+                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)),
+                        }
                     },
-                    { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), fill: 'origin', borderWidth: 0, pointRadius: 0,
-                      segment: { backgroundColor: (ctx: ScriptableContext<'line'>) => getBzScaleColor(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz) }
+                    { 
+                        label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), 
+                        fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+                        segment: {
+                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)].solid,
+                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)),
+                        }
                     }
                 ]
             });
         }
     }, [allPlasmaData, allMagneticData]);
 
-    const createChartOptions = useCallback((rangeMs: number, title: string): ChartOptions<'line'> => {
+    const createChartOptions = useCallback((rangeMs: number): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - rangeMs;
         return {
@@ -228,8 +262,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         };
     }, []);
     
-    const solarWindOptions = useMemo(() => createChartOptions(timeRange, 'Solar Wind'), [timeRange, createChartOptions]);
-    const magneticFieldOptions = useMemo(() => createChartOptions(timeRange, 'IMF'), [timeRange, createChartOptions]);
+    const solarWindOptions = useMemo(() => createChartOptions(timeRange), [timeRange, createChartOptions]);
+    const magneticFieldOptions = useMemo(() => createChartOptions(timeRange), [timeRange, createChartOptions]);
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
@@ -248,7 +282,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <div>
                             <div className="flex items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                             <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
-                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray }}></div></div>
+                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore || 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
