@@ -151,7 +151,7 @@ const AuroraBackground: React.FC = () => {
     };
   }, []);
 
-  return <div ref={mountRef} className="fixed top-0 left-0 w-full h-full z-[-1] pointer-events-none" />;
+  return <div ref={mountRef} className="fixed top-0 left-0 w-full h-full z-0 pointer-events-none" />;
 };
 
 export default AuroraBackground;

@@ -651,6 +651,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                             <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
                         </div>
+                        {/* MODIFIED: Removed moon details from this top section */}
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
