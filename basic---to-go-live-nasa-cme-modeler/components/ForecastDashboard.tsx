@@ -16,7 +16,6 @@ const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
-const SIGHTING_API_ENDPOINT = 'https://aurora-sightings.thenamesrock.workers.dev/';
 
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
@@ -71,14 +70,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         bz: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
         moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
     });
-    const [allAuroraData, setAllAuroraData] = useState<{base: any[], real: any[]}>({base: [], real: []});
+    
+    const [allPlasmaData, setAllPlasmaData] = useState<any[]>([]);
     const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
-    const [auroraChartData, setAuroraChartData] = useState<any>({ datasets: [] });
-    const [magneticChartData, setMagneticChartData] = useState<any>({ datasets: [] });
+    
+    const [solarWindChartData, setSolarWindChartData] = useState<any>({ datasets: [] });
+    const [magneticFieldChartData, setMagneticFieldChartData] = useState<any>({ datasets: [] });
+    
     const [auroraTimeRange, setAuroraTimeRange] = useState<number>(2 * 3600000);
     const [auroraTimeLabel, setAuroraTimeLabel] = useState<string>('2 Hr');
-    const [magneticTimeRange, setMagneticTimeRange] = useState<number>(2 * 3600000);
-    const [magneticTimeLabel, setMagneticTimeLabel] = useState<string>('2 Hr');
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     
@@ -118,21 +118,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         }
         return { color: GAUGE_COLORS[key], emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
-    const createChartOptions = useCallback((rangeMs: number, yConfig: {min?: number, max?: number, type?: 'linear' | 'logarithmic'} = {}): ChartOptions<'line'> => {
-        const now = Date.now();
-        const startTime = now - rangeMs;
-        return {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false } },
-            scales: { 
-                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                y: { type: yConfig.type || 'linear', min: yConfig.min, max: yConfig.max, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } } 
-            }
-        };
-    }, []);
-    const auroraOptions = useMemo(() => createChartOptions(auroraTimeRange, { min: 0, max: 100 }), [auroraTimeRange, createChartOptions]);
-    const magneticOptions = useMemo(() => createChartOptions(magneticTimeRange), [magneticTimeRange, createChartOptions]);
-    
+
     // --- Data Fetching & Processing Effects ---
     useEffect(() => {
         setIsLoading(true);
@@ -145,10 +131,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setAuroraScore(currentForecast.spotTheAuroraForecast);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
             setAuroraBlurb(getAuroraBlurb(currentForecast.spotTheAuroraForecast));
-            setAllAuroraData({
-                base: (historicalData || []).map((item: any) => ({ x: item.timestamp, y: item.baseScore })),
-                real: (historicalData || []).map((item: any) => ({ x: item.timestamp, y: item.finalScore })),
-            });
+            
             const { bt, bz } = currentForecast.inputs.magneticField;
             setGaugeData(prev => ({ ...prev, power: { ...prev.power, value: currentForecast.inputs.hemisphericPower.toFixed(1), ...getGaugeStyle(currentForecast.inputs.hemisphericPower, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, bt: { ...prev.bt, value: bt.toFixed(1), ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, bz: { ...prev.bz, value: bz.toFixed(1), ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` }, moon: getMoonData(currentForecast.inputs.moonReduction, currentForecast.inputs.owmDataLastFetched) }));
             
@@ -170,6 +153,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 };
             });
             setAllMagneticData(magPoints);
+
+            const plasmaPoints = plasmaData.slice(1).map((r:any[]) => {
+                const rawTime = r[plasmaTimeIdx];
+                const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
+                return {
+                    time: cleanTime,
+                    speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null,
+                    density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null,
+                }
+            });
+            setAllPlasmaData(plasmaPoints);
         
         }).catch(error => { console.error("Dashboard data failed to load:", error); setAuroraBlurb("Could not load forecast data.");
         }).finally(() => { setIsLoading(false); });
@@ -180,9 +174,53 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     const getMoonData = (moonReduction: number, timestamp: number) => { const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' }; };
     
-    useEffect(() => { if (allAuroraData.base.length) { setAuroraChartData({ datasets: [ { label: 'Base Score', data: allAuroraData.base, borderColor: '#A9A9A9', tension: 0.4, borderWidth: 1.5, pointRadius: 0 }, { label: 'Spot The Aurora Forecast', data: allAuroraData.real, borderColor: '#FF6347', tension: 0.4, borderWidth: 2, pointRadius: 0, fill: 'origin', backgroundColor: 'rgba(255, 99, 71, 0.2)' } ] }); } }, [allAuroraData]);
-    useEffect(() => { if (allMagneticData.length) { setMagneticChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({x: p.time, y: p.bt})), borderColor: '#A9A9A9', tension: 0.3, borderWidth: 1.5, pointRadius: 0 }, { label: 'Bz', data: allMagneticData.map(p => ({x: p.time, y: p.bz})), borderColor: '#FF6347', tension: 0.3, borderWidth: 1.5, pointRadius: 0 } ] }); } }, [allMagneticData]);
+    // --- Combined Chart Logic ---
+    useEffect(() => {
+        if (allPlasmaData.length > 0) {
+            setSolarWindChartData({
+                datasets: [
+                    { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), borderColor: '#34d399', tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), borderColor: '#fbbf24', tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y1' }
+                ]
+            });
+        }
+        if (allMagneticData.length > 0) {
+            setMagneticFieldChartData({
+                datasets: [
+                    { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), borderColor: '#a3a3a3', tension: 0.3, borderWidth: 1.5, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), borderColor: '#f87171', tension: 0.3, borderWidth: 2, pointRadius: 0, yAxisID: 'y' }
+                ]
+            });
+        }
+    }, [allPlasmaData, allMagneticData]);
+
+    const createCombinedChartOptions = useCallback((rangeMs: number, topChart: boolean): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - rangeMs;
+        const baseOptions: ChartOptions<'line'> = {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false } },
+            scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' }, display: !topChart }, }
+        };
+
+        if (topChart) {
+            baseOptions.scales = {
+                ...baseOptions.scales,
+                y: { type: 'linear', position: 'left', ticks: { color: '#34d399' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#34d399' } },
+                y1: { type: 'linear', position: 'right', ticks: { color: '#fbbf24' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#fbbf24' } }
+            };
+        } else {
+             baseOptions.scales = {
+                ...baseOptions.scales,
+                y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } }
+            };
+        }
+        return baseOptions;
+    }, []);
     
+    const solarWindOptions = useMemo(() => createCombinedChartOptions(auroraTimeRange, true), [auroraTimeRange, createCombinedChartOptions]);
+    const magneticFieldOptions = useMemo(() => createCombinedChartOptions(auroraTimeRange, false), [auroraTimeRange, createCombinedChartOptions]);
+
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
     }
@@ -218,16 +256,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         ))}
                     </div>
 
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind & IMF Data (Last {auroraTimeLabel})</h2>
                         <TimeRangeButtons onSelect={(duration, label) => { setAuroraTimeRange(duration); setAuroraTimeLabel(label); }} selected={auroraTimeRange} />
-                        <div className="flex-grow relative mt-2">{auroraChartData.datasets.length > 0 && auroraChartData.datasets[0]?.data.length > 0 ? <Line data={auroraChartData} options={auroraOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}</div>
+                        <div className="flex-grow relative mt-2 h-48">
+                            {solarWindChartData.datasets.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                        </div>
+                        <div className="flex-grow relative h-48">
+                           {magneticFieldChartData.datasets.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}
+                        </div>
                     </div>
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Magnetic Field (Last {magneticTimeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => {setMagneticTimeRange(duration); setMagneticTimeLabel(label)}} selected={magneticTimeRange} />
-                         <div className="flex-grow relative mt-2">{magneticChartData.datasets.length > 0 && magneticChartData.datasets[0]?.data.length > 0 ? <Line data={magneticChartData} options={magneticOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Loading Chart...</p>}</div>
-                    </div>
+                    
                     <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                         <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
                         <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
