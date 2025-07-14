@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
-import CaretIcon from './icons/CaretIcon'; // Using the single CaretIcon
+import CaretIcon from './icons/CaretIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -265,8 +265,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [solarWindChartData, setSolarWindChartData] = useState<any>({ datasets: [] });
     const [magneticFieldChartData, setMagneticFieldChartData] = useState<any>({ datasets: [] });
     
-    const [timeRange, setTimeRange] = useState<number>(6 * 3600000);
-    const [timeLabel, setTimeLabel] = useState<string>('6 Hr');
+    // MODIFIED: Decoupled time range state for each graph
+    const [solarWindTimeRange, setSolarWindTimeRange] = useState<number>(6 * 3600000);
+    const [solarWindTimeLabel, setSolarWindTimeLabel] = useState<string>('6 Hr');
+    const [magneticFieldTimeRange, setMagneticFieldTimeRange] = useState<number>(6 * 3600000);
+    const [magneticFieldTimeLabel, setMagneticFieldTimeLabel] = useState<string>('6 Hr');
+    
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
 
@@ -435,10 +439,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         // Extract the path from CaretIcon.tsx for embedding as a string
         const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`; // Path for a downward caret
 
-        const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-4 h-4 inline-block align-middle ml-1" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
-        const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-4 h-4 inline-block align-middle ml-1"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+        const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle ml-1" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+        const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle ml-1"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
 
-
+        // NEW: Smaller font size and no text for rise/set
         const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`;
         const lastUpdated = `Updated: ${formatNZTimestamp(Date.now())}`;
 
@@ -457,7 +461,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), 
                         yAxisID: 'y', order: 1, fill: 'origin', 
                         borderWidth: 1.5, pointRadius: 0, 
-                        tension: lineTension(timeRange), // Conditional tension
+                        tension: lineTension(solarWindTimeRange), // Use specific time range
                         segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } 
                     }, 
                     { 
@@ -465,7 +469,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), 
                         yAxisID: 'y1', order: 0, fill: 'origin', 
                         borderWidth: 1.5, pointRadius: 0, 
-                        tension: lineTension(timeRange), // Conditional tension
+                        tension: lineTension(solarWindTimeRange), // Use specific time range
                         segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } 
                     } 
                 ] 
@@ -479,7 +483,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), 
                         order: 1, fill: 'origin', 
                         borderWidth: 1.5, pointRadius: 0, 
-                        tension: lineTension(timeRange), // Conditional tension
+                        tension: lineTension(magneticFieldTimeRange), // Use specific time range
                         segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } 
                     }, 
                     { 
@@ -487,13 +491,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), 
                         order: 0, fill: 'origin', 
                         borderWidth: 1.5, pointRadius: 0, 
-                        tension: lineTension(timeRange), // Conditional tension
+                        tension: lineTension(magneticFieldTimeRange), // Use specific time range
                         segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } 
                     } 
                 ] 
             }); 
         }
-    }, [allPlasmaData, allMagneticData, timeRange]); // Add timeRange to dependency array
+    }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]); // Update dependency array
 
     const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean): ChartOptions<'line'> => {
         const now = Date.now();
@@ -512,8 +516,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return options;
     }, []);
     
-    const solarWindOptions = useMemo(() => createChartOptions(timeRange, true), [timeRange, createChartOptions]);
-    const magneticFieldOptions = useMemo(() => createChartOptions(timeRange, false), [timeRange, createChartOptions]);
+    const solarWindOptions = useMemo(() => createChartOptions(solarWindTimeRange, true), [solarWindTimeRange, createChartOptions]);
+    const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, false), [magneticFieldTimeRange, createChartOptions]);
 
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore), [auroraScore]);
 
@@ -671,7 +675,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Phone Settings */}
                                 <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                    <h3 className="text-lg font-semibold text-neutral-200 mb-3">📸 Phone Camera</h3>
+                                    <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
                                     <p className="text-neutral-400 text-sm mb-4">
                                         **General Phone Tips:** Use a tripod! Manual focus to infinity (look for a "mountain" or "star" icon in Pro/Night mode). Turn off flash.
                                     </p>
@@ -769,15 +773,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     </div>
 
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind (Last {timeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => { setTimeRange(duration); setTimeLabel(label); }} selected={timeRange} />
+                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind (Last {solarWindTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
                         <div className="flex-grow relative mt-2">
                             {solarWindChartData.datasets.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind data unavailable.</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field (Last {timeLabel})</h2>
-                        <TimeRangeButtons onSelect={(duration, label) => { setTimeRange(duration); setTimeLabel(label); }} selected={timeRange} />
+                        <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field (Last {magneticFieldTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
                          <div className="flex-grow relative mt-2">
                             {magneticFieldChartData.datasets.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
                         </div>
