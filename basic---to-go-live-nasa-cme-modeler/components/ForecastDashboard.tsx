@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
+import CameraIcon from './icons/CameraIcon'; // NEW: Import CameraIcon
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -92,7 +93,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
     );
 };
 
-// NEW: Camera Settings Helper Function - MODIFIED LOGIC
+// Camera Settings Helper Function - MODIFIED LOGIC
 const getSuggestedCameraSettings = (score: number | null) => {
     // Determine the base settings based on score tiers
     let baseSettings: any;
@@ -258,7 +259,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [timeLabel, setTimeLabel] = useState<string>('6 Hr');
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
-    
+
+    // NEW: State for camera settings visibility
+    const [isCameraSettingsOpen, setIsCameraSettingsOpen] = useState(false);
+    // NEW: State for Aurora Score Historical Data (placeholder, as API doesn't provide it)
+    const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ time: number; score: number }[]>([]);
+    const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
+    const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
+
     // --- Tooltip Content ---
     const tooltipContent = {
         'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
@@ -317,9 +325,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         // --- Process Forecast Data ---
         if (forecastResult.status === 'fulfilled' && forecastResult.value?.currentForecast) {
             const { currentForecast } = forecastResult.value;
-            setAuroraScore(currentForecast.spotTheAuroraForecast ?? null);
+            const currentScore = currentForecast.spotTheAuroraForecast ?? null;
+            setAuroraScore(currentScore);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
-            setAuroraBlurb(getAuroraBlurb(currentForecast.spotTheAuroraForecast ?? 0));
+            setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast.inputs.magneticField ?? {};
             setGaugeData(prev => ({
                 ...prev,
@@ -328,6 +337,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
                 moon: getMoonData(currentForecast.inputs.moonReduction, currentForecast.inputs.owmDataLastFetched)
             }));
+
+            // NEW: Add current score to history if it's new data point
+            if (currentScore !== null) {
+                setAuroraScoreHistory(prev => {
+                    const newEntry = { time: currentForecast.lastUpdated, score: currentScore };
+                    // Avoid adding duplicate if update is too frequent, or just take the latest within a short window
+                    if (prev.length === 0 || (newEntry.time - prev[prev.length - 1].time) > (REFRESH_INTERVAL_MS - 100)) {
+                        return [...prev, newEntry].slice(-1440); // Keep roughly 24 hours of minute-by-minute data (1440 minutes in a day)
+                    }
+                    return prev;
+                });
+            }
+
         } else {
             console.error("Forecast data failed to load:", forecastResult.reason);
             setAuroraBlurb("Could not load forecast data.");
@@ -412,6 +434,54 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore), [auroraScore]);
 
+    // NEW: Aurora Score Chart Options
+    const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - auroraScoreChartTimeRange;
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (c: any) => `Score: ${c.parsed.y.toFixed(1)}%` } }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    min: startTime,
+                    max: now,
+                    ticks: { color: '#71717a', source: 'auto' },
+                    grid: { color: '#3f3f46' }
+                },
+                y: {
+                    type: 'linear',
+                    min: 0,
+                    max: 100,
+                    ticks: { color: '#71717a', callback: (value: any) => `${value}%` },
+                    grid: { color: '#3f3f46' },
+                    title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' }
+                }
+            }
+        };
+    }, [auroraScoreChartTimeRange]);
+
+    // NEW: Aurora Score Chart Data
+    const auroraScoreChartData = useMemo(() => {
+        if (auroraScoreHistory.length === 0) return { datasets: [] };
+        return {
+            datasets: [{
+                label: 'Aurora Score',
+                data: auroraScoreHistory.map(d => ({ x: d.time, y: d.score })),
+                borderColor: '#818CF8', // Indigo-400
+                backgroundColor: 'rgba(129, 140, 248, 0.2)',
+                fill: 'origin',
+                tension: 0.2,
+                pointRadius: 0,
+                borderWidth: 2,
+                spanGaps: true,
+            }],
+        };
+    }, [auroraScoreHistory]);
+
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
@@ -435,78 +505,102 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
 
-                    {/* NEW: Suggested Camera Settings Section */}
-                    <div className="col-span-12 card bg-neutral-950/80 p-6">
-                        <h2 className="text-xl font-bold text-neutral-100 mb-4 text-center">Suggested Camera Settings</h2>
-                        <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
-
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Phone Settings */}
-                            <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                <h3 className="text-lg font-semibold text-neutral-200 mb-3">📸 Phone Camera</h3>
-                                <p className="text-neutral-400 text-sm mb-4">
-                                    **General Phone Tips:** Use a tripod! Manual focus to infinity (look for a "mountain" or "star" icon in Pro/Night mode). Turn off flash.
-                                </p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Android */}
-                                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
-                                        <h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
-                                        <ul className="text-xs space-y-1.5 text-neutral-400">
-                                            <li>**ISO:** {cameraSettings.phone.android.iso}</li>
-                                            <li>**Shutter Speed:** {cameraSettings.phone.android.shutter}</li>
-                                            <li>**Aperture:** {cameraSettings.phone.android.aperture}</li>
-                                            <li>**Focus:** {cameraSettings.phone.android.focus}</li>
-                                            <li>**White Balance:** {cameraSettings.phone.android.wb}</li>
-                                        </ul>
-                                        <div className="mt-2 text-xs">
-                                            <p className="text-green-400">**Pros:** {cameraSettings.phone.android.pros.join(' ')}</p>
-                                            <p className="text-red-400">**Cons:** {cameraSettings.phone.android.cons.join(' ')}</p>
-                                        </div>
-                                    </div>
-                                    {/* Apple */}
-                                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
-                                        <h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode / Third-Party Apps)</h4>
-                                        <ul className="text-xs space-y-1.5 text-neutral-400">
-                                            <li>**ISO:** {cameraSettings.phone.apple.iso}</li>
-                                            <li>**Shutter Speed:** {cameraSettings.phone.apple.shutter}</li>
-                                            <li>**Aperture:** {cameraSettings.phone.apple.aperture}</li>
-                                            <li>**Focus:** {cameraSettings.phone.apple.focus}</li>
-                                            <li>**White Balance:** {cameraSettings.phone.apple.wb}</li>
-                                        </ul>
-                                        <div className="mt-2 text-xs">
-                                            <p className="text-green-400">**Pros:** {cameraSettings.phone.apple.pros.join(' ')}</p>
-                                            <p className="text-red-400">**Cons:** {cameraSettings.phone.apple.cons.join(' ')}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            {/* DSLR/Mirrorless Settings */}
-                            <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
-                                <p className="text-neutral-400 text-sm mb-4">
-                                    **General DSLR Tips:** Use a sturdy tripod. Manual focus to infinity (use live view and magnify a distant star). Shoot in RAW for best quality.
-                                </p>
-                                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
-                                    <h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
-                                    <ul className="text-xs space-y-1.5 text-neutral-400">
-                                        <li>**ISO:** {cameraSettings.dslr.iso}</li>
-                                        <li>**Shutter Speed:** {cameraSettings.dslr.shutter}</li>
-                                        <li>**Aperture:** {cameraSettings.dslr.aperture} (as wide as your lens allows)</li>
-                                        <li>**Focus:** {cameraSettings.dslr.focus}</li>
-                                        <li>**White Balance:** {cameraSettings.dslr.wb}</li>
-                                    </ul>
-                                    <div className="mt-2 text-xs">
-                                        <p className="text-green-400">**Pros:** {cameraSettings.dslr.pros.join(' ')}</p>
-                                        <p className="text-red-400">**Cons:** {cameraSettings.dslr.cons.join(' ')}</p>
-                                    </div>
-                                </div>
-                            </div>
+                    {/* NEW: Collapsible Camera Settings Section */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-4">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}>
+                            <h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2>
+                            <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                <CameraIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-0' : 'rotate-180'}`} />
+                            </button>
                         </div>
-                        <p className="text-neutral-500 text-xs italic mt-6 text-center">
-                            **Disclaimer:** These are starting points. Aurora activity, light pollution, moon phase, and your specific camera/lens will influence optimal settings. Experimentation is key!
-                        </p>
+                        
+                        <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-screen opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                            <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Phone Settings */}
+                                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                    <h3 className="text-lg font-semibold text-neutral-200 mb-3">📸 Phone Camera</h3>
+                                    <p className="text-neutral-400 text-sm mb-4">
+                                        **General Phone Tips:** Use a tripod! Manual focus to infinity (look for a "mountain" or "star" icon in Pro/Night mode). Turn off flash.
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Android */}
+                                        <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                            <h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
+                                            <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                <li>**ISO:** {cameraSettings.phone.android.iso}</li>
+                                                <li>**Shutter Speed:** {cameraSettings.phone.android.shutter}</li>
+                                                <li>**Aperture:** {cameraSettings.phone.android.aperture}</li>
+                                                <li>**Focus:** {cameraSettings.phone.android.focus}</li>
+                                                <li>**White Balance:** {cameraSettings.phone.android.wb}</li>
+                                            </ul>
+                                            <div className="mt-2 text-xs">
+                                                <p className="text-green-400">**Pros:** {cameraSettings.phone.android.pros.join(' ')}</p>
+                                                <p className="text-red-400">**Cons:** {cameraSettings.phone.android.cons.join(' ')}</p>
+                                            </div>
+                                        </div>
+                                        {/* Apple */}
+                                        <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                            <h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode / Third-Party Apps)</h4>
+                                            <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                <li>**ISO:** {cameraSettings.phone.apple.iso}</li>
+                                                <li>**Shutter Speed:** {cameraSettings.phone.apple.shutter}</li>
+                                                <li>**Aperture:** {cameraSettings.phone.apple.aperture}</li>
+                                                <li>**Focus:** {cameraSettings.phone.apple.focus}</li>
+                                                <li>**White Balance:** {cameraSettings.phone.apple.wb}</li>
+                                            </ul>
+                                            <div className="mt-2 text-xs">
+                                                <p className="text-green-400">**Pros:** {cameraSettings.phone.apple.pros.join(' ')}</p>
+                                                <p className="text-red-400">**Cons:** {cameraSettings.phone.apple.cons.join(' ')}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* DSLR/Mirrorless Settings */}
+                                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                    <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
+                                    <p className="text-neutral-400 text-sm mb-4">
+                                        **General DSLR Tips:** Use a sturdy tripod. Manual focus to infinity (use live view and magnify a distant star). Shoot in RAW for best quality.
+                                    </p>
+                                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                        <h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
+                                        <ul className="text-xs space-y-1.5 text-neutral-400">
+                                            <li>**ISO:** {cameraSettings.dslr.iso}</li>
+                                            <li>**Shutter Speed:** {cameraSettings.dslr.shutter}</li>
+                                            <li>**Aperture:** {cameraSettings.dslr.aperture} (as wide as your lens allows)</li>
+                                            <li>**Focus:** {cameraSettings.dslr.focus}</li>
+                                            <li>**White Balance:** {cameraSettings.dslr.wb}</li>
+                                        </ul>
+                                        <div className="mt-2 text-xs">
+                                            <p className="text-green-400">**Pros:** {cameraSettings.dslr.pros.join(' ')}</p>
+                                            <p className="text-red-400">**Cons:** {cameraSettings.dslr.cons.join(' ')}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="text-neutral-500 text-xs italic mt-6 text-center">
+                                **Disclaimer:** These are starting points. Aurora activity, light pollution, moon phase, and your specific camera/lens will influence optimal settings. Experimentation is key!
+                            </p>
+                        </div>
                     </div>
-                    {/* END NEW SECTION */}
+                    {/* END NEW COLLAPSIBLE SECTION */}
+
+                    {/* NEW: Aurora Score Trend Graph */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast Trend (Last {auroraScoreChartTimeLabel})</h2>
+                        <TimeRangeButtons onSelect={(duration, label) => { setAuroraScoreChartTimeRange(duration); setAuroraScoreChartTimeLabel(label); }} selected={auroraScoreChartTimeRange} />
+                        <div className="flex-grow relative mt-2">
+                            {auroraScoreHistory.length > 0 ? (
+                                <Line data={auroraScoreChartData} options={auroraScoreChartOptions} />
+                            ) : (
+                                <p className="text-center pt-10 text-neutral-400 italic">
+                                    Historical forecast data is not available from the API. <br/> This graph will populate with data collected while the app is open.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    {/* END NEW GRAPH SECTION */}
 
                     <AuroraSightings />
 
