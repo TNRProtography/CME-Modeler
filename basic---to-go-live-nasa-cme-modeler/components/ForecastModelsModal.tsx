@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 
-// Note: The media type definition is now primarily managed in App.tsx
-// It's defined here to ensure the setViewerMedia prop is correctly typed.
+// Define the media object type to ensure type safety when calling setViewerMedia
 type MediaObject = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
@@ -24,7 +23,6 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
   const MAX_FRAMES_TO_CHECK = 400;
 
   useEffect(() => {
-    // Don't fetch if the modal isn't open
     if (!isOpen) {
       return;
     }
@@ -58,12 +56,10 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 
     fetchEnlilImages();
 
-    // This is a crucial cleanup function. When the modal is closed and unmounted,
-    // it revokes the blob URLs to prevent memory leaks.
     return () => {
       enlilImageUrls.forEach(url => URL.revokeObjectURL(url));
     };
-  }, [isOpen]); // Re-run only when the modal is opened
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -115,7 +111,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
               className="bg-neutral-900 p-2 rounded-lg relative min-h-[300px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
             >
                 <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">WSA-ENLIL Animation</h4>
-                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Loading ENLIL animation frames...</p></div>}
+                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching & processing forecast models...</p></div>}
                 {enlilError && <p className="text-red-400 text-center">{enlilError}</p>}
                 {!isLoadingEnlil && enlilImageUrls.length > 0 && (
                   <>
