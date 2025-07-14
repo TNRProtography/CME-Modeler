@@ -15,20 +15,28 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import HomeIcon from './components/icons/HomeIcon'; // Kept for the "Reset View" button
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
 
-// --- MODIFICATION START ---
-// Import the new icons and remove unused FlareIcon
-import SunIcon from './components/icons/SunIcon';
-import CmeModelerIcon from './components/icons/CmeModelerIcon';
-// --- MODIFICATION END ---
-
 // NEW: Import the refactored dashboard components
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
+
+// Custom Icon Components
+const SunIcon: React.FC<{className?: string}> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+  </svg>
+);
+
+const CmeIcon: React.FC<{className?: string}> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 12m-5 0a5 5 0 1010 0 5 5 0 10-10 0" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 7.5c3 0 5.25 2.25 5.25 5s-2.25 5-5.25 5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 9.5c1.5 0 2.75 1.125 2.75 2.5s-1.25 2.5-2.75 2.5" />
+    </svg>
+);
 
 // Define the new media type for the viewer state
 type ViewerMedia = 
@@ -57,7 +65,6 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
 
-  // Use the new ViewerMedia type for the state
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
@@ -227,7 +234,6 @@ const App: React.FC = () => {
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
-        {/* --- MODIFICATION START --- */}
         {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
@@ -247,9 +253,9 @@ const App: React.FC = () => {
                             ${activePage === 'solar-activity' 
                                 ? 'bg-amber-500/30 border border-amber-400' 
                                 : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
-                title="View Solar Dashboard">
+                title="View Solar Activity">
                     <SunIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">Solar Dashboard</span>
+                    <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
                  <button 
                 onClick={() => setActivePage('modeler')}
@@ -258,12 +264,11 @@ const App: React.FC = () => {
                                 ? 'bg-indigo-500/30 border border-indigo-400' 
                                 : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
                 title="View CME Modeler">
-                    <CmeModelerIcon className="w-5 h-5" />
+                    <CmeIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
         </header>
-        {/* --- MODIFICATION END --- */}
 
         {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
@@ -343,7 +348,7 @@ const App: React.FC = () => {
                                     <SettingsIcon className="w-6 h-6" />
                                 </button>
                                 <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-                                    <HomeIcon className="w-6 h-6" />
+                                    <CmeIcon className="w-6 h-6" />
                                 </button>
                                 <button 
                                     onClick={() => setIsForecastModelsOpen(true)}
