@@ -3,11 +3,6 @@ import { Line } from 'react-chartjs-2';
 import L from 'leaflet';
 import 'leaflet.markercluster';
 
-// CSS imports are now in index.tsx, but we keep this for reference.
-// import 'leaflet/dist/leaflet.css';
-// import 'leaflet.markercluster/dist/MarkerCluster.css';
-// import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-
 import CloseIcon from './icons/CloseIcon';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
@@ -107,6 +102,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [allSightings, setAllSightings] = useState<any[]>([]);
     const [sightingPage, setSightingPage] = useState(0);
     const [reportingState, setReportingState] = useState<ReportingState>('idle');
+    const reportingStateRef = useRef(reportingState);
+    useEffect(() => { reportingStateRef.current = reportingState; }, [reportingState]);
     
     // --- Tooltip Content ---
     const tooltipContent = {
@@ -214,6 +211,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 }
             }
         });
+        
+        // Force resize after a short delay to ensure the container is sized.
+        setTimeout(() => mapRef.current?.invalidateSize(), 100);
 
         return () => {
             mapRef.current?.remove();
@@ -221,13 +221,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         };
     }, [isLoading]);
 
-    const reportingStateRef = useRef(reportingState);
-    useEffect(() => { reportingStateRef.current = reportingState }, [reportingState]);
-
     useEffect(() => {
-        if (!sightingMarkersLayerRef.current) return;
-
         const fetchAndDisplaySightings = () => {
+            if (!sightingMarkersLayerRef.current) return;
+
             fetch(`${SIGHTING_API_ENDPOINT}?_=${Date.now()}`)
             .then(res => res.ok ? res.json() : Promise.reject(new Error(`API Error ${res.status}`)))
             .then(sightings => {
@@ -250,12 +247,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             .catch(e => console.error("Failed to fetch sightings:", e));
         };
         
-        fetchAndDisplaySightings();
-        const interval = setInterval(fetchAndDisplaySightings, 60000);
-        return () => clearInterval(interval);
-
+        if (!isLoading) {
+            fetchAndDisplaySightings();
+            const interval = setInterval(fetchAndDisplaySightings, 60000);
+            return () => clearInterval(interval);
+        }
     }, [isLoading]);
-
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     const getMoonData = (moonReduction: number, timestamp: number) => { const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' }; };
@@ -306,33 +303,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         ))}
                     </div>
 
-                    {isLoading ? (
-                         <div className="col-span-12 card bg-neutral-950/80 p-6 flex justify-center items-center min-h-[500px]">
-                            <LoadingSpinner />
-                        </div>
-                    ) : (
-                        <div className="col-span-12 card bg-neutral-950/80 p-6">
-                            <div className="flex flex-col lg:flex-row gap-6">
-                                <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700" ref={mapContainerRef}>
-                                    {/* Map is rendered here by the useEffect hook */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-6">
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <div className="w-full lg:w-2/3 h-[500px] rounded-lg overflow-hidden border border-neutral-700" ref={mapContainerRef}>
+                                {isLoading && <div className="w-full h-full flex justify-center items-center"><LoadingSpinner/></div>}
+                            </div>
+                            
+                            <div className="w-full lg:w-1/3 flex flex-col gap-4">
+                                <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
+                                <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
+                                    {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
+                                    {reportingState === 'placing_pin' && (<div className="text-center space-y-3"><p className="text-sm font-semibold">Step 1: Place Your Pin</p><p className="text-xs text-neutral-400">Click the map to place a pin, then confirm.</p><button onClick={handleConfirmLocation} disabled={!userPinRef.current} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button><button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button></div>)}
+                                    {(reportingState === 'confirming_location' || reportingState === 'submitting') && (<div className="space-y-2"><p className="text-sm font-semibold text-center">Step 2: What did you see?</p>{Object.entries(SIGHTING_TYPES).map(([key, { label, emoji }]) => (<button key={key} onClick={() => handleSubmitSighting(key)} disabled={reportingState === 'submitting'} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-50"><span className="text-2xl">{emoji}</span><span>{label}</span></button>))}<button onClick={handleCancelReporting} disabled={reportingState === 'submitting'} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center disabled:opacity-50">Cancel</button></div>)}
                                 </div>
-                                
-                                <div className="w-full lg:w-1/3 flex flex-col gap-4">
-                                    <h3 className="text-xl font-semibold text-white text-center">Community Sightings</h3>
-                                    <div className="bg-neutral-900 p-4 rounded-lg border border-neutral-800 flex-shrink-0">
-                                        {reportingState === 'idle' && (<><h4 className="font-semibold text-center mb-2">File a New Report</h4><input type="text" value={reporterName} onChange={e => setReporterName(e.target.value)} placeholder="Your Name" className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-2"/><button onClick={handleStartReporting} disabled={!reporterName.trim()} className="w-full bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Start Report</button></>)}
-                                        {reportingState === 'placing_pin' && (<div className="text-center space-y-3"><p className="text-sm font-semibold">Step 1: Place Your Pin</p><p className="text-xs text-neutral-400">Click the map to place a pin, then confirm.</p><button onClick={handleConfirmLocation} disabled={!userPinRef.current} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors">Confirm Location</button><button onClick={handleCancelReporting} className="text-xs text-neutral-400 hover:underline">Cancel</button></div>)}
-                                        {(reportingState === 'confirming_location' || reportingState === 'submitting') && (<div className="space-y-2"><p className="text-sm font-semibold text-center">Step 2: What did you see?</p>{Object.entries(SIGHTING_TYPES).map(([key, { label, emoji }]) => (<button key={key} onClick={() => handleSubmitSighting(key)} disabled={reportingState === 'submitting'} className="w-full flex items-center gap-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-50"><span className="text-2xl">{emoji}</span><span>{label}</span></button>))}<button onClick={handleCancelReporting} disabled={reportingState === 'submitting'} className="text-xs text-neutral-400 hover:underline mt-2 w-full text-center disabled:opacity-50">Cancel</button></div>)}
-                                    </div>
-                                    <div className="flex-grow space-y-3 min-h-[200px] max-h-96 overflow-y-auto pr-2">
-                                        {paginatedSightings.length > 0 ? paginatedSightings.map((sighting) => (<div key={sighting.timestamp} className="bg-neutral-900 p-3 rounded-lg flex items-center gap-4"><span className="text-3xl">{SIGHTING_TYPES[sighting.status]?.emoji || '❓'}</span><div><p className="font-semibold text-neutral-200">{SIGHTING_TYPES[sighting.status]?.label} by <span className="text-sky-400">{sighting.name || 'Anonymous'}</span></p><p className="text-sm text-neutral-400">{sighting.location || 'Unknown'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div></div>)) : <p className="text-center text-neutral-500 italic pt-8">No recent sightings.</p>}
-                                    </div>
-                                    {allSightings.length > 5 && (<div className="flex justify-between items-center mt-2 flex-shrink-0"><button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Prev</button><span className="text-xs">Page {sightingPage + 1} of {Math.ceil(allSightings.length / 5)}</span><button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Next</button></div>)}
+                                <div className="flex-grow space-y-3 min-h-[200px] max-h-96 overflow-y-auto pr-2">
+                                    {paginatedSightings.length > 0 ? paginatedSightings.map((sighting) => (<div key={sighting.timestamp} className="bg-neutral-900 p-3 rounded-lg flex items-center gap-4"><span className="text-3xl">{SIGHTING_TYPES[sighting.status]?.emoji || '❓'}</span><div><p className="font-semibold text-neutral-200">{SIGHTING_TYPES[sighting.status]?.label} by <span className="text-sky-400">{sighting.name || 'Anonymous'}</span></p><p className="text-sm text-neutral-400">{sighting.location || 'Unknown'} • {new Date(sighting.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div></div>)) : <p className="text-center text-neutral-500 italic pt-8">No recent sightings.</p>}
                                 </div>
+                                {allSightings.length > 5 && (<div className="flex justify-between items-center mt-2 flex-shrink-0"><button onClick={() => setSightingPage(p => Math.max(0, p - 1))} disabled={sightingPage === 0} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Prev</button><span className="text-xs">Page {sightingPage + 1} of {Math.ceil(allSightings.length / 5)}</span><button onClick={() => setSightingPage(p => p + 1)} disabled={(sightingPage + 1) * 5 >= allSightings.length} className="px-3 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 rounded-md disabled:opacity-50">Next</button></div>)}
                             </div>
                         </div>
-                    )}
-
+                    </div>
 
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast (Last {auroraTimeLabel})</h2>
