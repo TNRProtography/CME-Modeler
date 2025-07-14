@@ -262,8 +262,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     // NEW: State for camera settings visibility
     const [isCameraSettingsOpen, setIsCameraSettingsOpen] = useState(false);
-    // NEW: State for Aurora Score Historical Data (placeholder, as API doesn't provide it)
-    const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ time: number; score: number }[]>([]);
+    // NEW: State for Aurora Score Historical Data
+    const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
@@ -323,36 +323,39 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         const [forecastResult, plasmaResult, magResult] = results;
 
         // --- Process Forecast Data ---
-        if (forecastResult.status === 'fulfilled' && forecastResult.value?.currentForecast) {
-            const { currentForecast } = forecastResult.value;
-            const currentScore = currentForecast.spotTheAuroraForecast ?? null;
+        if (forecastResult.status === 'fulfilled' && forecastResult.value) { // Check for value existence
+            const { currentForecast, historicalData } = forecastResult.value;
+
+            const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
-            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
+            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
-            const { bt, bz } = currentForecast.inputs.magneticField ?? {};
+            const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
             setGaugeData(prev => ({
                 ...prev,
-                power: { ...prev.power, value: currentForecast.inputs.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast.inputs.hemisphericPower, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
-                bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
-                bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}` },
-                moon: getMoonData(currentForecast.inputs.moonReduction, currentForecast.inputs.owmDataLastFetched)
+                power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
+                bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt ?? null, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
+                bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz ?? null, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
+                moon: getMoonData(currentForecast?.inputs?.moonReduction ?? null, currentForecast?.inputs?.owmDataLastFetched ?? null)
             }));
 
-            // NEW: Add current score to history if it's new data point
-            if (currentScore !== null) {
-                setAuroraScoreHistory(prev => {
-                    const newEntry = { time: currentForecast.lastUpdated, score: currentScore };
-                    // Avoid adding duplicate if update is too frequent, or just take the latest within a short window
-                    if (prev.length === 0 || (newEntry.time - prev[prev.length - 1].time) > (REFRESH_INTERVAL_MS - 100)) {
-                        return [...prev, newEntry].slice(-1440); // Keep roughly 24 hours of minute-by-minute data (1440 minutes in a day)
-                    }
-                    return prev;
-                });
+            // NEW: Set historical data for graph
+            if (Array.isArray(historicalData)) {
+                // Ensure historical data is sorted by timestamp and filtered for valid numbers
+                const cleanedHistoricalData = historicalData
+                    .filter((d: any) => typeof d.timestamp === 'number' && !isNaN(d.timestamp) &&
+                                        typeof d.baseScore === 'number' && !isNaN(d.baseScore) &&
+                                        typeof d.finalScore === 'number' && !isNaN(d.finalScore))
+                    .sort((a: any, b: any) => a.timestamp - b.timestamp);
+                setAuroraScoreHistory(cleanedHistoricalData);
+            } else {
+                setAuroraScoreHistory([]); // Clear if data is not an array
             }
 
         } else {
             console.error("Forecast data failed to load:", forecastResult.reason);
             setAuroraBlurb("Could not load forecast data.");
+            setAuroraScoreHistory([]); // Clear history on error
         }
 
         // --- Process Plasma Data ---
@@ -441,8 +444,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
             plugins: {
-                legend: { display: false },
-                tooltip: { callbacks: { label: (c: any) => `Score: ${c.parsed.y.toFixed(1)}%` } }
+                legend: { labels: { color: '#a1a1aa' }},
+                tooltip: { callbacks: { label: (c: any) => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}%` } } // Label for both lines
             },
             scales: {
                 x: {
@@ -468,17 +471,33 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const auroraScoreChartData = useMemo(() => {
         if (auroraScoreHistory.length === 0) return { datasets: [] };
         return {
-            datasets: [{
-                label: 'Aurora Score',
-                data: auroraScoreHistory.map(d => ({ x: d.time, y: d.score })),
-                borderColor: '#818CF8', // Indigo-400
-                backgroundColor: 'rgba(129, 140, 248, 0.2)',
-                fill: 'origin',
-                tension: 0.2,
-                pointRadius: 0,
-                borderWidth: 2,
-                spanGaps: true,
-            }],
+            datasets: [
+                {
+                    label: 'Forecast Score', // Corresponds to finalScore
+                    data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
+                    borderColor: '#818CF8', // Indigo-400
+                    backgroundColor: 'rgba(129, 140, 248, 0.2)',
+                    fill: 'origin',
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                    spanGaps: true,
+                    order: 1, // Ensure this is on top
+                },
+                {
+                    label: 'Base Score',
+                    data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })),
+                    borderColor: '#34D399', // Emerald-400 (or another distinct color)
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 1, // Thinner line
+                    borderDash: [5, 5], // Dashed line
+                    spanGaps: true,
+                    order: 2, // Behind forecast score
+                }
+            ],
         };
     }, [auroraScoreHistory]);
 
@@ -509,13 +528,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     <div className="col-span-12 card bg-neutral-950/80 p-4">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}>
                             <h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2>
-                            <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                <CameraIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-0' : 'rotate-180'}`} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {!isCameraSettingsOpen && (
+                                    <p className="text-neutral-400 text-sm italic pr-2 max-w-sm overflow-hidden text-ellipsis whitespace-nowrap hidden sm:block">
+                                        {cameraSettings.overall}
+                                    </p>
+                                )}
+                                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                    <CameraIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-0' : 'rotate-180'}`} />
+                                </button>
+                            </div>
                         </div>
                         
                         <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-screen opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                            <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
+                            <p className="text-neutral-400 text-center mb-6 hidden sm:block">{cameraSettings.overall}</p> {/* Visible when open, hidden on small screens */}
+                            <p className="text-neutral-400 text-center mb-6 sm:hidden">{cameraSettings.overall}</p> {/* Always visible on small screens when open */}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Phone Settings */}
@@ -595,7 +622,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 <Line data={auroraScoreChartData} options={auroraScoreChartOptions} />
                             ) : (
                                 <p className="text-center pt-10 text-neutral-400 italic">
-                                    Historical forecast data is not available from the API. <br/> This graph will populate with data collected while the app is open.
+                                    No historical forecast data available for the selected period.
                                 </p>
                             )}
                         </div>
