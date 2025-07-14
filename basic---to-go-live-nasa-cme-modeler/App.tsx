@@ -15,11 +15,16 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import HomeIcon from './components/icons/HomeIcon';
+import HomeIcon from './components/icons/HomeIcon'; // Kept for the "Reset View" button
 import ForecastIcon from './components/icons/ForecastIcon';
-import FlareIcon from './components/icons/FlareIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
+
+// --- MODIFICATION START ---
+// Import the new icons and remove unused FlareIcon
+import SunIcon from './components/icons/SunIcon';
+import CmeModelerIcon from './components/icons/CmeModelerIcon';
+// --- MODIFICATION END ---
 
 // NEW: Import the refactored dashboard components
 import ForecastDashboard from './components/ForecastDashboard';
@@ -222,6 +227,7 @@ const App: React.FC = () => {
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
+        {/* --- MODIFICATION START --- */}
         {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
@@ -241,9 +247,9 @@ const App: React.FC = () => {
                             ${activePage === 'solar-activity' 
                                 ? 'bg-amber-500/30 border border-amber-400' 
                                 : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
-                title="View Solar Activity">
-                    <FlareIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
+                title="View Solar Dashboard">
+                    <SunIcon className="w-5 h-5" />
+                    <span className="text-sm font-semibold hidden md:inline">Solar Dashboard</span>
                 </button>
                  <button 
                 onClick={() => setActivePage('modeler')}
@@ -252,11 +258,12 @@ const App: React.FC = () => {
                                 ? 'bg-indigo-500/30 border border-indigo-400' 
                                 : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`}
                 title="View CME Modeler">
-                    <HomeIcon className="w-5 h-5" />
+                    <CmeModelerIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
         </header>
+        {/* --- MODIFICATION END --- */}
 
         {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
