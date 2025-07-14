@@ -210,7 +210,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setSolarWindChartData({
                 datasets: [
                     { 
-                        label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), 
+                        label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y',
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
                         segment: {
                             borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)].solid,
@@ -218,7 +218,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         }
                     },
                     { 
-                        label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), 
+                        label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1',
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
                         segment: {
                             borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)].solid,
@@ -252,18 +252,32 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         }
     }, [allPlasmaData, allMagneticData]);
 
-    const createChartOptions = useCallback((rangeMs: number): ChartOptions<'line'> => {
+    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - rangeMs;
-        return {
+        const options: ChartOptions<'line'> = {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
             plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { mode: 'index', intersect: false } },
-            scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { ticks: { color: '#a1a1aa' }, grid: { color: '#3f3f46' } } }
+            scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } }
         };
+
+        if (isDualAxis) {
+            options.scales = {
+                ...options.scales,
+                y: { type: 'linear', position: 'left', ticks: { color: '#86efac' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#86efac' } },
+                y1: { type: 'linear', position: 'right', ticks: { color: '#fcd34d' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#fcd34d' } }
+            };
+        } else {
+             options.scales = {
+                ...options.scales,
+                y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } }
+            };
+        }
+        return options;
     }, []);
     
-    const solarWindOptions = useMemo(() => createChartOptions(timeRange), [timeRange, createChartOptions]);
-    const magneticFieldOptions = useMemo(() => createChartOptions(timeRange), [timeRange, createChartOptions]);
+    const solarWindOptions = useMemo(() => createChartOptions(timeRange, true), [timeRange, createChartOptions]);
+    const magneticFieldOptions = useMemo(() => createChartOptions(timeRange, false), [timeRange, createChartOptions]);
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
