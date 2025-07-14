@@ -15,6 +15,7 @@ const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
+const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
 // --- HELPERS ---
 const getCssVar = (name: string): string => {
@@ -116,11 +117,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
             .then(rawData => {
                 const groupedData = new Map();
-                rawData.forEach((d: any) => {
-                    const time = new Date(d.time_tag).getTime();
-                    if (!groupedData.has(time)) groupedData.set(time, { time, short: null });
-                    if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux);
-                });
+                rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
                 const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
                 if (!processedData.length) throw new Error('No valid X-ray data.');
                 setAllXrayData(processedData);
@@ -139,10 +136,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); setSolarFlares([]); return; }
-            const processedData = data.map((flare: any) => ({
-                ...flare,
-                hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false,
-            }));
+            const processedData = data.map((flare: any) => ({ ...flare, hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false, }));
             setSolarFlares(processedData.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime()));
             setLoadingFlares(null);
         } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
@@ -155,7 +149,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
-            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); return; }
+            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
             setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
             setLoadingSunspots(null);
         } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
@@ -169,9 +163,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchFlares();
             fetchSunspots();
         };
-        runAllUpdates();
-        const interval = setInterval(runAllUpdates, 5 * 60 * 1000);
-        return () => clearInterval(interval);
+        runAllUpdates(); // Initial fetch
+        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS); // Refresh every minute
+        return () => clearInterval(interval); // Cleanup on unmount
     }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
@@ -184,25 +178,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
             const midnight = new Date(d).setUTCHours(12,0,0,0);
             if (midnight > startTime && midnight < now) {
-                midnightAnnotations[`midnight-${midnight}`] = {
-                    type: 'line', xMin: midnight, xMax: midnight,
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
-                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
-                };
+                midnightAnnotations[`midnight-${midnight}`] = { type: 'line', xMin: midnight, xMax: midnight, borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } };
             }
         }
         
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: false },
-                tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } },
-                annotation: { annotations: midnightAnnotations }
-            },
-            scales: { 
-                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
-            }
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } }, annotation: { annotations: midnightAnnotations } },
+            scales: { x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } }
         };
     }, [xrayTimeRange]);
     
@@ -213,10 +196,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 label: 'Short Flux (0.1-0.8 nm)', 
                 data: allXrayData.map(d => ({x: d.time, y: d.short})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                segment: {
-                    borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1),
-                    backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2),
-                }
+                segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2), }
             }],
         };
     }, [allXrayData]);
@@ -258,17 +238,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             : solarFlares.length > 0 ? solarFlares.map((flare) => {
                                 const { background, text } = getColorForFlareClass(flare.classType);
                                 const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
-                                return (
-                                <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}>
-                                    <div className="flex justify-between items-center">
-                                        <span>
-                                            <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong>
-                                            <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span>
-                                        </span>
-                                        {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
-                                    </div>
-                                </li>
-                                )}) 
+                                return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) 
                             : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
                         </ul>
                     </div>
@@ -285,18 +255,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 isOpen={!!selectedFlare}
                 onClose={() => setSelectedFlare(null)}
                 title={`Flare Details: ${selectedFlare?.flareID || ''}`}
-                content={ selectedFlare && (
-                    <div className="space-y-2">
-                        <p><strong>Class:</strong> {selectedFlare.classType}</p>
-                        <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p>
-                        <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p>
-                        <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p>
-                        <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p>
-                        <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p>
-                        <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p>
-                        <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p>
-                    </div>
-                )}
+                content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
             />
         </div>
     );

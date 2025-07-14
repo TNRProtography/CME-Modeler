@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Cache-Control Headers to prevent browser caching -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
 
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#171717">
@@ -29,14 +34,12 @@
         ::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #737373; }
         
-        /* --- Leaflet Dark Theme & Icon Fixes --- */
         .leaflet-container { background-color: #1a1a1a !important; }
         .leaflet-popup-content-wrapper, .leaflet-popup-tip {
             background: #262626;
             color: #d4d4d4;
             box-shadow: 0 3px 14px rgba(0,0,0,0.4);
         }
-        /* Fix for emoji markers: remove default icon background and border */
         .emoji-marker {
             background-color: transparent !important;
             border: none !important;

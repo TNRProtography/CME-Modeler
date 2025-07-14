@@ -4,7 +4,7 @@ import CloseIcon from './icons/CloseIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
-import AuroraSightings from './AuroraSightings'; // NEW: Import the sightings component
+import AuroraSightings from './AuroraSightings';
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -17,6 +17,7 @@ const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
+const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, maxExpected: 1000 },
@@ -161,13 +162,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     }, []);
     
     // --- Data Fetching & Processing Effects ---
-    useEffect(() => {
-        setIsLoading(true);
-        Promise.all([
-            fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-        ]).then(([forecastData, plasmaData, magData]) => {
+    const fetchAllData = useCallback(async (isInitialLoad = false) => {
+        if (isInitialLoad) setIsLoading(true);
+
+        try {
+            const [forecastData, plasmaData, magData] = await Promise.all([
+                fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
+                fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
+                fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            ]);
+
             const { currentForecast } = forecastData;
             setAuroraScore(currentForecast.spotTheAuroraForecast);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast.lastUpdated)}`);
@@ -184,33 +188,27 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setGaugeData(prev => ({ ...prev, speed: { ...prev.speed, value: speedVal ? speedVal.toFixed(1) : '...', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` }, density: { ...prev.density, value: densityVal ? densityVal.toFixed(1) : '...', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}` } }));
 
             const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
-            const magPoints = magData.slice(1).map((r: any[]) => {
-                const rawTime = r[magTimeIdx];
-                const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
-                return {
-                    time: cleanTime,
-                    bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null,
-                    bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null
-                };
-            });
+            const magPoints = magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; });
             setAllMagneticData(magPoints);
 
-            const plasmaPoints = plasmaData.slice(1).map((r:any[]) => {
-                const rawTime = r[plasmaTimeIdx];
-                const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
-                return {
-                    time: cleanTime,
-                    speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null,
-                    density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null,
-                }
-            });
+            const plasmaPoints = plasmaData.slice(1).map((r:any[]) => { const rawTime = r[plasmaTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null, } });
             setAllPlasmaData(plasmaPoints);
-        
-        }).catch(error => { console.error("Dashboard data failed to load:", error); setAuroraBlurb("Could not load forecast data.");
-        }).finally(() => { setIsLoading(false); });
-        
-        setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-    }, []);
+            
+            setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
+
+        } catch (error) {
+            console.error("Dashboard data failed to load:", error);
+            setAuroraBlurb("Could not load forecast data.");
+        } finally {
+            if (isInitialLoad) setIsLoading(false);
+        }
+    }, [getGaugeStyle]);
+
+    useEffect(() => {
+        fetchAllData(true); // Initial fetch
+        const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); // Refresh every minute
+        return () => clearInterval(interval); // Cleanup on unmount
+    }, [fetchAllData]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     const getMoonData = (moonReduction: number, timestamp: number) => { const moonIllumination = Math.max(0, (moonReduction || 0) / 40 * 100); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; return { value: moonIllumination.toFixed(0), unit: '%', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(timestamp)}`, color: '#A9A9A9' }; };
@@ -223,18 +221,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     { 
                         label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
-                        segment: {
-                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)].solid,
-                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)),
-                        }
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.speed)), }
                     },
                     { 
                         label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
-                        segment: {
-                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)].solid,
-                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)),
-                        }
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.density)), }
                     }
                 ]
             });
@@ -245,18 +237,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     { 
                         label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
-                        segment: {
-                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)].solid,
-                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)),
-                        }
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bt)), }
                     },
                     { 
                         label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0,
                         fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
-                        segment: {
-                            borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)].solid,
-                            backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)),
-                        }
+                        segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1.parsed.y, GAUGE_THRESHOLDS.bz)), }
                     }
                 ]
             });
@@ -273,16 +259,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         };
 
         if (isDualAxis) {
-            options.scales = {
-                ...options.scales,
-                y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } },
-                y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } }
-            };
+            options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
         } else {
-             options.scales = {
-                ...options.scales,
-                y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } }
-            };
+             options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Magnetic Field (nT)', color: '#a3a3a3' } } };
         }
         return options;
     }, []);
@@ -312,7 +291,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         <p className="text-neutral-300 mt-4 md:mt-0">{auroraBlurb}</p>
                     </div>
                     
-                    {/* --- NEW: AURORA SIGHTINGS COMPONENT --- */}
                     <AuroraSightings />
 
                     <div className="col-span-12 grid grid-cols-6 gap-5">
