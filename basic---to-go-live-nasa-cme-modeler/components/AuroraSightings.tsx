@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -26,10 +26,13 @@ const getEmojiForStatus = (status: SightingStatus) => STATUS_OPTIONS.find(opt =>
 
 // --- HELPER & CHILD COMPONENTS ---
 
-// Custom hook to handle map recentering
-const ChangeView = ({ center, zoom }: { center: [number, number], zoom: number }) => {
+// FIX: This component ensures the map resizes correctly when its container changes.
+const MapEffect = () => {
     const map = useMap();
-    map.setView(center, zoom);
+    useEffect(() => {
+        const timer = setTimeout(() => map.invalidateSize(), 100);
+        return () => clearTimeout(timer);
+    }, [map]);
     return null;
 };
 
@@ -42,15 +45,6 @@ const LocationFinder = ({ onLocationSelect }: { onLocationSelect: (latlng: L.Lat
     });
     return null;
 };
-
-// Inline SVG for the user's current location marker
-const LocationMarkerIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" stroke="white" strokeWidth="2"/>
-        <circle cx="12" cy="12" r="5" fill="rgb(59, 130, 246)"/>
-    </svg>
-);
-
 
 // The main component for this file
 const AuroraSightings: React.FC = () => {
@@ -70,6 +64,7 @@ const AuroraSightings: React.FC = () => {
 
     const fetchSightings = useCallback(async () => {
         try {
+            setError(null); // Clear previous errors
             const response = await fetch(API_URL);
             if (!response.ok) throw new Error('Failed to fetch sightings data.');
             const data: SightingReport[] = await response.json();
@@ -82,30 +77,18 @@ const AuroraSightings: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        // Load username from local storage
         setUserName(localStorage.getItem(LOCAL_STORAGE_USERNAME_KEY) || '');
-
-        // Load last report info from local storage
         const lastReportString = localStorage.getItem(LOCAL_STORAGE_LAST_REPORT_KEY);
-        if (lastReportString) {
-            setLastReportInfo(JSON.parse(lastReportString));
-        }
+        if (lastReportString) setLastReportInfo(JSON.parse(lastReportString));
 
-        // Fetch initial data
         fetchSightings();
 
-        // Attempt to get user's location via GPS
         navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setUserPosition(new L.LatLng(position.coords.latitude, position.coords.longitude));
-            },
-            (err) => {
-                console.warn(`Geolocation error: ${err.message}. Please click map to set location.`);
-            },
-            { timeout: 10000 }
+            (position) => setUserPosition(new L.LatLng(position.coords.latitude, position.coords.longitude)),
+            (err) => console.warn(`Geolocation error: ${err.message}. Please click map to set location.`),
+            { timeout: 10000, enableHighAccuracy: false }
         );
 
-        // Set up interval to refetch data every 2 minutes
         const intervalId = setInterval(fetchSightings, 2 * 60 * 1000);
         return () => clearInterval(intervalId);
     }, [fetchSightings]);
@@ -128,34 +111,24 @@ const AuroraSightings: React.FC = () => {
 
     const handleSubmit = async () => {
         if (!userPosition || !selectedStatus || !userName.trim() || !canSubmit) {
-            let alertMsg = [];
-            if (!userName.trim()) alertMsg.push('Please enter your name.');
-            if (!userPosition) alertMsg.push('Please set your location by clicking the map or enabling GPS.');
-            if (!selectedStatus) alertMsg.push('Please select your sighting status.');
-            if (!canSubmit) alertMsg.push('You can only report once per hour.');
-            alert(alertMsg.join('\n'));
+            const alertMsg = [
+                !userName.trim() && 'Please enter your name.',
+                !userPosition && 'Please set your location by clicking the map or enabling GPS.',
+                !selectedStatus && 'Please select your sighting status.',
+                !canSubmit && 'You can only report once per hour.'
+            ].filter(Boolean).join('\n');
+            if (alertMsg) alert(alertMsg);
             return;
         }
 
         setIsSubmitting(true);
         setError(null);
-
-        const reportData: Omit<SightingReport, 'timestamp'> = {
-            lat: userPosition.lat,
-            lng: userPosition.lng,
-            status: selectedStatus,
-            name: userName.trim(),
-        };
-
+        const reportData: Omit<SightingReport, 'timestamp'> = { lat: userPosition.lat, lng: userPosition.lng, status: selectedStatus, name: userName.trim() };
         const pendingSighting: SightingReport = { ...reportData, timestamp: Date.now(), isPending: true };
         setPendingReport(pendingSighting);
 
         try {
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(reportData),
-            });
+            const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reportData) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Submission failed.');
             
@@ -163,34 +136,35 @@ const AuroraSightings: React.FC = () => {
             setLastReportInfo(newReportInfo);
             localStorage.setItem(LOCAL_STORAGE_LAST_REPORT_KEY, JSON.stringify(newReportInfo));
             
-            // Successfully submitted, clear pending state and refresh sightings list
-            setPendingReport(null);
-            await fetchSightings(); // Refresh the map with the new official data
+            await fetchSightings();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An unknown error occurred.');
-            setPendingReport(null); // Remove pending marker on error
         } finally {
             setIsSubmitting(false);
+            setPendingReport(null);
         }
     };
     
     // --- RENDER LOGIC ---
 
     const userMarkerIcon = L.divIcon({
-        html: `<svg class="w-6 h-6 animate-pulse" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="rgb(59, 130, 246)"/></svg>`,
-        className: '',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`,
+        className: '', // Let Tailwind handle it all
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
     });
 
     const createSightingIcon = (sighting: SightingReport) => {
         const emoji = getEmojiForStatus(sighting.status);
-        const animationClass = sighting.isPending ? 'grayscale animate-spin' : '';
+        const sendingAnimation = sighting.isPending ? `
+            <div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div>
+            <div class="absolute inset-0 bg-black rounded-full opacity-60"></div>
+        ` : '';
         return L.divIcon({
-            html: `<div class="text-3xl ${animationClass}">${emoji}</div>`,
-            className: 'bg-transparent border-0',
-            iconSize: [30, 30],
-            iconAnchor: [15, 15]
+            html: `<div class="relative">${sendingAnimation}<div>${emoji}</div></div>`,
+            className: 'emoji-marker', // Use the custom class from index.html
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
         });
     };
     
@@ -203,64 +177,35 @@ const AuroraSightings: React.FC = () => {
 
             {/* Reporting UI */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-neutral-900 p-4 rounded-lg">
-                <input
-                    type="text"
-                    value={userName}
-                    onChange={handleNameChange}
-                    placeholder="Your Name (required)"
-                    className="col-span-1 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
+                <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-1 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
                 <div className="col-span-1 md:col-span-2 grid grid-cols-2 lg:grid-cols-6 gap-2 items-center">
                     <div className="col-span-2 lg:col-span-5 flex flex-wrap justify-center gap-2">
                         {STATUS_OPTIONS.map(({ status, emoji, label }) => (
-                            <button
-                                key={status}
-                                onClick={() => setSelectedStatus(status)}
-                                className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`}
-                                title={label}
-                            >
+                            <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={label}>
                                 <span className="text-lg">{emoji}</span>
                                 <span className="hidden sm:inline">{label}</span>
                             </button>
                         ))}
                     </div>
-                     <button
-                        onClick={handleSubmit}
-                        disabled={!canSubmit || isSubmitting}
-                        className="col-span-2 lg:col-span-1 w-full px-4 py-2 rounded-lg text-white font-semibold transition-colors disabled:bg-neutral-600 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500"
-                    >
+                     <button onClick={handleSubmit} disabled={!canSubmit || isSubmitting} className="col-span-2 lg:col-span-1 w-full px-4 py-2 rounded-lg text-white font-semibold transition-colors disabled:bg-neutral-600 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500">
                         {isSubmitting ? <LoadingSpinner /> : 'Submit'}
                     </button>
                 </div>
-                {cooldownRemaining > 0 && (
-                     <p className="col-span-1 md:col-span-3 text-center text-xs text-amber-400 mt-2">
-                        You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.
-                     </p>
-                )}
+                {cooldownRemaining > 0 && <p className="col-span-1 md:col-span-3 text-center text-xs text-amber-400 mt-2">You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.</p>}
             </div>
 
             {/* Map and Table Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                  <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
-                    <MapContainer center={NZ_SOUTH_ISLAND_CENTER} zoom={MAP_ZOOM} scrollWheelZoom={true} className="h-full w-full">
-                        <ChangeView center={NZ_SOUTH_ISLAND_CENTER} zoom={MAP_ZOOM} />
-                        <TileLayer
-                            attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
-                            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                        />
-                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
+                    <MapContainer center={NZ_SOUTH_ISLAND_CENTER} zoom={MAP_ZOOM} scrollWheelZoom={true} className="h-full w-full bg-neutral-800">
+                        <MapEffect />
+                        <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
+                        <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
 
-                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon}><Popup>Your selected location</Popup></Marker>}
-
+                        {userPosition && <Marker position={userPosition} icon={userMarkerIcon}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
+                        
                         <MarkerClusterGroup chunkedLoading>
-                             {sightings.map(sighting => (
-                                 <Marker key={sighting.timestamp + sighting.name} position={[sighting.lat, sighting.lng]} icon={createSightingIcon(sighting)}>
-                                     <Popup>
-                                        <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/>
-                                        Reported at {new Date(sighting.timestamp).toLocaleTimeString()}
-                                     </Popup>
-                                 </Marker>
-                             ))}
+                             {sightings.map(sighting => ( <Marker key={sighting.timestamp + sighting.name} position={[sighting.lat, sighting.lng]} icon={createSightingIcon(sighting)}> <Popup> <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> Reported at {new Date(sighting.timestamp).toLocaleTimeString()} </Popup> </Marker> ))}
                         </MarkerClusterGroup>
                         
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} />}
@@ -271,23 +216,9 @@ const AuroraSightings: React.FC = () => {
                      <h3 className="text-xl font-semibold text-white">Latest 5 Reports</h3>
                      <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left text-neutral-400">
-                            <thead className="text-xs text-neutral-300 uppercase bg-neutral-800">
-                                <tr>
-                                    <th scope="col" className="px-4 py-2">Time</th>
-                                    <th scope="col" className="px-4 py-2">Name</th>
-                                    <th scope="col" className="px-4 py-2">Report</th>
-                                </tr>
-                            </thead>
+                            <thead className="text-xs text-neutral-300 uppercase bg-neutral-800"><tr><th scope="col" className="px-4 py-2">Time</th><th scope="col" className="px-4 py-2">Name</th><th scope="col" className="px-4 py-2">Report</th></tr></thead>
                             <tbody>
-                                {isLoading ? (
-                                    <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr>
-                                ) : sightings.slice(0, 5).map(s => (
-                                    <tr key={s.timestamp + s.name} className="bg-neutral-900 border-b border-neutral-800">
-                                        <td className="px-4 py-2">{new Date(s.timestamp).toLocaleTimeString('en-NZ')}</td>
-                                        <td className="px-4 py-2 font-medium text-neutral-200">{s.name}</td>
-                                        <td className="px-4 py-2 text-2xl" title={s.status}>{getEmojiForStatus(s.status)}</td>
-                                    </tr>
-                                ))}
+                                {isLoading ? ( <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr> ) : sightings.length === 0 ? ( <tr><td colSpan={3} className="text-center p-4 italic">No reports in the last 24 hours.</td></tr> ) : sightings.slice(0, 5).map(s => ( <tr key={s.timestamp + s.name} className="bg-neutral-900 border-b border-neutral-800"> <td className="px-4 py-2">{new Date(s.timestamp).toLocaleTimeString('en-NZ')}</td> <td className="px-4 py-2 font-medium text-neutral-200">{s.name}</td> <td className="px-4 py-2 text-2xl" title={s.status}>{getEmojiForStatus(s.status)}</td> </tr> ))}
                             </tbody>
                         </table>
                         {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
