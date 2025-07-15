@@ -664,8 +664,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto">
-            {/* The background will now correctly sit behind all content */}
-            <AuroraBackground /> 
             <div className="container mx-auto relative z-10">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
@@ -840,41 +838,5 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         </div>
     );
 };
-
-// This component is not exported because it is used locally
-const AuroraBackground: React.FC = () => {
-    return (
-        <div className="absolute inset-0 z-0 overflow-hidden">
-            <div className="aurora-container">
-                <div className="aurora-band" style={{ '--offset': 0, '--speed': 1.5, '--color': 'rgba(0, 255, 150, 0.2)' } as React.CSSProperties}></div>
-                <div className="aurora-band" style={{ '--offset': 1, '--speed': 2, '--color': 'rgba(255, 0, 255, 0.15)' } as React.CSSProperties}></div>
-                <div className="aurora-band" style={{ '--offset': 2, '--speed': 1, '--color': 'rgba(0, 200, 255, 0.2)' } as React.CSSProperties}></div>
-            </div>
-            <style>{`
-                .aurora-container {
-                    position: absolute;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    filter: blur(40px) brightness(1.2);
-                    transform: skewY(-10deg);
-                }
-                .aurora-band {
-                    position: absolute;
-                    top: 0; left: -50%;
-                    width: 200%; height: 60%;
-                    background: var(--color);
-                    border-radius: 50%;
-                    animation: aurora-anim calc(15s / var(--speed)) infinite linear;
-                    animation-delay: calc(var(--offset) * -5s);
-                }
-                @keyframes aurora-anim {
-                    0% { transform: translateX(-25%) rotate(0deg) scaleY(1); }
-                    50% { transform: translateX(25%) rotate(10deg) scaleY(1.3); }
-                    100% { transform: translateX(-25%) rotate(0deg) scaleY(1); }
-                }
-            `}</style>
-        </div>
-    );
-}
-
 
 export default ForecastDashboard;
