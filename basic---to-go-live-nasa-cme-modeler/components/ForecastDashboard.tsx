@@ -12,7 +12,7 @@ import GuideIcon from './icons/GuideIcon';
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; } // Changed content to string
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
 interface CelestialTimeData {
     moon?: { rise: number | null, set: number | null, illumination?: number };
@@ -112,8 +112,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            phone: { android: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+            dslr: { iso: "N/A", shutter: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
         };
     }
     let baseSettings: any;
@@ -181,10 +181,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
-        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
+        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</b> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
     
-    const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, title: id === 'forecast' ? 'About The Forecast Score' : id === 'solar-wind-graph' ? 'About The Solar Wind Graph' : id === 'imf-graph' ? 'About The IMF Graph' : id === 'goes-mag' ? 'GOES Magnetometer (Hp)' : tooltipContent[id as keyof typeof tooltipContent], content: content }); }, [tooltipContent]); // Pass tooltipContent as dependency
+    const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, title: id === 'forecast' ? 'About The Forecast Score' : id === 'solar-wind-graph' ? 'About The Solar Wind Graph' : id === 'imf-graph' ? 'About The IMF Graph' : id === 'goes-mag' ? 'GOES Magnetometer (Hp)' : tooltipContent[id as keyof typeof tooltipContent], content: content }); }, [tooltipContent]);
     const closeModal = useCallback(() => setModalState(null), []);
     const formatNZTimestamp = (timestamp: number) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
@@ -260,25 +260,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
         } else { console.error("Magnetic data failed to load:", magResult.reason); setAllMagneticData([]); }
 
-        setLoadingMagnetometer(null); // Reset loading state first
+        let anyGoesDataFound = false; // Flag to track if any valid GOES data was found
 
         // --- GOES Data Processing (Primary - GOES-18) ---
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             console.log('GOES-18 Raw Data (last 5):', goes18Result.value.slice(-5));
             const processedData18 = goes18Result.value
-                .filter((d: any) => d.hp != null && typeof d.hp === 'number' && !isNaN(d.hp) && d.hp > -99999) // Ensure valid number
-                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.hp }))
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp) && d.Hp > -99999) // Access d.Hp (capital H)
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
             analyzeMagnetometerData(processedData18); // Analyze based on primary satellite
             console.log('GOES-18 Processed Data (first 5):', processedData18.slice(0, 5));
             console.log('GOES-18 Processed Data Count:', processedData18.length);
-            if (processedData18.length === 0) {
-                setLoadingMagnetometer('GOES-18: No valid Hp data found for this period.');
+            if (processedData18.length > 0) {
+                anyGoesDataFound = true;
+            } else {
+                console.warn('GOES-18: No valid Hp data points after filtering.');
             }
         } else {
             console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error');
-            setLoadingMagnetometer('GOES-18 data unavailable or failed to fetch.');
             setGoes18Data([]);
         }
 
@@ -286,23 +287,27 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
             console.log('GOES-19 Raw Data (last 5):', goes19Result.value.slice(-5));
             const processedData19 = goes19Result.value
-                .filter((d: any) => d.hp != null && typeof d.hp === 'number' && !isNaN(d.hp) && d.hp > -99999) // Ensure valid number
-                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.hp }))
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp) && d.Hp > -99999) // Access d.Hp (capital H)
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes19Data(processedData19);
             console.log('GOES-19 Processed Data (first 5):', processedData19.slice(0, 5));
             console.log('GOES-19 Processed Data Count:', processedData19.length);
-            if (processedData19.length === 0 && (loadingMagnetometer === null || loadingMagnetometer.includes('GOES-18'))) {
-                 // Only update loading status if GOES-18 also had no data or was initially loading
-                setLoadingMagnetometer('GOES-19: No valid Hp data found for this period.');
+            if (processedData19.length > 0) {
+                anyGoesDataFound = true;
+            } else {
+                console.warn('GOES-19: No valid Hp data points after filtering.');
             }
         } else {
             console.error('GOES-19 Fetch Failed:', goes19Result.reason || 'Unknown error');
-            if (loadingMagnetometer === null || loadingMagnetometer.includes('GOES-18')) {
-                // Only update loading status if GOES-18 also had no data or was initially loading
-                setLoadingMagnetometer('GOES-19 data unavailable or failed to fetch.');
-            }
             setGoes19Data([]);
+        }
+        
+        // Update loadingMagnetometer status based on overall GOES data availability
+        if (!anyGoesDataFound) {
+             setLoadingMagnetometer('No valid GOES Magnetometer data available from either satellite for this period.');
+        } else {
+            setLoadingMagnetometer(null); // Clear loading message if any data was found
         }
         
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
@@ -312,7 +317,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
 
-    const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
+    const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => { const moonIllumination = Math.max(0, (illumination ?? 0) ); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; const riseStr = riseTime ? new Date(riseTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A'; const setStr = setTime ? new Date(setTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A'; const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`; const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`; const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`; const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`; return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' }; };
     
     useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
@@ -336,7 +341,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from city and town lights.</li><li><strong>The Moon:</b> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data come from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
+    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from city and town lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data come from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
