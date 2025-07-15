@@ -12,7 +12,7 @@ import GuideIcon from './icons/GuideIcon';
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: React.ReactNode; }
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; } // Changed content to string
 
 interface CelestialTimeData {
     moon?: { rise: number | null, set: number | null, illumination?: number };
@@ -89,7 +89,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content as string }} />
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content }} />
       </div>
     </div>
   );
@@ -112,8 +112,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
         };
     }
     let baseSettings: any;
@@ -160,7 +160,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [magnetometerTimeRange, setMagnetometerTimeRange] = useState<number>(3 * 3600000);
     const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState<string>('3 Hr');
     
-    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: React.ReactNode } | null>(null);
+    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null); // Changed content to string
     const [isFaqOpen, setIsFaqOpen] = useState(false);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
 
@@ -171,20 +171,20 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
     const tooltipContent = {
-        'forecast': { title: 'About The Forecast Score', content: `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>` },
-        'power': { title: 'Hemispheric Power', content: `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.` },
-        'speed': { title: 'Solar Wind Speed', content: `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.` },
-        'density': { title: 'Solar Wind Density', content: `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³.<br><br><strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.` },
-        'bt': { title: 'IMF Bt (Total)', content: `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.` },
-        'bz': { title: 'IMF Bz (N/S)', content: `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>` },
-        'epam': { title: 'ACE EPAM', content: `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.` },
-        'moon': { title: 'Moon Illumination', content: `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.` },
-        'solar-wind-graph': { title: 'About The Solar Wind Graph', content: `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>` },
-        'imf-graph': { title: 'About The IMF Graph', content: `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>` },
-        'goes-mag': { title: 'GOES Magnetometer (Hp)', content: `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>` },
+        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
+        'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
+        'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
+        'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³.<br><br><strong>Effect on Aurora:</strong> Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.`,
+        'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
+        'bz': `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
+        'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
+        'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
+        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
+        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
+        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
     
-    const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, title: content.title, content: content.content }); }, []);
+    const openModal = useCallback((id: string) => { const content = tooltipContent[id as keyof typeof tooltipContent]; if (content) setModalState({ isOpen: true, title: id === 'forecast' ? 'About The Forecast Score' : id === 'solar-wind-graph' ? 'About The Solar Wind Graph' : id === 'imf-graph' ? 'About The IMF Graph' : id === 'goes-mag' ? 'GOES Magnetometer (Hp)' : tooltipContent[id as keyof typeof tooltipContent], content: content }); }, [tooltipContent]); // Pass tooltipContent as dependency
     const closeModal = useCallback(() => setModalState(null), []);
     const formatNZTimestamp = (timestamp: number) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
@@ -199,12 +199,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     const analyzeMagnetometerData = (data: any[]) => {
         if (data.length < 30) { setSubstormBlurb({ text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' }); return; }
-        const latestPoint = data[data.length - 1]; const tenMinAgoPoint = data.find(p => p.time >= latestPoint.time - 10 * 60 * 1000); const oneHourAgoPoint = data.find(p => p.time >= latestPoint.time - 60 * 60 * 1000);
-        if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint) { setSubstormBlurb({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' }); return; }
-        const jump = latestPoint.hp - tenMinAgoPoint.hp; const drop = latestPoint.hp - oneHourAgoPoint.hp;
-        if (jump > 20) { setSubstormBlurb({ text: 'Substorm signature detected! A sharp field increase suggests a recent or ongoing eruption. Look south!', color: 'text-green-400 font-bold animate-pulse' }); }
-        else if (drop < -15) { setSubstormBlurb({ text: 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.', color: 'text-yellow-400' }); }
-        else { setSubstormBlurb({ text: 'The magnetic field appears stable. No immediate signs of substorm development.', color: 'text-neutral-400' }); }
+        // Get the latest point from the end of the sorted array
+        const latestPoint = data[data.length - 1];
+        // Find points approximately 10 minutes and 1 hour ago
+        const tenMinAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 10 * 60 * 1000);
+        const oneHourAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 60 * 60 * 1000);
+
+        if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) {
+            setSubstormBlurb({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' });
+            return;
+        }
+
+        const jump = latestPoint.hp - tenMinAgoPoint.hp;
+        const drop = latestPoint.hp - oneHourAgoPoint.hp;
+
+        console.log('Magnetometer Analysis:', {latestHp: latestPoint.hp, tenMinAgoHp: tenMinAgoPoint.hp, oneHourAgoHp: oneHourAgoPoint.hp, jump, drop});
+
+
+        if (jump > 20) { // Sharp positive jump indicates dipolarization
+            setSubstormBlurb({ text: 'Substorm signature detected! A sharp field increase suggests a recent or ongoing eruption. Look south!', color: 'text-green-400 font-bold animate-pulse' });
+        } else if (drop < -15) { // Significant drop over 1 hour indicates stretching
+            setSubstormBlurb({ text: 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.', color: 'text-yellow-400' });
+        } else { // Stable
+            setSubstormBlurb({ text: 'The magnetic field appears stable. No immediate signs of substorm development.', color: 'text-neutral-400' });
+        }
     };
     
     const fetchAllData = useCallback(async (isInitialLoad = false) => {
@@ -228,23 +246,64 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
             setGaugeData(prev => ({...prev, power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt ?? null, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz ?? null, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null) }));
             if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
-        } else { setAuroraBlurb("Could not load forecast data."); setAuroraScoreHistory([]); }
+        } else { console.error("Forecast data failed to load:", forecastResult.reason); setAuroraBlurb("Could not load forecast data."); setAuroraScoreHistory([]); }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
             const plasmaData = plasmaResult.value; const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
             const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999); const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null; const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx]; const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
             setGaugeData(prev => ({...prev, speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}, density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}}));
             setAllPlasmaData(plasmaData.slice(1).map((r:any[]) => { const rawTime = r[plasmaTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }}));
-        } else { setAllPlasmaData([]); }
+        } else { console.error("Plasma data failed to load:", plasmaResult.reason); setAllPlasmaData([]); }
 
         if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
             const magData = magResult.value; const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
             setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
-        } else { setAllMagneticData([]); }
+        } else { console.error("Magnetic data failed to load:", magResult.reason); setAllMagneticData([]); }
 
-        setLoadingMagnetometer(null);
-        if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) { const data = goes18Result.value.filter(d => d.hp != null && d.hp > -99999).map(d => ({ time: new Date(d.time_tag).getTime(), hp: d.hp })).sort((a,b) => a.time - b.time); setGoes18Data(data); analyzeMagnetometerData(data); } else { setLoadingMagnetometer('GOES-18 data unavailable.'); setGoes18Data([]); }
-        if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) { setGoes19Data(goes19Result.value.filter(d => d.hp != null && d.hp > -99999).map(d => ({ time: new Date(d.time_tag).getTime(), hp: d.hp })).sort((a,b) => a.time - b.time)); } else { setGoes19Data([]); }
+        setLoadingMagnetometer(null); // Reset loading state first
+
+        // --- GOES Data Processing (Primary - GOES-18) ---
+        if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
+            console.log('GOES-18 Raw Data (last 5):', goes18Result.value.slice(-5));
+            const processedData18 = goes18Result.value
+                .filter((d: any) => d.hp != null && typeof d.hp === 'number' && !isNaN(d.hp) && d.hp > -99999) // Ensure valid number
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.hp }))
+                .sort((a, b) => a.time - b.time);
+            setGoes18Data(processedData18);
+            analyzeMagnetometerData(processedData18); // Analyze based on primary satellite
+            console.log('GOES-18 Processed Data (first 5):', processedData18.slice(0, 5));
+            console.log('GOES-18 Processed Data Count:', processedData18.length);
+            if (processedData18.length === 0) {
+                setLoadingMagnetometer('GOES-18: No valid Hp data found for this period.');
+            }
+        } else {
+            console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error');
+            setLoadingMagnetometer('GOES-18 data unavailable or failed to fetch.');
+            setGoes18Data([]);
+        }
+
+        // --- GOES Data Processing (Secondary - GOES-19) ---
+        if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
+            console.log('GOES-19 Raw Data (last 5):', goes19Result.value.slice(-5));
+            const processedData19 = goes19Result.value
+                .filter((d: any) => d.hp != null && typeof d.hp === 'number' && !isNaN(d.hp) && d.hp > -99999) // Ensure valid number
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.hp }))
+                .sort((a, b) => a.time - b.time);
+            setGoes19Data(processedData19);
+            console.log('GOES-19 Processed Data (first 5):', processedData19.slice(0, 5));
+            console.log('GOES-19 Processed Data Count:', processedData19.length);
+            if (processedData19.length === 0 && (loadingMagnetometer === null || loadingMagnetometer.includes('GOES-18'))) {
+                 // Only update loading status if GOES-18 also had no data or was initially loading
+                setLoadingMagnetometer('GOES-19: No valid Hp data found for this period.');
+            }
+        } else {
+            console.error('GOES-19 Fetch Failed:', goes19Result.reason || 'Unknown error');
+            if (loadingMagnetometer === null || loadingMagnetometer.includes('GOES-18')) {
+                // Only update loading status if GOES-18 also had no data or was initially loading
+                setLoadingMagnetometer('GOES-19 data unavailable or failed to fetch.');
+            }
+            setGoes19Data([]);
+        }
         
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
@@ -277,7 +336,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from city and town lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data come from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
+    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from city and town lights.</li><li><strong>The Moon:</b> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data come from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
