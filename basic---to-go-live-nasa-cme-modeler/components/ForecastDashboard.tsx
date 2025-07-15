@@ -89,7 +89,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content as string }} />
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">{content}</div>
       </div>
     </div>
   );
@@ -117,7 +117,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
         };
     }
     let baseSettings: any;
-    if (score === null || score < 10) {
+    if (score === null || score < 10) { 
         baseSettings = { overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.", phone: { android: { iso: "3200-6400 (Max)", shutter: "20-30s", pros: ["Might pick up an extremely faint, indiscernible glow."], cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."], }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", pros: ["Simple to try with Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], }, }, dslr: { iso: "6400-12800", shutter: "20-30s", pros: ["Maximizes light gathering for extremely faint conditions."], cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."], }, };
     } else if (score < 20) {
          baseSettings = { overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.", phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", pros: ["Might detect very faint light not visible to the eye."], cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."], }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", pros: ["Simple to attempt using Night Mode."], cons: ["Limited manual control. Photos will be very noisy and may not show discernible aurora."], }, }, dslr: { iso: "3200-6400", shutter: "15-25s", pros: ["Better light gathering than phones, higher chance for a faint detection."], cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."], }, };
@@ -277,7 +277,38 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `...`; // FAQ content remains the same
+    const faqContent = (
+        <div className="space-y-4">
+            <div>
+                <h4 className="font-bold text-neutral-200">Why don't you use the Kp-index?</h4>
+                <p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p>
+            </div>
+            <div>
+                <h4 className="font-bold text-neutral-200">What data SHOULD I look at then?</h4>
+                <p>The most critical live data points for aurora nowcasting are:</p>
+                <ul className="list-disc list-inside pl-2 mt-1">
+                    <li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li>
+                    <li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li>
+                    <li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li>
+                </ul>
+            </div>
+             <div>
+                <h4 className="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4>
+                <p>This can happen for several reasons! The most common are:</p>
+                 <ul className="list-disc list-inside pl-2 mt-1">
+                    <li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li>
+                    <li><strong>Light Pollution:</strong> You must be far away from city and town lights.</li>
+                    <li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li>
+                    <li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li>
+                     <li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li>
+                </ul>
+            </div>
+             <div>
+                <h4 className="font-bold text-neutral-200">Where does your data come from?</h4>
+                <p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p>
+            </div>
+        </div>
+    );
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
@@ -311,22 +342,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     
                     <AuroraSightings isDaylight={isDaylight} />
 
-                    <div className="col-span-12 card bg-neutral-950/80 p-4">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-2 h-[450px] flex flex-col">
-                                <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2><button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
-                                <div className="flex-grow relative mt-2">
-                                    {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} />}
-                                </div>
-                            </div>
-                            <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
-                                <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
-                                <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
                         <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast Trend (Last {auroraScoreChartTimeLabel})</h2>
                         <TimeRangeButtons onSelect={(duration, label) => { setAuroraScoreChartTimeRange(duration); setAuroraScoreChartTimeLabel(label); }} selected={auroraScoreChartTimeRange} />
@@ -348,17 +363,33 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     </div>
 
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Solar Wind (Last {solarWindTimeLabel})</h2><button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                        <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Solar Wind</h2><button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                         <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
                         <div className="flex-grow relative mt-2">
                             {allPlasmaData.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind data unavailable.</p>}
                         </div>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field (Last {magneticFieldTimeLabel})</h2><button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                        <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2><button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                         <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
                          <div className="flex-grow relative mt-2">
                             {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
+                        </div>
+                    </div>
+
+                    <div className="col-span-12 card bg-neutral-950/80 p-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="lg:col-span-2 h-[450px] flex flex-col">
+                                <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2><button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
+                                <div className="flex-grow relative mt-2">
+                                    {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} />}
+                                </div>
+                            </div>
+                            <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
+                                <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
+                                <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
+                            </div>
                         </div>
                     </div>
                     
