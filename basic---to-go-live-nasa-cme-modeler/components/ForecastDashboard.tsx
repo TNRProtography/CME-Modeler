@@ -113,8 +113,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            phone: { android: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+            dslr: { iso: "N/A", shutter: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
         };
     }
     let baseSettings: any;
@@ -171,7 +171,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                     focus: "Infinity", 
                     wb: "Auto or 3500K-4000K", 
                     pros: ["Simple to attempt using Night Mode."], 
-                    cons: ["Limited manual control. Photos will be very noisy and may not show discernible aurora."], 
+                    cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], 
                 }, 
             }, 
             dslr: { 
@@ -300,8 +300,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'bz': `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</b> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
-        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</b> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</b> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
+        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</b> Elevated conditions.</li><li><b><strong style="color:rgb(255,165,0)">Orange:</b> Moderate conditions.</li><li><b><strong style="color:rgb(255,69,0)">Red:</b> Strong conditions.</li><li><b><strong style="color:rgb(128,0,128)">Purple:</b> Severe conditions.</li></ul>`,
+        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</b> Moderately favorable conditions.</li><li><b><strong style="color:rgb(255,165,0)">Orange:</b> Favorable conditions.</li><li><b><strong style="color:rgb(255,69,0)">Red:</b> Very favorable/strong conditions.</li><li><b><strong style="color:rgb(128,0,128)">Purple:</b> Extremely favorable/severe conditions.</li></ul>`,
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
     
@@ -350,7 +350,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
 
         if (jump > 20) { // Sharp positive jump indicates dipolarization
-            setSubstormBlurb({ text: 'Substorm signature detected! A sharp field increase suggests a recent or ongoing eruption. Look south!', color: 'text-green-400 font-bold animate-pulse' });
+            const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+            setSubstormBlurb({ text: `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`, color: 'text-green-400 font-bold animate-pulse' });
         } else if (drop < -15) { // Significant drop over 1 hour indicates stretching
             setSubstormBlurb({ text: 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.', color: 'text-yellow-400' });
         } else { // Stable
@@ -360,7 +361,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
     // Helper to generate annotations based on GOES-18 data for highlighting
     const getMagnetometerAnnotations = useCallback((data: any[]) => {
-        const annotations = {};
+        const annotations: any = {};
         if (data.length < 60) return annotations; // Need at least an hour of data to analyze trends
 
         const getSegmentAnalysis = (startIndex: number, endIndex: number) => {
@@ -374,10 +375,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
 
             if (durationMinutes < 10) return null; // Only consider segments of reasonable duration
 
-            if (hpChange > 20) { // Sharp positive jump (Substorm)
-                return { type: 'substorm', xMin: startPoint.time, xMax: endPoint.time, label: 'SUBSTORM!' };
-            } else if (hpChange < -15 && durationMinutes > 30) { // Steady drop over significant period (Stretching)
-                return { type: 'stretching', xMin: startPoint.time, xMax: endPoint.time, label: 'STRETCHING' };
+            if (hpChange > 20) { // Sharp positive jump indicates substorm
+                return { type: 'substorm', xMin: startPoint.time, xMax: endPoint.time }; // Remove label here
+            } else if (hpChange < -15 && durationMinutes > 30) { // Steady drop over significant period indicates stretching
+                return { type: 'stretching', xMin: startPoint.time, xMax: endPoint.time }; // Remove label here
             }
             return null;
         };
@@ -405,15 +406,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         borderColor: 'transparent',
                         borderWidth: 0,
                         drawTime: 'beforeDatasetsDraw',
-                        label: {
-                            content: jumpAnalysis.label,
-                            display: true,
+                        label: { // Label now hidden but still defined if needed later
+                            content: 'SUBSTORM!',
+                            display: false, // Set to false to hide label on graph
                             position: 'center',
-                            color: 'rgba(34, 197, 94, 1)',
-                            font: { size: 10, weight: 'bold' },
-                            backgroundColor: 'rgba(10, 10, 10, 0.7)',
-                            padding: 3,
-                            borderRadius: 3,
                         }
                     };
                 }
@@ -426,7 +422,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                 if (stretchAnalysis && stretchAnalysis.type === 'stretching') {
                      // Ensure stretching doesn't overlap with a recent substorm marker
                     const recentSubstormOverlap = Object.values(annotations).some((ann: any) =>
-                        ann.type === 'box' && ann.label?.content === 'SUBSTORM!' &&
+                        ann.type === 'box' && ann.label?.content === 'SUBSTORM!' && // Check by label content for safety
                         Math.max(stretchAnalysis.xMin, ann.xMin) < Math.min(stretchAnalysis.xMax, ann.xMax) // Check for overlap
                     );
 
@@ -439,15 +435,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                             borderColor: 'transparent',
                             borderWidth: 0,
                             drawTime: 'beforeDatasetsDraw',
-                            label: {
-                                content: stretchAnalysis.label,
-                                display: true,
+                            label: { // Label now hidden
+                                content: 'STRETCHING',
+                                display: false, // Set to false to hide label on graph
                                 position: 'center',
-                                color: 'rgba(255, 215, 0, 1)',
-                                font: { size: 10, weight: 'bold' },
-                                backgroundColor: 'rgba(10, 10, 10, 0.7)',
-                                padding: 3,
-                                borderRadius: 3,
                             }
                         };
                     }
@@ -553,16 +544,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     
     useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
 
-    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraPlugins?: any[]): ChartOptions<'line'> => { // Added extraPlugins param
+    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => { // Changed extraPlugins to extraAnnotations
         const now = Date.now(); const startTime = now - rangeMs; const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
         if (isDualAxis) options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
         else options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } } };
 
         // Add annotations to plugins if provided
-        if (extraPlugins) {
+        if (extraAnnotations) { // Use extraAnnotations
             options.plugins = {
                 ...options.plugins,
-                annotation: { annotations: extraPlugins }
+                annotation: { annotations: extraAnnotations }
             };
         }
 
