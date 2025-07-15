@@ -3,23 +3,18 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 're
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
-import GuideIcon from './icons/GuideIcon'; // For the info button
-import CloseIcon from './icons/CloseIcon'; // For the modal close button
+import GuideIcon from './icons/GuideIcon';
+import CloseIcon from './icons/CloseIcon';
 
 // --- CONSTANTS & CONFIG ---
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
-const REPORTING_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
+const REPORTING_COOLDOWN_MS = 60 * 60 * 1000;
 
-// NEW: South Island of NZ bounding box for map
-const NZ_SOUTH_ISLAND_BOUNDS: L.LatLngBoundsLiteral = [
-    [-47.5, 166.0], // South-West corner
-    [-40.0, 175.5]  // North-East corner
-];
-const MAP_ZOOM = 6; // Initial zoom level that fits South Island well
+const NZ_SOUTH_ISLAND_BOUNDS: L.LatLngBoundsLiteral = [[-47.5, 166.0], [-40.0, 175.5]];
+const MAP_ZOOM = 6;
 
-// --- EMOJIS AND LABELS ---
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; }[] = [
     { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.' },
     { status: 'phone', emoji: '📱', label: 'Phone Camera', description: 'Not visible to your eyes, but shows up clearly in a modern smartphone photo (e.g., a 3-second night mode shot).' },
@@ -30,8 +25,12 @@ const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; de
 
 const getEmojiForStatus = (status: SightingStatus) => STATUS_OPTIONS.find(opt => opt.status === status)?.emoji || '❓';
 
-// --- HELPER & CHILD COMPONENTS ---
+// --- PROPS INTERFACE ---
+interface AuroraSightingsProps {
+  isDaylight: boolean;
+}
 
+// --- HELPER & CHILD COMPONENTS ---
 const MapEffect = () => {
     const map = useMap();
     useEffect(() => {
@@ -42,23 +41,10 @@ const MapEffect = () => {
 };
 
 const LocationFinder = ({ onLocationSelect }: { onLocationSelect: (latlng: L.LatLng) => void }) => {
-    // MODIFIED: Use useMapEvents for dragging and scrollWheel events to prevent accidental scroll
-    const map = useMap();
-    useMapEvents({
-        click(e) {
-            onLocationSelect(e.latlng);
-        },
-        // Only allow dragging if Shift key is pressed on desktop, or two fingers on touch
-        // Leaflet's default `dragging` and `scrollWheelZoom` options handle touch/multi-touch behavior well.
-        // For desktop mouse wheel, setting scrollWheelZoom to 'center' or false and relying on modifier key is common.
-        // For this specific request, setting them to false and letting `touchZoom` handle multi-touch is key.
-        // Mouse interactions for dragging/zooming are now disabled by the MapContainer props below.
-        // We only listen for clicks to set location.
-    });
+    useMapEvents({ click(e) { onLocationSelect(e.latlng); } });
     return null;
 };
 
-// A simple, local modal component for the guide
 const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
     return (
@@ -80,10 +66,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                             {STATUS_OPTIONS.map(({ emoji, label, description }) => (
                                 <li key={label} className="flex items-start gap-4">
                                     <span className="text-3xl mt-[-4px]">{emoji}</span>
-                                    <div>
-                                        <strong className="font-semibold text-neutral-200">{label}</strong>
-                                        <p className="text-neutral-400">{description}</p>
-                                    </div>
+                                    <div> <strong className="font-semibold text-neutral-200">{label}</strong> <p className="text-neutral-400">{description}</p> </div>
                                 </li>
                             ))}
                         </ul>
@@ -94,15 +77,11 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
     );
 };
 
-
-// The main component for this file
-const AuroraSightings: React.FC = () => {
-    // --- STATE MANAGEMENT ---
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
-
     const [userName, setUserName] = useState<string>('');
     const [userPosition, setUserPosition] = useState<L.LatLng | null>(null);
     const [selectedStatus, setSelectedStatus] = useState<SightingStatus | null>(null);
@@ -110,8 +89,6 @@ const AuroraSightings: React.FC = () => {
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
     const [lastReportInfo, setLastReportInfo] = useState<{timestamp: number, key: string} | null>(null);
     
-    // --- DATA FETCHING & INITIALIZATION ---
-
     const fetchSightings = useCallback(async () => {
         try {
             setError(null);
@@ -130,29 +107,24 @@ const AuroraSightings: React.FC = () => {
         setUserName(localStorage.getItem(LOCAL_STORAGE_USERNAME_KEY) || '');
         const lastReportString = localStorage.getItem(LOCAL_STORAGE_LAST_REPORT_KEY);
         if (lastReportString) setLastReportInfo(JSON.parse(lastReportString));
-
         fetchSightings();
-
         navigator.geolocation.getCurrentPosition(
             (position) => setUserPosition(new L.LatLng(position.coords.latitude, position.coords.longitude)),
             (err) => console.warn(`Geolocation error: ${err.message}. Please click map to set location.`),
             { timeout: 10000, enableHighAccuracy: false }
         );
-
         const intervalId = setInterval(fetchSightings, 2 * 60 * 1000);
         return () => clearInterval(intervalId);
     }, [fetchSightings]);
 
-    // --- COMPUTED VALUES & MEMOS ---
     const cooldownRemaining = useMemo(() => {
         if (!lastReportInfo) return 0;
         const timePassed = Date.now() - lastReportInfo.timestamp;
         return Math.max(0, REPORTING_COOLDOWN_MS - timePassed);
     }, [lastReportInfo]);
     
-    const canSubmit = !isSubmitting && cooldownRemaining === 0;
+    const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight;
 
-    // --- EVENT HANDLERS ---
     const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newName = e.target.value;
         setUserName(newName);
@@ -165,7 +137,7 @@ const AuroraSightings: React.FC = () => {
                 !userName.trim() && 'Please enter your name.',
                 !userPosition && 'Please set your location by clicking the map or enabling GPS.',
                 !selectedStatus && 'Please select your sighting status.',
-                !canSubmit && 'You can only report once per hour.'
+                !canSubmit && (isDaylight ? 'Sighting reports are disabled during daylight hours.' : 'You can only report once per hour.')
             ].filter(Boolean).join('\n');
             if (alertMsg) alert(alertMsg);
             return;
@@ -181,11 +153,9 @@ const AuroraSightings: React.FC = () => {
             const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reportData) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Submission failed.');
-            
             const newReportInfo = { timestamp: Date.now(), key: result.key };
             setLastReportInfo(newReportInfo);
             localStorage.setItem(LOCAL_STORAGE_LAST_REPORT_KEY, JSON.stringify(newReportInfo));
-            
             await fetchSightings();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -195,24 +165,11 @@ const AuroraSightings: React.FC = () => {
         }
     };
     
-    // --- RENDER LOGIC ---
-
-    const userMarkerIcon = L.divIcon({
-        html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`,
-        className: '',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
-    });
-
+    const userMarkerIcon = L.divIcon({ html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`, className: '', iconSize: [20, 20], iconAnchor: [10, 10], });
     const createSightingIcon = (sighting: SightingReport) => {
         const emoji = getEmojiForStatus(sighting.status);
         const sendingAnimation = sighting.isPending ? `<div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div><div class="absolute inset-0 bg-black rounded-full opacity-60"></div>` : '';
-        return L.divIcon({
-            html: `<div class="relative">${sendingAnimation}<div>${emoji}</div></div>`,
-            className: 'emoji-marker',
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-        });
+        return L.divIcon({ html: `<div class="relative">${sendingAnimation}<div>${emoji}</div></div>`, className: 'emoji-marker', iconSize: [32, 32], iconAnchor: [16, 16], });
     };
     
     return (
@@ -227,8 +184,12 @@ const AuroraSightings: React.FC = () => {
                 <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!). Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
             </div>
 
-            {/* Reporting UI */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-neutral-900 p-4 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-neutral-900 p-4 rounded-lg relative">
+                {isDaylight && (
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center rounded-lg z-10">
+                        <p className="text-amber-400 font-semibold text-lg text-center p-4">Reporting is disabled during daylight hours</p>
+                    </div>
+                )}
                 <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-1 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
                 <div className="col-span-1 md:col-span-2 grid grid-cols-2 lg:grid-cols-6 gap-2 items-center">
                     <div className="col-span-2 lg:col-span-5 flex flex-wrap justify-center gap-2">
@@ -243,36 +204,19 @@ const AuroraSightings: React.FC = () => {
                         {isSubmitting ? <LoadingSpinner /> : 'Submit'}
                     </button>
                 </div>
-                {cooldownRemaining > 0 && <p className="col-span-1 md:col-span-3 text-center text-xs text-amber-400 mt-2">You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.</p>}
+                {cooldownRemaining > 0 && !isDaylight && <p className="col-span-1 md:col-span-3 text-center text-xs text-amber-400 mt-2">You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.</p>}
             </div>
 
-            {/* Map and Table Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                  <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
-                    <MapContainer 
-                        center={[(NZ_SOUTH_ISLAND_BOUNDS[0][0] + NZ_SOUTH_ISLAND_BOUNDS[1][0]) / 2, (NZ_SOUTH_ISLAND_BOUNDS[0][1] + NZ_SOUTH_ISLAND_BOUNDS[1][1]) / 2]} // Center of bounds
-                        zoom={MAP_ZOOM} 
-                        scrollWheelZoom={false} // Prevent single-finger/accidental scroll zoom
-                        dragging={false}       // Prevent single-finger/accidental dragging
-                        doubleClickZoom={false} // Disable double-click zoom
-                        touchZoom={true}       // Enable two-finger pinch-to-zoom on touch devices
-                        boxZoom={false}        // Disable box zoom
-                        keyboard={false}       // Disable keyboard pan/zoom
-                        zoomControl={true}    // Keep zoom +/- buttons
-                        minZoom={MAP_ZOOM} // Ensure it doesn't zoom out too far
-                        maxBounds={NZ_SOUTH_ISLAND_BOUNDS} // Restrict panning outside bounds
-                        className="h-full w-full bg-neutral-800"
-                    >
+                    <MapContainer center={[(NZ_SOUTH_ISLAND_BOUNDS[0][0] + NZ_SOUTH_ISLAND_BOUNDS[1][0]) / 2, (NZ_SOUTH_ISLAND_BOUNDS[0][1] + NZ_SOUTH_ISLAND_BOUNDS[1][1]) / 2]} zoom={MAP_ZOOM} scrollWheelZoom={false} dragging={!L.Browser.mobile} touchZoom={true} minZoom={MAP_ZOOM} maxBounds={NZ_SOUTH_ISLAND_BOUNDS} className="h-full w-full bg-neutral-800">
                         <MapEffect />
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
-
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
-                        
                         <>
                              {sightings.map(sighting => ( <Marker key={sighting.timestamp + sighting.name} position={[sighting.lat, sighting.lng]} icon={createSightingIcon(sighting)} zIndexOffset={sighting.timestamp}> <Popup> <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> Reported at {new Date(sighting.timestamp).toLocaleTimeString()} </Popup> </Marker> ))}
                         </>
-                        
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
                     </MapContainer>
                 </div>
