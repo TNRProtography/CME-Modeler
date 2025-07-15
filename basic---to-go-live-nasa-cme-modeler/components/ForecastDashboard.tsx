@@ -12,7 +12,7 @@ import GuideIcon from './icons/GuideIcon';
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; } // Changed content to string
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
 interface CelestialTimeData {
     moon?: { rise: number | null, set: number | null, illumination?: number };
@@ -118,18 +118,138 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     }
     let baseSettings: any;
     if (score === null || score < 10) { 
-        baseSettings = { overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.", phone: { android: { iso: "3200-6400 (Max)", shutter: "20-30s", pros: ["Might pick up an extremely faint, indiscernible glow."], cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."], }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", pros: ["Simple to try with Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], }, }, dslr: { iso: "6400-12800", shutter: "20-30s", pros: ["Maximizes light gathering for extremely faint conditions."], cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."], }, };
+        baseSettings = { 
+            overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.", 
+            phone: { 
+                android: { 
+                    iso: "3200-6400 (Max)", 
+                    shutter: "20-30s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Might pick up an extremely faint, indiscernible glow."], 
+                    cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."], 
+                }, 
+                apple: { 
+                    iso: "Auto (max Night Mode)", 
+                    shutter: "Longest Night Mode auto-exposure (10-30s)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Simple to try with Night Mode."], 
+                    cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], 
+                }, 
+            }, 
+            dslr: { 
+                iso: "6400-12800", 
+                shutter: "20-30s", 
+                aperture: "f/2.8-f/4 (widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
+                pros: ["Maximizes light gathering for extremely faint conditions."], 
+                cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."], 
+            }, 
+        };
     } else if (score < 20) {
-         baseSettings = { overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.", phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", pros: ["Might detect very faint light not visible to the eye."], cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."], }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", pros: ["Simple to attempt using Night Mode."], cons: ["Limited manual control. Photos will be very noisy and may not show discernible aurora."], }, }, dslr: { iso: "3200-6400", shutter: "15-25s", pros: ["Better light gathering than phones, higher chance for a faint detection."], cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."], }, };
+         baseSettings = { 
+            overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.", 
+            phone: { 
+                android: { 
+                    iso: "3200-6400 (Max)", 
+                    shutter: "15-30s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Might detect very faint light not visible to the eye."], 
+                    cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."], 
+                }, 
+                apple: { 
+                    iso: "Auto (max Night Mode)", 
+                    shutter: "Longest Night Mode auto-exposure (10-30s)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Simple to attempt using Night Mode."], 
+                    cons: ["Limited manual control. Photos will be very noisy and may not show discernible aurora."], 
+                }, 
+            }, 
+            dslr: { 
+                iso: "3200-6400", 
+                shutter: "15-25s", 
+                aperture: "f/2.8-f/4 (widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
+                pros: ["Better light gathering than phones, higher chance for a faint detection."], 
+                cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."], 
+            }, 
+        };
     } else if (score >= 80) {
-        baseSettings = { overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.", phone: { android: { iso: "400-800", shutter: "1-5s", pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."], cons: ["May still struggle with extreme brightness or very fast movement."], }, apple: { iso: "Auto or 500-1500 (in third-party app)", shutter: "1-3s (or what auto-selects)", pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."], cons: ["Less manual control than Android Pro mode for precise settings."], }, }, dslr: { iso: "800-1600", shutter: "1-5s", pros: ["Stunning detail, vibrant colors.", "Can capture movement without blur.", "Minimal noise."], cons: ["May need quick adjustments for fluctuating brightness."], }, };
+        baseSettings = { 
+            overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.", 
+            phone: { 
+                android: { 
+                    iso: "400-800", 
+                    shutter: "1-5s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."], 
+                    cons: ["May still struggle with extreme brightness or very fast movement."], 
+                }, 
+                apple: { 
+                    iso: "Auto or 500-1500 (in third-party app)", 
+                    shutter: "1-3s (or what auto-selects)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."], 
+                    cons: ["Less manual control than Android Pro mode for precise settings."], 
+                }, 
+            }, 
+            dslr: { 
+                iso: "800-1600", 
+                shutter: "1-5s", 
+                aperture: "f/2.8 (or your widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
+                pros: ["Stunning detail, vibrant colors.", "Can capture movement without blur.", "Minimal noise."], 
+                cons: ["May need quick adjustments for fluctuating brightness."], 
+            }, 
+        };
     } else {
-        baseSettings = { overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.", phone: { android: { iso: "800-1600", shutter: "5-10s", pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."], cons: ["Still limited dynamic range compared to DSLR."], }, apple: { iso: "Auto (let it choose), or 1000-2000 (in manual app)", shutter: "3-7s (or what auto selects)", pros: ["Good balance, easier to get usable shots.", "Built-in processing helps with noise."], cons: ["Less control over very fast-moving aurora."], }, }, dslr: { iso: "1600-3200", shutter: "5-15s", pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."], cons: ["Can still get light pollution if exposure is too long."], }, };
+        baseSettings = { 
+            overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.", 
+            phone: { 
+                android: { 
+                    iso: "800-1600", 
+                    shutter: "5-10s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."], 
+                    cons: ["Still limited dynamic range compared to DSLR."], 
+                }, 
+                apple: { 
+                    iso: "Auto (let it choose), or 1000-2000 (in manual app)", 
+                    shutter: "3-7s (or what auto selects)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
+                    pros: ["Good balance, easier to get usable shots.", "Built-in processing helps with noise."], 
+                    cons: ["Less control over very fast-moving aurora."], 
+                }, 
+            }, 
+            dslr: { 
+                iso: "1600-3200", 
+                shutter: "5-15s", 
+                aperture: "f/2.8-f/4 (widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
+                pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."], 
+                cons: ["Can still get light pollution if exposure is too long."], 
+            }, 
+        };
     }
-    const sharedSettings = { aperture: "f/2.8 or widest", focus: "Manual to Infinity", wb: "3500K-4500K" };
-    baseSettings.phone.android = {...baseSettings.phone.android, ...sharedSettings};
-    baseSettings.phone.apple = {...baseSettings.phone.apple, ...sharedSettings};
-    baseSettings.dslr = {...baseSettings.dslr, ...sharedSettings};
     return baseSettings;
 };
 
@@ -174,12 +294,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
         'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
-        'density': `<strong>What it is:</b> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.`,
+        'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.`,
         'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
         'bz': `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
+        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</b> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
@@ -335,7 +455,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const magnetometerChartData = useMemo(() => ({ datasets: [ { label: 'GOES-18 (Primary)', data: goes18Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(56, 189, 248)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false }, { label: 'GOES-19 (Secondary)', data: goes19Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(255, 69, 0)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false } ] }), [goes18Data, goes19Data]);
     
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => { const now = Date.now(); const startTime = now - auroraScoreChartTimeRange; const annotations: any = {}; const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase(); const addAnnotation = (key: string, timestamp: number | null | undefined, text: string, emoji: string, color: string, position: 'start' | 'end') => { if (timestamp && timestamp > startTime && timestamp < now) { annotations[key] = { type: 'line', xMin: timestamp, xMax: timestamp, borderColor: color.replace(/, 1\)/, ', 0.7)'), borderWidth: 1.5, borderDash: [6, 6], label: { content: `${emoji} ${text}: ${formatTime(timestamp)}`, display: true, position, color, font: { size: 10, weight: 'bold' }, backgroundColor: 'rgba(10, 10, 10, 0.7)', padding: 3, borderRadius: 3 }, enter(ctx, event) { ctx.element.label.options.display = true; ctx.chart.draw(); }, leave(ctx, event) { ctx.element.label.options.display = true; ctx.chart.draw(); } }; } }; addAnnotation('sunrise', celestialTimes.sun?.rise, 'Sunrise', '☀️', '#fcd34d', 'start'); addAnnotation('sunset', celestialTimes.sun?.set, 'Sunset', '☀️', '#fcd34d', 'end'); addAnnotation('moonrise', celestialTimes.moon?.rise, 'Moonrise', '🌕', '#d1d5db', 'start'); addAnnotation('moonset', celestialTimes.moon?.set, 'Moonset', '🌕', '#d1d5db', 'end'); return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { callbacks: { title: (context) => context.length > 0 ? `Time: ${new Date(context[0].parsed.x).toLocaleTimeString('en-NZ')}` : '', label: (context) => { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed.y !== null) label += `${context.parsed.y.toFixed(1)}%`; if (context.dataset.label === 'Spot The Aurora Forecast') label += ' (Final Score)'; else if (context.dataset.label === 'Base Score') label += ' (Raw Calculation)'; return label; } } }, annotation: { annotations, drawTime: 'afterDatasetsDraw' } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (value: any) => `${value}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } } } }; }, [auroraScoreChartTimeRange, celestialTimes]);
+    const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => { const now = Date.Now(); const startTime = now - auroraScoreChartTimeRange; const annotations: any = {}; const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase(); const addAnnotation = (key: string, timestamp: number | null | undefined, text: string, emoji: string, color: string, position: 'start' | 'end') => { if (timestamp && timestamp > startTime && timestamp < now) { annotations[key] = { type: 'line', xMin: timestamp, xMax: timestamp, borderColor: color.replace(/, 1\)/, ', 0.7)'), borderWidth: 1.5, borderDash: [6, 6], label: { content: `${emoji} ${text}: ${formatTime(timestamp)}`, display: true, position, color, font: { size: 10, weight: 'bold' }, backgroundColor: 'rgba(10, 10, 10, 0.7)', padding: 3, borderRadius: 3 }, enter(ctx, event) { ctx.element.label.options.display = true; ctx.chart.draw(); }, leave(ctx, event) { ctx.element.label.options.display = true; ctx.chart.draw(); } }; } }; addAnnotation('sunrise', celestialTimes.sun?.rise, 'Sunrise', '☀️', '#fcd34d', 'start'); addAnnotation('sunset', celestialTimes.sun?.set, 'Sunset', '☀️', '#fcd34d', 'end'); addAnnotation('moonrise', celestialTimes.moon?.rise, 'Moonrise', '🌕', '#d1d5db', 'start'); addAnnotation('moonset', celestialTimes.moon?.set, 'Moonset', '🌕', '#d1d5db', 'end'); return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { callbacks: { title: (context) => context.length > 0 ? `Time: ${new Date(context[0].parsed.x).toLocaleTimeString('en-NZ')}` : '', label: (context) => { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed.y !== null) label += `${context.parsed.y.toFixed(1)}%`; if (context.dataset.label === 'Spot The Aurora Forecast') label += ' (Final Score)'; else if (context.dataset.label === 'Base Score') label += ' (Raw Calculation)'; return label; } } }, annotation: { annotations, drawTime: 'afterDatasetsDraw' } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (value: any) => `${value}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } } } }; }, [auroraScoreChartTimeRange, celestialTimes]);
     const auroraScoreChartData = useMemo(() => { if (auroraScoreHistory.length === 0) return { datasets: [] }; const getForecastGradient = (ctx: ScriptableContext<'line'>) => { const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined; const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top); const score0 = ctx.p0?.parsed?.y ?? 0; const score1 = ctx.p1?.parsed?.y ?? 0; const colorKey0 = getForecastScoreColorKey(score0); const colorKey1 = getForecastScoreColorKey(score1); gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi); gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi); return gradient; }; return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'transparent', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 0, spanGaps: true, order: 1, }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2, } ], }; }, [auroraScoreHistory]);
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
@@ -368,7 +488,75 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         </div>
                         <div className="card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p></div>
+                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    {/* Phone Settings */}
+                                    <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                        <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
+                                        <p className="text-neutral-400 text-sm mb-4">
+                                            **General Phone Tips:** Use a tripod! Manual focus to infinity (look for a "mountain" or "star" icon in Pro/Night mode). Turn off flash.
+                                        </p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Android */}
+                                            <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                                <h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
+                                                <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                    <li>**ISO:** {cameraSettings.phone.android.iso}</li>
+                                                    <li>**Shutter Speed:** {cameraSettings.phone.android.shutter}</li>
+                                                    <li>**Aperture:** {cameraSettings.phone.android.aperture}</li>
+                                                    <li>**Focus:** {cameraSettings.phone.android.focus}</li>
+                                                    <li>**White Balance:** {cameraSettings.phone.android.wb}</li>
+                                                </ul>
+                                                <div className="mt-2 text-xs">
+                                                    <p className="text-green-400">**Pros:** {cameraSettings.phone.android.pros.join(' ')}</p>
+                                                    <p className="text-red-400">**Cons:** {cameraSettings.phone.android.cons.join(' ')}</p>
+                                                </div>
+                                            </div>
+                                            {/* Apple */}
+                                            <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                                <h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode / Third-Party Apps)</h4>
+                                                <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                    <li>**ISO:** {cameraSettings.phone.apple.iso}</li>
+                                                    <li>**Shutter Speed:** {cameraSettings.phone.apple.shutter}</li>
+                                                    <li>**Aperture:** {cameraSettings.phone.apple.aperture}</li>
+                                                    <li>**Focus:** {cameraSettings.phone.apple.focus}</li>
+                                                    <li>**White Balance:** {cameraSettings.phone.apple.wb}</li>
+                                                </ul>
+                                                <div className="mt-2 text-xs">
+                                                    <p className="text-green-400">**Pros:** {cameraSettings.phone.apple.pros.join(' ')}</p>
+                                                    <p className="text-red-400">**Cons:** {cameraSettings.phone.apple.cons.join(' ')}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {/* DSLR/Mirrorless Settings */}
+                                    <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                        <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
+                                        <p className="text-neutral-400 text-sm mb-4">
+                                            **General DSLR Tips:** Use a sturdy tripod. Manual focus to infinity (use live view and magnify a distant star). Shoot in RAW for best quality.
+                                        </p>
+                                        <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                            <h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
+                                            <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                <li>**ISO:** {cameraSettings.dslr.iso}</li>
+                                                <li>**Shutter Speed:** {cameraSettings.dslr.shutter}</li>
+                                                <li>**Aperture:** {cameraSettings.dslr.aperture} (as wide as your lens allows)</li>
+                                                <li>**Focus:** {cameraSettings.dslr.focus}</li>
+                                                <li>**White Balance:** {cameraSettings.dslr.wb}</li>
+                                            </ul>
+                                            <div className="mt-2 text-xs">
+                                                <p className="text-green-400">**Pros:** {cameraSettings.dslr.pros.join(' ')}</p>
+                                                <p className="text-red-400">**Cons:** {cameraSettings.dslr.cons.join(' ')}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-neutral-500 text-xs italic mt-6 text-center">
+                                    **Disclaimer:** These are starting points. Aurora activity, light pollution, moon phase, and your specific camera/lens will influence optimal settings. Experimentation is key!
+                                </p>
+                            </div>
                         </div>
                     </div>
                     
