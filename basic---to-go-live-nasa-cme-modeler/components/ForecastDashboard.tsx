@@ -113,8 +113,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
         };
     }
     let baseSettings: any;
@@ -292,7 +292,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
     const tooltipContent = {
-        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</b> Minimal activity; cameras may detect a faint glow.</li><li><b>25-40% 😊:</b> Clear activity on camera; a faint naked-eye glow is possible.</li><li><b>40-50% 🙂:</b> Faint naked-eye aurora likely, maybe with color.</li><li><b>50-80% 😀:</b> Good chance of naked-eye color and structure.</li><li><b>80%+ 🤩:</b> High probability of a significant substorm.</li></ul>`,
+        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
         'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
         'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thicker" looking auroral displays.`,
@@ -300,9 +300,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         'bz': `<strong>What it is:</strong> The North-South direction of the IMF, measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</b> Elevated conditions.</li><li><b><strong style="color:rgb(255,165,0)">Orange:</b> Moderate conditions.</li><li><b><strong style="color:rgb(255,69,0)">Red:</b> Strong conditions.</li><li><b><strong style="color:rgb(128,0,128)">Purple:</b> Severe conditions.</li></ul>`,
-        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</b> Moderately favorable conditions.</li><li><b><strong style="color:rgb(255,165,0)">Orange:</b> Favorable conditions.</li><li><b><strong style="color:rgb(255,69,0)">Red:</b> Very favorable/strong conditions.</li><li><b><strong style="color:rgb(128,0,128)">Purple:</b> Extremely favorable/severe conditions.</li></ul>`,
-        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
+        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
+        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
+        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
     
     const openModal = useCallback((id: string) => { 
@@ -406,7 +406,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                         borderColor: 'transparent',
                         borderWidth: 0,
                         drawTime: 'beforeDatasetsDraw',
-                        label: { // Label now hidden but still defined if needed later
+                        label: { // Label now hidden
                             content: 'SUBSTORM!',
                             display: false, // Set to false to hide label on graph
                             position: 'center',
@@ -489,7 +489,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             console.log('GOES-18 Raw Data (last 5):', goes18Result.value.slice(-5));
             const processedData18 = goes18Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp) && d.Hp > -99999) // Access d.Hp (capital H)
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H), filter for number & not NaN
                 .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
@@ -510,7 +510,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
             console.log('GOES-19 Raw Data (last 5):', goes19Result.value.slice(-5));
             const processedData19 = goes19Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp) && d.Hp > -99999) // Access d.Hp (capital H)
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H), filter for number & not NaN
                 .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes19Data(processedData19);
@@ -718,7 +718,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                                 <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2><button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
                                 <div className="flex-grow relative mt-2">
-                                    {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} /* Ensure plugin is registered/passed */ />}
+                                    {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
                                 </div>
                             </div>
                             <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
