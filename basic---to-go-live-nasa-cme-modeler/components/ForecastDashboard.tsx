@@ -6,12 +6,13 @@ import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
+import GuideIcon from './icons/GuideIcon'; // Import GuideIcon for the FAQ button
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
 }
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: React.ReactNode; }
 
 // NEW: Type for Sun/Moon data
 interface CelestialTimeData {
@@ -90,7 +91,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content }} />
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">{content}</div>
       </div>
     </div>
   );
@@ -181,6 +182,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     const [magneticFieldTimeLabel, setMagneticFieldTimeLabel] = useState<string>('6 Hr');
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
+    const [isFaqOpen, setIsFaqOpen] = useState(false); // NEW state for FAQ modal
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
 
     const [isCameraSettingsOpen, setIsCameraSettingsOpen] = useState(false);
@@ -318,7 +320,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         } else {
             setIsDaylight(false); // Default to not daylight if data is unavailable.
         }
-    }, [celestialTimes]);
+    }, [celestialTimes, lastUpdated]); // Rerun when celestialTimes or lastUpdated changes
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint auroral glow potentially visible to the naked eye.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
     
@@ -436,6 +438,39 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
     }
+
+    const faqContent = (
+        <div className="space-y-4">
+            <div>
+                <h4 className="font-bold text-neutral-200">Why don't you use the Kp-index?</h4>
+                <p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p>
+            </div>
+            <div>
+                <h4 className="font-bold text-neutral-200">What data SHOULD I look at then?</h4>
+                <p>The most critical live data points for aurora nowcasting are:</p>
+                <ul className="list-disc list-inside pl-2 mt-1">
+                    <li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li>
+                    <li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li>
+                    <li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li>
+                </ul>
+            </div>
+             <div>
+                <h4 className="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4>
+                <p>This can happen for several reasons! The most common are:</p>
+                 <ul className="list-disc list-inside pl-2 mt-1">
+                    <li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li>
+                    <li><strong>Light Pollution:</strong> You must be far away from city and town lights.</li>
+                    <li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li>
+                    <li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li>
+                     <li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li>
+                </ul>
+            </div>
+             <div>
+                <h4 className="font-bold text-neutral-200">Where does your data come from?</h4>
+                <p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p>
+            </div>
+        </div>
+    );
 
     return (
         <div
@@ -595,10 +630,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
                     <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
                     <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides a highly localized, 2-hour aurora forecast specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.</p>
                     <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.</p>
+                    <div className="mt-6">
+                        <button onClick={() => setIsFaqOpen(true)} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors">
+                            <GuideIcon className="w-5 h-5" />
+                            <span>Frequently Asked Questions</span>
+                        </button>
+                    </div>
                     <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a> | Live Camera by <a href="https://queenstown.roundshot.com/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Roundshot</a></p><p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p></div>
                 </footer>
              </div>
-            {modalState && <InfoModal {...modalState} onClose={closeModal} />}
+            {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
+            <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
         </div>
     );
 };
