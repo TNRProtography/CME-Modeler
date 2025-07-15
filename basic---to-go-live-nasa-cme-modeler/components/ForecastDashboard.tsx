@@ -12,7 +12,7 @@ import annotationPlugin from 'chartjs-plugin-annotation';
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
-  setLastUpdatedTime: (timestamp: number) => void; // New prop for global update
+  setLastUpdatedTime: (timestamp: number) => void;
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -114,8 +114,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            phone: { android: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+            dslr: { iso: "N/A", shutter: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
         };
     }
     let baseSettings: any;
@@ -229,7 +229,6 @@ interface ForecastDashboardHandle {
 }
 
 const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardProps>(({ setViewerMedia, setLastUpdatedTime }, ref) => {
-    const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -254,7 +253,7 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
     const [magnetometerTimeRange, setMagnetometerTimeRange] = useState<number>(3 * 3600000);
     const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState<string>('3 Hr');
     
-    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
+    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null); // Changed content to string
     const [isFaqOpen, setIsFaqOpen] = useState(false);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
 
@@ -470,8 +469,8 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             console.log('GOES-18 Raw Data (last 5):', goes18Result.value.slice(-5));
             const processedData18 = goes18Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp))
-                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp }))
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H)
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
             if (processedData18.length > 0) {
@@ -492,8 +491,8 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
         if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
             console.log('GOES-19 Raw Data (last 5):', goes19Result.value.slice(-5));
             const processedData19 = goes19Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp))
-                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp }))
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H)
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes19Data(processedData19);
             if (processedData19.length > 0) {
