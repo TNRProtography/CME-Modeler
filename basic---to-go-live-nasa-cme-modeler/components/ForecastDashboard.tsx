@@ -538,20 +538,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         const startTime = now - auroraScoreChartTimeRange;
         
         const annotations: any = {};
-        const caretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" style="width:10px;height:10px;transform:rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>`;
-        const caretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" style="width:10px;height:10px;"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>`;
 
         if (celestialTimes.sun?.rise && celestialTimes.sun.rise > startTime && celestialTimes.sun.rise < now) {
-            annotations['sunrise'] = { type: 'line', xMin: celestialTimes.sun.rise, xMax: celestialTimes.sun.rise, borderColor: 'rgba(252, 211, 77, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `☀️${caretUpSvg}`, display: true, position: 'start', color: '#fcd34d' } };
+            annotations['sunrise'] = { type: 'line', xMin: celestialTimes.sun.rise, xMax: celestialTimes.sun.rise, borderColor: 'rgba(252, 211, 77, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `☀️`, display: true, position: 'start', color: '#fcd34d' } };
         }
         if (celestialTimes.sun?.set && celestialTimes.sun.set > startTime && celestialTimes.sun.set < now) {
-            annotations['sunset'] = { type: 'line', xMin: celestialTimes.sun.set, xMax: celestialTimes.sun.set, borderColor: 'rgba(252, 211, 77, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `☀️${caretDownSvg}`, display: true, position: 'end', color: '#fcd34d' } };
+            annotations['sunset'] = { type: 'line', xMin: celestialTimes.sun.set, xMax: celestialTimes.sun.set, borderColor: 'rgba(252, 211, 77, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `☀️`, display: true, position: 'end', color: '#fcd34d' } };
         }
         if (celestialTimes.moon?.rise && celestialTimes.moon.rise > startTime && celestialTimes.moon.rise < now) {
-            annotations['moonrise'] = { type: 'line', xMin: celestialTimes.moon.rise, xMax: celestialTimes.moon.rise, borderColor: 'rgba(209, 213, 219, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `🌕${caretUpSvg}`, display: true, position: 'start', color: '#d1d5db' } };
+            annotations['moonrise'] = { type: 'line', xMin: celestialTimes.moon.rise, xMax: celestialTimes.moon.rise, borderColor: 'rgba(209, 213, 219, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `🌕`, display: true, position: 'start', color: '#d1d5db' } };
         }
         if (celestialTimes.moon?.set && celestialTimes.moon.set > startTime && celestialTimes.moon.set < now) {
-            annotations['moonset'] = { type: 'line', xMin: celestialTimes.moon.set, xMax: celestialTimes.moon.set, borderColor: 'rgba(209, 213, 219, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `🌕${caretDownSvg}`, display: true, position: 'end', color: '#d1d5db' } };
+            annotations['moonset'] = { type: 'line', xMin: celestialTimes.moon.set, xMax: celestialTimes.moon.set, borderColor: 'rgba(209, 213, 219, 0.7)', borderWidth: 1.5, borderDash: [6, 6], label: { content: `🌕`, display: true, position: 'end', color: '#d1d5db' } };
         }
 
         return {
@@ -842,5 +840,41 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia })
         </div>
     );
 };
+
+// This component is not exported because it is used locally
+const AuroraBackground: React.FC = () => {
+    return (
+        <div className="absolute inset-0 z-0 overflow-hidden">
+            <div className="aurora-container">
+                <div className="aurora-band" style={{ '--offset': 0, '--speed': 1.5, '--color': 'rgba(0, 255, 150, 0.2)' } as React.CSSProperties}></div>
+                <div className="aurora-band" style={{ '--offset': 1, '--speed': 2, '--color': 'rgba(255, 0, 255, 0.15)' } as React.CSSProperties}></div>
+                <div className="aurora-band" style={{ '--offset': 2, '--speed': 1, '--color': 'rgba(0, 200, 255, 0.2)' } as React.CSSProperties}></div>
+            </div>
+            <style>{`
+                .aurora-container {
+                    position: absolute;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    filter: blur(40px) brightness(1.2);
+                    transform: skewY(-10deg);
+                }
+                .aurora-band {
+                    position: absolute;
+                    top: 0; left: -50%;
+                    width: 200%; height: 60%;
+                    background: var(--color);
+                    border-radius: 50%;
+                    animation: aurora-anim calc(15s / var(--speed)) infinite linear;
+                    animation-delay: calc(var(--offset) * -5s);
+                }
+                @keyframes aurora-anim {
+                    0% { transform: translateX(-25%) rotate(0deg) scaleY(1); }
+                    50% { transform: translateX(25%) rotate(10deg) scaleY(1.3); }
+                    100% { transform: translateX(-25%) rotate(0deg) scaleY(1); }
+                }
+            `}</style>
+        </div>
+    );
+}
+
 
 export default ForecastDashboard;
