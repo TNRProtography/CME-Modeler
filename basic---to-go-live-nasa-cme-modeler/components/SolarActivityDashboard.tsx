@@ -203,7 +203,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     
     return (
         <div
-            className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5"
+            className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5 relative"
             style={{
                 backgroundImage: `url('/background-solar.jpg')`,
                 backgroundSize: 'cover',
@@ -211,8 +211,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 backgroundAttachment: 'fixed',
             }}
         >
+            <div className="absolute inset-0 bg-black/50 z-0"></div>
             <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
-            <div className="container mx-auto">
+            <div className="container mx-auto relative z-10">
                 <header className="text-center mb-8">
                     <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                     <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
