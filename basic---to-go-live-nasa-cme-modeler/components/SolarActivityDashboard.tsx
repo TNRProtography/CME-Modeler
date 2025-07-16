@@ -16,9 +16,9 @@ const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
-const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4'; // NEW VIDEO URL
-const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg'; // NEW SDO IMAGE 1
-const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg'; // NEW SDO IMAGE 2
+const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
+const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
+const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -110,22 +110,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
-    const tooltipContent = {
+    const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
-        'suvi-131': 'The SUVI (Solar Ultraviolet Imager) on GOES satellites captures images of the Sun in extreme ultraviolet (EUV) wavelengths. 131Å (angstrom) is a wavelength that shows the hot, flaring regions of the Sun, often highlighting solar flares and active regions.',
-        'suvi-304': 'The SUVI (Solar Ultraviolet Imager) 304Å wavelength shows the cooler, denser plasma in the Sun\'s chromosphere and transition region, often revealing prominences and filaments.',
-        'sdo-hmi': 'SDO HMI (Helioseismic and Magnetic Imager) captures images of the Sun\'s photosphere, showing sunspots in visible light. Intensitygrams show the sunspots as dark regions, indicating areas of strong magnetic fields.',
-        'sdo-aia-193': 'SDO AIA (Atmospheric Imaging Assembly) 193Å (angstrom) is an extreme ultraviolet wavelength that shows the Sun\'s corona and hot flare plasma. It highlights areas of coronal holes (dark regions) and active regions.',
-        'ccor1-video': 'CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) imagery captures the outer atmosphere of the Sun (corona). It is used to detect and track Coronal Mass Ejections (CMEs) as they erupt from the Sun and travel into space. This view blocks out the bright Sun to reveal faint coronal structures.',
-        'solar-flares': 'A list of the latest detected solar flares. Flares are bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
-        'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth.',
-    };
+        'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
+        'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
+        'sdo-hmi': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram:</strong> This instrument captures images of the Sun\'s photosphere in visible light. It primarily shows sunspots as dark regions, which are areas of concentrated, strong magnetic fields. These active regions are often the source of flares and CMEs.',
+        'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> Another EUV wavelength from the SDO Atmospheric Imaging Assembly. This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
+        'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
+        'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
+        'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
+    }), []); // Memoize to prevent re-creation on every render
 
-    const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false) => {
+    const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
         try {
-            const res = await fetch(`${url}?_=${new Date().getTime()}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
+            const res = await fetch(fetchUrl);
+            if (!res.ok) {
+                console.error(`Failed to fetch ${fetchUrl}: HTTP ${res.status} ${res.statusText}`);
+                throw new Error(`HTTP ${res.status} for ${url}`);
+            }
             if (isVideo) {
                 setState({ url: url, loading: null });
             } else {
@@ -197,8 +201,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi);
-            fetchImage(SDO_AIA_193_URL, setSdoAia193);
+            fetchImage(SDO_HMI_URL, setSdoHmi, false, false); // No cache-buster for SDO
+            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false); // No cache-buster for SDO
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchFlares();
@@ -267,35 +271,35 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             <button
                                 onClick={() => setActiveSunImage('SUVI_131')}
                                 className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="SUVI 131Å: Shows hot, flaring regions of the Sun's corona."
+                                title="Displays the Sun in 131 Angstroms, highlighting hot, flaring regions. (SUVI)"
                             >
                                 SUVI 131Å
                             </button>
                             <button
                                 onClick={() => setActiveSunImage('SUVI_304')}
                                 className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="SUVI 304Å: Shows cooler, denser plasma in the Sun's chromosphere and prominences."
+                                title="Displays the Sun in 304 Angstroms, showing cooler plasma, prominences, and filaments. (SUVI)"
                             >
                                 SUVI 304Å
                             </button>
                             <button
                                 onClick={() => setActiveSunImage('SDO_HMI')}
                                 className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMI' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="SDO HMI: Shows sunspots in visible light, indicating strong magnetic fields."
+                                title="Displays a visible light image of the Sun's surface, showing sunspots. (SDO HMI)"
                             >
                                 SDO HMI
                             </button>
                             <button
                                 onClick={() => setActiveSunImage('SDO_AIA_193')}
                                 className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA_193' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="SDO AIA 193Å: Shows the Sun's corona and hot flare plasma."
+                                title="Displays the Sun in 193 Angstroms, showing the hot corona and coronal holes. (SDO AIA)"
                             >
                                 SDO AIA 193Å
                             </button>
                             <button
                                 onClick={() => setActiveSunImage('CCOR1_VIDEO')}
                                 className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'CCOR1_VIDEO' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="CCOR1: Shows the outer corona, useful for tracking CMEs."
+                                title="Displays the Sun's outer corona with the solar disk blocked, to track CMEs. (CCOR1 Coronagraph)"
                             >
                                 CCOR1 Video
                             </button>
