@@ -7,6 +7,7 @@ import CloseIcon from './icons/CloseIcon';
 interface SolarActivityDashboardProps {
   apiKey: string;
   setViewerMedia: (media: { url: string, type: 'image' | 'video' } | null) => void;
+  setLatestXrayFlux: (flux: number | null) => void; // NEW PROP
 }
 
 // --- CONSTANTS ---
@@ -86,7 +87,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => { // ADDED setLatestXrayFlux
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
@@ -119,11 +120,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 const groupedData = new Map();
                 rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
                 const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
-                if (!processedData.length) throw new Error('No valid X-ray data.');
+                if (!processedData.length) {
+                    setLoadingXray('No valid X-ray data.');
+                    setAllXrayData([]);
+                    setLatestXrayFlux(null); // NEW: Clear flux if no data
+                    return;
+                }
                 setAllXrayData(processedData);
                 setLoadingXray(null);
-            }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
-    }, []);
+                // NEW: Update latest X-ray flux for global banner
+                const latestFluxValue = processedData[processedData.length - 1].short;
+                setLatestXrayFlux(latestFluxValue);
+            }).catch(e => {
+                console.error('Error fetching X-ray flux:', e);
+                setLoadingXray(`Error: ${e.message}`);
+                setLatestXrayFlux(null); // NEW: Clear flux on error
+            });
+    }, [setLatestXrayFlux]); // ADDED setLatestXrayFlux to dependencies
     
     const fetchFlares = useCallback(async () => {
         setLoadingFlares('Loading solar flares...');

@@ -22,6 +22,8 @@ import ForecastModelsModal from './components/ForecastModelsModal';
 // NEW: Import the refactored dashboard components
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
+// NEW: Import the GlobalBanner
+import GlobalBanner from './components/GlobalBanner';
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -88,6 +90,11 @@ const App: React.FC = () => {
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
+  // NEW: State for GlobalBanner data
+  const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
+  const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
+  const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
+
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -232,8 +239,37 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
+  // Logic for GlobalBanner conditions
+  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
+  const flareClass = useMemo(() => {
+    if (latestXrayFlux === null) return undefined;
+    if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
+    if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`;
+    return undefined;
+  }, [latestXrayFlux]);
+
+  const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
+
+  const isSubstormAlert = useMemo(() => 
+    substormActivityStatus !== null && 
+    substormActivityStatus.text.includes('stretching') && 
+    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
+    [substormActivityStatus]
+  );
+
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
+        {/* NEW: Global Alert Banner */}
+        <GlobalBanner
+            isFlareAlert={isFlareAlert}
+            flareClass={flareClass}
+            isAuroraAlert={isAuroraAlert}
+            auroraScore={currentAuroraScore ?? undefined}
+            isSubstormAlert={isSubstormAlert}
+            substormText={substormActivityStatus?.text ?? undefined}
+        />
+
         {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
@@ -302,7 +338,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        currentlyModeledCMEId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -414,11 +450,19 @@ const App: React.FC = () => {
             )}
 
             {activePage === 'forecast' && (
-                <ForecastDashboard setViewerMedia={setViewerMedia} />
+                <ForecastDashboard 
+                  setViewerMedia={setViewerMedia}
+                  setCurrentAuroraScore={setCurrentAuroraScore} // NEW PROP
+                  setSubstormActivityStatus={setSubstormActivityStatus} // NEW PROP
+                />
             )}
 
             {activePage === 'solar-activity' && (
-                <SolarActivityDashboard setViewerMedia={setViewerMedia} apiKey={apiKey} />
+                <SolarActivityDashboard 
+                  setViewerMedia={setViewerMedia} 
+                  apiKey={apiKey}
+                  setLatestXrayFlux={setLatestXrayFlux} // NEW PROP
+                />
             )}
         </div>
         
