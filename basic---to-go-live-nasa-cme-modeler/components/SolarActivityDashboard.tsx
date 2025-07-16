@@ -94,9 +94,12 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-    const [sdoHmi, setSdoHmi] = useState({ url: '/placeholder.png', loading: 'Loading image...' }); // NEW SDO STATE
-    const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' }); // NEW SDO STATE
-    const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' }); // NEW CCOR1 VIDEO STATE
+    const [sdoHmi, setSdoHmi] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+    const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+    const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
+
+    // NEW state for active sun image display
+    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131'); // Default to SUVI 131Å
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
@@ -124,8 +127,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const res = await fetch(`${url}?_=${new Date().getTime()}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             if (isVideo) {
-                // For videos, directly set the URL if it's a direct link to the video file
-                // If it were a stream or required special handling, this would be more complex
                 setState({ url: url, loading: null });
             } else {
                 const blob = await res.blob();
@@ -196,9 +197,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi); // NEW SDO FETCH
-            fetchImage(SDO_AIA_193_URL, setSdoAia193); // NEW SDO FETCH
-            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true); // NEW CCOR1 VIDEO FETCH
+            fetchImage(SDO_HMI_URL, setSdoHmi);
+            fetchImage(SDO_AIA_193_URL, setSdoAia193);
+            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchFlares();
             fetchSunspots();
@@ -259,53 +260,106 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
                 </header>
                 <main className="grid grid-cols-12 gap-5">
-                    {/* Solar Imagers */}
-                    <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-5">
-                        <div className="card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 131Å</h2>
-                            <div
-                                onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
-                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
-                                title={tooltipContent['suvi-131']}
+                    {/* Consolidated Solar Imagers Panel */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">Solar Imagery</h2>
+                        <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
+                            <button
+                                onClick={() => setActiveSunImage('SUVI_131')}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                title="SUVI 131Å: Shows hot, flaring regions of the Sun's corona."
                             >
-                                <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
-                            </div>
+                                SUVI 131Å
+                            </button>
+                            <button
+                                onClick={() => setActiveSunImage('SUVI_304')}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                title="SUVI 304Å: Shows cooler, denser plasma in the Sun's chromosphere and prominences."
+                            >
+                                SUVI 304Å
+                            </button>
+                            <button
+                                onClick={() => setActiveSunImage('SDO_HMI')}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMI' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                title="SDO HMI: Shows sunspots in visible light, indicating strong magnetic fields."
+                            >
+                                SDO HMI
+                            </button>
+                            <button
+                                onClick={() => setActiveSunImage('SDO_AIA_193')}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA_193' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                title="SDO AIA 193Å: Shows the Sun's corona and hot flare plasma."
+                            >
+                                SDO AIA 193Å
+                            </button>
+                            <button
+                                onClick={() => setActiveSunImage('CCOR1_VIDEO')}
+                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'CCOR1_VIDEO' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                title="CCOR1: Shows the outer corona, useful for tracking CMEs."
+                            >
+                                CCOR1 Video
+                            </button>
                         </div>
-                        <div className="card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 304Å</h2>
-                            <div
-                                onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
-                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
-                                title={tooltipContent['suvi-304']}
-                            >
-                                <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
-                            </div>
-                        </div>
-                        {/* NEW SDO HMI Image */}
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SDO HMI Intensitygram</h2>
-                            <div
-                                onClick={() => sdoHmi.url !== '/placeholder.png' && sdoHmi.url !== '/error.png' && setViewerMedia({ url: sdoHmi.url, type: 'image' })}
-                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
-                                title={tooltipContent['sdo-hmi']}
-                            >
-                                <img src={sdoHmi.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                {sdoHmi.loading && <p className="absolute text-neutral-400 italic">{sdoHmi.loading}</p>}
-                            </div>
-                        </div>
-                        {/* NEW SDO AIA 193 Image */}
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SDO AIA 193Å</h2>
-                            <div
-                                onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
-                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
-                                title={tooltipContent['sdo-aia-193']}
-                            >
-                                <img src={sdoAia193.url} alt="SDO AIA 193Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
-                            </div>
+
+                        {/* Conditional Rendering of the selected image/video */}
+                        <div className="flex-grow flex justify-center items-center relative min-h-0">
+                            {activeSunImage === 'SUVI_131' && (
+                                <div
+                                    onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
+                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                    title={tooltipContent['suvi-131']}
+                                >
+                                    <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                    {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
+                                </div>
+                            )}
+                            {activeSunImage === 'SUVI_304' && (
+                                <div
+                                    onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
+                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                    title={tooltipContent['suvi-304']}
+                                >
+                                    <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                    {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
+                                </div>
+                            )}
+                            {activeSunImage === 'SDO_HMI' && (
+                                <div
+                                    onClick={() => sdoHmi.url !== '/placeholder.png' && sdoHmi.url !== '/error.png' && setViewerMedia({ url: sdoHmi.url, type: 'image' })}
+                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                    title={tooltipContent['sdo-hmi']}
+                                >
+                                    <img src={sdoHmi.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                    {sdoHmi.loading && <p className="absolute text-neutral-400 italic">{sdoHmi.loading}</p>}
+                                </div>
+                            )}
+                            {activeSunImage === 'SDO_AIA_193' && (
+                                <div
+                                    onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
+                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                    title={tooltipContent['sdo-aia-193']}
+                                >
+                                    <img src={sdoAia193.url} alt="SDO AIA 193Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                    {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
+                                </div>
+                            )}
+                            {activeSunImage === 'CCOR1_VIDEO' && (
+                                <div
+                                    onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
+                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                    title={tooltipContent['ccor1-video']}
+                                >
+                                    {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
+                                    {ccor1Video.url && !ccor1Video.loading ? (
+                                        <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
+                                            <source src={ccor1Video.url} type="video/mp4" />
+                                            Your browser does not support the video tag.
+                                        </video>
+                                    ) : (
+                                        !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -318,26 +372,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                         <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
                             {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
-                        </div>
-                    </div>
-
-                    {/* NEW CCOR1 Video Section */}
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">CCOR1 Latest 24 Hours</h2>
-                        <div
-                            onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
-                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
-                            title={tooltipContent['ccor1-video']}
-                        >
-                            {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
-                            {ccor1Video.url && !ccor1Video.loading ? (
-                                <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
-                                    <source src={ccor1Video.url} type="video/mp4" />
-                                    Your browser does not support the video tag.
-                                </video>
-                            ) : (
-                                !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
-                            )}
                         </div>
                     </div>
 
