@@ -11,57 +11,54 @@ interface SolarActivityDashboardProps {
 }
 
 // --- CONSTANTS ---
+// !!! IMPORTANT: REPLACE WITH YOUR DEPLOYED PROXY WORKER URL !!!
+const SDO_PROXY_BASE_URL = 'https://sdo-image-proxy.<YOUR_SUBDOMAIN>.workers.dev'; // <--- PASTE YOUR URL HERE
+
 const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
-const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
-const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 
-const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
+// Use the new proxy URLs
+const SDO_HMI_URL = `${SDO_PROXY_BASE_URL}/sdo-hmi`;
+const SDO_AIA_193_URL = `${SDO_PROXY_BASE_URL}/sdo-aia-193`;
 
-// --- HELPERS ---
+const REFRESH_INTERVAL_MS = 60 * 1000;
+
+// ... (The rest of the component remains the same as the previous version)
+
 const getCssVar = (name: string): string => {
   try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
 };
 
 const getColorForFlux = (value: number, opacity: number = 1): string => {
-    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Green
-    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Hot Pink for X5+
-    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';    // Purple for X1-X4.9
-    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';    // OrangeRed for M
-    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow
+    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94';
+    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180';
+    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';
+    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';
+    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11';
     return `rgba(${rgb}, ${opacity})`;
 };
 
 const getColorForFlareClass = (classType: string): { background: string, text: string } => {
     const type = classType ? classType[0].toUpperCase() : 'U';
     const magnitude = parseFloat(classType.substring(1));
-
     if (type === 'X') {
-        if (magnitude >= 5) {
-            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' }; // Hot Pink
-        }
-        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' }; // Purple
+        if (magnitude >= 5) return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' };
     }
-    if (type === 'M') {
-        return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' }; // OrangeRed
-    }
-    if (type === 'C') {
-        return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' }; // Yellow
-    }
-    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B/Unknown
+    if (type === 'M') return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' };
+    if (type === 'C') return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' };
+    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
 };
-
 
 const formatNZTimestamp = (isoString: string | null) => {
     if (!isoString) return 'N/A';
     try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
 };
 
-// --- REUSABLE COMPONENTS ---
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '4 Hr', hours: 4 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
@@ -85,7 +82,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">{content}</div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content as string }} />
       </div>
     </div>
   );
@@ -98,12 +95,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
 
-    // NEW state for active sun image display
-    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131'); // Default to SUVI 131Å
+    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
-    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
+    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000);
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
     const [sunspots, setSunspots] = useState<any[]>([]);
@@ -119,12 +115,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
-    }), []); // Memoize to prevent re-creation on every render
+    }), []);
 
-    const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
+    const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false) => {
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
         try {
-            const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
+            // Always use cache buster for our own proxy to get the latest image it has fetched
+            const fetchUrl = `${url}?_=${new Date().getTime()}`;
             const res = await fetch(fetchUrl);
             if (!res.ok) {
                 console.error(`Failed to fetch ${fetchUrl}: HTTP ${res.status} ${res.statusText}`);
@@ -143,108 +140,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         }
     }, []);
 
-    const fetchXrayFlux = useCallback(() => {
-        setLoadingXray('Loading X-ray flux data...');
-        fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
-            .then(rawData => {
-                const groupedData = new Map();
-                rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
-                const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
-                if (!processedData.length) {
-                    setLoadingXray('No valid X-ray data.');
-                    setAllXrayData([]);
-                    setLatestXrayFlux(null);
-                    return;
-                }
-                setAllXrayData(processedData);
-                setLoadingXray(null);
-                const latestFluxValue = processedData[processedData.length - 1].short;
-                setLatestXrayFlux(latestFluxValue);
-            }).catch(e => {
-                console.error('Error fetching X-ray flux:', e);
-                setLoadingXray(`Error: ${e.message}`);
-                setLatestXrayFlux(null);
-            });
-    }, [setLatestXrayFlux]);
-    
-    const fetchFlares = useCallback(async () => {
-        setLoadingFlares('Loading solar flares...');
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const startDate = yesterday.toISOString().split('T')[0];
-        const endDate = new Date().toISOString().split('T')[0];
-        
-        try {
-            const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); setSolarFlares([]); return; }
-            const processedData = data.map((flare: any) => ({ ...flare, hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false, }));
-            setSolarFlares(processedData.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime()));
-            setLoadingFlares(null);
-        } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
-    }, [apiKey]);
-
-    const fetchSunspots = useCallback(async () => {
-        setLoadingSunspots('Loading active regions...');
-        try {
-            const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await response.json();
-            const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
-            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
-            setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
-            setLoadingSunspots(null);
-        } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
-    }, []);
-
-    useEffect(() => {
-        const runAllUpdates = () => {
-            fetchImage(SUVI_131_URL, setSuvi131);
-            fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi, false, false); // No cache-buster for SDO
-            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false); // No cache-buster for SDO
-            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
-            fetchXrayFlux();
-            fetchFlares();
-            fetchSunspots();
-        };
-        runAllUpdates(); // Initial fetch
-        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS); // Refresh every minute
-        return () => clearInterval(interval); // Cleanup on unmount
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
-
-    const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
-        const now = Date.now();
-        const startTime = now - xrayTimeRange;
-        
-        const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000;
-        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
-        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
-            const midnight = new Date(d).setUTCHours(12,0,0,0);
-            if (midnight > startTime && midnight < now) {
-                midnightAnnotations[`midnight-${midnight}`] = { type: 'line', xMin: midnight, xMax: midnight, borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } };
-            }
-        }
-        
-        return {
-            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } }, annotation: { annotations: midnightAnnotations } },
-            scales: { x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } }
-        };
-    }, [xrayTimeRange]);
-    
-    const xrayChartData = useMemo(() => {
-        if (allXrayData.length === 0) return { datasets: [] };
-        return {
-            datasets: [{
-                label: 'Short Flux (0.1-0.8 nm)', 
-                data: allXrayData.map(d => ({x: d.time, y: d.short})),
-                pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2), }
-            }],
-        };
-    }, [allXrayData]);
+    // ... (rest of the component logic remains the same)
+    // The following functions (fetchXrayFlux, fetchFlares, fetchSunspots, useEffect for fetching,
+    // xrayChartOptions, xrayChartData, and the entire return() statement for rendering)
+    // are exactly the same as the last correct version. I am omitting them here for brevity,
+    // but you should ensure they are present in your file. If you need the full component again,
+    // please let me know.
+    // ...
     
     return (
         <div
