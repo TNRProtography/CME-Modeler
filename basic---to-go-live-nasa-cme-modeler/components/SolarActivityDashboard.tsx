@@ -6,8 +6,8 @@ import CloseIcon from './icons/CloseIcon';
 
 interface SolarActivityDashboardProps {
   apiKey: string;
-  setViewerMedia: (media: { url: string, type: 'image' | 'video' } | null) => void;
-  setLatestXrayFlux: (flux: number | null) => void; // NEW PROP
+  setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
+  setLatestXrayFlux: (flux: number | null) => void;
 }
 
 // --- CONSTANTS ---
@@ -16,6 +16,10 @@ const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
+const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4'; // NEW VIDEO URL
+const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg'; // NEW SDO IMAGE 1
+const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg'; // NEW SDO IMAGE 2
+
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
 // --- HELPERS ---
@@ -63,7 +67,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`} title={`Show data for the last ${hours} hours`}>
                     {label}
                 </button>
             ))}
@@ -87,29 +91,50 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => { // ADDED setLatestXrayFlux
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+    const [sdoHmi, setSdoHmi] = useState({ url: '/placeholder.png', loading: 'Loading image...' }); // NEW SDO STATE
+    const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' }); // NEW SDO STATE
+    const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' }); // NEW CCOR1 VIDEO STATE
+
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
-    const [xrayTimeRange, setXrayTimeRange] = useState<number>(2 * 60 * 60 * 1000);
+    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
     const [sunspots, setSunspots] = useState<any[]>([]);
     const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
-    const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>) => {
-        setState({ url: '/placeholder.png', loading: 'Loading image...' });
+    const tooltipContent = {
+        'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
+        'suvi-131': 'The SUVI (Solar Ultraviolet Imager) on GOES satellites captures images of the Sun in extreme ultraviolet (EUV) wavelengths. 131Å (angstrom) is a wavelength that shows the hot, flaring regions of the Sun, often highlighting solar flares and active regions.',
+        'suvi-304': 'The SUVI (Solar Ultraviolet Imager) 304Å wavelength shows the cooler, denser plasma in the Sun\'s chromosphere and transition region, often revealing prominences and filaments.',
+        'sdo-hmi': 'SDO HMI (Helioseismic and Magnetic Imager) captures images of the Sun\'s photosphere, showing sunspots in visible light. Intensitygrams show the sunspots as dark regions, indicating areas of strong magnetic fields.',
+        'sdo-aia-193': 'SDO AIA (Atmospheric Imaging Assembly) 193Å (angstrom) is an extreme ultraviolet wavelength that shows the Sun\'s corona and hot flare plasma. It highlights areas of coronal holes (dark regions) and active regions.',
+        'ccor1-video': 'CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) imagery captures the outer atmosphere of the Sun (corona). It is used to detect and track Coronal Mass Ejections (CMEs) as they erupt from the Sun and travel into space. This view blocks out the bright Sun to reveal faint coronal structures.',
+        'solar-flares': 'A list of the latest detected solar flares. Flares are bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
+        'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth.',
+    };
+
+    const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false) => {
+        setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
         try {
             const res = await fetch(`${url}?_=${new Date().getTime()}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const blob = await res.blob();
-            const objectURL = URL.createObjectURL(blob);
-            setState({ url: objectURL, loading: null });
+            if (isVideo) {
+                // For videos, directly set the URL if it's a direct link to the video file
+                // If it were a stream or required special handling, this would be more complex
+                setState({ url: url, loading: null });
+            } else {
+                const blob = await res.blob();
+                const objectURL = URL.createObjectURL(blob);
+                setState({ url: objectURL, loading: null });
+            }
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
-            setState({ url: '/error.png', loading: 'Image failed to load.' });
+            setState({ url: isVideo ? '' : '/error.png', loading: `${isVideo ? 'Video' : 'Image'} failed to load.` });
         }
     }, []);
 
@@ -123,20 +148,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 if (!processedData.length) {
                     setLoadingXray('No valid X-ray data.');
                     setAllXrayData([]);
-                    setLatestXrayFlux(null); // NEW: Clear flux if no data
+                    setLatestXrayFlux(null);
                     return;
                 }
                 setAllXrayData(processedData);
                 setLoadingXray(null);
-                // NEW: Update latest X-ray flux for global banner
                 const latestFluxValue = processedData[processedData.length - 1].short;
                 setLatestXrayFlux(latestFluxValue);
             }).catch(e => {
                 console.error('Error fetching X-ray flux:', e);
                 setLoadingXray(`Error: ${e.message}`);
-                setLatestXrayFlux(null); // NEW: Clear flux on error
+                setLatestXrayFlux(null);
             });
-    }, [setLatestXrayFlux]); // ADDED setLatestXrayFlux to dependencies
+    }, [setLatestXrayFlux]);
     
     const fetchFlares = useCallback(async () => {
         setLoadingFlares('Loading solar flares...');
@@ -159,7 +183,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         setLoadingSunspots('Loading active regions...');
         try {
             const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) throw new Error(`HTTP ${res.status}`);
             const data = await response.json();
             const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
             if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
@@ -172,6 +196,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
+            fetchImage(SDO_HMI_URL, setSdoHmi); // NEW SDO FETCH
+            fetchImage(SDO_AIA_193_URL, setSdoAia193); // NEW SDO FETCH
+            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true); // NEW CCOR1 VIDEO FETCH
             fetchXrayFlux();
             fetchFlares();
             fetchSunspots();
@@ -232,29 +259,94 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
                 </header>
                 <main className="grid grid-cols-12 gap-5">
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 131Å</h2>
-                        <div onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })} className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0">
-                            <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                            {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
+                    {/* Solar Imagers */}
+                    <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        <div className="card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 131Å</h2>
+                            <div
+                                onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
+                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
+                                title={tooltipContent['suvi-131']}
+                            >
+                                <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
+                            </div>
+                        </div>
+                        <div className="card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 304Å</h2>
+                            <div
+                                onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
+                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
+                                title={tooltipContent['suvi-304']}
+                            >
+                                <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
+                            </div>
+                        </div>
+                        {/* NEW SDO HMI Image */}
+                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SDO HMI Intensitygram</h2>
+                            <div
+                                onClick={() => sdoHmi.url !== '/placeholder.png' && sdoHmi.url !== '/error.png' && setViewerMedia({ url: sdoHmi.url, type: 'image' })}
+                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
+                                title={tooltipContent['sdo-hmi']}
+                            >
+                                <img src={sdoHmi.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                {sdoHmi.loading && <p className="absolute text-neutral-400 italic">{sdoHmi.loading}</p>}
+                            </div>
+                        </div>
+                        {/* NEW SDO AIA 193 Image */}
+                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SDO AIA 193Å</h2>
+                            <div
+                                onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
+                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
+                                title={tooltipContent['sdo-aia-193']}
+                            >
+                                <img src={sdoAia193.url} alt="SDO AIA 193Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
+                            </div>
                         </div>
                     </div>
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">SUVI 304Å</h2>
-                        <div onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })} className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0">
-                            <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                            {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
-                        </div>
-                    </div>
+
+                    {/* GOES X-ray Flux Graph */}
                     <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                            <button onClick={() => setViewerMedia({ url: NOAA_XRAY_FLUX_URL, type: 'image' })} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="View GOES X-ray Flux raw image on NOAA SWPC.">?</button>
+                        </div>
                         <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
-                        <div className="flex-grow relative mt-2">
+                        <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
                             {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                         </div>
                     </div>
+
+                    {/* NEW CCOR1 Video Section */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[450px] flex flex-col">
+                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">CCOR1 Latest 24 Hours</h2>
+                        <div
+                            onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
+                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0"
+                            title={tooltipContent['ccor1-video']}
+                        >
+                            {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
+                            {ccor1Video.url && !ccor1Video.loading ? (
+                                <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
+                                    <source src={ccor1Video.url} type="video/mp4" />
+                                    Your browser does not support the video tag.
+                                </video>
+                            ) : (
+                                !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Solar Flares & Active Regions */}
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
-                        <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
+                            <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
+                        </div>
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                             {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> 
                             : solarFlares.length > 0 ? solarFlares.map((flare) => {
@@ -265,7 +357,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         </ul>
                     </div>
                     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
-                        <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
+                            <button onClick={() => openModal('active-regions')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Active Regions/Sunspots.">?</button>
+                        </div>
                         <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                            {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
                         </ul>

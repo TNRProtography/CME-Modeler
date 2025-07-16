@@ -24,6 +24,7 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 // NEW: Import the GlobalBanner
 import GlobalBanner from './components/GlobalBanner';
+import FlareIcon from './components/icons/FlareIcon'; // Import the FlareIcon
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -59,7 +60,7 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   
-  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
+  const [currentlyModeledCMEId, setCurrentlyModeledCmeId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
   const [isControlsOpen, setIsControlsOpen] = useState(false);
@@ -204,7 +205,7 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying((prev: boolean) => !prev);
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -213,7 +214,7 @@ const App: React.FC = () => {
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -229,7 +230,7 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-    setCurrentlyModeledCMEId(null);
+    setCurrentlyModeledCmeId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes, timelineMinDate, timelineMaxDate]);
 
@@ -252,8 +253,8 @@ const App: React.FC = () => {
 
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus !== null && 
-    substormActivityStatus.text.includes('stretching') && 
-    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
+    substormActivityStatus.text.includes('stretching') && // "stretching" implies pre-eruption
+    !substormActivityStatus.text.includes('substorm signature detected'), // Exclude if eruption already happened
     [substormActivityStatus]
   );
 
@@ -338,7 +339,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId}
+                        currentlyModeledCmeId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -452,8 +453,8 @@ const App: React.FC = () => {
             {activePage === 'forecast' && (
                 <ForecastDashboard 
                   setViewerMedia={setViewerMedia}
-                  setCurrentAuroraScore={setCurrentAuroraScore} // NEW PROP
-                  setSubstormActivityStatus={setSubstormActivityStatus} // NEW PROP
+                  setCurrentAuroraScore={setCurrentAuroraScore}
+                  setSubstormActivityStatus={setSubstormActivityStatus}
                 />
             )}
 
@@ -461,7 +462,7 @@ const App: React.FC = () => {
                 <SolarActivityDashboard 
                   setViewerMedia={setViewerMedia} 
                   apiKey={apiKey}
-                  setLatestXrayFlux={setLatestXrayFlux} // NEW PROP
+                  setLatestXrayFlux={setLatestXrayFlux}
                 />
             )}
         </div>
