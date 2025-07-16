@@ -19,10 +19,9 @@ import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
 
-// NEW: Import the refactored dashboard components
+// Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
-// NEW: Import the GlobalBanner
 import GlobalBanner from './components/GlobalBanner';
 
 // Custom Icon Components
@@ -47,8 +46,10 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
+  // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
+  // CME Modeler State
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -62,18 +63,20 @@ const App: React.FC = () => {
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
+  // UI/Modal State
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
-
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
 
+  // Display Options State
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
 
+  // Timeline State
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
@@ -81,22 +84,23 @@ const App: React.FC = () => {
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
 
+  // Three.js specific state
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
 
+  // Refs
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
-  // NEW: State for GlobalBanner data
+  // Global Banner State
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
   useEffect(() => {
-    // Only attempt to initialize THREE.Clock if THREE is loaded
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
     }
@@ -169,7 +173,7 @@ const App: React.FC = () => {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCmeId]);
+  }, [filteredCmes, currentlyModeledCMEId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -253,8 +257,8 @@ const App: React.FC = () => {
 
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus !== null && 
-    substormActivityStatus.text.includes('stretching') && // "stretching" implies pre-eruption
-    !substormActivityStatus.text.includes('substorm signature detected'), // Exclude if eruption already happened
+    substormActivityStatus.text.includes('stretching') && 
+    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
     [substormActivityStatus]
   );
 
