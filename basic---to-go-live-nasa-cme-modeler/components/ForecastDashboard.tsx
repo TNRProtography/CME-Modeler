@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
@@ -7,12 +7,11 @@ import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
-import annotationPlugin from 'chartjs-plugin-annotation';
+import annotationPlugin from 'chartjs-plugin-annotation'; // Import the annotation plugin
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
-  setLastUpdatedTime: (timestamp: number) => void;
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -114,8 +113,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
         };
     }
     let baseSettings: any;
@@ -126,12 +125,18 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                 android: { 
                     iso: "3200-6400 (Max)", 
                     shutter: "20-30s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Might pick up an extremely faint, indiscernible glow."], 
                     cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."], 
                 }, 
                 apple: { 
                     iso: "Auto (max Night Mode)", 
                     shutter: "Longest Night Mode auto-exposure (10-30s)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Simple to try with Night Mode."], 
                     cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], 
                 }, 
@@ -139,6 +144,9 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { 
                 iso: "6400-12800", 
                 shutter: "20-30s", 
+                aperture: "f/2.8-f/4 (widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
                 pros: ["Maximizes light gathering for extremely faint conditions."], 
                 cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."], 
             }, 
@@ -150,19 +158,28 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                 android: { 
                     iso: "3200-6400 (Max)", 
                     shutter: "15-30s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Might detect very faint light not visible to the eye."], 
                     cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."], 
                 }, 
                 apple: { 
                     iso: "Auto (max Night Mode)", 
                     shutter: "Longest Night Mode auto-exposure (10-30s)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Simple to attempt using Night Mode."], 
-                    cons: ["Limited manual control. Photos will be very noisy and may not show discernible aurora."], 
+                    cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], 
                 }, 
             }, 
             dslr: { 
                 iso: "3200-6400", 
                 shutter: "15-25s", 
+                aperture: "f/2.8-f/4 (widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
                 pros: ["Better light gathering than phones, higher chance for a faint detection."], 
                 cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."], 
             }, 
@@ -174,12 +191,18 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                 android: { 
                     iso: "400-800", 
                     shutter: "1-5s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."], 
                     cons: ["May still struggle with extreme brightness or very fast movement."], 
                 }, 
                 apple: { 
                     iso: "Auto or 500-1500 (in third-party app)", 
                     shutter: "1-3s (or what auto-selects)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."], 
                     cons: ["Less manual control than Android Pro mode for precise settings."], 
                 }, 
@@ -187,6 +210,9 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { 
                 iso: "800-1600", 
                 shutter: "1-5s", 
+                aperture: "f/2.8 (or your widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
                 pros: ["Stunning detail, vibrant colors.", "Can capture movement without blur.", "Minimal noise."], 
                 cons: ["May need quick adjustments for fluctuating brightness."], 
             }, 
@@ -198,12 +224,18 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                 android: { 
                     iso: "800-1600", 
                     shutter: "5-10s", 
+                    aperture: "Lowest f-number", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."], 
                     cons: ["Still limited dynamic range compared to DSLR."], 
                 }, 
                 apple: { 
                     iso: "Auto (let it choose), or 1000-2000 (in manual app)", 
                     shutter: "3-7s (or what auto selects)", 
+                    aperture: "N/A (fixed)", 
+                    focus: "Infinity", 
+                    wb: "Auto or 3500K-4000K", 
                     pros: ["Good balance, easier to get usable shots.", "Built-in processing helps with noise."], 
                     cons: ["Less control over very fast-moving aurora."], 
                 }, 
@@ -211,24 +243,20 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { 
                 iso: "1600-3200", 
                 shutter: "5-15s", 
+                aperture: "f/2.8-f/4 (widest)", 
+                focus: "Manual to Infinity", 
+                wb: "3500K-4500K", 
                 pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."], 
                 cons: ["Can still get light pollution if exposure is too long."], 
             }, 
         };
     }
-    const sharedSettings = { aperture: "f/2.8 or widest", focus: "Manual to Infinity", wb: "3500K-4500K" };
-    baseSettings.phone.android = {...baseSettings.phone.android, ...sharedSettings};
-    baseSettings.phone.apple = {...baseSettings.phone.apple, ...sharedSettings};
-    baseSettings.dslr = {...baseSettings.dslr, ...sharedSettings};
     return baseSettings;
 };
 
 
-interface ForecastDashboardHandle {
-    triggerDataFetch: () => void;
-}
-
-const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardProps>(({ setViewerMedia, setLastUpdatedTime }, ref) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia }) => {
+    const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -274,7 +302,7 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
-        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
+        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
     
     const openModal = useCallback((id: string) => { 
@@ -420,10 +448,8 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
         return annotations;
     }, []);
     
-    const fetchAllData = useCallback(async () => {
-        setIsLoading(true);
-        let latestTimestamp = 0;
-
+    const fetchAllData = useCallback(async (isInitialLoad = false) => {
+        if (isInitialLoad) setIsLoading(true);
         const results = await Promise.allSettled([
             fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
@@ -438,13 +464,11 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
-            const forecastUpdatedTime = currentForecast?.lastUpdated ?? 0;
-            setLastUpdated(`Last Updated: ${formatNZTimestamp(forecastUpdatedTime)}`);
+            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
-            setGaugeData(prev => ({...prev, power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(forecastUpdatedTime)}`}, bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt ?? null, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(forecastUpdatedTime)}`}, bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz ?? null, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(forecastUpdatedTime)}`}, moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null) }));
+            setGaugeData(prev => ({...prev, power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt ?? null, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz ?? null, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null) }));
             if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
-            latestTimestamp = Math.max(latestTimestamp, forecastUpdatedTime);
         } else { console.error("Forecast data failed to load:", forecastResult.reason); setAuroraBlurb("Could not load forecast data."); setAuroraScoreHistory([]); }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
@@ -452,36 +476,31 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
             const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999); const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null; const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx]; const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
             setGaugeData(prev => ({...prev, speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}, density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}}));
             setAllPlasmaData(plasmaData.slice(1).map((r:any[]) => { const rawTime = r[plasmaTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }}));
-            latestTimestamp = Math.max(latestTimestamp, plasmaTimestamp);
         } else { console.error("Plasma data failed to load:", plasmaResult.reason); setAllPlasmaData([]); }
 
         if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
             const magData = magResult.value; const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
-            const latestMagTimestamp = magData.slice(1).reduce((maxT: number, r:any[]) => { const cleanTime = new Date(r[magTimeIdx].replace(' ', 'T') + 'Z').getTime(); return Math.max(maxT, cleanTime); }, 0);
             setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
-            latestTimestamp = Math.max(latestTimestamp, latestMagTimestamp);
         } else { console.error("Magnetic data failed to load:", magResult.reason); setAllMagneticData([]); }
 
         let anyGoesDataFound = false; // Flag to track if any valid GOES data was found
-        let latestGoesTimestamp = 0;
 
         // --- GOES Data Processing (Primary - GOES-18) ---
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             console.log('GOES-18 Raw Data (last 5):', goes18Result.value.slice(-5));
             const processedData18 = goes18Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H)
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H), filter for number & not NaN
                 .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
+            analyzeMagnetometerData(processedData18); // Analyze based on primary satellite
+            console.log('GOES-18 Processed Data (first 5):', processedData18.slice(0, 5));
+            console.log('GOES-18 Processed Data Count:', processedData18.length);
             if (processedData18.length > 0) {
-                analyzeMagnetometerData(processedData18); // Analyze based on primary satellite
-                latestGoesTimestamp = Math.max(latestGoesTimestamp, processedData18[processedData18.length - 1].time);
                 anyGoesDataFound = true;
             } else {
                 console.warn('GOES-18: No valid Hp data points after filtering.');
             }
-            console.log('GOES-18 Processed Data (first 5):', processedData18.slice(0, 5));
-            console.log('GOES-18 Processed Data Count:', processedData18.length);
         } else {
             console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error');
             setGoes18Data([]);
@@ -491,18 +510,17 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
         if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
             console.log('GOES-19 Raw Data (last 5):', goes19Result.value.slice(-5));
             const processedData19 = goes19Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H)
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H), filter for number & not NaN
                 .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
                 .sort((a, b) => a.time - b.time);
             setGoes19Data(processedData19);
+            console.log('GOES-19 Processed Data (first 5):', processedData19.slice(0, 5));
+            console.log('GOES-19 Processed Data Count:', processedData19.length);
             if (processedData19.length > 0) {
-                latestGoesTimestamp = Math.max(latestGoesTimestamp, processedData19[processedData19.length - 1].time);
                 anyGoesDataFound = true;
             } else {
                 console.warn('GOES-19: No valid Hp data points after filtering.');
             }
-            console.log('GOES-19 Processed Data (first 5):', processedData19.slice(0, 5));
-            console.log('GOES-19 Processed Data Count:', processedData19.length);
         } else {
             console.error('GOES-19 Fetch Failed:', goes19Result.reason || 'Unknown error');
         }
@@ -515,27 +533,10 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
         }
         
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-        setIsLoading(false); // Only set loading to false after all fetches are attempted
+        if (isInitialLoad) setIsLoading(false);
+    }, [getGaugeStyle]);
 
-        if (latestGoesTimestamp > 0) latestTimestamp = Math.max(latestTimestamp, latestGoesTimestamp);
-        setLastUpdatedTime(latestTimestamp); // Report latest timestamp to parent
-
-    }, [getGaugeStyle, setLastUpdatedTime]); // Added setLastUpdatedTime to dependencies
-
-    // Expose triggerDataFetch method to parent component
-    useImperativeHandle(ref, () => ({
-        triggerDataFetch: () => {
-            fetchAllData();
-        }
-    }));
-
-    // Initial fetch on mount
-    useEffect(() => {
-        fetchAllData();
-        const interval = setInterval(() => fetchAllData(), REFRESH_INTERVAL_MS);
-        return () => clearInterval(interval);
-    }, [fetchAllData]);
-
+    useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
@@ -543,7 +544,7 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
     
     useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
 
-    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => {
+    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => { // Changed extraPlugins to extraAnnotations
         const now = Date.now(); const startTime = now - rangeMs; const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
         if (isDualAxis) options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
         else options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } } };
@@ -757,6 +758,6 @@ const ForecastDashboard = forwardRef<ForecastDashboardHandle, ForecastDashboardP
             <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
         </div>
     );
-});
+};
 
 export default ForecastDashboard;

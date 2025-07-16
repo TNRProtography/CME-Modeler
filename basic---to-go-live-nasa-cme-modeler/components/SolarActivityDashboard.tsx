@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
@@ -7,7 +7,6 @@ import CloseIcon from './icons/CloseIcon';
 interface SolarActivityDashboardProps {
   apiKey: string;
   setViewerMedia: (media: { url: string, type: 'image' | 'video' } | null) => void;
-  setLastUpdatedTime: (timestamp: number) => void; // New prop for global update
 }
 
 // --- CONSTANTS ---
@@ -71,7 +70,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     );
 };
 
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
@@ -81,17 +80,13 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content }} />
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">{content}</div>
       </div>
     </div>
   );
 };
 
-interface SolarActivityDashboardHandle {
-    triggerDataFetch: () => void;
-}
-
-const SolarActivityDashboard = forwardRef<SolarActivityDashboardHandle, SolarActivityDashboardProps>(({ apiKey, setViewerMedia, setLastUpdatedTime }, ref) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
@@ -111,32 +106,23 @@ const SolarActivityDashboard = forwardRef<SolarActivityDashboardHandle, SolarAct
             const blob = await res.blob();
             const objectURL = URL.createObjectURL(blob);
             setState({ url: objectURL, loading: null });
-            return new Date().getTime(); // Return current time as its update time
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
             setState({ url: '/error.png', loading: 'Image failed to load.' });
-            return 0; // Return 0 on error
         }
     }, []);
 
-    const fetchXrayFlux = useCallback(async () => {
+    const fetchXrayFlux = useCallback(() => {
         setLoadingXray('Loading X-ray flux data...');
-        try {
-            const res = await fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const rawData = await res.json();
-            const groupedData = new Map();
-            rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
-            const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
-            if (!processedData.length) throw new Error('No valid X-ray data.');
-            setAllXrayData(processedData);
-            setLoadingXray(null);
-            return processedData[processedData.length - 1]?.time || 0; // Return latest timestamp
-        } catch (e) {
-            console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`);
-            setAllXrayData([]);
-            return 0; // Return 0 on error
-        }
+        fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
+            .then(rawData => {
+                const groupedData = new Map();
+                rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
+                const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
+                if (!processedData.length) throw new Error('No valid X-ray data.');
+                setAllXrayData(processedData);
+                setLoadingXray(null);
+            }).catch(e => { console.error('Error fetching X-ray flux:', e); setLoadingXray(`Error: ${e.message}`); });
     }, []);
     
     const fetchFlares = useCallback(async () => {
@@ -149,12 +135,11 @@ const SolarActivityDashboard = forwardRef<SolarActivityDashboardHandle, SolarAct
             const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); setSolarFlares([]); return 0; }
+            if (!data || data.length === 0) { setLoadingFlares('No solar flares in the last 24 hours.'); setSolarFlares([]); return; }
             const processedData = data.map((flare: any) => ({ ...flare, hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false, }));
             setSolarFlares(processedData.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime()));
             setLoadingFlares(null);
-            return new Date(processedData[0].peakTime).getTime(); // Return latest flare time
-        } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); setSolarFlares([]); return 0; }
+        } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, [apiKey]);
 
     const fetchSunspots = useCallback(async () => {
@@ -164,40 +149,24 @@ const SolarActivityDashboard = forwardRef<SolarActivityDashboardHandle, SolarAct
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
-            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return 0; }
+            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
             setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
             setLoadingSunspots(null);
-            return new Date().getTime(); // Sunspot data doesn't have explicit update time per entry, use fetch time
-        } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); setSunspots([]); return 0; }
+        } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, []);
 
-    const runAllUpdates = useCallback(async () => {
-        let latestTimeFromSolar = 0;
-        const [time131, time304, timeXray, timeFlares, timeSunspots] = await Promise.all([
-            fetchImage(SUVI_131_URL, setSuvi131),
-            fetchImage(SUVI_304_URL, setSuvi304),
-            fetchXrayFlux(),
-            fetchFlares(),
-            fetchSunspots(),
-        ]);
-        latestTimeFromSolar = Math.max(time131, time304, timeXray, timeFlares, timeSunspots);
-        if (latestTimeFromSolar > 0) {
-            setLastUpdatedTime(latestTimeFromSolar); // Report latest timestamp to parent
-        }
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, setLastUpdatedTime]);
-
-    // Expose triggerDataFetch method to parent component
-    useImperativeHandle(ref, () => ({
-        triggerDataFetch: () => {
-            runAllUpdates();
-        }
-    }));
-
     useEffect(() => {
+        const runAllUpdates = () => {
+            fetchImage(SUVI_131_URL, setSuvi131);
+            fetchImage(SUVI_304_URL, setSuvi304);
+            fetchXrayFlux();
+            fetchFlares();
+            fetchSunspots();
+        };
         runAllUpdates(); // Initial fetch
-        const interval = setInterval(() => runAllUpdates(), REFRESH_INTERVAL_MS); // Refresh every minute
+        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS); // Refresh every minute
         return () => clearInterval(interval); // Cleanup on unmount
-    }, [runAllUpdates]);
+    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -295,21 +264,10 @@ const SolarActivityDashboard = forwardRef<SolarActivityDashboardHandle, SolarAct
                 isOpen={!!selectedFlare}
                 onClose={() => setSelectedFlare(null)}
                 title={`Flare Details: ${selectedFlare?.flareID || ''}`}
-                content={ selectedFlare && ( `
-                    <div class="space-y-2">
-                        <p><strong>Class:</strong> ${selectedFlare.classType}</p>
-                        <p><strong>Begin Time (NZT):</strong> ${formatNZTimestamp(selectedFlare.beginTime)}</p>
-                        <p><strong>Peak Time (NZT):</strong> ${formatNZTimestamp(selectedFlare.peakTime)}</p>
-                        <p><strong>End Time (NZT):</strong> ${formatNZTimestamp(selectedFlare.endTime)}</p>
-                        <p><strong>Source Location:</strong> ${selectedFlare.sourceLocation}</p>
-                        <p><strong>Active Region:</strong> ${selectedFlare.activeRegionNum || 'N/A'}</p>
-                        <p><strong>CME Associated:</strong> ${selectedFlare.hasCME ? 'Yes' : 'No'}</p>
-                        <p><a href="${selectedFlare.link}" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">View on NASA DONKI</a></p>
-                    </div>
-                `)}
+                content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
             />
         </div>
     );
-});
+};
 
 export default SolarActivityDashboard;

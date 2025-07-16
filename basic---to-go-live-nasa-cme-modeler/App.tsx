@@ -17,7 +17,6 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import RefreshIcon from './components/icons/RefreshIcon'; // Corrected Import Path
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // NEW: Import the refactored dashboard components
@@ -44,10 +43,6 @@ type ViewerMedia =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
-
-interface DashboardRef {
-  triggerDataFetch: () => void;
-}
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -91,15 +86,6 @@ const App: React.FC = () => {
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
-  // NEW: State for global last updated time
-  const [cmeLastUpdated, setCmeLastUpdated] = useState<number>(0);
-  const [forecastLastUpdated, setForecastLastUpdated] = useState<number>(0);
-  const [solarActivityLastUpdated, setSolarActivityLastUpdated] = useState<number>(0);
-
-  // REFS for dashboard components to trigger their fetches
-  const forecastDashboardRef = useRef<DashboardRef>(null);
-  const solarActivityDashboardRef = useRef<DashboardRef>(null);
-
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
   useEffect(() => {
@@ -128,7 +114,7 @@ const App: React.FC = () => {
     setTimelinePlaying(false);
     setTimelineScrubberValue(0);
     resetClock();
-    setDataVersion((v: number) => v + 1); // Trigger re-render of SimulationCanvas
+    setDataVersion((v: number) => v + 1);
 
     try {
       const data = await fetchCMEData(days, apiKey);
@@ -146,7 +132,6 @@ const App: React.FC = () => {
         setTimelineMinDate(0);
         setTimelineMaxDate(0);
       }
-      setCmeLastUpdated(Date.now()); // Update CME's last updated time
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -247,24 +232,6 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
-  const globalLastUpdatedTime = useMemo(() => {
-    // Return the latest of all three dashboard update times
-    const maxTime = Math.max(cmeLastUpdated, forecastLastUpdated, solarActivityLastUpdated);
-    return maxTime > 0 ? new Date(maxTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
-  }, [cmeLastUpdated, forecastLastUpdated, solarActivityLastUpdated]);
-
-  const handleGlobalRefresh = useCallback(() => {
-    // Trigger re-fetch for CME modeler
-    loadCMEData(activeTimeRange);
-
-    // Trigger re-fetch for other dashboards if they exist
-    forecastDashboardRef.current?.triggerDataFetch();
-    solarActivityDashboardRef.current?.triggerDataFetch();
-
-    // Optionally, update a general 'refresh started' timestamp if needed
-    // setGlobalRefreshInitiatedTime(Date.now());
-  }, [loadCMEData, activeTimeRange]);
-
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* Unified Header Bar for Navigation */}
@@ -299,17 +266,6 @@ const App: React.FC = () => {
                 title="View CME Modeler">
                     <CmeIcon className="w-5 h-5" />
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
-                </button>
-            </div>
-            {/* NEW: Refresh Button and Last Updated Time */}
-            <div className="flex items-center space-x-4 ml-auto">
-                <span className="text-xs text-neutral-400 hidden sm:block">Last Updated: {globalLastUpdatedTime}</span>
-                <button 
-                    onClick={handleGlobalRefresh}
-                    className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
-                    title="Refresh All Data"
-                >
-                    <RefreshIcon className="w-5 h-5" />
                 </button>
             </div>
         </header>
@@ -458,11 +414,11 @@ const App: React.FC = () => {
             )}
 
             {activePage === 'forecast' && (
-                <ForecastDashboard ref={forecastDashboardRef} setViewerMedia={setViewerMedia} setLastUpdatedTime={setForecastLastUpdated} />
+                <ForecastDashboard setViewerMedia={setViewerMedia} />
             )}
 
             {activePage === 'solar-activity' && (
-                <SolarActivityDashboard ref={solarActivityDashboardRef} setViewerMedia={setViewerMedia} apiKey={apiKey} setLastUpdatedTime={setSolarActivityLastUpdated} />
+                <SolarActivityDashboard setViewerMedia={setViewerMedia} apiKey={apiKey} />
             )}
         </div>
         
