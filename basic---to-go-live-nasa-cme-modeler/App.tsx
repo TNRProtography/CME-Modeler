@@ -24,7 +24,6 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 // NEW: Import the GlobalBanner
 import GlobalBanner from './components/GlobalBanner';
-import FlareIcon from './components/icons/FlareIcon'; // Import the FlareIcon
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -60,7 +59,7 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   
-  const [currentlyModeledCMEId, setCurrentlyModeledCmeId] = useState<string | null>(null);
+  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
   const [isControlsOpen, setIsControlsOpen] = useState(false);
@@ -97,6 +96,7 @@ const App: React.FC = () => {
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
   useEffect(() => {
+    // Only attempt to initialize THREE.Clock if THREE is loaded
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
     }
@@ -169,7 +169,7 @@ const App: React.FC = () => {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, [filteredCmes, currentlyModeledCmeId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -205,7 +205,7 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying((prev: boolean) => !prev);
-    setCurrentlyModeledCmeId(null);
+    setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -214,7 +214,7 @@ const App: React.FC = () => {
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-    setCurrentlyModeledCmeId(null);
+    setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
@@ -230,7 +230,7 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-    setCurrentlyModeledCmeId(null);
+    setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes, timelineMinDate, timelineMaxDate]);
 
@@ -339,7 +339,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCmeId}
+                        currentlyModeledCmeId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
