@@ -276,7 +276,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                 focus: "Manual to Infinity",
                 wb: "3500K-4500K",
                 pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."],
-                cons: ["Can still get light pollution if exposure is too long."],
+                progressBar: "Can still get light pollution if exposure is too long.",
             },
         };
     }
@@ -293,18 +293,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const [celestialTimes, setCelestialTimes] = useState<CelestialTimeData>({});
     const [isDaylight, setIsDaylight] = useState(false);
-    const [allPlasmaData, setAllPlasmaData] = useState<any[]>([]);
+    // NEW: Separate states for speed and density data
+    const [allSpeedData, setAllSpeedData] = useState<any[]>([]);
+    const [allDensityData, setAllDensityData] = useState<any[]>([]);
     const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
     const [goes18Data, setGoes18Data] = useState<any[]>([]);
     const [goes19Data, setGoes19Data] = useState<any[]>([]);
     const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
     const [substormBlurb, setSubstormBlurb] = useState<{ text: string; color: string }>({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' });
 
-    const [solarWindChartData, setSolarWindChartData] = useState<any>({ datasets: [] });
-    const [magneticFieldChartData, setMagneticFieldChartData] = useState<any>({ datasets: [] });
-
+    // OLD: Removed solarWindChartData, magneticFieldChartData
+    // NEW: Replaced with individual chart data for speed and density
+    
+    // Time range for solar wind properties (speed and density)
     const [solarWindTimeRange, setSolarWindTimeRange] = useState<number>(6 * 3600000);
     const [solarWindTimeLabel, setSolarWindTimeLabel] = useState<string>('6 Hr');
+
     const [magneticFieldTimeRange, setMagneticFieldTimeRange] = useState<number>(6 * 3600000);
     const [magneticFieldTimeLabel, setMagneticFieldTimeLabel] = useState<string>('6 Hr');
     const [magnetometerTimeRange, setMagnetometerTimeRange] = useState<number>(3 * 3600000);
@@ -354,7 +358,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (contentData) {
             let title = '';
             if (id === 'forecast') title = 'About The Forecast Score';
-            else if (id === 'solar-wind-graph') title = 'About The Solar Wind Graph';
+            else if (id === 'solar-wind-graph') title = 'About The Solar Wind Graph'; // Still using this ID for speed/density graph tooltips
             else if (id === 'imf-graph') title = 'About The IMF Graph';
             else if (id === 'goes-mag') title = 'GOES Magnetometer (Hp)';
             else if (id === 'hemispheric-power-graph') title = 'About The Hemispheric Power Graph'; // NEW: Add title for hemispheric power graph
@@ -601,7 +605,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result] = results;
 
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
-            const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value; // Destructure rawHistory
+            const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
@@ -617,13 +621,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 setDailyCelestialHistory([]);
             }
 
-            // NEW: Set the OWM daily forecast data (for gauge display of next events)
+            // Set the OWM daily forecast data (for gauge display of next events)
             if (Array.isArray(owmDailyForecast)) {
                 setOwmDailyForecast(owmDailyForecast);
             } else {
                 setOwmDailyForecast([]);
             }
-
 
             // Pass owmDailyForecast (the full array) to getMoonData for accurate future event finding
             setGaugeData(prev => ({
@@ -631,7 +634,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
                 bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
                 bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
-                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || []) // Pass owmDailyForecast
+                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || [])
             }));
             if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
 
@@ -639,12 +642,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (Array.isArray(rawHistory)) {
                 setHemisphericPowerHistory(rawHistory.filter((d: any) =>
                     typeof d.timestamp === 'number' && typeof d.hemisphericPower === 'number' && !isNaN(d.hemisphericPower)
-                ).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })) // Explicitly map
+                ).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower }))
                 .sort((a:any, b:any) => a.timestamp - b.timestamp));
             } else {
                 setHemisphericPowerHistory([]);
             }
-
 
         } else {
             console.error("Forecast data failed to load:", forecastResult.reason);
@@ -652,16 +654,46 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAuroraScoreHistory([]);
             setCurrentAuroraScore(null);
             setDailyCelestialHistory([]);
-            setOwmDailyForecast([]); // Clear on error
-            setHemisphericPowerHistory([]); // NEW: Clear hemispheric power history on error
+            setOwmDailyForecast([]);
+            setHemisphericPowerHistory([]);
         }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
-            const plasmaData = plasmaResult.value; const plasmaHeaders = plasmaData[0]; const speedIdx = plasmaHeaders.indexOf('speed'); const densityIdx = plasmaHeaders.indexOf('density'); const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
-            const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999); const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null; const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null; const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx]; const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
-            setGaugeData(prev => ({...prev, speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}, density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}}));
-            setAllPlasmaData(plasmaData.slice(1).map((r:any[]) => { const rawTime = r[plasmaTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }}));
-        } else { console.error("Plasma data failed to load:", plasmaResult.reason); setAllPlasmaData([]); }
+            const plasmaData = plasmaResult.value;
+            const plasmaHeaders = plasmaData[0];
+            const speedIdx = plasmaHeaders.indexOf('speed');
+            const densityIdx = plasmaHeaders.indexOf('density');
+            const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
+
+            const processedPlasma = plasmaData.slice(1).map((r:any[]) => {
+                const rawTime = r[plasmaTimeIdx];
+                const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
+                return {
+                    time: cleanTime,
+                    speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null,
+                    density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null
+                };
+            });
+            setAllSpeedData(processedPlasma.map(p => ({ x: p.time, y: p.speed })));
+            setAllDensityData(processedPlasma.map(p => ({ x: p.time, y: p.density })));
+
+            // Keep the latest gauge data update logic
+            const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
+            const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
+            const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+            const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx];
+            const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
+
+            setGaugeData(prev => ({
+                ...prev,
+                speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`},
+                density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}
+            }));
+        } else {
+            console.error("Plasma data failed to load:", plasmaResult.reason);
+            setAllSpeedData([]);
+            setAllDensityData([]);
+        }
 
         if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
             const magData = magResult.value; const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
@@ -724,7 +756,59 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
 
 
-    useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
+    // NEW: Speed Chart Data
+    const speedChartData = useMemo(() => {
+        if (allSpeedData.length === 0) return { datasets: [] };
+        const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3;
+        return {
+            datasets: [{
+                label: 'Speed',
+                data: allSpeedData,
+                yAxisID: 'y',
+                order: 1,
+                fill: 'origin',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: lineTension(solarWindTimeRange),
+                segment: {
+                    borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid,
+                    backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)),
+                }
+            }]
+        };
+    }, [allSpeedData, solarWindTimeRange, getPositiveScaleColorKey]);
+
+    // NEW: Density Chart Data
+    const densityChartData = useMemo(() => {
+        if (allDensityData.length === 0) return { datasets: [] };
+        const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3;
+        return {
+            datasets: [{
+                label: 'Density',
+                data: allDensityData,
+                yAxisID: 'y',
+                order: 0,
+                fill: 'origin',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: lineTension(solarWindTimeRange),
+                segment: {
+                    borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid,
+                    backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)),
+                }
+            }]
+        };
+    }, [allDensityData, solarWindTimeRange, getPositiveScaleColorKey]);
+
+    const magneticFieldChartData = useMemo(() => { // This remains combined Bt/Bz
+        if (allMagneticData.length === 0) return { datasets: [] };
+        const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3;
+        return { datasets: [
+            { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } },
+            { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } }
+        ] };
+    }, [allMagneticData, magneticFieldTimeRange, getPositiveScaleColorKey, getBzScaleColorKey]);
+
 
     const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => {
         const now = Date.now(); const startTime = now - rangeMs; const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
@@ -741,7 +825,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return options;
     }, []);
 
-    const solarWindOptions = useMemo(() => createChartOptions(solarWindTimeRange, true, '', false), [solarWindTimeRange, createChartOptions]);
+    // NEW: Speed Chart Options
+    const speedChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, false, 'Speed (km/s)', false), [solarWindTimeRange, createChartOptions]);
+    // NEW: Density Chart Options
+    const densityChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, false, 'Density (p/cm³)', false), [solarWindTimeRange, createChartOptions]);
+    
     const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, false, 'Magnetic Field (nT)', false), [magneticFieldTimeRange, createChartOptions]);
 
     // NEW: Hemispheric Power Chart Data
@@ -780,7 +868,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 },
             ],
         };
-    }, [hemisphericPowerHistory]);
+    }, [hemisphericPowerHistory, getPositiveScaleColorKey]);
 
     // NEW: Hemispheric Power Chart Options
     const hemisphericPowerChartOptions = useMemo(() =>
@@ -888,8 +976,142 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</b> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
+
+    // Reusable component for rendering the expanded graph content
+    interface ExpandedGraphContentProps {
+        graphId: string;
+        solarWindTimeRange: number;
+        setSolarWindTimeRange: (duration: number, label: string) => void;
+        solarWindTimeLabel: string;
+        magneticFieldTimeRange: number;
+        setMagneticFieldTimeRange: (duration: number, label: string) => void;
+        magneticFieldTimeLabel: string;
+        hemisphericPowerChartTimeRange: number;
+        setHemisphericPowerChartTimeRange: (duration: number, label: string) => void;
+        hemisphericPowerChartTimeLabel: string;
+        magnetometerTimeRange: number;
+        setMagnetometerTimeRange: (duration: number, label: string) => void;
+        magnetometerTimeLabel: string;
+        openModal: (id: string) => void;
+        // Data props
+        allSpeedData: any[];
+        speedChartData: any;
+        speedChartOptions: ChartOptions<'line'>;
+        allDensityData: any[];
+        densityChartData: any;
+        densityChartOptions: ChartOptions<'line'>;
+        allMagneticData: any[];
+        magneticFieldChartData: any;
+        magneticFieldOptions: ChartOptions<'line'>;
+        hemisphericPowerHistory: any[];
+        hemisphericPowerChartData: any;
+        hemisphericPowerChartOptions: ChartOptions<'line'>;
+        goes18Data: any[];
+        goes19Data: any[];
+        magnetometerChartData: any;
+        magnetometerOptions: ChartOptions<'line'>;
+        loadingMagnetometer: string | null;
+        substormBlurb: { text: string; color: string };
+    }
+
+    const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.memo(({
+        graphId,
+        solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel,
+        magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel,
+        hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel,
+        magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel,
+        openModal,
+        allSpeedData, speedChartData, speedChartOptions,
+        allDensityData, densityChartData, densityChartOptions,
+        allMagneticData, magneticFieldChartData, magneticFieldOptions,
+        hemisphericPowerHistory, hemisphericPowerChartData, hemisphericPowerChartOptions,
+        goes18Data, goes19Data, magnetometerChartData, magnetometerOptions, loadingMagnetometer, substormBlurb
+    }) => {
+        const CHART_HEIGHT = 'h-[calc(100%-80px)]'; // Adjusted to consider time range buttons and title
+
+        switch (graphId) {
+            case 'speed-graph-container':
+                return (
+                    <>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind Speed</h2>
+                            <button onClick={(e) => { e.stopPropagation(); openModal('solar-wind-graph'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                        </div>
+                        <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
+                        <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
+                            {allSpeedData.length > 0 ? <Line data={speedChartData} options={speedChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind speed data unavailable.</p>}
+                        </div>
+                    </>
+                );
+            case 'density-graph-container':
+                return (
+                    <>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind Density</h2>
+                            <button onClick={(e) => { e.stopPropagation(); openModal('solar-wind-graph'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                        </div>
+                        <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
+                        <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
+                            {allDensityData.length > 0 ? <Line data={densityChartData} options={densityChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind density data unavailable.</p>}
+                        </div>
+                    </>
+                );
+            case 'imf-graph-container':
+                return (
+                    <>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2>
+                            <button onClick={(e) => { e.stopPropagation(); openModal('imf-graph'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                        </div>
+                        <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
+                        <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
+                            {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
+                        </div>
+                    </>
+                );
+            case 'hemispheric-power-graph-container':
+                return (
+                    <>
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center">Hemispheric Power Trend (Last {hemisphericPowerChartTimeLabel})</h2>
+                            <button onClick={(e) => { e.stopPropagation(); openModal('hemispheric-power-graph'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                        </div>
+                        <TimeRangeButtons onSelect={(duration, label) => { setHemisphericPowerChartTimeRange(duration); setHemisphericPowerChartTimeLabel(label); }} selected={hemisphericPowerChartTimeRange} />
+                        <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
+                            {hemisphericPowerHistory.length > 0 ? (
+                                <Line data={hemisphericPowerChartData} options={hemisphericPowerChartOptions} />
+                            ) : (
+                                <p className="text-center pt-10 text-neutral-400 italic">Hemispheric Power data unavailable.</p>
+                            )}
+                        </div>
+                    </>
+                );
+            case 'goes-mag-graph-container':
+                return (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                        <div className="lg:col-span-2 h-full flex flex-col">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2>
+                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
+                            <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
+                                {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
+                            </div>
+                        </div>
+                        <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg h-full">
+                            <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
+                            <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
+                        </div>
+                    </div>
+                );
+            default:
+                return null;
+        }
+    });
+
+
     return (
-        // This outer div now spans the full height and applies the background/overlay
         <div
             className="w-full h-full bg-neutral-900 text-neutral-300 relative"
             style={{
@@ -899,12 +1121,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 backgroundAttachment: 'fixed',
             }}
         >
-            {/* The absolute overlay now covers the entire fixed-height background div */}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
 
-            {/* THIS IS THE NEW SCROLLABLE CONTAINER */}
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
-                {/* Your existing dashboard content goes inside here */}
                 <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
                 <div className="container mx-auto">
                     <header className="text-center mb-8">
@@ -925,7 +1144,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
                             </div>
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
@@ -1011,115 +1230,93 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                         </div>
 
-                        <div className="col-span-12 grid grid-cols-6 gap-5">
+                        {/* Metrics and their associated inline graphs */}
+                        <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5"> {/* Adjusted grid for metrics */}
                             {Object.entries(gaugeData).map(([key, data]) => {
-                                // Determine the target graph ID for this metric
                                 const isGraphable = !['moon'].includes(key); // Moon is explicitly not graphable
                                 let graphId: string | null = null;
-                                if (key === 'speed' || key === 'density') graphId = 'solar-wind-graph-container';
-                                else if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
+                                if (key === 'speed') graphId = 'speed-graph-container';
+                                else if (key === 'density') graphId = 'density-graph-container';
                                 else if (key === 'power') graphId = 'hemispheric-power-graph-container';
-                                else if (key === 'substorm' ) graphId = 'goes-mag-graph-container'; // Assuming you might have a dedicated substorm gauge later
+                                else if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container'; // Bt and Bz share the IMF graph
 
                                 const isCurrentlyExpanded = expandedGraph === graphId;
 
+                                // Condition to render the graph only once for shared graphs (IMF)
+                                const shouldRenderGraphContent = isCurrentlyExpanded && graphId &&
+                                    ((graphId === 'imf-graph-container' && key === 'bt') || // IMF graph rendered only when 'bt' is the key
+                                    (graphId !== 'imf-graph-container')); // Other graphs render for their respective keys
+
                                 return (
-                                    <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
-                                        <button
-                                            onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)}
-                                            className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`}
-                                            disabled={!isGraphable} // Disable the button if not graphable
-                                        >
-                                            <div className="flex justify-center items-center">
-                                                <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
-                                                {/* Ensure the info button prevents propagation so it doesn't also toggle the graph */}
-                                                <button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                    <React.Fragment key={key}>
+                                        {/* Metric Card Button */}
+                                        <div className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
+                                            <button
+                                                onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)}
+                                                className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`}
+                                                disabled={!isGraphable}
+                                            >
+                                                <div className="flex justify-center items-center">
+                                                    <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                                    {/* Ensure the info button prevents propagation so it doesn't also toggle the graph */}
+                                                    <button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                                </div>
+                                                <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                                                <div className="text-3xl my-2">{data.emoji}</div>
+                                                <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                                                <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                                                {isGraphable && ( // Only show caret for graphable metrics
+                                                    <CaretIcon className={`w-6 h-6 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                                )}
+                                            </button>
+                                        </div>
+                                        {/* Expanded Graph Content (appears directly under metric on mobile/tablet) */}
+                                        {shouldRenderGraphContent && (
+                                            <div className="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100">
+                                                <ExpandedGraphContent
+                                                    graphId={graphId}
+                                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={setSolarWindTimeRange} solarWindTimeLabel={solarWindTimeLabel}
+                                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={setMagneticFieldTimeRange} magneticFieldTimeLabel={magneticFieldTimeLabel}
+                                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={setHemisphericPowerChartTimeRange} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
+                                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={setMagnetometerTimeRange} magnetometerTimeLabel={magnetometerTimeLabel}
+                                                    openModal={openModal}
+                                                    allSpeedData={allSpeedData} speedChartData={speedChartData} speedChartOptions={speedChartOptions}
+                                                    allDensityData={allDensityData} densityChartData={densityChartData} densityChartOptions={densityChartOptions}
+                                                    allMagneticData={allMagneticData} magneticFieldChartData={magneticFieldChartData} magneticFieldOptions={magneticFieldOptions}
+                                                    hemisphericPowerHistory={hemisphericPowerHistory} hemisphericPowerChartData={hemisphericPowerChartData} hemisphericPowerChartOptions={hemisphericPowerChartOptions}
+                                                    goes18Data={goes18Data} goes19Data={goes19Data} magnetometerChartData={magnetometerChartData} magnetometerOptions={magnetometerOptions} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
+                                                />
                                             </div>
-                                            <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                                            <div className="text-3xl my-2">{data.emoji}</div>
-                                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
-                                            <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
-                                            {isGraphable && ( // Only show caret for graphable metrics
-                                                <CaretIcon className={`w-6 h-6 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
-                                            )}
-                                        </button>
-                                    </div>
+                                        )}
+                                    </React.Fragment>
                                 );
                             })}
                         </div>
 
-                        {/* Solar Wind Graph */}
-                        <div id="solar-wind-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out ${expandedGraph === 'solar-wind-graph-container' ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
-                            {expandedGraph === 'solar-wind-graph-container' && ( // Only render content if expanded
-                                <>
-                                    <div className="flex justify-center items-center gap-2">
-                                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind</h2>
-                                        <button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                    </div>
-                                    <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
-                                    <div className="flex-grow relative mt-2">
-                                        {allPlasmaData.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind data unavailable.</p>}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* IMF Graph (for Bt/Bz) */}
-                        <div id="imf-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out ${expandedGraph === 'imf-graph-container' ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
-                            {expandedGraph === 'imf-graph-container' && (
-                                <>
-                                    <div className="flex justify-center items-center gap-2">
-                                        <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2>
-                                        <button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                    </div>
-                                    <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
-                                    <div className="flex-grow relative mt-2">
-                                        {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* NEW: Hemispheric Power Graph */}
-                        <div id="hemispheric-power-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out ${expandedGraph === 'hemispheric-power-graph-container' ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
-                            {expandedGraph === 'hemispheric-power-graph-container' && (
-                                <>
-                                    <div className="flex justify-center items-center gap-2">
-                                        <h2 className="text-xl font-semibold text-white text-center">Hemispheric Power Trend (Last {hemisphericPowerChartTimeLabel})</h2>
-                                        <button onClick={() => openModal('hemispheric-power-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                    </div>
-                                    <TimeRangeButtons onSelect={(duration, label) => { setHemisphericPowerChartTimeRange(duration); setHemisphericPowerChartTimeLabel(label); }} selected={hemisphericPowerChartTimeRange} />
-                                    <div className="flex-grow relative mt-2">
-                                        {hemisphericPowerHistory.length > 0 ? (
-                                            <Line data={hemisphericPowerChartData} options={hemisphericPowerChartOptions} />
-                                        ) : (
-                                            <p className="text-center pt-10 text-neutral-400 italic">Hemispheric Power data unavailable.</p>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* GOES Magnetometer Graph */}
-                        <div id="goes-mag-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 transition-all duration-500 ease-in-out ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[550px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
-                            {expandedGraph === 'goes-mag-graph-container' && (
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                    <div className="lg:col-span-2 h-[450px] flex flex-col">
-                                        <div className="flex justify-center items-center gap-2">
-                                            <h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2>
-                                            <button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                        </div>
-                                        <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
-                                        <div className="flex-grow relative mt-2">
-                                            {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
-                                        </div>
-                                    </div>
-                                    <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
-                                        <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
-                                        <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
-                                    </div>
-                                </div>
-                            )}
+                        {/* GOES Magnetometer Graph - Now a collapsible card */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4">
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
+                                <h2 className="text-xl font-bold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
+                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                    <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} />
+                                </button>
+                            </div>
+                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                <ExpandedGraphContent
+                                    graphId={'goes-mag-graph-container'}
+                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={setSolarWindTimeRange} solarWindTimeLabel={solarWindTimeLabel}
+                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={setMagneticFieldTimeRange} magneticFieldTimeLabel={magneticFieldTimeLabel}
+                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={setHemisphericPowerChartTimeRange} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
+                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={setMagnetometerTimeRange} magnetometerTimeLabel={magnetometerTimeLabel}
+                                    openModal={openModal}
+                                    allSpeedData={allSpeedData} speedChartData={speedChartData} speedChartOptions={speedChartOptions}
+                                    allDensityData={allDensityData} densityChartData={densityChartData} densityChartOptions={densityChartOptions}
+                                    allMagneticData={allMagneticData} magneticFieldChartData={magneticFieldChartData} magneticFieldOptions={magneticFieldOptions}
+                                    hemisphericPowerHistory={hemisphericPowerHistory} hemisphericPowerChartData={hemisphericPowerChartData} hemisphericPowerChartOptions={hemisphericPowerChartOptions}
+                                    goes18Data={goes18Data} goes19Data={goes19Data} magnetometerChartData={magnetometerChartData} magnetometerOptions={magnetometerOptions} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
+                                />
+                            </div>
                         </div>
 
                         <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
