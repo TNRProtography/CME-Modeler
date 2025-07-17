@@ -265,7 +265,8 @@ const App: React.FC = () => {
 
 
   return (
-    <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
+    // FIX: Changed overflow-hidden to overflow-y-auto to allow overall page scrolling.
+    <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-y-auto">
         {/* NEW: Global Alert Banner */}
         <GlobalBanner
             isFlareAlert={isFlareAlert}
@@ -313,7 +314,8 @@ const App: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        <div className="flex flex-grow min-h-0">
+        {/* Changed from 'flex-grow min-h-0' to 'flex-grow' as the overflow is now handled by the parent */}
+        <div className="flex-grow"> 
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
                 <>
@@ -338,13 +340,14 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    <main className="flex-1 relative min-w-0 h-full">
+                    {/* Removed min-w-0 h-full to allow content to expand within the scrollable parent */}
+                    <main className="flex-1 relative"> 
                         <SimulationCanvas
                         ref={canvasRef}
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId}
+                        currentlyModeledCMEId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -460,7 +463,7 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia}
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
-                  apiKey={apiKey} // Pass apiKey here
+                  apiKey={apiKey}
                 />
             )}
 
