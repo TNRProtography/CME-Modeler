@@ -422,7 +422,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'bz': `<strong>What it is:</strong> The North-South direction of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
+        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</b> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
         'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Very high power.</li></ul>`, // NEW: Hemispheric Power Graph Tooltip
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
@@ -619,63 +619,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const now = Date.now(); // Current time in milliseconds
         const today = new Date();
+        const tomorrow = new Date(today); // This declaration is fine
         tomorrow.setDate(today.getDate() + 1);
 
-        // Helper to find the next valid event time from a list of timestamps
-        const findNextEvent = (eventTimestamps: (number | null)[]) => {
-            const sortedTimes = eventTimestamps
-                .filter((t): t is number => t !== null && !isNaN(t))
-                .sort((a, b) => a - b);
-            for (const timestamp of sortedTimes) {
-                if (timestamp > now) { // Found a future event
-                    return timestamp;
-                }
-            }
-            return null; // No future event found
-        };
-
-        // Collect all potential future moonrise times from the FULL OWM daily forecast
-        const allPotentialRiseTimes: number[] = [];
-        // Add current forecast's moonrise first if relevant
-        if (currentRiseTime !== null) {
-            allPotentialRiseTimes.push(currentRiseTime);
-        }
-        // Iterate through owmDailyForecast (which has times in seconds, convert to milliseconds)
-        owmDailyForecast.forEach(day => {
-            if (day.moonrise) {
-                const moonriseMs = day.moonrise * 1000;
-                // Only add if it's not already in and not too far in the past compared to 'now'
-                if (!allPotentialRiseTimes.includes(moonriseMs) && moonriseMs > now - (24 * 60 * 60 * 1000)) {
-                    allPotentialRiseTimes.push(moonriseMs);
-                }
-            }
-        });
-
-
-        // Collect all potential future moonset times from the FULL OWM daily forecast
-        const allPotentialSetTimes: number[] = [];
-        // Add current forecast's moonset first if relevant
-        if (currentSetTime !== null) {
-            allPotentialSetTimes.push(currentSetTime);
-        }
-        // Iterate through owmDailyForecast (which has times in seconds, convert to milliseconds)
-        owmDailyForecast.forEach(day => {
-            if (day.moonset) {
-                const moonsetMs = day.moonset * 1000;
-                if (!allPotentialSetTimes.includes(moonsetMs) && moonsetMs > now - (24 * 60 * 60 * 1000)) {
-                    allPotentialSetTimes.push(moonsetMs);
-                }
-            }
-        });
-
-        const nextRiseEvent = findNextEvent(allPotentialRiseTimes);
-        const nextSetEvent = findNextEvent(allPotentialSetTimes);
-
-        const formatEventTime = (timestamp: number | null) => {
+        // FIX: Pass today and tomorrow explicitly to formatEventTime to resolve ReferenceError
+        const formatEventTime = (timestamp: number | null, todayDate: Date, tomorrowDate: Date) => {
             if (!timestamp) return 'N/A';
             const eventDate = new Date(timestamp);
-            const isToday = eventDate.toDateString() === today.toDateString();
-            const isTomorrow = eventDate.toDateString() === tomorrow.toDateString();
+            const isToday = eventDate.toDateString() === todayDate.toDateString();
+            const isTomorrow = eventDate.toDateString() === tomorrowDate.toDateString();
 
             let dayLabel = '';
             if (isToday) {
@@ -690,8 +642,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             return `${dayLabel} ${eventDate.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
         };
 
-        const riseStr = formatEventTime(nextRiseEvent);
-        const setStr = formatEventTime(nextSetEvent);
+        const riseStr = formatEventTime(nextRiseEvent, today, tomorrow); // Pass arguments
+        const setStr = formatEventTime(nextSetEvent, today, tomorrow); // Pass arguments
 
         const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`;
         const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
