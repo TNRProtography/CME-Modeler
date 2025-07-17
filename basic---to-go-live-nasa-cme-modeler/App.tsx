@@ -265,8 +265,8 @@ const App: React.FC = () => {
 
 
   return (
-    // FIX: Changed overflow-y-auto back to overflow-hidden (default for h-screen)
-    // The individual dashboards will manage their own scrolling with 'overflow-y-auto'
+    // FIX: Reverted overflow-y-auto back to overflow-hidden.
+    // The individual dashboards will manage their own scrolling.
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* NEW: Global Alert Banner */}
         <GlobalBanner
@@ -315,7 +315,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        {/* FIX: Ensure this container takes up remaining height to correctly size children */}
+        {/* FIX: Re-ensured min-h-0 and h-full for this container to correctly size children, especially the modeler */}
         <div className="flex flex-grow min-h-0 h-full"> 
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
@@ -341,14 +341,15 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    {/* FIX: Re-added min-w-0 and h-full for the main content area of modeler */}
+                    {/* FIX: Ensured min-w-0 and h-full are present for the main content area of the modeler.
+                            This is crucial for the SimulationCanvas inside to inherit correct dimensions. */}
                     <main className="flex-1 relative min-w-0 h-full"> 
                         <SimulationCanvas
                         ref={canvasRef}
                         cmeData={filteredCmes}
                         activeView={activeView}
-                        focusTarget={focusTarget}
-                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        focusTarget={activeFocus} // This prop is correctly passed from App.tsx
+                        currentlyModeledCmeId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
