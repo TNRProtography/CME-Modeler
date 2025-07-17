@@ -247,8 +247,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     }, [allXrayData]);
     
     return (
+        // This outer div now spans the full height and applies the background/overlay
         <div
-            className="w-full h-full overflow-y-auto bg-neutral-900 text-neutral-300 p-5 relative"
+            className="w-full h-full bg-neutral-900 text-neutral-300 relative"
             style={{
                 backgroundImage: `url('/background-solar.jpg')`,
                 backgroundSize: 'cover',
@@ -256,154 +257,160 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 backgroundAttachment: 'fixed',
             }}
         >
+            {/* The absolute overlay now covers the entire fixed-height background div */}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
-            <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
-            <div className="container mx-auto relative z-10">
-                <header className="text-center mb-8">
-                    <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
-                    <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
-                </header>
-                <main className="grid grid-cols-12 gap-5">
-                    {/* Consolidated Solar Imagers Panel */}
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
-                        <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">Solar Imagery</h2>
-                        <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
-                            <button
-                                onClick={() => setActiveSunImage('SUVI_131')}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="Displays the Sun in 131 Angstroms, highlighting hot, flaring regions. (SUVI)"
-                            >
-                                SUVI 131Å
-                            </button>
-                            <button
-                                onClick={() => setActiveSunImage('SUVI_304')}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="Displays the Sun in 304 Angstroms, showing cooler plasma, prominences, and filaments. (SUVI)"
-                            >
-                                SUVI 304Å
-                            </button>
-                            <button
-                                onClick={() => setActiveSunImage('SDO_HMI')}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMI' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="Displays a visible light image of the Sun's surface, showing sunspots. (SDO HMI)"
-                            >
-                                SDO HMI
-                            </button>
-                            <button
-                                onClick={() => setActiveSunImage('SDO_AIA_193')}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA_193' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="Displays the Sun in 193 Angstroms, showing the hot corona and coronal holes. (SDO AIA)"
-                            >
-                                SDO AIA 193Å
-                            </button>
-                            <button
-                                onClick={() => setActiveSunImage('CCOR1_VIDEO')}
-                                className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'CCOR1_VIDEO' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                title="Displays the Sun's outer corona with the solar disk blocked, to track CMEs. (CCOR1 Coronagraph)"
-                            >
-                                CCOR1 Video
-                            </button>
+            
+            {/* THIS IS THE NEW SCROLLABLE CONTAINER */}
+            <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
+                {/* Your existing dashboard content goes inside here */}
+                <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
+                <div className="container mx-auto"> {/* This div doesn't need to be relative anymore or z-10 if it's already a child of the z-10 scroll container */}
+                    <header className="text-center mb-8">
+                        <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
+                        <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
+                    </header>
+                    <main className="grid grid-cols-12 gap-5">
+                        {/* Consolidated Solar Imagers Panel */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
+                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">Solar Imagery</h2>
+                            <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
+                                <button
+                                    onClick={() => setActiveSunImage('SUVI_131')}
+                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    title="Displays the Sun in 131 Angstroms, highlighting hot, flaring regions. (SUVI)"
+                                >
+                                    SUVI 131Å
+                                </button>
+                                <button
+                                    onClick={() => setActiveSunImage('SUVI_304')}
+                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    title="Displays the Sun in 304 Angstroms, showing cooler plasma, prominences, and filaments. (SUVI)"
+                                >
+                                    SUVI 304Å
+                                </button>
+                                <button
+                                    onClick={() => setActiveSunImage('SDO_HMI')}
+                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMI' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    title="Displays a visible light image of the Sun's surface, showing sunspots. (SDO HMI)"
+                                >
+                                    SDO HMI
+                                </button>
+                                <button
+                                    onClick={() => setActiveSunImage('SDO_AIA_193')}
+                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA_193' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    title="Displays the Sun in 193 Angstroms, showing the hot corona and coronal holes. (SDO AIA)"
+                                >
+                                    SDO AIA 193Å
+                                </button>
+                                <button
+                                    onClick={() => setActiveSunImage('CCOR1_VIDEO')}
+                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'CCOR1_VIDEO' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    title="Displays the Sun's outer corona with the solar disk blocked, to track CMEs. (CCOR1 Coronagraph)"
+                                >
+                                    CCOR1 Video
+                                </button>
+                            </div>
+
+                            {/* Conditional Rendering of the selected image/video */}
+                            <div className="flex-grow flex justify-center items-center relative min-h-0">
+                                {activeSunImage === 'SUVI_131' && (
+                                    <div
+                                        onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
+                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                        title={tooltipContent['suvi-131']}
+                                    >
+                                        <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                        {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
+                                    </div>
+                                )}
+                                {activeSunImage === 'SUVI_304' && (
+                                    <div
+                                        onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
+                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                        title={tooltipContent['suvi-304']}
+                                    >
+                                        <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                        {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
+                                    </div>
+                                )}
+                                {activeSunImage === 'SDO_HMI' && (
+                                    <div
+                                        onClick={() => sdoHmi.url !== '/placeholder.png' && sdoHmi.url !== '/error.png' && setViewerMedia({ url: sdoHmi.url, type: 'image' })}
+                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                        title={tooltipContent['sdo-hmi']}
+                                    >
+                                        <img src={sdoHmi.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                        {sdoHmi.loading && <p className="absolute text-neutral-400 italic">{sdoHmi.loading}</p>}
+                                    </div>
+                                )}
+                                {activeSunImage === 'SDO_AIA_193' && (
+                                    <div
+                                        onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
+                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                        title={tooltipContent['sdo-aia-193']}
+                                    >
+                                        <img src={sdoAia193.url} alt="SDO AIA 193Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                        {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
+                                    </div>
+                                )}
+                                {activeSunImage === 'CCOR1_VIDEO' && (
+                                    <div
+                                        onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
+                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                        title={tooltipContent['ccor1-video']}
+                                    >
+                                        {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
+                                        {ccor1Video.url && !ccor1Video.loading ? (
+                                            <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
+                                                <source src={ccor1Video.url} type="video/mp4" />
+                                                Your browser does not support the video tag.
+                                            </video>
+                                        ) : (
+                                            !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
-                        {/* Conditional Rendering of the selected image/video */}
-                        <div className="flex-grow flex justify-center items-center relative min-h-0">
-                            {activeSunImage === 'SUVI_131' && (
-                                <div
-                                    onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
-                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                    title={tooltipContent['suvi-131']}
-                                >
-                                    <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                    {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
-                                </div>
-                            )}
-                            {activeSunImage === 'SUVI_304' && (
-                                <div
-                                    onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
-                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                    title={tooltipContent['suvi-304']}
-                                >
-                                    <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                    {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
-                                </div>
-                            )}
-                            {activeSunImage === 'SDO_HMI' && (
-                                <div
-                                    onClick={() => sdoHmi.url !== '/placeholder.png' && sdoHmi.url !== '/error.png' && setViewerMedia({ url: sdoHmi.url, type: 'image' })}
-                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                    title={tooltipContent['sdo-hmi']}
-                                >
-                                    <img src={sdoHmi.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                    {sdoHmi.loading && <p className="absolute text-neutral-400 italic">{sdoHmi.loading}</p>}
-                                </div>
-                            )}
-                            {activeSunImage === 'SDO_AIA_193' && (
-                                <div
-                                    onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
-                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                    title={tooltipContent['sdo-aia-193']}
-                                >
-                                    <img src={sdoAia193.url} alt="SDO AIA 193Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                    {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
-                                </div>
-                            )}
-                            {activeSunImage === 'CCOR1_VIDEO' && (
-                                <div
-                                    onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
-                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                    title={tooltipContent['ccor1-video']}
-                                >
-                                    {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
-                                    {ccor1Video.url && !ccor1Video.loading ? (
-                                        <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
-                                            <source src={ccor1Video.url} type="video/mp4" />
-                                            Your browser does not support the video tag.
-                                        </video>
-                                    ) : (
-                                        !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
-                                    )}
-                                </div>
-                            )}
+                        {/* GOES X-ray Flux Graph */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                                <button onClick={() => setViewerMedia({ url: NOAA_XRAY_FLUX_URL, type: 'image' })} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="View GOES X-ray Flux raw image on NOAA SWPC.">?</button>
+                            </div>
+                            <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
+                            <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
+                                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                            </div>
                         </div>
-                    </div>
 
-                    {/* GOES X-ray Flux Graph */}
-                    <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                        <div className="flex justify-center items-center gap-2">
-                            <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                            <button onClick={() => setViewerMedia({ url: NOAA_XRAY_FLUX_URL, type: 'image' })} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="View GOES X-ray Flux raw image on NOAA SWPC.">?</button>
+                        {/* Solar Flares & Active Regions */}
+                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
+                                <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
+                            </div>
+                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                                {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> 
+                                : solarFlares.length > 0 ? solarFlares.map((flare) => {
+                                    const { background, text } = getColorForFlareClass(flare.classType);
+                                    const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
+                                    return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) 
+                                : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
+                            </ul>
                         </div>
-                        <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
-                        <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
-                            {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
+                                <button onClick={() => openModal('active-regions')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Active Regions/Sunspots.">?</button>
+                            </div>
+                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                            {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
+                            </ul>
                         </div>
-                    </div>
-
-                    {/* Solar Flares & Active Regions */}
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
-                        <div className="flex justify-center items-center gap-2">
-                            <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
-                            <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
-                        </div>
-                        <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                            {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> 
-                            : solarFlares.length > 0 ? solarFlares.map((flare) => {
-                                const { background, text } = getColorForFlareClass(flare.classType);
-                                const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
-                                return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) 
-                            : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
-                        </ul>
-                    </div>
-                    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
-                        <div className="flex justify-center items-center gap-2">
-                            <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
-                            <button onClick={() => openModal('active-regions')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Active Regions/Sunspots.">?</button>
-                        </div>
-                        <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                           {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
-                        </ul>
-                    </div>
-                </main>
+                    </main>
+                </div>
             </div>
             
             <InfoModal
