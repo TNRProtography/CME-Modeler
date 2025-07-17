@@ -1,3 +1,4 @@
+// START OF FILE types.ts
 // Assuming global THREE is available from CDN
 // import * as THREE from 'three'; 
 
@@ -128,3 +129,15 @@ export interface SightingReport {
   key?: string; // a unique key from the KV store
   isPending?: boolean; // For client-side state
 }
+
+// --- NEW TYPE FOR INTERPLANETARY SHOCK ---
+export interface InterplanetaryShock {
+  interplanetaryShockID: string;
+  eventTime: string;
+  location: string;
+  speed: number | null;
+  associatedCMEID: string | null;
+  kp_index: number | null;
+  link: string;
+}
+// END OF FILE types.ts

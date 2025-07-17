@@ -1,3 +1,4 @@
+// START OF FILE App.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
@@ -343,12 +344,12 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        currentlyModeledCMEId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
                         timelineSpeed={timelineSpeed}
-                        timelineValue={timelineScrubberValue}
+                        timelineValue={timelineValue}
                         timelineMinDate={timelineMinDate}
                         timelineMaxDate={timelineMaxDate}
                         setPlanetMeshesForLabels={handleSetPlanetMeshes}
@@ -459,6 +460,7 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia}
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
+                  apiKey={apiKey} // Pass apiKey here
                 />
             )}
 
@@ -480,3 +482,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+// END OF FILE App.tsx

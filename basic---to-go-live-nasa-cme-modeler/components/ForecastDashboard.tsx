@@ -1,3 +1,4 @@
+// START OF FILE ForecastDashboard.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
@@ -8,12 +9,14 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation'; // Import the annotation plugin
+import { InterplanetaryShock } from '../types'; // Import the new interface
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void; // NEW PROP
   setSubstormActivityStatus: (status: { text: string; color: string } | null) => void; // NEW PROP
+  apiKey: string; // NEW PROP FOR IPS FETCH
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -22,6 +25,7 @@ interface CelestialTimeData {
     sun?: { rise: number | null, set: number | null };
 }
 
+
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
@@ -29,6 +33,7 @@ const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-d
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
+const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/'; // BASE URL FOR DONKI
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
 const GAUGE_THRESHOLDS = {
@@ -257,7 +262,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus }) => { // ADDED setCurrentAuroraScore, setSubstormActivityStatus
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, apiKey }) => { 
     const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
@@ -283,7 +288,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [magnetometerTimeRange, setMagnetometerTimeRange] = useState<number>(3 * 3600000);
     const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState<string>('3 Hr');
     
-    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null); // Changed content to string
+    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
     const [isFaqOpen, setIsFaqOpen] = useState(false);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
 
@@ -292,6 +297,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
+
+    // NEW STATE FOR INTERPLANETARY SHOCKS
+    const [interplanetaryShocks, setInterplanetaryShocks] = useState<InterplanetaryShock[]>([]);
+    const [loadingShocks, setLoadingShocks] = useState<string | null>('Loading interplanetary shocks...');
 
     const tooltipContent = {
         'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
@@ -305,6 +314,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
+        'interplanetary-shocks': `<strong>What it is:</strong> Interplanetary shocks are disturbances that propagate through the solar wind, often driven by fast Coronal Mass Ejections (CMEs). They are the "leading edge" of a CME or high-speed stream.<br><br><strong>Effect on Aurora:</strong> When an interplanetary shock arrives at Earth's magnetosphere, it can compress the magnetosphere and trigger geomagnetic activity, leading to enhanced auroral displays. Look for a sudden jump in solar wind speed and density when a shock arrives.`
     };
     
     const openModal = useCallback((id: string) => { 
@@ -315,13 +325,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             else if (id === 'solar-wind-graph') title = 'About The Solar Wind Graph';
             else if (id === 'imf-graph') title = 'About The IMF Graph';
             else if (id === 'goes-mag') title = 'GOES Magnetometer (Hp)';
-            else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim(); // Generic title for other gauges
+            else if (id === 'interplanetary-shocks') title = 'About Interplanetary Shocks';
+            else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
             
             setModalState({ isOpen: true, title: title, content: contentData }); 
         }
     }, [tooltipContent]);
     const closeModal = useCallback(() => setModalState(null), []);
-    const formatNZTimestamp = (timestamp: number) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
+    const formatNZTimestamp = (timestamp: number | string) => { 
+        try { 
+            const d = typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp); 
+            return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); 
+        } catch { 
+            return "Invalid Date"; 
+        } 
+    };
     const getAuroraEmoji = (s: number | null) => { if (s === null) return GAUGE_EMOJIS.error; if (s < 10) return '😞'; if (s < 25) return '😐'; if (s < 40) return '😊'; if (s < 50) return '🙂'; if (s < 80) return '😀'; return '🤩'; };
     
     const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
@@ -335,18 +353,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const analyzeMagnetometerData = (data: any[]) => {
         if (data.length < 30) {
             setSubstormBlurb({ text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' });
-            setSubstormActivityStatus({ text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' }); // NEW: Pass to App
+            setSubstormActivityStatus({ text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' }); 
             return;
         }
-        // Get the latest point from the end of the sorted array
         const latestPoint = data[data.length - 1];
-        // Find points approximately 10 minutes and 1 hour ago
         const tenMinAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 10 * 60 * 1000);
         const oneHourAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 60 * 60 * 1000);
 
         if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) {
             setSubstormBlurb({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' });
-            setSubstormActivityStatus({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' }); // NEW: Pass to App
+            setSubstormActivityStatus({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' }); 
             return;
         }
 
@@ -356,26 +372,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         console.log('Magnetometer Analysis:', {latestHp: latestPoint.hp, tenMinAgoHp: tenMinAgoPoint.hp, oneHourAgoHp: oneHourAgoPoint.hp, jump, drop});
 
 
-        if (jump > 20) { // Sharp positive jump indicates dipolarization
+        if (jump > 20) { 
             const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
             const status = { text: `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`, color: 'text-green-400 font-bold animate-pulse' };
             setSubstormBlurb(status);
-            setSubstormActivityStatus(status); // NEW: Pass to App
-        } else if (drop < -15) { // Significant drop over 1 hour indicates stretching
+            setSubstormActivityStatus(status); 
+        } else if (drop < -15) { 
             const status = { text: 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.', color: 'text-yellow-400' };
             setSubstormBlurb(status);
-            setSubstormActivityStatus(status); // NEW: Pass to App
-        } else { // Stable
+            setSubstormActivityStatus(status); 
+        } else { 
             const status = { text: 'The magnetic field appears stable. No immediate signs of substorm development.', color: 'text-neutral-400' };
             setSubstormBlurb(status);
-            setSubstormActivityStatus(status); // NEW: Pass to App
+            setSubstormActivityStatus(status); 
         }
     };
 
-    // Helper to generate annotations based on GOES-18 data for highlighting
     const getMagnetometerAnnotations = useCallback((data: any[]) => {
         const annotations: any = {};
-        if (data.length < 60) return annotations; // Need at least an hour of data to analyze trends
+        if (data.length < 60) return annotations; 
 
         const getSegmentAnalysis = (startIndex: number, endIndex: number) => {
             if (startIndex >= endIndex || endIndex >= data.length) return null;
@@ -386,57 +401,51 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             const hpChange = endPoint.hp - startPoint.hp;
             const durationMinutes = (endPoint.time - startPoint.time) / (60 * 1000);
 
-            if (durationMinutes < 10) return null; // Only consider segments of reasonable duration
+            if (durationMinutes < 10) return null; 
 
-            if (hpChange > 20) { // Sharp positive jump indicates substorm
-                return { type: 'substorm', xMin: startPoint.time, xMax: endPoint.time }; // Remove label here
-            } else if (hpChange < -15 && durationMinutes > 30) { // Steady drop over significant period indicates stretching
-                return { type: 'stretching', xMin: startPoint.time, xMax: endPoint.time }; // Remove label here
+            if (hpChange > 20) { 
+                return { type: 'substorm', xMin: startPoint.time, xMax: endPoint.time }; 
+            } else if (hpChange < -15 && durationMinutes > 30) { 
+                return { type: 'stretching', xMin: startPoint.time, xMax: endPoint.time }; 
             }
             return null;
         };
 
-        // Simplified segment analysis for annotations
-        // We look for significant changes over rolling windows
-        const windowSizeMinutes = 10; // Check for jumps over 10 minutes
-        const trendWindowMinutes = 60; // Check for drops over 60 minutes
+        const windowSizeMinutes = 10; 
+        const trendWindowMinutes = 60; 
 
         for (let i = 0; i < data.length; i++) {
             const currentPoint = data[i];
 
-            // Check for substorm (sharp jump) in a 10-minute window
             const tenMinAgoIndex = data.findIndex(p => p.time >= currentPoint.time - windowSizeMinutes * 60 * 1000);
             if (tenMinAgoIndex !== -1 && tenMinAgoIndex < i) {
                 const jumpAnalysis = getSegmentAnalysis(tenMinAgoIndex, i);
                 if (jumpAnalysis && jumpAnalysis.type === 'substorm') {
-                    // Extend the highlight slightly after the event, or make it appear immediately
-                    const highlightEnd = currentPoint.time + 5 * 60 * 1000; // Extend 5 mins past the jump detection
+                    const highlightEnd = currentPoint.time + 5 * 60 * 1000; 
                     annotations[`substorm-${currentPoint.time}`] = {
                         type: 'box',
                         xMin: jumpAnalysis.xMin,
                         xMax: highlightEnd,
-                        backgroundColor: 'rgba(34, 197, 94, 0.2)', // Green for substorm
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)', 
                         borderColor: 'transparent',
                         borderWidth: 0,
                         drawTime: 'beforeDatasetsDraw',
-                        label: { // Label now hidden
+                        label: { 
                             content: 'SUBSTORM!',
-                            display: false, // Set to false to hide label on graph
+                            display: false, 
                             position: 'center',
                         }
                     };
                 }
             }
 
-            // Check for stretching (steady drop) in a 60-minute window
             const oneHourAgoIndex = data.findIndex(p => p.time >= currentPoint.time - trendWindowMinutes * 60 * 1000);
             if (oneHourAgoIndex !== -1 && oneHourAgoIndex < i) {
                 const stretchAnalysis = getSegmentAnalysis(oneHourAgoIndex, i);
                 if (stretchAnalysis && stretchAnalysis.type === 'stretching') {
-                     // Ensure stretching doesn't overlap with a recent substorm marker
-                    const recentSubstormOverlap = Object.values(annotations).some((ann: any) =>
-                        ann.type === 'box' && ann.label?.content === 'SUBSTORM!' && // Check by label content for safety
-                        Math.max(stretchAnalysis.xMin, ann.xMin) < Math.min(stretchAnalysis.xMax, ann.xMax) // Check for overlap
+                     const recentSubstormOverlap = Object.values(annotations).some((ann: any) =>
+                        ann.type === 'box' && ann.label?.content === 'SUBSTORM!' && 
+                        Math.max(stretchAnalysis.xMin, ann.xMin) < Math.min(stretchAnalysis.xMax, ann.xMax) 
                     );
 
                     if (!recentSubstormOverlap) {
@@ -444,13 +453,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             type: 'box',
                             xMin: stretchAnalysis.xMin,
                             xMax: stretchAnalysis.xMax,
-                            backgroundColor: 'rgba(255, 215, 0, 0.1)', // Yellow for stretching, lighter
+                            backgroundColor: 'rgba(255, 215, 0, 0.1)', 
                             borderColor: 'transparent',
                             borderWidth: 0,
                             drawTime: 'beforeDatasetsDraw',
-                            label: { // Label now hidden
+                            label: { 
                                 content: 'STRETCHING',
-                                display: false, // Set to false to hide label on graph
+                                display: false, 
                                 position: 'center',
                             }
                         };
@@ -461,6 +470,27 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return annotations;
     }, []);
     
+    const fetchInterplanetaryShocks = useCallback(async () => {
+        setLoadingShocks('Loading interplanetary shocks...');
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 3); // Fetch last 3 days of shocks
+        const formattedStartDate = startDate.toISOString().split('T')[0];
+        const formattedEndDate = endDate.toISOString().split('T')[0];
+
+        try {
+            const response = await fetch(`${NASA_DONKI_BASE_URL}IPS?startDate=${formattedStartDate}&endDate=${formattedEndDate}&api_key=${apiKey}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data: InterplanetaryShock[] = await response.json();
+            setInterplanetaryShocks(data.sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime()));
+            setLoadingShocks(null);
+        } catch (error) {
+            console.error('Error fetching interplanetary shocks:', error);
+            setLoadingShocks(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            setInterplanetaryShocks([]);
+        }
+    }, [apiKey]);
+
     const fetchAllData = useCallback(async (isInitialLoad = false) => {
         if (isInitialLoad) setIsLoading(true);
         const results = await Promise.allSettled([
@@ -477,7 +507,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
-            setCurrentAuroraScore(currentScore); // NEW: Pass to App
+            setCurrentAuroraScore(currentScore); 
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
@@ -487,7 +517,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             console.error("Forecast data failed to load:", forecastResult.reason);
             setAuroraBlurb("Could not load forecast data.");
             setAuroraScoreHistory([]);
-            setCurrentAuroraScore(null); // NEW: Clear score on error
+            setCurrentAuroraScore(null); 
         }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
@@ -502,17 +532,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
         } else { console.error("Magnetic data failed to load:", magResult.reason); setAllMagneticData([]); }
 
-        let anyGoesDataFound = false; // Flag to track if any valid GOES data was found
+        let anyGoesDataFound = false; 
 
-        // --- GOES Data Processing (Primary - GOES-18) ---
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             console.log('GOES-18 Raw Data (last 5):', goes18Result.value.slice(-5));
             const processedData18 = goes18Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H), filter for number & not NaN
-                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) 
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) 
                 .sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
-            analyzeMagnetometerData(processedData18); // Analyze based on primary satellite
+            analyzeMagnetometerData(processedData18); 
             console.log('GOES-18 Processed Data (first 5):', processedData18.slice(0, 5));
             console.log('GOES-18 Processed Data Count:', processedData18.length);
             if (processedData18.length > 0) {
@@ -525,12 +554,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setGoes18Data([]);
         }
 
-        // --- GOES Data Processing (Secondary - GOES-19) ---
         if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
             console.log('GOES-19 Raw Data (last 5):', goes19Result.value.slice(-5));
             const processedData19 = goes19Result.value
-                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) // Corrected: access d.Hp (capital H), filter for number & not NaN
-                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) // Map d.Hp (capital H)
+                .filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)) 
+                .map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })) 
                 .sort((a, b) => a.time - b.time);
             setGoes19Data(processedData19);
             console.log('GOES-19 Processed Data (first 5):', processedData19.slice(0, 5));
@@ -544,18 +572,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             console.error('GOES-19 Fetch Failed:', goes19Result.reason || 'Unknown error');
         }
         
-        // Update loadingMagnetometer status based on overall GOES data availability
         if (!anyGoesDataFound) {
              setLoadingMagnetometer('No valid GOES Magnetometer data available from either satellite for this period.');
         } else {
-            setLoadingMagnetometer(null); // Clear loading message if any data was found
+            setLoadingMagnetometer(null); 
         }
         
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus]); // ADDED dependencies
+    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, apiKey]); 
 
-    useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
+    useEffect(() => { 
+        fetchAllData(true); 
+        fetchInterplanetaryShocks(); 
+        const interval = setInterval(() => {
+            fetchAllData(false);
+            fetchInterplanetaryShocks();
+        }, REFRESH_INTERVAL_MS); 
+        return () => clearInterval(interval); 
+    }, [fetchAllData, fetchInterplanetaryShocks]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
@@ -563,13 +598,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     
     useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
 
-    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => { // Changed extraPlugins to extraAnnotations
+    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => { 
         const now = Date.now(); const startTime = now - rangeMs; const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
         if (isDualAxis) options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
         else options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } } };
 
-        // Add annotations to plugins if provided
-        if (extraAnnotations) { // Use extraAnnotations
+        if (extraAnnotations) { 
             options.plugins = {
                 ...options.plugins,
                 annotation: { annotations: extraAnnotations }
@@ -582,7 +616,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const solarWindOptions = useMemo(() => createChartOptions(solarWindTimeRange, true, '', false), [solarWindTimeRange, createChartOptions]);
     const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, false, 'Magnetic Field (nT)', false), [magneticFieldTimeRange, createChartOptions]);
     
-    // Pass annotations to magnetometer options
     const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data, getMagnetometerAnnotations]);
     const magnetometerOptions = useMemo(() => createChartOptions(magnetometerTimeRange, false, 'Hp (nT)', true, magnetometerAnnotations), [magnetometerTimeRange, createChartOptions, magnetometerAnnotations]);
 
@@ -597,7 +630,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
     return (
-        <div className="w-full h-full bg-neutral-900 text-neutral-300 p-5 overflow-y-auto relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
+        <div className="w-full min-h-screen bg-neutral-900 text-neutral-300 p-5 overflow-y-auto relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
             <div className="absolute inset-0 bg-black/50 z-0"></div>
             <div className="container mx-auto relative z-10">
                 <header className="text-center mb-8">
@@ -755,6 +788,37 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <h3 className="text-xl font-semibold text-center text-white mb-4">Queenstown Live Camera</h3>
                         <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Live View from Queenstown" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://queenstown.roundshot.com/#/"></iframe></div>
                     </div>
+
+                    {/* NEW: Interplanetary Shocks Section */}
+                    <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[300px]">
+                        <div className="flex justify-center items-center gap-2">
+                            <h2 className="text-xl font-semibold text-white text-center mb-4">Interplanetary Shocks (Last 3 Days)</h2>
+                            <button onClick={() => openModal('interplanetary-shocks')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Interplanetary Shocks.">?</button>
+                        </div>
+                        <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                            {loadingShocks ? (
+                                <li className="text-center text-neutral-400 italic">{loadingShocks}</li>
+                            ) : interplanetaryShocks.length > 0 ? (
+                                interplanetaryShocks.map((shock) => (
+                                    <li key={shock.interplanetaryShockID} className="bg-neutral-800 p-2 rounded text-sm">
+                                        <div className="flex justify-between items-center">
+                                            <span>
+                                                <strong>Time:</strong> {formatNZTimestamp(shock.eventTime)}
+                                            </span>
+                                            {shock.speed && <span className="ml-2"><strong>Speed:</strong> {shock.speed.toFixed(0)} km/s</span>}
+                                        </div>
+                                        <p><strong>Location:</strong> {shock.location || 'N/A'}</p>
+                                        {shock.associatedCMEID && <p><strong>Associated CME:</strong> <a href={`https://kauai.ccmc.gsfc.nasa.gov/DONKI/url/CME/IPS/view/${shock.associatedCMEID}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{shock.associatedCMEID}</a></p>}
+                                        {shock.kp_index !== null && <p><strong>Kp Index at Shock:</strong> {shock.kp_index}</p>}
+                                        <p><a href={shock.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View Details on NASA DONKI</a></p>
+                                    </li>
+                                ))
+                            ) : (
+                                <li className="text-center text-neutral-400 italic">No interplanetary shocks reported in the last 3 days.</li>
+                            )}
+                        </ul>
+                    </div>
+
                     <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                         <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                          <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
@@ -780,3 +844,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
+// END OF FILE ForecastDashboard.tsx
