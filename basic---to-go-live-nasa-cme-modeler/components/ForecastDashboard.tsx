@@ -40,6 +40,14 @@ interface OwmDailyForecastEntry {
   // Other fields omitted for brevity
 }
 
+// NEW: Define type for raw history record
+interface RawHistoryRecord {
+  timestamp: number;
+  baseScore: number;
+  finalScore: number;
+  hemisphericPower: number; // Added hemisphericPower
+}
+
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
@@ -53,7 +61,7 @@ const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, maxExpected: 1000 },
   density: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, maxExpected: 70 },
-  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, maxExpected: 250 },
+  power: { gray: 20, yellow: 40, orange: 70, red: 150, purple: 200, maxExpected: 250 }, // Max expected for Hemispheric Power
   bt: { gray: 5, yellow: 10, orange: 15, red: 20, purple: 50, maxExpected: 60 },
   bz: { gray: -5, yellow: -10, orange: -15, red: -20, purple: -50, maxNegativeExpected: -60 }
 };
@@ -312,6 +320,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
+    // NEW STATE: Hemispheric Power History
+    const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
+    const [hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange] = useState<number>(6 * 3600000);
+    const [hemisphericPowerChartTimeLabel, setHemisphericPowerChartTimeLabel] = useState<string>('6 Hr');
+
     // State to hold the daily history of celestial events (completed days for graph annotations)
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
     // NEW State: To hold the full OWM daily forecast (for accurate next moon/sun events in gauge)
@@ -329,6 +342,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Elevated conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Moderate conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Quiet conditions.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Favorable conditions.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
+        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:rgb(128, 128, 128)">Gray:</strong> Low power.</li><li><strong style="color:rgb(255,215,0)">Yellow:</strong> Moderate power.</li><li><strong style="color:rgb(255,165,0)">Orange:</strong> Elevated power.</li><li><strong style="color:rgb(255,69,0)">Red:</strong> High power.</li><li><strong style="color:rgb(128,0,128)">Purple:</strong> Very high power.</li></ul>`, // NEW: Hemispheric Power Graph Tooltip
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
 
@@ -340,6 +354,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             else if (id === 'solar-wind-graph') title = 'About The Solar Wind Graph';
             else if (id === 'imf-graph') title = 'About The IMF Graph';
             else if (id === 'goes-mag') title = 'GOES Magnetometer (Hp)';
+            else if (id === 'hemispheric-power-graph') title = 'About The Hemispheric Power Graph'; // NEW: Add title for hemispheric power graph
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
 
             setModalState({ isOpen: true, title: title, content: contentData });
@@ -583,7 +598,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result] = results;
 
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
-            const { currentForecast, historicalData, dailyHistory, owmDailyForecast } = forecastResult.value; // Destructure owmDailyForecast
+            const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value; // Destructure rawHistory
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
@@ -617,6 +632,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }));
             if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
 
+            // NEW: Process rawHistory for hemispheric power
+            if (Array.isArray(rawHistory)) {
+                setHemisphericPowerHistory(rawHistory.filter((d: any) =>
+                    typeof d.timestamp === 'number' && typeof d.hemisphericPower === 'number' && !isNaN(d.hemisphericPower)
+                ).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })) // Explicitly map
+                .sort((a:any, b:any) => a.timestamp - b.timestamp));
+            } else {
+                setHemisphericPowerHistory([]);
+            }
+
+
         } else {
             console.error("Forecast data failed to load:", forecastResult.reason);
             setAuroraBlurb("Could not load forecast data.");
@@ -624,6 +650,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setCurrentAuroraScore(null);
             setDailyCelestialHistory([]);
             setOwmDailyForecast([]); // Clear on error
+            setHemisphericPowerHistory([]); // NEW: Clear hemispheric power history on error
         }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
@@ -713,6 +740,50 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const solarWindOptions = useMemo(() => createChartOptions(solarWindTimeRange, true, '', false), [solarWindTimeRange, createChartOptions]);
     const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, false, 'Magnetic Field (nT)', false), [magneticFieldTimeRange, createChartOptions]);
+
+    // NEW: Hemispheric Power Chart Data
+    const hemisphericPowerChartData = useMemo(() => {
+        if (hemisphericPowerHistory.length === 0) return { datasets: [] };
+
+        const getHemisphericPowerGradient = (ctx: ScriptableContext<'line'>) => {
+            const chart = ctx.chart;
+            const { ctx: chartCtx, chartArea } = chart;
+            if (!chartArea) return undefined;
+
+            const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+            const power0 = ctx.p0?.parsed?.y ?? 0;
+            const power1 = ctx.p1?.parsed?.y ?? 0;
+            const colorKey0 = getPositiveScaleColorKey(power0, GAUGE_THRESHOLDS.power);
+            const colorKey1 = getPositiveScaleColorKey(power1, GAUGE_THRESHOLDS.power);
+
+            gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi);
+            gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi);
+            return gradient;
+        };
+
+        return {
+            datasets: [
+                {
+                    label: 'Hemispheric Power',
+                    data: hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower })),
+                    borderColor: 'transparent',
+                    backgroundColor: getHemisphericPowerGradient,
+                    fill: 'origin',
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 0,
+                    spanGaps: true,
+                    order: 1,
+                },
+            ],
+        };
+    }, [hemisphericPowerHistory]);
+
+    // NEW: Hemispheric Power Chart Options
+    const hemisphericPowerChartOptions = useMemo(() =>
+        createChartOptions(hemisphericPowerChartTimeRange, false, 'Hemispheric Power (GW)', false),
+        [hemisphericPowerChartTimeRange, createChartOptions]
+    );
 
     const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data, getMagnetometerAnnotations]);
     const magnetometerOptions = useMemo(() => createChartOptions(magnetometerTimeRange, false, 'Hp (nT)', true, magnetometerAnnotations), [magnetometerTimeRange, createChartOptions, magnetometerAnnotations]);
@@ -851,14 +922,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by an intense outburst. Don't give up after just a few minutes.</li></ul></div>
                             </div>
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
                                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
                                     <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
 
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                         {/* Phone Settings */}
                                         <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
                                             <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
@@ -961,6 +1032,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
                              <div className="flex-grow relative mt-2">
                                 {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
+                            </div>
+                        </div>
+
+                        {/* NEW: Hemispheric Power Graph */}
+                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center">Hemispheric Power Trend (Last {hemisphericPowerChartTimeLabel})</h2>
+                                <button onClick={() => openModal('hemispheric-power-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <TimeRangeButtons onSelect={(duration, label) => { setHemisphericPowerChartTimeRange(duration); setHemisphericPowerChartTimeLabel(label); }} selected={hemisphericPowerChartTimeRange} />
+                            <div className="flex-grow relative mt-2">
+                                {hemisphericPowerHistory.length > 0 ? (
+                                    <Line data={hemisphericPowerChartData} options={hemisphericPowerChartOptions} />
+                                ) : (
+                                    <p className="text-center pt-10 text-neutral-400 italic">Hemispheric Power data unavailable.</p>
+                                )}
                             </div>
                         </div>
 
