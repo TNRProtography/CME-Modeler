@@ -349,7 +349,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
 
     const tooltipContent = {
-        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
+        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</b> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
         'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
         'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thick" looking auroral displays.`,
@@ -358,8 +358,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
-        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</b> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
-        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Very high power.</li></ul>`, // NEW: Hemispheric Power Graph Tooltip
+        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
+        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</b> Very high power.</li></ul>`, // NEW: Hemispheric Power Graph Tooltip
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
 
@@ -901,7 +901,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 {
                     label: 'Hemispheric Power',
                     data: hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower })),
-                    // MODIFIED: Make line visible and colored dynamically
+                    // MODIFIED: Make line visible and colored dynamically, retaining gradient fill
                     borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power)].solid,
                     backgroundColor: getHemisphericPowerGradient,
                     fill: 'origin',
@@ -1017,31 +1017,45 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const auroraScoreChartData = useMemo(() => {
         if (auroraScoreHistory.length === 0) return { datasets: [] };
-        // MODIFIED: Apply fixed colors directly from HTML example for this specific chart
+        // MODIFIED: Revert to previous gradient fill logic for Aurora Forecast Graph
+        const getForecastGradient = (ctx: ScriptableContext<'line'>) => {
+            const chart = ctx.chart;
+            const { ctx: chartCtx, chartArea } = chart;
+            if (!chartArea) return undefined;
+            const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+            const score0 = ctx.p0?.parsed?.y ?? 0;
+            const score1 = ctx.p1?.parsed?.y ?? 0;
+            const colorKey0 = getForecastScoreColorKey(score0);
+            const colorKey1 = getForecastScoreColorKey(score1);
+            gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi);
+            gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi);
+            return gradient;
+        };
+
         return {
             datasets: [
                 {
-                    label: 'Spot The Aurora Forecast', // Corresponds to 'Real Aurora Score' in HTML
+                    label: 'Spot The Aurora Forecast',
                     data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
-                    borderColor: '#FF6347', // Fixed color from HTML
-                    backgroundColor: 'rgba(255, 99, 71, 0.2)', // Fixed color from HTML
+                    borderColor: 'transparent', // The line itself is transparent, rely on fill gradient
+                    backgroundColor: getForecastGradient,
                     fill: 'origin',
-                    tension: 0.4, // HTML uses 0.4
-                    pointRadius: 1, // HTML uses 1
-                    borderWidth: 1, // HTML uses 1
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 0, // No border, rely on fill
                     spanGaps: true,
                     order: 1,
                 },
                 {
-                    label: 'Base Score', // Corresponds to 'Aurora Score - No Lunar or Sun Influence' in HTML
+                    label: 'Base Score',
                     data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })),
-                    borderColor: '#A9A9A9', // Fixed color from HTML
-                    backgroundColor: 'rgba(169, 169, 169, 0.2)', // Fixed color from HTML
-                    fill: 'origin', // HTML uses true, which corresponds to 'origin'
-                    tension: 0.4, // HTML uses 0.4
-                    pointRadius: 1, // HTML uses 1
-                    borderWidth: 1, // HTML uses 1
-                    borderDash: [0, 0], // Remove dash for consistency with HTML example if it didn't have it
+                    borderColor: 'rgba(255, 255, 255, 1)', // White line for base score
+                    backgroundColor: 'transparent', // Transparent fill for base score
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 1,
+                    borderDash: [5, 5], // Dashed line for base score
                     spanGaps: true,
                     order: 2,
                 },
