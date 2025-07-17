@@ -1,4 +1,3 @@
-// START OF FILE SimulationCanvas.tsx
 import React, { useRef, useEffect, useCallback } from 'react';
 import { ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData, InteractionMode, SimulationCanvasHandle } from '../types';
 import {
@@ -175,35 +174,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   // Use a ref to hold props that the animation loop needs access to.
   // This avoids issues with stale closures in the requestAnimationFrame loop.
-  const animPropsRef = useRef({ 
-      onScrubberChangeByAnim, 
-      onTimelineEnd, 
-      currentlyModeledCMEId, 
-      timelineActive, 
-      timelinePlaying, 
-      timelineSpeed, 
-      timelineMinDate, 
-      timelineMaxDate,
-      activeView, // FIX: Added activeView to ref
-      focusTarget // FIX: Added focusTarget to ref
-  });
+  const animPropsRef = useRef({ onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate });
   const interactionRef = useRef({ onCMEClick, interactionMode });
 
   useEffect(() => {
-    // FIX: Ensure this useEffect updates ALL relevant props in the ref
-    animPropsRef.current = { 
-        onScrubberChangeByAnim, 
-        onTimelineEnd, 
-        currentlyModeledCMEId, 
-        timelineActive, 
-        timelinePlaying, 
-        timelineSpeed, 
-        timelineMinDate, 
-        timelineMaxDate,
-        activeView, // FIX: Updated in ref
-        focusTarget // FIX: Updated in ref
-    };
-  }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, activeView, focusTarget]); // FIX: Added activeView and focusTarget to dependencies
+    animPropsRef.current = { onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate };
+  }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
 
   useEffect(() => {
     interactionRef.current = { onCMEClick, interactionMode };
@@ -497,8 +473,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         timelineMaxDate,
         onScrubberChangeByAnim,
         onTimelineEnd,
-        activeView: currentActiveView, // FIX: Get from ref
-        focusTarget: currentFocusTarget // FIX: Get from ref
       } = animPropsRef.current;
       
       const elapsedTime = getClockElapsedTime();
@@ -524,7 +498,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Moons orbit their parent body (local coordinates)
         else {
             body.mesh.position.x = bodyData.radius * Math.sin(angle);
-            body.mesh.position.z = bodyData.cos(angle); // Typo fixed: should be bodyData.radius * Math.cos(angle)
+            body.mesh.position.z = bodyData.radius * Math.cos(angle);
         }
       });
       
@@ -562,10 +536,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (timelinePlaying) {
             const timeRange = timelineMaxDate - timelineMinDate;
             if (timeRange > 0 && timelineValueRef.current < 1000) {
-                // FIX: Corrected simMillisPerSecond calculation to use delta
                 const simHoursPerSecond = 3 * timelineSpeed;
                 const simMillisPerSecond = simHoursPerSecond * 3600 * 1000;
-                const valueToAdd = (delta * simMillisPerSecond / timeRange) * 1000; // Use delta here
+                const simTimePassedThisFrame = delta * simMillisPerSecond;
+                const valueToAdd = (simTimePassedThisFrame / timeRange) * 1000;
                 
                 const newValue = timelineValueRef.current + valueToAdd;
 
@@ -614,9 +588,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             updateCMEShape(cmeObject, currentDistSceneUnits);
         });
       }
-      
-      // FIX: Call moveCamera using values from the ref
-      moveCamera(currentActiveView, currentFocusTarget);
 
       // Check for impacts and update effects
       const maxImpactSpeed = checkImpacts();
@@ -770,19 +741,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, gsap, THREE]);
 
-  // FIX: Modified moveCamera to use values from animPropsRef.current when called from animate loop.
-  // When called directly from useEffect (activeView/focusTarget change), it still uses those props directly.
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return; 
-    
-    // Defensive check to ensure celestial bodies are initialized before attempting to move camera
-    if (!celestialBodiesRef.current.EARTH || !celestialBodiesRef.current.SUN) {
-      console.warn("Celestial bodies not ready for camera move.");
-      return;
-    }
 
     const targetPosition = new THREE.Vector3(0, 0, 0); 
-    if (focus === FocusTarget.EARTH) { // Focus can be null, so check explicitly
+    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) {
       celestialBodiesRef.current.EARTH.mesh.getWorldPosition(targetPosition);
     }
     // If focus is SUN or null, the target position defaults to (0,0,0) which is correct.
@@ -811,7 +774,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
   }, [gsap, THREE]);
 
-  // Effect to move camera based on UI selections (this will still call moveCamera directly with props)
+  // Effect to move camera based on UI selections
   useEffect(() => {
     moveCamera(activeView, focusTarget);
   }, [activeView, focusTarget, dataVersion, moveCamera]); 
@@ -858,7 +821,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       });
       const line = new THREE.Line(geometry, material);
       line.computeLineDistances(); 
-      line.visible = !!currentlyModeledCmeId; 
+      line.visible = !!currentlyModeledCMEId; 
       sceneRef.current.add(line);
       predictionLineRef.current = line;
     }
@@ -958,4 +921,3 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
-// END OF FILE SimulationCanvas.tsx

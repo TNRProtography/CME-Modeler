@@ -1,4 +1,3 @@
-// START OF FILE App.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
@@ -265,8 +264,6 @@ const App: React.FC = () => {
 
 
   return (
-    // FIX: Reverted overflow-y-auto back to overflow-hidden.
-    // The individual dashboards will manage their own scrolling.
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* NEW: Global Alert Banner */}
         <GlobalBanner
@@ -315,8 +312,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        {/* FIX: Ensure this container takes up remaining height to correctly size children */}
-        <div className="flex flex-grow min-h-0 h-full"> 
+        <div className="flex flex-grow min-h-0">
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
                 <>
@@ -341,20 +337,18 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    {/* FIX: Ensured min-w-0 and h-full are present for the main content area of the modeler.
-                            This is crucial for the SimulationCanvas inside to inherit correct dimensions. */}
-                    <main className="flex-1 relative min-w-0 h-full"> 
+                    <main className="flex-1 relative min-w-0 h-full">
                         <SimulationCanvas
                         ref={canvasRef}
                         cmeData={filteredCmes}
                         activeView={activeView}
-                        focusTarget={activeFocus} // This prop is passed correctly from App.tsx
-                        currentlyModeledCmeId={currentlyModeledCmeId}
+                        focusTarget={activeFocus}
+                        currentlyModeledCmeId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
                         timelineSpeed={timelineSpeed}
-                        timelineValue={timelineValue}
+                        timelineValue={timelineScrubberValue}
                         timelineMinDate={timelineMinDate}
                         timelineMaxDate={timelineMaxDate}
                         setPlanetMeshesForLabels={handleSetPlanetMeshes}
@@ -465,7 +459,6 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia}
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
-                  apiKey={apiKey}
                 />
             )}
 
@@ -487,4 +480,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-// END OF FILE App.tsx
