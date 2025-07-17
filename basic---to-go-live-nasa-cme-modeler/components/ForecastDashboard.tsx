@@ -22,11 +22,22 @@ interface CelestialTimeData {
     sun?: { rise: number | null, set: number | null };
 }
 
-// Define a type for the daily history entry
+// Define a type for the daily history entry (for graph annotations of past days)
 interface DailyHistoryEntry {
     date: string; // "YYYY-MM-DD"
     sun?: { rise: number | null, set: number | null };
     moon?: { rise: number | null, set: number | null, illumination?: number };
+}
+
+// Define a type for the OWM Daily Forecast entry (for gauge calculation of next events)
+interface OwmDailyForecastEntry {
+  dt: number; // Daily UTC time, seconds
+  sunrise: number; // Sunrise time, seconds
+  sunset: number; // Sunset time, seconds
+  moonrise: number; // Moonrise time, seconds
+  moonset: number; // Moonset time, seconds
+  moon_phase: number; // Moon phase (0 to 1)
+  // Other fields omitted for brevity
 }
 
 
@@ -246,7 +257,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                     aperture: "N/A (fixed)",
                     focus: "Infinity",
                     wb: "Auto or 3500K-4000K",
-                    pros: ["Good balance, easier to get usable shots.", "Built-in processing helps with noise."],
+                    pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."],
                     cons: ["Less control over very fast-moving aurora."],
                 },
             },
@@ -301,8 +312,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
-    // State to hold the daily history of celestial events
+    // State to hold the daily history of celestial events (completed days for graph annotations)
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
+    // NEW State: To hold the full OWM daily forecast (for accurate next moon/sun events in gauge)
+    const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
 
 
     const tooltipContent = {
@@ -443,7 +456,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     );
 
                     if (!recentSubstormOverlap) {
-                        annotations[`stretching-${currentPoint.time}`] = { // CORRECTED LINE HERE
+                        annotations[`stretching-${currentPoint.time}`] = {
                             type: 'box',
                             xMin: stretchAnalysis.xMin,
                             xMax: stretchAnalysis.xMax,
@@ -464,8 +477,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return annotations;
     }, []);
 
-    // NEW getMoonData function
-    const getMoonData = useCallback((illumination: number | null, currentRiseTime: number | null, currentSetTime: number | null, dailyHistory: DailyHistoryEntry[]) => {
+    // UPDATED getMoonData function: now takes owmDailyForecast
+    const getMoonData = useCallback((illumination: number | null, currentRiseTime: number | null, currentSetTime: number | null, owmDailyForecast: OwmDailyForecastEntry[]) => {
         const moonIllumination = Math.max(0, (illumination ?? 0));
         let moonEmoji = '🌑';
         if (moonIllumination > 95) moonEmoji = '🌕';
@@ -473,18 +486,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         else if (moonIllumination > 45) moonEmoji = '🌗';
         else if (moonIllumination > 5) moonEmoji = '🌒';
 
-        const now = Date.now();
+        const now = Date.now(); // Current time in milliseconds
         const today = new Date();
         const tomorrow = new Date(today);
         tomorrow.setDate(today.getDate() + 1);
 
         // Helper to find the next valid event time from a list of timestamps
         const findNextEvent = (eventTimestamps: (number | null)[]) => {
-            // Filter out null/invalid timestamps and sort them chronologically
             const sortedTimes = eventTimestamps
                 .filter((t): t is number => t !== null && !isNaN(t))
                 .sort((a, b) => a - b);
-
             for (const timestamp of sortedTimes) {
                 if (timestamp > now) { // Found a future event
                     return timestamp;
@@ -493,30 +504,37 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             return null; // No future event found
         };
 
-        // Collect all potential future moonrise times
+        // Collect all potential future moonrise times from the FULL OWM daily forecast
         const allPotentialRiseTimes: number[] = [];
-        // Add the current forecast's rise time if it's not null, even if it's in the past initially
+        // Add current forecast's moonrise first if relevant
         if (currentRiseTime !== null) {
             allPotentialRiseTimes.push(currentRiseTime);
         }
-        // Add moonrise times from dailyHistory for today and future days
-        dailyHistory.forEach(day => {
-            const dayDate = new Date(day.date);
-            // Only consider entries for today or future, and only if moonrise is present
-            if (dayDate.setHours(0,0,0,0) >= today.setHours(0,0,0,0) && day.moon?.rise !== null) {
-                allPotentialRiseTimes.push(day.moon.rise);
+        // Iterate through owmDailyForecast (which has times in seconds, convert to milliseconds)
+        owmDailyForecast.forEach(day => {
+            if (day.moonrise) {
+                const moonriseMs = day.moonrise * 1000;
+                // Only add if it's not already in and not too far in the past compared to 'now'
+                if (!allPotentialRiseTimes.includes(moonriseMs) && moonriseMs > now - (24 * 60 * 60 * 1000)) {
+                    allPotentialRiseTimes.push(moonriseMs);
+                }
             }
         });
 
-        // Collect all potential future moonset times
+
+        // Collect all potential future moonset times from the FULL OWM daily forecast
         const allPotentialSetTimes: number[] = [];
+        // Add current forecast's moonset first if relevant
         if (currentSetTime !== null) {
             allPotentialSetTimes.push(currentSetTime);
         }
-        dailyHistory.forEach(day => {
-            const dayDate = new Date(day.date);
-            if (dayDate.setHours(0,0,0,0) >= today.setHours(0,0,0,0) && day.moon?.set !== null) {
-                allPotentialSetTimes.push(day.moon.set);
+        // Iterate through owmDailyForecast (which has times in seconds, convert to milliseconds)
+        owmDailyForecast.forEach(day => {
+            if (day.moonset) {
+                const moonsetMs = day.moonset * 1000;
+                if (!allPotentialSetTimes.includes(moonsetMs) && moonsetMs > now - (24 * 60 * 60 * 1000)) {
+                    allPotentialSetTimes.push(moonsetMs);
+                }
             }
         });
 
@@ -551,7 +569,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`;
         return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
-    }, []); // Added useCallback for getMoonData
+    }, []);
 
     const fetchAllData = useCallback(async (isInitialLoad = false) => {
         if (isInitialLoad) setIsLoading(true);
@@ -565,7 +583,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result] = results;
 
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
-            const { currentForecast, historicalData, dailyHistory } = forecastResult.value;
+            const { currentForecast, historicalData, dailyHistory, owmDailyForecast } = forecastResult.value; // Destructure owmDailyForecast
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
@@ -574,20 +592,28 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
 
-            // Set dailyCelestialHistory first, so getMoonData can use the most recent data
+            // Set dailyCelestialHistory (for graph annotations of past days)
             if (Array.isArray(dailyHistory)) {
                 setDailyCelestialHistory(dailyHistory);
             } else {
                 setDailyCelestialHistory([]);
             }
 
-            // Pass dailyHistory to getMoonData
+            // NEW: Set the OWM daily forecast data (for gauge display of next events)
+            if (Array.isArray(owmDailyForecast)) {
+                setOwmDailyForecast(owmDailyForecast);
+            } else {
+                setOwmDailyForecast([]);
+            }
+
+
+            // Pass owmDailyForecast (the full array) to getMoonData for accurate future event finding
             setGaugeData(prev => ({
                 ...prev,
                 power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
                 bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
                 bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
-                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, dailyHistory || []) // Pass dailyHistory here
+                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || []) // Pass owmDailyForecast
             }));
             if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
 
@@ -597,6 +623,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAuroraScoreHistory([]);
             setCurrentAuroraScore(null);
             setDailyCelestialHistory([]);
+            setOwmDailyForecast([]); // Clear on error
         }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
@@ -659,7 +686,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData]); // Added getMoonData to dependency array for useCallback
+    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData]);
 
     useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
@@ -694,7 +721,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
 
-    // NEW: Memoized annotations for Aurora Score Chart, using dailyCelestialHistory
+    // NEW: Memoized annotations for Aurora Score Chart, using dailyCelestialHistory and owmDailyForecast
     const auroraScoreChartAnnotations = useMemo(() => {
         const annotations: any = {};
         const now = Date.now();
@@ -726,7 +753,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         };
 
-        // Iterate through dailyCelestialHistory to add all relevant events
+        // Iterate through dailyCelestialHistory to add all relevant events for *past completed days*
         dailyCelestialHistory.forEach(day => {
             if (day.sun) {
                 addAnnotation('sunrise', day.sun.rise, 'Sunrise', '☀️', '#fcd34d', 'start');
@@ -738,8 +765,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         });
 
+        // Also add annotations from the full OWM daily forecast for all 8 days (including today and future)
+        owmDailyForecast.forEach(day => {
+            // Convert OWM times (seconds) to milliseconds
+            if (day.sunrise) addAnnotation('owm-sunrise-' + day.dt, day.sunrise * 1000, 'Sunrise', '☀️', '#fcd34d', 'start');
+            if (day.sunset) addAnnotation('owm-sunset-' + day.dt, day.sunset * 1000, 'Sunset', '☀️', '#fcd34d', 'end');
+            if (day.moonrise) addAnnotation('owm-moonrise-' + day.dt, day.moonrise * 1000, 'Moonrise', '🌕', '#d1d5db', 'start');
+            if (day.moonset) addAnnotation('owm-moonset-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end');
+        });
+
+
         return annotations;
-    }, [auroraScoreChartTimeRange, dailyCelestialHistory]); // DEPENDENCY on dailyCelestialHistory
+    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast]); // DEPENDENCY on dailyCelestialHistory and owmDailyForecast
 
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -775,7 +812,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
+    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</b> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
     return (
         // This outer div now spans the full height and applies the background/overlay
@@ -803,7 +840,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     <main className="grid grid-cols-12 gap-6">
                         <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
                             <div>
-                                <div className="flex items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                <div className="flex justify-center items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
                                 <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                                 <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
@@ -935,7 +972,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     <div className="flex-grow relative mt-2">
                                         {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
                                     </div>
-                                </div>
+                                </div> {/* <-- CORRECTED: Added closing div tag here */}
                                 <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
                                     <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
                                     <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
