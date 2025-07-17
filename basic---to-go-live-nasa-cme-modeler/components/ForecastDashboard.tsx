@@ -69,12 +69,12 @@ const GAUGE_THRESHOLDS = {
 
 // UPDATED: GAUGE_COLORS to match the provided HTML (and derive rgba for gradients)
 const GAUGE_COLORS = {
-    gray:   { solid: '#808080', semi: 'rgba(128, 128, 128, 0.7)', trans: 'rgba(128, 128, 128, 0)' },
-    yellow: { solid: '#FFD700', semi: 'rgba(255, 215, 0, 0.7)', trans: 'rgba(255, 215, 0, 0)' },
-    orange: { solid: '#FFA500', semi: 'rgba(255, 165, 0, 0.7)', trans: 'rgba(255, 165, 0, 0)' },
-    red:    { solid: '#FF4500', semi: 'rgba(255, 69, 0, 0.7)', trans: 'rgba(255, 69, 0, 0)' }, // HTML uses FF4500 which is OrangeRed
-    purple: { solid: '#800080', semi: 'rgba(128, 0, 128, 0.7)', trans: 'rgba(128, 0, 128, 0)' },
-    pink:   { solid: '#FF1493', semi: 'rgba(255, 20, 147, 0.7)', trans: 'rgba(255, 20, 147, 0)' }
+    gray:   { solid: '#808080', semi: 'rgba(128, 128, 128, 0.5)', trans: 'rgba(128, 128, 128, 0)' },
+    yellow: { solid: '#FFD700', semi: 'rgba(255, 215, 0, 0.5)', trans: 'rgba(255, 215, 0, 0)' },
+    orange: { solid: '#FFA500', semi: 'rgba(255, 165, 0, 0.5)', trans: 'rgba(255, 165, 0, 0)' },
+    red:    { solid: '#FF4500', semi: 'rgba(255, 69, 0, 0.5)', trans: 'rgba(255, 69, 0, 0)' }, // HTML uses FF4500 which is OrangeRed
+    purple: { solid: '#800080', semi: 'rgba(128, 0, 128, 0.5)', trans: 'rgba(128, 0, 128, 0)' },
+    pink:   { solid: '#FF1493', semi: 'rgba(255, 20, 147, 0.5)', trans: 'rgba(255, 20, 147, 0)' }
 };
 
 // UPDATED: GAUGE_EMOJIS to match the provided HTML (Unicode entities)
@@ -114,14 +114,83 @@ const getBzScaleColorKey = (value: number, thresholds: { [key: string]: number }
     return 'gray';
 };
 
-const createGradient = (ctx: CanvasRenderingContext2D, chartArea: any, colorKey: keyof typeof GAUGE_COLORS) => {
-    if (!chartArea) return;
-    const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-    // Use the `semi` transparent color for the gradient fill
-    gradient.addColorStop(0, GAUGE_COLORS[colorKey].semi);
-    gradient.addColorStop(1, GAUGE_COLORS[colorKey].trans);
+// Removed `createGradient` as it's replaced by `createVerticalThresholdGradient` for metric fills
+// and Aurora Forecast graph has its own internal gradient logic.
+
+// NEW: Function to create a Y-axis gradient across the full scale of the chart
+const createVerticalThresholdGradient = (
+    ctx: ScriptableContext<'line'>, // Use ScriptableContext here
+    thresholds: { [key: string]: number, maxExpected?: number, maxNegativeExpected?: number },
+    isBz: boolean = false
+) => {
+    const chart = ctx.chart;
+    const chartArea = chart.chartArea;
+    const yScale = chart.scales.y; // Get the Y-axis scale object
+
+    if (!chartArea || !yScale) return undefined;
+
+    // Create a linear gradient from bottom to top (y=chartArea.bottom to y=chartArea.top)
+    const gradient = chart.ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+
+    // Helper to calculate gradient stop position (0=top, 1=bottom) based on data value
+    const getYStopPosition = (value: number) => {
+        const normalizedValue = (value - yScale.min) / (yScale.max - yScale.min);
+        return 1 - normalizedValue; // Invert for bottom-to-top gradient mapping
+    };
+
+    if (isBz) {
+        // Bz: more negative values (lower on graph) are higher intensity colors
+        // Thresholds are negative values. We want these colors to appear when values are at or below them.
+        // Gradient stops should be added from bottom (most positive/least active) to top (most negative/most active)
+
+        // Ensure these values fall within the actual Y-scale min/max of the chart for valid stop positions
+        const clampedGetYStopPosition = (value: number) => {
+            return Math.max(0, Math.min(1, getYStopPosition(value)));
+        };
+
+        // Add stops from bottom (higher values, e.g., 0) towards top (most negative values)
+        // Add a transparent stop at the true scale max to fade out
+        gradient.addColorStop(clampedGetYStopPosition(yScale.max), GAUGE_COLORS.gray.trans);
+
+        // Then add the colored stops, ensuring a smooth transition downwards (as values get more negative)
+        // Use a small epsilon to make sure the color is present slightly above the threshold too
+        if (thresholds.gray !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.gray), GAUGE_COLORS.gray.semi);
+        if (thresholds.yellow !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.yellow), GAUGE_COLORS.yellow.semi);
+        if (thresholds.orange !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.orange), GAUGE_COLORS.orange.semi);
+        if (thresholds.red !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.red), GAUGE_COLORS.red.semi);
+        if (thresholds.purple !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.purple), GAUGE_COLORS.purple.semi);
+        if (thresholds.pink !== Infinity && thresholds.pink !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.pink), GAUGE_COLORS.pink.semi);
+
+        // Add a final stop at the true scale min to ensure the color extends to the bottom
+        gradient.addColorStop(clampedGetYStopPosition(yScale.min), GAUGE_COLORS.pink.semi);
+
+
+    } else {
+        // For Speed, Density, Power, Bt: higher positive value = higher intensity colors
+        // Add stops from bottom (low values) to top (high values)
+
+        // Ensure values are within the actual Y-scale min/max of the chart for valid stop positions
+        const clampedGetYStopPosition = (value: number) => {
+            return Math.max(0, Math.min(1, getYStopPosition(value)));
+        };
+
+        // Add stops starting from the lowest value on the chart's Y-axis
+        gradient.addColorStop(clampedGetYStopPosition(yScale.min), GAUGE_COLORS.gray.semi); // Start with gray at the very bottom
+
+        if (thresholds.gray !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.gray), GAUGE_COLORS.gray.semi);
+        if (thresholds.yellow !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.yellow), GAUGE_COLORS.yellow.semi);
+        if (thresholds.orange !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.orange), GAUGE_COLORS.orange.semi);
+        if (thresholds.red !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.red), GAUGE_COLORS.red.semi);
+        if (thresholds.purple !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.purple), GAUGE_COLORS.purple.semi);
+        if (thresholds.pink !== Infinity && thresholds.pink !== undefined) gradient.addColorStop(clampedGetYStopPosition(thresholds.pink), GAUGE_COLORS.pink.semi);
+
+        // Add a transparent stop at the very top (yScale.max) to fade out
+        gradient.addColorStop(clampedGetYStopPosition(yScale.max), GAUGE_COLORS.pink.trans);
+    }
+
     return gradient;
 };
+
 
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
@@ -349,17 +418,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
 
     const tooltipContent = {
-        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</b> High probability of a significant substorm.</li></ul>`,
+        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</b> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
         'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
         'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thick" looking auroral displays.`,
         'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
         'bz': `<strong>What it is:</strong> The North-South direction of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
-        'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</b> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
+        'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
+        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</b> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
-        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</b> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Very high power.</li></ul>`, // NEW: Hemispheric Power Graph Tooltip
+        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Very high power.</li></ul>`, // NEW: Hemispheric Power Graph Tooltip
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
     };
 
@@ -724,7 +793,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             // Keep the latest gauge data update logic
             const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
             const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
-            const densityVal = latestPlasmaRow ? parseFloat(latestDataRow[densityIdx]) : null;
+            // FIX: Corrected typo from latestDataRow to latestPlasmaRow
+            const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
             const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx];
             const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
 
@@ -815,11 +885,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 pointRadius: 0,
                 tension: lineTension(solarWindTimeRange),
                 segment: {
-                    // Line color matches gauge solid color
+                    // Line color matches gauge solid color for that segment
                     borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid,
-                    // Fill color uses gradient from semi-transparent to transparent
-                    backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)),
-                }
+                },
+                // Background color is the vertical threshold gradient for the entire dataset
+                backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false),
             }]
         };
     }, [allSpeedData, solarWindTimeRange, getPositiveScaleColorKey]);
@@ -839,11 +909,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 pointRadius: 0,
                 tension: lineTension(solarWindTimeRange),
                 segment: {
-                    // Line color matches gauge solid color
+                    // Line color matches gauge solid color for that segment
                     borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid,
-                    // Fill color uses gradient from semi-transparent to transparent
-                    backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)),
-                }
+                },
+                // Background color is the vertical threshold gradient for the entire dataset
+                backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false),
             }]
         };
     }, [allDensityData, solarWindTimeRange, getPositiveScaleColorKey]);
@@ -853,17 +923,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3;
         return { datasets: [
             { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: {
-                // Line color matches gauge solid color
+                // Line color matches gauge solid color for that segment
                 borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid,
-                // Fill color uses gradient from semi-transparent to transparent
-                backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)),
-            } },
+            },
+            // Background color is the vertical threshold gradient for the entire dataset
+            backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false),
+            },
             { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: {
-                // Line color matches gauge solid color
+                // Line color matches gauge solid color for that segment
                 borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid,
-                // Fill color uses gradient from semi-transparent to transparent
-                backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)),
-            } }
+            },
+            // Background color is the vertical threshold gradient for the entire dataset, with isBz flag
+            backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true),
+            }
         ] };
     }, [allMagneticData, magneticFieldTimeRange, getPositiveScaleColorKey, getBzScaleColorKey]);
 
@@ -894,30 +966,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const hemisphericPowerChartData = useMemo(() => {
         if (hemisphericPowerHistory.length === 0) return { datasets: [] };
 
-        const getHemisphericPowerGradient = (ctx: ScriptableContext<'line'>) => {
-            const chart = ctx.chart;
-            const { ctx: chartCtx, chartArea } = chart;
-            if (!chartArea) return undefined;
-
-            const gradient = ctx.chart.ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-            const power0 = ctx.p0?.parsed?.y ?? 0;
-            const power1 = ctx.p1?.parsed?.y ?? 0;
-            const colorKey0 = getPositiveScaleColorKey(power0, GAUGE_THRESHOLDS.power);
-            const colorKey1 = getPositiveScaleColorKey(power1, GAUGE_THRESHOLDS.power);
-
-            gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi);
-            gradient.addColorStop(1, GAUGE_COLORS[colorKey1].trans);
-            return gradient;
-        };
-
         return {
             datasets: [
                 {
                     label: 'Hemispheric Power',
                     data: hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower })),
-                    // MODIFIED: Make line visible and colored dynamically, retaining gradient fill
+                    // MODIFIED: Line color is dynamic to segment, fill is vertical gradient
                     borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power)].solid,
-                    backgroundColor: getHemisphericPowerGradient,
+                    backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false),
                     fill: 'origin',
                     tension: 0.2,
                     pointRadius: 0,
