@@ -333,8 +333,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                     aperture: "Lowest f-number",
                     focus: "Infinity",
                     wb: "Auto or 3500K-4000K",
-                    pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."],
-                    cons: ["Still limited dynamic range compared to DSLR."],
+                    pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."],
+                    cons: ["Less control over very fast-moving aurora."],
                 },
                 apple: {
                     iso: "Auto (let it choose), or 1000-2000 (in manual app)",
@@ -395,7 +395,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [isCameraSettingsOpen, setIsCameraSettingsOpen] = useState(false);
     const [isTipsOpen, setIsTipsOpen] = useState(false);
     const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
-    // FIX: Added missing array destructuring brackets for useState
+    // FIX: Corrected useState declaration missing array destructuring
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
@@ -414,12 +414,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
 
     const tooltipContent = {
-        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
+        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>&lt; 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
         'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
         'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thick" looking auroral displays.`,
         'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
-        'bz': `<strong>What it is:</strong> The North-South direction of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the "gatekeeper." When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
+        'bz': `<strong>What it is:</strong> The North-South direction of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
@@ -1130,7 +1130,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</b> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
+    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
 
     // Reusable component for rendering the expanded graph content
@@ -1304,73 +1304,73 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul class="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
                             </div>
                             <div className="card bg-neutral-950/80 p-4">
-                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
+                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 class="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
                                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                                    <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
+                                    <p class="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
 
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                         {/* Phone Settings */}
-                                        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                            <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
-                                            <p className="text-neutral-400 text-sm mb-4">
+                                        <div class="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                            <h3 class="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
+                                            <p class="text-neutral-400 text-sm mb-4">
                                                 **General Phone Tips:** Use a tripod! Manual focus to infinity (look for a "mountain" or "star" icon in Pro/Night mode). Turn off flash.
                                             </p>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 {/* Android */}
-                                                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
-                                                    <h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
-                                                    <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                <div class="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                                    <h4 class="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
+                                                    <ul class="text-xs space-y-1.5 text-neutral-400">
                                                         <li>**ISO:** {cameraSettings.phone.android.iso}</li>
                                                         <li>**Shutter Speed:** {cameraSettings.phone.android.shutter}</li>
                                                         <li>**Aperture:** {cameraSettings.phone.android.aperture}</li>
                                                         <li>**Focus:** {cameraSettings.phone.android.focus}</li>
                                                         <li>**White Balance:** {cameraSettings.phone.android.wb}</li>
                                                     </ul>
-                                                    <div className="mt-2 text-xs">
-                                                        <p className="text-green-400">**Pros:** {cameraSettings.phone.android.pros.join(' ')}</p>
-                                                        <p className="text-red-400">**Cons:** {cameraSettings.phone.android.cons.join(' ')}</p>
+                                                    <div class="mt-2 text-xs">
+                                                        <p class="text-green-400">**Pros:** {cameraSettings.phone.android.pros.join(' ')}</p>
+                                                        <p class="text-red-400">**Cons:** {cameraSettings.phone.android.cons.join(' ')}</p>
                                                     </div>
                                                 </div>
                                                 {/* Apple */}
-                                                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
-                                                    <h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode / Third-Party Apps)</h4>
-                                                    <ul className="text-xs space-y-1.5 text-neutral-400">
+                                                <div class="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                                    <h4 class="font-semibold text-neutral-300 mb-2">Apple (Night Mode / Third-Party Apps)</h4>
+                                                    <ul class="text-xs space-y-1.5 text-neutral-400">
                                                         <li>**ISO:** {cameraSettings.phone.apple.iso}</li>
                                                         <li>**Shutter Speed:** {cameraSettings.phone.apple.shutter}</li>
                                                         <li>**Aperture:** {cameraSettings.phone.apple.aperture}</li>
                                                         <li>**Focus:** {cameraSettings.phone.apple.focus}</li>
                                                         <li>**White Balance:** {cameraSettings.phone.apple.wb}</li>
                                                     </ul>
-                                                    <div className="mt-2 text-xs">
-                                                        <p className="text-green-400">**Pros:** {cameraSettings.phone.apple.pros.join(' ')}</p>
-                                                        <p className="text-red-400">**Cons:** {cameraSettings.phone.apple.cons.join(' ')}</p>
+                                                    <div class="mt-2 text-xs">
+                                                        <p class="text-green-400">**Pros:** {cameraSettings.phone.apple.pros.join(' ')}</p>
+                                                        <p class="text-red-400">**Cons:** {cameraSettings.phone.apple.cons.join(' ')}</p>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                         {/* DSLR/Mirrorless Settings */}
-                                        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                            <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
-                                            <p className="text-neutral-400 text-sm mb-4">
+                                        <div class="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                            <h3 class="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
+                                            <p class="text-neutral-400 text-sm mb-4">
                                                 **General DSLR Tips:** Use a sturdy tripod. Manual focus to infinity (use live view and magnify a distant star). Shoot in RAW for best quality.
                                             </p>
-                                            <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
-                                                <h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
-                                                <ul className="text-xs space-y-1.5 text-neutral-400">
+                                            <div class="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                                                <h4 class="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
+                                                <ul class="text-xs space-y-1.5 text-neutral-400">
                                                     <li>**ISO:** {cameraSettings.dslr.iso}</li>
                                                     <li>**Shutter Speed:** {cameraSettings.dslr.shutter}</li>
                                                     <li>**Aperture:** {cameraSettings.dslr.aperture} (as wide as your lens allows)</li>
                                                     <li>**Focus:** {cameraSettings.dslr.focus}</li>
                                                     <li>**White Balance:** {cameraSettings.dslr.wb}</li>
                                                 </ul>
-                                                <div className="mt-2 text-xs">
-                                                    <p className="text-green-400">**Pros:** {cameraSettings.dslr.pros.join(' ')}</p>
-                                                    <p className="text-red-400">**Cons:** {cameraSettings.dslr.cons.join(' ')}</p>
+                                                <div class="mt-2 text-xs">
+                                                    <p class="text-green-400">**Pros:** {cameraSettings.dslr.pros.join(' ')}</p>
+                                                    <p class="text-red-400">**Cons:** {cameraSettings.dslr.cons.join(' ')}</p>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                    <p className="text-neutral-500 text-xs italic mt-6 text-center">
+                                    <p class="text-neutral-500 text-xs italic mt-6 text-center">
                                         **Disclaimer:** These are starting points. Aurora activity, light pollution, moon phase, and your specific camera/lens will influence optimal settings. Experimentation is key!
                                     </p>
                                 </div>
@@ -1379,16 +1379,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                         <AuroraSightings isDaylight={isDaylight} />
 
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
-                            <h2 className="text-xl font-semibold text-white text-center">Spot The Aurora Forecast Trend (Last {auroraScoreChartTimeLabel})</h2>
+                        <div class="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
+                            <h2 class="text-xl font-semibold text-white text-center">Spot The Aurora Forecast Trend (Last {auroraScoreChartTimeLabel})</h2>
                             <TimeRangeButtons onSelect={(duration, label) => { setAuroraScoreChartTimeRange(duration); setAuroraScoreChartTimeLabel(label); }} selected={auroraScoreChartTimeRange} />
-                            <div className="flex-grow relative mt-2">
-                                {auroraScoreHistory.length > 0 ? ( <Line data={auroraScoreChartData} options={auroraScoreChartOptions} /> ) : ( <p className="text-center pt-10 text-neutral-400 italic">No historical forecast data available.</p> )}
+                            <div class="flex-grow relative mt-2">
+                                {auroraScoreHistory.length > 0 ? ( <Line data={auroraScoreChartData} options={auroraScoreChartOptions} /> ) : ( <p class="text-center pt-10 text-neutral-400 italic">No historical forecast data available.</p> )}
                             </div>
                         </div>
 
                         {/* Metrics and their associated inline graphs */}
-                        <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5"> {/* Adjusted grid for metrics */}
+                        <div class="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5"> {/* Adjusted grid for metrics */}
                             {Object.entries(gaugeData).map(([key, data]) => {
                                 const isGraphable = !['moon'].includes(key); // Moon is explicitly not graphable
                                 let graphId: string | null = null;
@@ -1407,29 +1407,29 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 return (
                                     <React.Fragment key={key}>
                                         {/* Metric Card Button */}
-                                        <div className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
+                                        <div class="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
                                             <button
                                                 onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)}
-                                                className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`}
+                                                class={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`}
                                                 disabled={!isGraphable}
                                             >
-                                                <div className="flex justify-center items-center">
-                                                    <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                                <div class="flex justify-center items-center">
+                                                    <h3 class="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
                                                     {/* Ensure the info button prevents propagation so it doesn't also toggle the graph */}
-                                                    <button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                                    <button onClick={(e) => { e.stopPropagation(); openModal(key); }} class="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                                 </div>
-                                                <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                                                <div className="text-3xl my-2">{data.emoji}</div>
-                                                <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
-                                                <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                                                <div class="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                                                <div class="text-3xl my-2">{data.emoji}</div>
+                                                <div class="w-full bg-neutral-700 rounded-full h-3 mt-4"><div class="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                                                <div class="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
                                                 {isGraphable && ( // Only show caret for graphable metrics
-                                                    <CaretIcon className={`w-6 h-6 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                                    <CaretIcon class={`w-6 h-6 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
                                                 )}
                                             </button>
                                         </div>
                                         {/* Expanded Graph Content (appears directly under metric on mobile/tablet) */}
                                         {shouldRenderGraphContent && (
-                                            <div className="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100">
+                                            <div class="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100">
                                                 <ExpandedGraphContent
                                                     graphId={graphId}
                                                     solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={setSolarWindTimeRange} solarWindTimeLabel={solarWindTimeLabel}
@@ -1451,15 +1451,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         </div>
 
                         {/* GOES Magnetometer Graph - Now a collapsible card */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4">
-                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
-                                <h2 className="text-xl font-bold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
-                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                    <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} />
+                        <div class="col-span-12 card bg-neutral-950/80 p-4">
+                            <div class="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
+                                <h2 class="text-xl font-bold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
+                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} class="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                <button class="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                    <CaretIcon class={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} />
                                 </button>
                             </div>
-                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                            <div class={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
                                 <ExpandedGraphContent
                                     graphId={'goes-mag-graph-container'}
                                     solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={setSolarWindTimeRange} solarWindTimeLabel={solarWindTimeLabel}
@@ -1476,30 +1476,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                         </div>
 
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
-                            <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
+                        <div class="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                            <h3 class="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
+                            <div class="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" class="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameborder="0"></iframe></div>
                         </div>
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <h3 className="text-xl font-semibold text-center text-white mb-4">Queenstown Live Camera</h3>
-                            <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Live View from Queenstown" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://queenstown.roundshot.com/#/"></iframe></div>
+                        <div class="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                            <h3 class="text-xl font-semibold text-center text-white mb-4">Queenstown Live Camera</h3>
+                            <div class="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Live View from Queenstown" class="absolute top-0 left-0 w-full h-full rounded-lg" src="https://queenstown.roundshot.com/#/"></iframe></div>
                         </div>
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                             <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
+                        <div class="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                            <div class="flex justify-center items-center"><h2 class="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} class="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                             <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} class="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" class="w-full h-full object-contain" /></div>
                         </div>
                     </main>
-                    <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
-                        <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
-                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides a highly localized, 2-hour aurora forecast specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.</p>
-                        <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.</p>
-                        <div className="mt-6">
-                            <button onClick={() => setIsFaqOpen(true)} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors">
-                                <GuideIcon className="w-5 h-5" />
+                    <footer class="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
+                        <h3 class="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
+                        <p class="max-w-3xl mx-auto leading-relaxed">This dashboard provides a highly localized, 2-hour aurora forecast specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.</p>
+                        <p class="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.</p>
+                        <div class="mt-6">
+                            <button onClick={() => setIsFaqOpen(true)} class="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors">
+                                <GuideIcon class="w-5 h-5" />
                                 <span>Frequently Asked Questions</span>
                             </button>
                         </div>
-                        <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a> | Live Camera by <a href="https://queenstown.roundshot.com/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Roundshot</a></p><p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p></div>
+                        <div class="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">Windy.com</a> | Live Camera by <a href="https://queenstown.roundshot.com/" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">Roundshot</a></p><p class="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p></div>
                     </footer>
                  </div>
             </div>
