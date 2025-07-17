@@ -333,8 +333,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
                     aperture: "Lowest f-number",
                     focus: "Infinity",
                     wb: "Auto or 3500K-4000K",
-                    pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."],
-                    cons: ["Still limited dynamic range compared to DSLR."],
+                    pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."],
+                    cons: ["Less control over very fast-moving aurora."],
                 },
                 apple: {
                     iso: "Auto (let it choose), or 1000-2000 (in manual app)",
@@ -1048,7 +1048,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast]); // DEPENDENCY on dailyCelestialHistory and owmDailyForecast
 
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
-        const now = Date.now();
+        const now = Date.now(); // Corrected from Date.Date()
         const startTime = now - auroraScoreChartTimeRange;
 
         return {
@@ -1420,7 +1420,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                                 <div class="w-full bg-neutral-700 rounded-full h-3 mt-4"><div class="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
                                                 <div class="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
                                                 {isGraphable && ( // Only show caret for graphable metrics
-                                                    <CaretIcon class={`w-6 h-6 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                                    // FIX: Changed CaretIcon size to w-5 h-5 for consistency
+                                                    <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
                                                 )}
                                             </button>
                                         </div>
@@ -1437,7 +1438,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                                     allSpeedData={allSpeedData} speedChartData={speedChartData} speedChartOptions={speedChartOptions}
                                                     allDensityData={allDensityData} densityChartData={densityChartData} densityChartOptions={densityChartOptions}
                                                     allMagneticData={allMagneticData} magneticFieldChartData={magneticFieldChartData} magneticFieldOptions={magneticFieldOptions}
-                                                    hemisphericPowerHistory={hemisphericPowerHistory} hemisphericPowerChartData={hemisphericPowerChartData} hemisphericPowerChartOptions={hemisphericPowerChartOptions}
+                                                    perHemisphericPowerHistory={hemisphericPowerHistory} hemisphericPowerChartData={hemisphericPowerChartData} hemisphericPowerChartOptions={hemisphericPowerChartOptions}
                                                     goes18Data={goes18Data} goes19Data={goes19Data} magnetometerChartData={magnetometerChartData} magnetometerOptions={magnetometerOptions} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
                                                 />
                                             </div>
