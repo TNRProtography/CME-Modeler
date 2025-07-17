@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
-import CaretIcon from './icons/CaretIcon';
+import CaretIcon from './icons/CaretIcon'; // Ensure CaretIcon is imported
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -324,6 +324,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
     const [hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange] = useState<number>(6 * 3600000);
     const [hemisphericPowerChartTimeLabel, setHemisphericPowerChartTimeLabel] = useState<string>('6 Hr');
+
+    // NEW STATE: Expanded Graph for interactive display
+    const [expandedGraph, setExpandedGraph] = useState<string | null>(null); // State to control which graph is visible
 
     // State to hold the daily history of celestial events (completed days for graph annotations)
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
@@ -922,7 +925,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by an intense outburst. Don't give up after just a few minutes.</li></ul></div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
                             </div>
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
@@ -1009,62 +1012,114 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         </div>
 
                         <div className="col-span-12 grid grid-cols-6 gap-5">
-                            {Object.entries(gaugeData).map(([key, data]) => (
-                                <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
-                                    <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                    <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                                    <div className="text-3xl my-2">{data.emoji}</div>
-                                    <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
-                                    <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
-                                </div>
-                            ))}
+                            {Object.entries(gaugeData).map(([key, data]) => {
+                                // Determine the target graph ID for this metric
+                                const isGraphable = !['moon'].includes(key); // Moon is explicitly not graphable
+                                let graphId: string | null = null;
+                                if (key === 'speed' || key === 'density') graphId = 'solar-wind-graph-container';
+                                else if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
+                                else if (key === 'power') graphId = 'hemispheric-power-graph-container';
+                                else if (key === 'substorm' ) graphId = 'goes-mag-graph-container'; // Assuming you might have a dedicated substorm gauge later
+
+                                const isCurrentlyExpanded = expandedGraph === graphId;
+
+                                return (
+                                    <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
+                                        <button
+                                            onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)}
+                                            className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`}
+                                            disabled={!isGraphable} // Disable the button if not graphable
+                                        >
+                                            <div className="flex justify-center items-center">
+                                                <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                                {/* Ensure the info button prevents propagation so it doesn't also toggle the graph */}
+                                                <button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                            </div>
+                                            <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                                            <div className="text-3xl my-2">{data.emoji}</div>
+                                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                                            <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                                            {isGraphable && ( // Only show caret for graphable metrics
+                                                <CaretIcon className={`w-6 h-6 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                            )}
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
 
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Solar Wind</h2><button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                            <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
-                            <div className="flex-grow relative mt-2">
-                                {allPlasmaData.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind data unavailable.</p>}
-                            </div>
+                        {/* Solar Wind Graph */}
+                        <div id="solar-wind-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out ${expandedGraph === 'solar-wind-graph-container' ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
+                            {expandedGraph === 'solar-wind-graph-container' && ( // Only render content if expanded
+                                <>
+                                    <div className="flex justify-center items-center gap-2">
+                                        <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind</h2>
+                                        <button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                    </div>
+                                    <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
+                                    <div className="flex-grow relative mt-2">
+                                        {allPlasmaData.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind data unavailable.</p>}
+                                    </div>
+                                </>
+                            )}
                         </div>
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2><button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                            <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
-                             <div className="flex-grow relative mt-2">
-                                {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
-                            </div>
+
+                        {/* IMF Graph (for Bt/Bz) */}
+                        <div id="imf-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out ${expandedGraph === 'imf-graph-container' ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
+                            {expandedGraph === 'imf-graph-container' && (
+                                <>
+                                    <div className="flex justify-center items-center gap-2">
+                                        <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2>
+                                        <button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                    </div>
+                                    <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
+                                    <div className="flex-grow relative mt-2">
+                                        {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {/* NEW: Hemispheric Power Graph */}
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white text-center">Hemispheric Power Trend (Last {hemisphericPowerChartTimeLabel})</h2>
-                                <button onClick={() => openModal('hemispheric-power-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                            </div>
-                            <TimeRangeButtons onSelect={(duration, label) => { setHemisphericPowerChartTimeRange(duration); setHemisphericPowerChartTimeLabel(label); }} selected={hemisphericPowerChartTimeRange} />
-                            <div className="flex-grow relative mt-2">
-                                {hemisphericPowerHistory.length > 0 ? (
-                                    <Line data={hemisphericPowerChartData} options={hemisphericPowerChartOptions} />
-                                ) : (
-                                    <p className="text-center pt-10 text-neutral-400 italic">Hemispheric Power data unavailable.</p>
-                                )}
-                            </div>
+                        <div id="hemispheric-power-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out ${expandedGraph === 'hemispheric-power-graph-container' ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
+                            {expandedGraph === 'hemispheric-power-graph-container' && (
+                                <>
+                                    <div className="flex justify-center items-center gap-2">
+                                        <h2 className="text-xl font-semibold text-white text-center">Hemispheric Power Trend (Last {hemisphericPowerChartTimeLabel})</h2>
+                                        <button onClick={() => openModal('hemispheric-power-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                    </div>
+                                    <TimeRangeButtons onSelect={(duration, label) => { setHemisphericPowerChartTimeRange(duration); setHemisphericPowerChartTimeLabel(label); }} selected={hemisphericPowerChartTimeRange} />
+                                    <div className="flex-grow relative mt-2">
+                                        {hemisphericPowerHistory.length > 0 ? (
+                                            <Line data={hemisphericPowerChartData} options={hemisphericPowerChartOptions} />
+                                        ) : (
+                                            <p className="text-center pt-10 text-neutral-400 italic">Hemispheric Power data unavailable.</p>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
-                        <div className="col-span-12 card bg-neutral-950/80 p-4">
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="lg:col-span-2 h-[450px] flex flex-col">
-                                    <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2><button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                    <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
-                                    <div className="flex-grow relative mt-2">
-                                        {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
+                        {/* GOES Magnetometer Graph */}
+                        <div id="goes-mag-graph-container" className={`col-span-12 card bg-neutral-950/80 p-4 transition-all duration-500 ease-in-out ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[550px] opacity-100 mt-6' : 'max-h-0 opacity-0 overflow-hidden p-0 m-0 border-0'}`}>
+                            {expandedGraph === 'goes-mag-graph-container' && (
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    <div className="lg:col-span-2 h-[450px] flex flex-col">
+                                        <div className="flex justify-center items-center gap-2">
+                                            <h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2>
+                                            <button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                        </div>
+                                        <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
+                                        <div className="flex-grow relative mt-2">
+                                            {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
+                                        </div>
                                     </div>
-                                </div> {/* <-- CORRECTED: Added closing div tag here */}
-                                <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
-                                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
-                                    <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
+                                    <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
+                                        <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
+                                        <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
 
                         <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
