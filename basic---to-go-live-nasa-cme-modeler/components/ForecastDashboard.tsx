@@ -22,24 +22,29 @@ interface CelestialTimeData {
     sun?: { rise: number | null, set: number | null };
 }
 
-// Define a type for the daily history entry (for graph annotations of past days)
 interface DailyHistoryEntry {
-    date: string; // "YYYY-MM-DD"
+    date: string;
     sun?: { rise: number | null, set: number | null };
     moon?: { rise: number | null, set: number | null, illumination?: number };
 }
 
-// Define a type for the OWM Daily Forecast entry (for gauge calculation of next events)
 interface OwmDailyForecastEntry {
-  dt: number; // Daily UTC time, seconds
-  sunrise: number; // Sunrise time, seconds
-  sunset: number; // Sunset time, seconds
-  moonrise: number; // Moonrise time, seconds
-  moonset: number; // Moonset time, seconds
-  moon_phase: number; // Moon phase (0 to 1)
-  // Other fields omitted for brevity
+  dt: number;
+  sunrise: number;
+  sunset: number;
+  moonrise: number;
+  moonset: number;
+  moon_phase: number;
 }
 
+interface HistoricalAuroraData {
+  timestamp: number;
+  baseScore: number;
+  finalScore: number;
+  hemisphericPower?: number;
+}
+
+type ExpandableMetric = 'power' | 'speed' | 'density' | 'btbz' | null;
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
@@ -48,7 +53,7 @@ const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-d
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
-const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
+const REFRESH_INTERVAL_MS = 60 * 1000;
 
 const GAUGE_THRESHOLDS = {
   speed: { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, maxExpected: 1000 },
@@ -143,57 +148,17 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
         baseSettings = {
             overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.",
             phone: {
-                android: {
-                    iso: "3200-6400 (Max)",
-                    shutter: "20-30s",
-                    aperture: "Lowest f-number",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Might pick up an extremely faint, indiscernible glow."],
-                    cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."],
-                },
-                apple: {
-                    iso: "Auto (max Night Mode)",
-                    shutter: "Longest Night Mode auto-exposure (10-30s)",
-                    aperture: "N/A (fixed)",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Simple to try with Night Mode."],
-                    cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."],
-                },
+                android: { iso: "3200-6400 (Max)", shutter: "20-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Might pick up an extremely faint, indiscernible glow."], cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."], },
+                apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Simple to try with Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], },
             },
-            dslr: {
-                iso: "6400-12800",
-                shutter: "20-30s",
-                aperture: "f/2.8-f/4 (widest)",
-                focus: "Manual to Infinity",
-                wb: "3500K-4500K",
-                pros: ["Maximizes light gathering for extremely faint conditions."],
-                cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."],
-            },
+            dslr: { iso: "6400-12800", shutter: "20-30s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Maximizes light gathering for extremely faint conditions."], cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."], },
         };
     } else if (score < 20) {
          baseSettings = {
             overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
             phone: {
-                android: {
-                    iso: "3200-6400 (Max)",
-                    shutter: "15-30s",
-                    aperture: "Lowest f-number",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Might detect very faint light not visible to the eye."],
-                    cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."],
-                },
-                apple: {
-                    iso: "Auto (max Night Mode)",
-                    shutter: "Longest Night Mode auto-exposure (10-30s)",
-                    aperture: "N/A (fixed)",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Simple to attempt using Night Mode."],
-                    cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."],
-                },
+                android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Might detect very faint light not visible to the eye."], cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."], },
+                apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Simple to attempt using Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."], },
             },
             dslr: {
                 iso: "3200-6400",
@@ -209,24 +174,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
         baseSettings = {
             overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.",
             phone: {
-                android: {
-                    iso: "400-800",
-                    shutter: "1-5s",
-                    aperture: "Lowest f-number",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."],
-                    cons: ["May still struggle with extreme brightness or very fast movement."],
-                },
-                apple: {
-                    iso: "Auto or 500-1500 (in third-party app)",
-                    shutter: "1-3s (or what auto-selects)",
-                    aperture: "N/A (fixed)",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."],
-                    cons: ["Less manual control than Android Pro mode for precise settings."],
-                },
+                android: { iso: "400-800", shutter: "1-5s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."], cons: ["May still struggle with extreme brightness or very fast movement."], },
+                apple: { iso: "Auto or 500-1500 (in third-party app)", shutter: "1-3s (or what auto-selects)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."], cons: ["Less manual control than Android Pro mode for precise settings."], },
             },
             dslr: {
                 iso: "800-1600",
@@ -242,24 +191,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
         baseSettings = {
             overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
             phone: {
-                android: {
-                    iso: "800-1600",
-                    shutter: "5-10s",
-                    aperture: "Lowest f-number",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."],
-                    cons: ["Still limited dynamic range compared to DSLR."],
-                },
-                apple: {
-                    iso: "Auto (let it choose), or 1000-2000 (in manual app)",
-                    shutter: "3-7s (or what auto selects)",
-                    aperture: "N/A (fixed)",
-                    focus: "Infinity",
-                    wb: "Auto or 3500K-4000K",
-                    pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."],
-                    cons: ["Less control over very fast-moving aurora."],
-                },
+                android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Better detail and color than faint conditions.", "Less motion blur than very long exposures."], cons: ["Still limited dynamic range compared to DSLR."], },
+                apple: { iso: "Auto (let it choose), or 1000-2000 (in manual app)", shutter: "3-7s (or what auto selects)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Good balance, easier to get usable shots.", "Built-in processing helps with noise."], cons: ["Less control over very fast-moving aurora."], },
             },
             dslr: {
                 iso: "1600-3200",
@@ -295,11 +228,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [solarWindChartData, setSolarWindChartData] = useState<any>({ datasets: [] });
     const [magneticFieldChartData, setMagneticFieldChartData] = useState<any>({ datasets: [] });
 
-    const [solarWindTimeRange, setSolarWindTimeRange] = useState<number>(6 * 3600000);
+    const [solarWindTimeRange, setSolarWindTimeRange] = useState<number>(6 * 3600000); // Default to 6 hours
     const [solarWindTimeLabel, setSolarWindTimeLabel] = useState<string>('6 Hr');
     const [magneticFieldTimeRange, setMagneticFieldTimeRange] = useState<number>(6 * 3600000);
     const [magneticFieldTimeLabel, setMagneticFieldTimeLabel] = useState<string>('6 Hr');
-    const [magnetometerTimeRange, setMagnetometerTimeRange] = useState<number>(3 * 3600000);
+    const [magnetometerTimeRange, setMagnetometerTimeRange] = useState<number>(3 * 3600000); // Default to 3 hours
     const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState<string>('3 Hr');
 
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string } | null>(null);
@@ -308,14 +241,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const [isCameraSettingsOpen, setIsCameraSettingsOpen] = useState(false);
     const [isTipsOpen, setIsTipsOpen] = useState(false);
-    const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
+    const [auroraScoreHistory, setAuroraScoreHistory] = useState<HistoricalAuroraData[]>([]);
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
-    // State to hold the daily history of celestial events (completed days for graph annotations)
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
-    // NEW State: To hold the full OWM daily forecast (for accurate next moon/sun events in gauge)
     const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
+
+    // NEW STATES for expandable graphs
+    const [expandedMetric, setExpandedMetric] = useState<ExpandableMetric>(null);
+    const [expandedMetricTimeRange, setExpandedMetricTimeRange] = useState<number>(2 * 3600000); // Default to 2 hours
+    const [expandedMetricTimeLabel, setExpandedMetricTimeLabel] = useState<string>('2 Hr');
 
 
     const tooltipContent = {
@@ -477,7 +413,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return annotations;
     }, []);
 
-    // UPDATED getMoonData function: now takes owmDailyForecast
     const getMoonData = useCallback((illumination: number | null, currentRiseTime: number | null, currentSetTime: number | null, owmDailyForecast: OwmDailyForecastEntry[]) => {
         const moonIllumination = Math.max(0, (illumination ?? 0));
         let moonEmoji = '🌑';
@@ -486,49 +421,40 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         else if (moonIllumination > 45) moonEmoji = '🌗';
         else if (moonIllumination > 5) moonEmoji = '🌒';
 
-        const now = Date.now(); // Current time in milliseconds
+        const now = Date.now();
         const today = new Date();
         const tomorrow = new Date(today);
         tomorrow.setDate(today.getDate() + 1);
 
-        // Helper to find the next valid event time from a list of timestamps
         const findNextEvent = (eventTimestamps: (number | null)[]) => {
             const sortedTimes = eventTimestamps
                 .filter((t): t is number => t !== null && !isNaN(t))
                 .sort((a, b) => a - b);
             for (const timestamp of sortedTimes) {
-                if (timestamp > now) { // Found a future event
+                if (timestamp > now) {
                     return timestamp;
                 }
             }
-            return null; // No future event found
+            return null;
         };
 
-        // Collect all potential future moonrise times from the FULL OWM daily forecast
         const allPotentialRiseTimes: number[] = [];
-        // Add current forecast's moonrise first if relevant
         if (currentRiseTime !== null) {
             allPotentialRiseTimes.push(currentRiseTime);
         }
-        // Iterate through owmDailyForecast (which has times in seconds, convert to milliseconds)
         owmDailyForecast.forEach(day => {
             if (day.moonrise) {
                 const moonriseMs = day.moonrise * 1000;
-                // Only add if it's not already in and not too far in the past compared to 'now'
                 if (!allPotentialRiseTimes.includes(moonriseMs) && moonriseMs > now - (24 * 60 * 60 * 1000)) {
                     allPotentialRiseTimes.push(moonriseMs);
                 }
             }
         });
 
-
-        // Collect all potential future moonset times from the FULL OWM daily forecast
         const allPotentialSetTimes: number[] = [];
-        // Add current forecast's moonset first if relevant
         if (currentSetTime !== null) {
             allPotentialSetTimes.push(currentSetTime);
         }
-        // Iterate through owmDailyForecast (which has times in seconds, convert to milliseconds)
         owmDailyForecast.forEach(day => {
             if (day.moonset) {
                 const moonsetMs = day.moonset * 1000;
@@ -553,7 +479,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             } else if (isTomorrow) {
                 dayLabel = 'Tomorrow';
             } else {
-                // If it's more than tomorrow, show the actual date (e.g., 'Fri 19 Jul')
                 dayLabel = eventDate.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short' });
             }
 
@@ -583,7 +508,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result] = results;
 
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
-            const { currentForecast, historicalData, dailyHistory, owmDailyForecast } = forecastResult.value; // Destructure owmDailyForecast
+            const { currentForecast, historicalData, dailyHistory, owmDailyForecast } = forecastResult.value;
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
@@ -592,30 +517,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
 
-            // Set dailyCelestialHistory (for graph annotations of past days)
             if (Array.isArray(dailyHistory)) {
                 setDailyCelestialHistory(dailyHistory);
             } else {
                 setDailyCelestialHistory([]);
             }
 
-            // NEW: Set the OWM daily forecast data (for gauge display of next events)
             if (Array.isArray(owmDailyForecast)) {
                 setOwmDailyForecast(owmDailyForecast);
             } else {
                 setOwmDailyForecast([]);
             }
 
-
-            // Pass owmDailyForecast (the full array) to getMoonData for accurate future event finding
             setGaugeData(prev => ({
                 ...prev,
                 power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
                 bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
                 bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
-                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || []) // Pass owmDailyForecast
+                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || [])
             }));
-            if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
+            if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a: any, b: any) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
 
         } else {
             console.error("Forecast data failed to load:", forecastResult.reason);
@@ -623,7 +544,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAuroraScoreHistory([]);
             setCurrentAuroraScore(null);
             setDailyCelestialHistory([]);
-            setOwmDailyForecast([]); // Clear on error
+            setOwmDailyForecast([]);
         }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
@@ -688,40 +609,165 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (isInitialLoad) setIsLoading(false);
     }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData]);
 
-    useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
+    useEffect(() => { fetchAllData(true); const intervalId = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(intervalId); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
 
+    const handleExpandedTimeRangeChange = (range: number, label: string) => {
+        setExpandedMetricTimeRange(range);
+        setExpandedMetricTimeLabel(label);
+    };
 
-    useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
-
-    const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => {
-        const now = Date.now(); const startTime = now - rangeMs; const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
-        if (isDualAxis) options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
-        else options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } } };
-
-        if (extraAnnotations) {
-            options.plugins = {
-                ...options.plugins,
-                annotation: { annotations: extraAnnotations }
-            };
-        }
-
+    const createExpandedChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, metricKey: ExpandableMetric): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - rangeMs;
+        const options: ChartOptions<'line'> = {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false, axis: 'x' },
+            plugins: {
+                legend: { display: showLegend, labels: { color: '#a1a1aa' } },
+                tooltip: { mode: 'index', intersect: false, callbacks: { title: (context) => context.length > 0 ? `Time: ${new Date(context[0].parsed.x).toLocaleTimeString('en-NZ')}` : '', label: (context) => { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed.y !== null) label += `${context.parsed.y.toFixed(1)}%`; if (context.dataset.label === 'Spot The Aurora Forecast') label += ' (Final Score)'; else if (context.dataset.label === 'Base Score') label += ' (Raw Calculation)'; return label; } } },
+                annotation: {
+                    annotations: (() => {
+                        const anns: any = {};
+                        if (metricKey === 'power') {
+                            const powerValue = parseFloat(gaugeData.power.value);
+                            if (!isNaN(powerValue)) {
+                                const colorKey = getGaugeStyle(powerValue, 'power').color;
+                                anns[`power-level`] = {
+                                    type: 'line',
+                                    scaleID: 'y',
+                                    value: powerValue,
+                                    borderColor: colorKey.replace(')', ', 0.7)'),
+                                    borderWidth: 2,
+                                    label: { content: `Current Power: ${powerValue} GW`, display: true, position: 'end', backgroundColor: 'rgba(10, 10, 10, 0.7)', color: '#ffffff', font: { size: 10, weight: 'bold' }, padding: 5, borderRadius: 3 }
+                                };
+                            }
+                        } else if (metricKey === 'speed') {
+                             const speedValue = parseFloat(gaugeData.speed.value);
+                             if (!isNaN(speedValue)) {
+                                const colorKey = getGaugeStyle(speedValue, 'speed').color;
+                                anns[`speed-level`] = {
+                                    type: 'line', scaleID: 'y', value: speedValue, borderColor: colorKey.replace(')', ', 0.7)'), borderWidth: 2, label: { content: `Speed: ${speedValue.toFixed(1)} km/s`, display: true, position: 'end', backgroundColor: 'rgba(10, 10, 10, 0.7)', color: '#ffffff', font: { size: 10, weight: 'bold' }, padding: 5, borderRadius: 3 }
+                                };
+                             }
+                        } else if (metricKey === 'density') {
+                             const densityValue = parseFloat(gaugeData.density.value);
+                             if (!isNaN(densityValue)) {
+                                const colorKey = getGaugeStyle(densityValue, 'density').color;
+                                anns[`density-level`] = {
+                                    type: 'line', scaleID: 'y1', value: densityValue, borderColor: colorKey.replace(')', ', 0.7)'), borderWidth: 2, label: { content: `Density: ${densityValue.toFixed(1)} p/cm³`, display: true, position: 'end', backgroundColor: 'rgba(10, 10, 10, 0.7)', color: '#ffffff', font: { size: 10, weight: 'bold' }, padding: 5, borderRadius: 3 }
+                                };
+                             }
+                        } else if (metricKey === 'btbz') {
+                            const btValue = parseFloat(gaugeData.bt.value);
+                            const bzValue = parseFloat(gaugeData.bz.value);
+                            if (!isNaN(btValue)) {
+                                const colorKey = getGaugeStyle(btValue, 'bt').color;
+                                anns[`bt-level`] = {
+                                    type: 'line', scaleID: 'y', value: btValue, borderColor: colorKey.replace(')', ', 0.7)'), borderWidth: 2, label: { content: `Bt: ${btValue.toFixed(1)} nT`, display: true, position: 'end', backgroundColor: 'rgba(10, 10, 10, 0.7)', color: '#ffffff', font: { size: 10, weight: 'bold' }, padding: 5, borderRadius: 3 }
+                                };
+                            }
+                            if (!isNaN(bzValue)) {
+                                const colorKey = getGaugeStyle(bzValue, 'bz').color;
+                                anns[`bz-level`] = {
+                                    type: 'line', scaleID: 'y1', value: bzValue, borderColor: colorKey.replace(')', ', 0.7)'), borderWidth: 2, label: { content: `Bz: ${bzValue.toFixed(1)} nT`, display: true, position: 'end', backgroundColor: 'rgba(10, 10, 10, 0.7)', color: '#ffffff', font: { size: 10, weight: 'bold' }, padding: 5, borderRadius: 3 }
+                                };
+                            }
+                        }
+                        return anns;
+                    })()
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    min: startTime,
+                    max: now,
+                    ticks: { color: '#71717a', source: 'auto' },
+                    grid: { color: '#3f3f46' }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    ticks: { color: '#a3a3a3' },
+                    grid: { color: '#3f3f46' },
+                    title: {
+                        display: true,
+                        text: expandedMetric === 'speed' ? 'Speed (km/s)' :
+                              expandedMetric === 'density' ? 'Density (p/cm³)' :
+                              expandedMetric === 'power' ? 'Power (GW)' :
+                              '',
+                        color: '#a3a3a3'
+                    }
+                },
+                // Conditionally add y1 axis only for density and bz
+                ...(expandedMetric === 'speed' || expandedMetric === 'density' || expandedMetric === 'btbz') && {
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        ticks: { color: '#a3a3a3' },
+                        grid: { drawOnChartArea: false },
+                        title: {
+                            display: true,
+                            text: expandedMetric === 'density' ? 'Density (p/cm³)' :
+                                  expandedMetric === 'btbz' ? 'Bz (nT)' :
+                                  '',
+                            color: '#a3a3a3'
+                        }
+                    }
+                }
+            }
+        };
         return options;
-    }, []);
+    }, [expandedMetricTimeRange, expandedMetric, gaugeData, auroraScoreHistory, createChartOptions, goes18Data, getPositiveScaleColorKey, getBzScaleColorKey, getGaugeStyle]);
 
-    const solarWindOptions = useMemo(() => createChartOptions(solarWindTimeRange, true, '', false), [solarWindTimeRange, createChartOptions]);
-    const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, false, 'Magnetic Field (nT)', false), [magneticFieldTimeRange, createChartOptions]);
+    const expandedPlasmaData = useMemo(() => {
+        if (!allPlasmaData || allPlasmaData.length === 0) return { datasets: [] };
+        const filteredData = allPlasmaData.filter(p => p.time > Date.now() - expandedMetricTimeRange);
+        return {
+            datasets: [
+                { label: 'Speed', data: filteredData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: false, borderWidth: 2, pointRadius: 0, tension: 0.1, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } },
+                { label: 'Density', data: filteredData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: false, borderWidth: 1.5, pointRadius: 0, tension: 0.1, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } }
+            ]
+        };
+    }, [allPlasmaData, expandedMetricTimeRange, getPositiveScaleColorKey, createGradient]);
 
-    const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data, getMagnetometerAnnotations]);
-    const magnetometerOptions = useMemo(() => createChartOptions(magnetometerTimeRange, false, 'Hp (nT)', true, magnetometerAnnotations), [magnetometerTimeRange, createChartOptions, magnetometerAnnotations]);
+    const expandedMagneticData = useMemo(() => {
+        if (!allMagneticData || allMagneticData.length === 0) return { datasets: [] };
+        const filteredData = allMagneticData.filter(p => p.time > Date.now() - expandedMetricTimeRange);
+        return {
+            datasets: [
+                { label: 'Bt', data: filteredData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: false, borderWidth: 1.5, pointRadius: 0, tension: 0.1, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } },
+                { label: 'Bz', data: filteredData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: false, borderWidth: 1.5, pointRadius: 0, tension: 0.1, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } }
+            ]
+        };
+    }, [allMagneticData, expandedMetricTimeRange, getPositiveScaleColorKey, getBzScaleColorKey, createGradient]);
+
+    const expandedPowerData = useMemo(() => {
+        if (!auroraScoreHistory || auroraScoreHistory.length === 0) return { datasets: [] };
+        const filteredData = auroraScoreHistory.filter(p => p.timestamp > Date.now() - expandedMetricTimeRange);
+        return {
+            datasets: [{
+                label: 'Hemispheric Power',
+                data: filteredData.map(d => ({ x: d.timestamp, y: d.hemisphericPower })),
+                borderColor: GAUGE_COLORS.purple.solid,
+                backgroundColor: GAUGE_COLORS.purple.semi,
+                fill: 'origin',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.1,
+            }]
+        };
+    }, [auroraScoreHistory, expandedMetricTimeRange]);
+
+    const expandedChartOptions = useMemo(() => createChartOptions(expandedMetricTimeRange, expandedMetric === 'speed' || expandedMetric === 'density' || expandedMetric === 'bz', expandedMetric === 'density' ? 'Density (p/cm³)' : expandedMetric === 'bz' ? 'Bz (nT)' : expandedMetric === 'power' ? 'Power (GW)' : expandedMetric === 'speed' ? 'Speed (km/s)' : '', expandedMetric === 'btbz'), [expandedMetricTimeRange, expandedMetric, gaugeData, auroraScoreHistory, createChartOptions, goes18Data, getPositiveScaleColorKey, getBzScaleColorKey, getGaugeStyle]);
 
     const magnetometerChartData = useMemo(() => ({ datasets: [ { label: 'GOES-18 (Primary)', data: goes18Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(56, 189, 248)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false }, { label: 'GOES-19 (Secondary)', data: goes19Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(255, 69, 0)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false } ] }), [goes18Data, goes19Data]);
 
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
 
-    // NEW: Memoized annotations for Aurora Score Chart, using dailyCelestialHistory and owmDailyForecast
     const auroraScoreChartAnnotations = useMemo(() => {
         const annotations: any = {};
         const now = Date.now();
@@ -730,7 +776,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const addAnnotation = (keyPrefix: string, timestamp: number | null | undefined, text: string, emoji: string, color: string, position: 'start' | 'end') => {
             if (timestamp && timestamp > startTime && timestamp < now) {
-                annotations[`${keyPrefix}-${timestamp}`] = { // Use timestamp in key to ensure uniqueness
+                annotations[`${keyPrefix}-${timestamp}`] = {
                     type: 'line',
                     xMin: timestamp,
                     xMax: timestamp,
@@ -753,7 +799,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         };
 
-        // Iterate through dailyCelestialHistory to add all relevant events for *past completed days*
         dailyCelestialHistory.forEach(day => {
             if (day.sun) {
                 addAnnotation('sunrise', day.sun.rise, 'Sunrise', '☀️', '#fcd34d', 'start');
@@ -765,18 +810,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         });
 
-        // Also add annotations from the full OWM daily forecast for all 8 days (including today and future)
         owmDailyForecast.forEach(day => {
-            // Convert OWM times (seconds) to milliseconds
             if (day.sunrise) addAnnotation('owm-sunrise-' + day.dt, day.sunrise * 1000, 'Sunrise', '☀️', '#fcd34d', 'start');
             if (day.sunset) addAnnotation('owm-sunset-' + day.dt, day.sunset * 1000, 'Sunset', '☀️', '#fcd34d', 'end');
             if (day.moonrise) addAnnotation('owm-moonrise-' + day.dt, day.moonrise * 1000, 'Moonrise', '🌕', '#d1d5db', 'start');
             if (day.moonset) addAnnotation('owm-moonset-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end');
         });
 
-
         return annotations;
-    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast]); // DEPENDENCY on dailyCelestialHistory and owmDailyForecast
+    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast]);
 
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -785,7 +827,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
             plugins: {
-                legend: { labels: { color: '#a1a1aa' }},
+                legend: { display: false, labels: { color: '#a1a1aa' }},
                 tooltip: {
                     callbacks: {
                         title: (context) => context.length > 0 ? `Time: ${new Date(context[0].parsed.x).toLocaleTimeString('en-NZ')}` : '',
@@ -799,38 +841,41 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         }
                     }
                 },
-                annotation: { annotations: auroraScoreChartAnnotations, drawTime: 'afterDatasetsDraw' } // Use the new memoized annotations
+                annotation: { annotations: auroraScoreChartAnnotations, drawTime: 'afterDatasetsDraw' }
             },
             scales: {
                 x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-                y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (value: any) => `${value}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } }
+                y: {
+                    type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (value: any) => `${value}%` },
+                    grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' }
+                }
             }
         };
-    }, [auroraScoreChartTimeRange, auroraScoreChartAnnotations]); // Update dependency here
+    }, [auroraScoreChartTimeRange, auroraScoreChartAnnotations]);
 
     const auroraScoreChartData = useMemo(() => { if (auroraScoreHistory.length === 0) return { datasets: [] }; const getForecastGradient = (ctx: ScriptableContext<'line'>) => { const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined; const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top); const score0 = ctx.p0?.parsed?.y ?? 0; const score1 = ctx.p1?.parsed?.y ?? 0; const colorKey0 = getForecastScoreColorKey(score0); const colorKey1 = getForecastScoreColorKey(score1); gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi); gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi); return gradient; }; return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'transparent', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 0, spanGaps: true, order: 1, }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2, } ], }; }, [auroraScoreHistory]);
 
+    const isLoadingExpandedChart = useMemo(() => {
+        if (expandedMetric === 'power') return !expandedPowerData.datasets.length;
+        if (expandedMetric === 'speed' || expandedMetric === 'density') return !expandedPlasmaData.datasets.length;
+        if (expandedMetric === 'btbz') return !expandedMagneticData.datasets.length;
+        return false;
+    }, [expandedMetric, expandedPowerData, expandedPlasmaData, expandedMagneticData]);
+
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</b> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
+    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an average calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
     return (
-        // This outer div now spans the full height and applies the background/overlay
-        <div
-            className="w-full h-full bg-neutral-900 text-neutral-300 relative"
-            style={{
+        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative"
+             style={{
                 backgroundImage: `url('/background-aurora.jpg')`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
                 backgroundAttachment: 'fixed',
-            }}
-        >
-            {/* The absolute overlay now covers the entire fixed-height background div */}
+            }}>
             <div className="absolute inset-0 bg-black/50 z-0"></div>
-
-            {/* THIS IS THE NEW SCROLLABLE CONTAINER */}
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
-                {/* Your existing dashboard content goes inside here */}
                 <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
                 <div className="container mx-auto">
                     <header className="text-center mb-8">
@@ -840,7 +885,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     <main className="grid grid-cols-12 gap-6">
                         <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
                             <div>
-                                <div className="flex justify-center items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                <div className="flex items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
                                 <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? getGaugeStyle(auroraScore, 'power').color : GAUGE_COLORS.gray.solid }}></div></div>
                                 <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
@@ -850,11 +895,31 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="card bg-neutral-950/80 p-4">
-                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
+                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}>
+                                    <h2 className="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2>
+                                    <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                        <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} />
+                                    </button>
+                                </div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                    <ul className="space-y-3 text-neutral-300 text-sm list-disc list-inside pl-2">
+                                        <li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li>
+                                        <li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li>
+                                        <li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li>
+                                        <li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li>
+                                        <li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li>
+                                        <li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li>
+                                        <li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li>
+                                    </ul>
+                                </div>
                             </div>
                             <div className="card bg-neutral-950/80 p-4">
-                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
+                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}>
+                                    <h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2>
+                                    <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                        <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} />
+                                    </button>
+                                </div>
                                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
                                     <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
 
@@ -939,25 +1004,101 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                         <div className="col-span-12 grid grid-cols-6 gap-5">
                             {Object.entries(gaugeData).map(([key, data]) => (
-                                <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between">
-                                    <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                    <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                                    <div className="text-3xl my-2">{data.emoji}</div>
-                                    <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
-                                    <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
-                                </div>
+                                // Skip moon box for the expansion feature
+                                key !== 'moon' && (
+                                    <div key={key} className="col-span-3 md:col-span-2 lg:col-span-1 card bg-neutral-950/80 p-4 text-center flex flex-col justify-between relative">
+                                        <div className="flex justify-center items-center">
+                                            <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                            <button onClick={() => openModal(key)} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                            {/* Caret Icon for expansion */}
+                                            {!isDaylight && ( // Only show caret if not daylight
+                                                <button
+                                                    onClick={() => setExpandedMetric(expandedMetric === key ? null : key as 'power' | 'speed' | 'density' | 'btbz')}
+                                                    className="ml-auto p-1 text-neutral-300 hover:text-white hover:bg-white/10 transition-colors rounded-full"
+                                                    title={expandedMetric === key ? 'Collapse graph' : 'Expand graph'}
+                                                >
+                                                    <CaretIcon className={`w-5 h-5 transition-transform duration-300 ${expandedMetric === key ? 'rotate-180' : 'rotate-0'}`} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                                        <div className="text-3xl my-2">{data.emoji}</div>
+                                        <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
+                                            <div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div>
+                                        </div>
+                                        <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                                    </div>
+                                )
                             ))}
                         </div>
 
+                        {/* Expanded Graph Section */}
+                        {expandedMetric && (
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col z-10 relative">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-semibold text-white">
+                                        {expandedMetric === 'power' && 'Hemispheric Power'}
+                                        {expandedMetric === 'speed' && 'Solar Wind Speed'}
+                                        {expandedMetric === 'density' && 'Solar Wind Density'}
+                                        {expandedMetric === 'btbz' && 'Interplanetary Magnetic Field (Bt & Bz)'}
+                                    </h2>
+                                    <button onClick={() => setExpandedMetric(null)} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
+                                        <CloseIcon className="w-6 h-6" />
+                                    </button>
+                                </div>
+                                <TimeRangeButtons onSelect={handleExpandedTimeRangeChange} selected={expandedMetricTimeRange} />
+                                <div className="flex-grow relative mt-2">
+                                    {isLoadingExpandedChart ? (
+                                        <div className="flex items-center justify-center h-full">
+                                            <LoadingSpinner />
+                                            <p className="text-neutral-400 italic ml-4">Loading graph data...</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {(expandedMetric === 'power' && expandedPowerData.datasets.length > 0) && <Line data={expandedPowerData} options={expandedChartOptions} />}
+                                            {(expandedMetric === 'speed' || expandedMetric === 'density') && allPlasmaData.length > 0 && <Line data={expandedPlasmaData} options={expandedChartOptions} />}
+                                            {expandedMetric === 'btbz' && allMagneticData.length > 0 && <Line data={expandedMagneticData} options={expandedChartOptions} />}
+                                            {!((expandedMetric === 'power' && expandedPowerData.datasets.length > 0) ||
+                                              (expandedMetric === 'speed' && allPlasmaData.length > 0) ||
+                                              (expandedMetric === 'density' && allPlasmaData.length > 0) ||
+                                              (expandedMetric === 'btbz' && allMagneticData.length > 0)) && (
+                                                <p className="text-center text-neutral-400 italic py-10">No data available for the selected time range.</p>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Solar Wind</h2><button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                            <div className="flex items-center justify-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center">Live Solar Wind</h2>
+                                <button onClick={() => openModal('solar-wind-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                <button
+                                    onClick={() => setExpandedMetric('speed')}
+                                    className="ml-auto p-1 text-neutral-300 hover:text-white hover:bg-white/10 transition-colors rounded-full"
+                                    title="Expand graph"
+                                >
+                                    <CaretIcon className={`w-5 h-5 transition-transform duration-300 ${expandedMetric === 'speed' ? 'rotate-180' : 'rotate-0'}`} />
+                                </button>
+                            </div>
                             <TimeRangeButtons onSelect={(duration, label) => { setSolarWindTimeRange(duration); setSolarWindTimeLabel(label); }} selected={solarWindTimeRange} />
                             <div className="flex-grow relative mt-2">
                                 {allPlasmaData.length > 0 ? <Line data={solarWindChartData} options={solarWindOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Solar wind data unavailable.</p>}
                             </div>
                         </div>
                         <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2><button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                            <div className="flex items-center justify-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center">Live Interplanetary Magnetic Field</h2>
+                                <button onClick={() => openModal('imf-graph')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                <button
+                                    onClick={() => setExpandedMetric('btbz')}
+                                    className="ml-auto p-1 text-neutral-300 hover:text-white hover:bg-white/10 transition-colors rounded-full"
+                                    title="Expand graph"
+                                >
+                                    <CaretIcon className={`w-5 h-5 transition-transform duration-300 ${expandedMetric === 'btbz' ? 'rotate-180' : 'rotate-0'}`} />
+                                </button>
+                            </div>
                             <TimeRangeButtons onSelect={(duration, label) => { setMagneticFieldTimeRange(duration); setMagneticFieldTimeLabel(label); }} selected={magneticFieldTimeRange} />
                              <div className="flex-grow relative mt-2">
                                 {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">IMF data unavailable.</p>}
@@ -967,12 +1108,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <div className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 <div className="lg:col-span-2 h-[450px] flex flex-col">
-                                    <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2><button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                    <div className="flex justify-center items-center gap-2">
+                                        <h2 className="text-xl font-semibold text-white text-center">GOES Magnetometer (Substorm Watch)</h2>
+                                        <button onClick={() => openModal('goes-mag')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                        <button
+                                            onClick={() => setExpandedMetric('btbz')} // This will trigger the BT/BZ graph expansion, as per logic above
+                                            className="ml-auto p-1 text-neutral-300 hover:text-white hover:bg-white/10 transition-colors rounded-full"
+                                            title="Expand graph"
+                                        >
+                                            <CaretIcon className={`w-5 h-5 transition-transform duration-300 ${expandedMetric === 'btbz' ? 'rotate-180' : 'rotate-0'}`} />
+                                        </button>
+                                    </div>
                                     <TimeRangeButtons onSelect={(duration, label) => { setMagnetometerTimeRange(duration); setMagnetometerTimeLabel(label); }} selected={magnetometerTimeRange} />
                                     <div className="flex-grow relative mt-2">
                                         {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
                                     </div>
-                                </div> {/* <-- CORRECTED: Added closing div tag here */}
+                                </div>
                                 <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg">
                                     <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
                                     <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
