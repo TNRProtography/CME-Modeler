@@ -129,58 +129,54 @@ const createVerticalThresholdGradient = (
     // Create a linear gradient from bottom to top (y=chartArea.bottom to y=chartArea.top)
     const gradient = chart.ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
 
+    // FIX: Safely calculate yScaleRange to prevent division by zero
+    const yScaleRange = yScale.max - yScale.min;
+    if (yScaleRange === 0) {
+        // Return a fallback gradient if the scale range is zero (e.g., all data points are identical)
+        const fallbackGradient = chart.ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+        fallbackGradient.addColorStop(0, GAUGE_COLORS.gray.semi);
+        fallbackGradient.addColorStop(1, GAUGE_COLORS.gray.trans);
+        return fallbackGradient;
+    }
+
     // Helper to calculate gradient stop position (0=top, 1=bottom) based on data value
-    // This maps the data value to a 0-1 range based on the chart's Y-scale min/max, then inverts for gradient.
     const getYStopPosition = (value: number) => {
-        const normalizedValue = (value - yScale.min) / (yScale.max - yScale.min);
-        return 1 - normalizedValue; // Invert for bottom-to-top gradient mapping (0 at max, 1 at min)
+        let normalizedValue = (value - yScale.min) / yScaleRange;
+        // FIX: Clamp normalizedValue to be strictly between 0 and 1
+        normalizedValue = Math.max(0, Math.min(1, normalizedValue));
+        return 1 - normalizedValue; // Invert for bottom-to-top gradient mapping
     };
 
     if (isBz) {
-        // Bz: values become more active (better for aurora) as they become more negative.
-        // On a standard chart, more negative values are typically lower on the Y-axis.
-        // We want the most active colors (pink/purple) to be at the bottom of the chart (lower Y values).
-        // The least active colors (gray) to be at the top of the chart (higher/positive Y values).
+        // Bz: more negative values are higher intensity colors
+        // Stops from highest value (least active) to lowest value (most active) on the Y-axis.
+        gradient.addColorStop(getYStopPosition(yScale.max), GAUGE_COLORS.gray.trans); // Top of chart, transparent
 
-        // Add stops from the highest value on the scale down to the lowest.
-        // Add a transparent stop at the top of the actual Y-scale range to fade out.
-        gradient.addColorStop(getYStopPosition(yScale.max), GAUGE_COLORS.gray.trans);
-
-        // Add solid color stops at their respective threshold values, from least active to most active.
-        // The `getYStopPosition` function naturally maps lower values to higher stop positions (closer to 1) for a bottom-up gradient.
-        // So, list thresholds from largest (least negative) to smallest (most negative) for correct visual order.
-        if (thresholds.gray !== undefined) gradient.addColorStop(getYStopPosition(thresholds.gray), GAUGE_COLORS.gray.semi);
-        if (thresholds.yellow !== undefined) gradient.addColorStop(getYStopPosition(thresholds.yellow), GAUGE_COLORS.yellow.semi);
-        if (thresholds.orange !== undefined) gradient.addColorStop(getYStopPosition(thresholds.orange), GAUGE_COLORS.orange.semi);
-        if (thresholds.red !== undefined) gradient.addColorStop(getYStopPosition(thresholds.red), GAUGE_COLORS.red.semi);
-        if (thresholds.purple !== undefined) gradient.addColorStop(getYStopPosition(thresholds.purple), GAUGE_COLORS.purple.semi);
-        if (thresholds.pink !== Infinity && thresholds.pink !== undefined) gradient.addColorStop(getYStopPosition(thresholds.pink), GAUGE_COLORS.pink.semi);
-
-        // Ensure the gradient extends fully to the bottom of the visible chart range
-        gradient.addColorStop(getYStopPosition(yScale.min), GAUGE_COLORS.pink.semi);
-
+        // Use the clamped getYStopPosition for all threshold values
+        gradient.addColorStop(getYStopPosition(thresholds.gray), GAUGE_COLORS.gray.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.yellow), GAUGE_COLORS.yellow.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.orange), GAUGE_COLORS.orange.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.red), GAUGE_COLORS.red.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.purple), GAUGE_COLORS.purple.semi);
+        if (thresholds.pink !== Infinity && thresholds.pink !== undefined) {
+            gradient.addColorStop(getYStopPosition(thresholds.pink), GAUGE_COLORS.pink.semi);
+        }
+        gradient.addColorStop(getYStopPosition(yScale.min), GAUGE_COLORS.pink.semi); // Bottom of chart, solid color
     } else {
-        // For Speed, Density, Power, Bt: values become more active as they become more positive.
-        // On a standard chart, more positive values are typically higher on the Y-axis.
-        // We want the least active colors (gray) to be at the bottom of the chart (lower Y values).
-        // The most active colors (pink/purple) to be at the top of the chart (higher Y values).
+        // Positive metrics: higher values are higher intensity colors
+        // Stops from lowest value (least active) to highest value (most active) on the Y-axis.
+        gradient.addColorStop(getYStopPosition(yScale.min), GAUGE_COLORS.gray.semi); // Bottom of chart, solid gray
 
-        // Add stops from the lowest value on the scale up to the highest.
-        // Start with a solid color at the bottom of the actual Y-scale range.
-        gradient.addColorStop(getYStopPosition(yScale.min), GAUGE_COLORS.gray.semi);
-
-        // Add color stops at their respective threshold values, from least active to most active.
-        // The `getYStopPosition` function naturally maps lower values to higher stop positions (closer to 1) for a bottom-up gradient.
-        // So, list thresholds from smallest to largest for correct visual order.
-        if (thresholds.gray !== undefined) gradient.addColorStop(getYStopPosition(thresholds.gray), GAUGE_COLORS.gray.semi);
-        if (thresholds.yellow !== undefined) gradient.addColorStop(getYStopPosition(thresholds.yellow), GAUGE_COLORS.yellow.semi);
-        if (thresholds.orange !== undefined) gradient.addColorStop(getYStopPosition(thresholds.orange), GAUGE_COLORS.orange.semi);
-        if (thresholds.red !== undefined) gradient.addColorStop(getYStopPosition(thresholds.red), GAUGE_COLORS.red.semi);
-        if (thresholds.purple !== undefined) gradient.addColorStop(getYStopPosition(thresholds.purple), GAUGE_COLORS.purple.semi);
-        if (thresholds.pink !== Infinity && thresholds.pink !== undefined) gradient.addColorStop(getYStopPosition(thresholds.pink), GAUGE_COLORS.pink.semi);
-
-        // Add a transparent stop at the top of the actual Y-scale range to fade out.
-        gradient.addColorStop(getYStopPosition(yScale.max), GAUGE_COLORS.pink.trans);
+        // Use the clamped getYStopPosition for all threshold values
+        gradient.addColorStop(getYStopPosition(thresholds.gray), GAUGE_COLORS.gray.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.yellow), GAUGE_COLORS.yellow.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.orange), GAUGE_COLORS.orange.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.red), GAUGE_COLORS.red.semi);
+        gradient.addColorStop(getYStopPosition(thresholds.purple), GAUGE_COLORS.purple.semi);
+        if (thresholds.pink !== Infinity && thresholds.pink !== undefined) {
+            gradient.addColorStop(getYStopPosition(thresholds.pink), GAUGE_COLORS.pink.semi);
+        }
+        gradient.addColorStop(getYStopPosition(yScale.max), GAUGE_COLORS.pink.trans); // Top of chart, transparent
     }
 
     return gradient;
@@ -1297,12 +1293,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="card bg-neutral-950/80 p-4">
-                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul class="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
+                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 class="text-xl font-bold text-neutral-100">Tips for West Coast Spotting</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul class="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become. West Coast beaches are often perfect for this.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. West Coast weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
                             </div>
                             <div className="card bg-neutral-950/80 p-4">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 class="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                <div class={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
                                     <p class="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
 
                                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1438,7 +1434,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                                     allSpeedData={allSpeedData} speedChartData={speedChartData} speedChartOptions={speedChartOptions}
                                                     allDensityData={allDensityData} densityChartData={densityChartData} densityChartOptions={densityChartOptions}
                                                     allMagneticData={allMagneticData} magneticFieldChartData={magneticFieldChartData} magneticFieldOptions={magneticFieldOptions}
-                                                    perHemisphericPowerHistory={hemisphericPowerHistory} hemisphericPowerChartData={hemisphericPowerChartData} hemisphericPowerChartOptions={hemisphericPowerChartOptions}
+                                                    hemisphericPowerHistory={hemisphericPowerHistory} hemisphericPowerChartData={hemisphericPowerChartData} hemisphericPowerChartOptions={hemisphericPowerChartOptions}
                                                     goes18Data={goes18Data} goes19Data={goes19Data} magnetometerChartData={magnetometerChartData} magnetometerOptions={magnetometerOptions} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
                                                 />
                                             </div>
