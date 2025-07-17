@@ -127,7 +127,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1000] flex justify-center items-center p-4" onClick={onClose}>
-      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w<lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
@@ -892,7 +892,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             const colorKey1 = getPositiveScaleColorKey(power1, GAUGE_THRESHOLDS.power);
 
             gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi);
-            gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi);
+            gradient.addColorStop(1, GAUGE_COLORS[colorKey1].trans);
             return gradient;
         };
 
@@ -901,12 +901,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 {
                     label: 'Hemispheric Power',
                     data: hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower })),
-                    borderColor: 'transparent',
+                    // MODIFIED: Make line visible and colored dynamically
+                    borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power)].solid,
                     backgroundColor: getHemisphericPowerGradient,
                     fill: 'origin',
                     tension: 0.2,
                     pointRadius: 0,
-                    borderWidth: 0,
+                    borderWidth: 1.5, // Make the line visible
                     spanGaps: true,
                     order: 1,
                 },
@@ -1014,7 +1015,39 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         };
     }, [auroraScoreChartTimeRange, auroraScoreChartAnnotations]); // Update dependency here
 
-    const auroraScoreChartData = useMemo(() => { if (auroraScoreHistory.length === 0) return { datasets: [] }; const getForecastGradient = (ctx: ScriptableContext<'line'>) => { const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined; const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top); const score0 = ctx.p0?.parsed?.y ?? 0; const score1 = ctx.p1?.parsed?.y ?? 0; const colorKey0 = getForecastScoreColorKey(score0); const colorKey1 = getForecastScoreColorKey(score1); gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi); gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi); return gradient; }; return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'transparent', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 0, spanGaps: true, order: 1, }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2, } ], }; }, [auroraScoreHistory]);
+    const auroraScoreChartData = useMemo(() => {
+        if (auroraScoreHistory.length === 0) return { datasets: [] };
+        // MODIFIED: Apply fixed colors directly from HTML example for this specific chart
+        return {
+            datasets: [
+                {
+                    label: 'Spot The Aurora Forecast', // Corresponds to 'Real Aurora Score' in HTML
+                    data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
+                    borderColor: '#FF6347', // Fixed color from HTML
+                    backgroundColor: 'rgba(255, 99, 71, 0.2)', // Fixed color from HTML
+                    fill: 'origin',
+                    tension: 0.4, // HTML uses 0.4
+                    pointRadius: 1, // HTML uses 1
+                    borderWidth: 1, // HTML uses 1
+                    spanGaps: true,
+                    order: 1,
+                },
+                {
+                    label: 'Base Score', // Corresponds to 'Aurora Score - No Lunar or Sun Influence' in HTML
+                    data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })),
+                    borderColor: '#A9A9A9', // Fixed color from HTML
+                    backgroundColor: 'rgba(169, 169, 169, 0.2)', // Fixed color from HTML
+                    fill: 'origin', // HTML uses true, which corresponds to 'origin'
+                    tension: 0.4, // HTML uses 0.4
+                    pointRadius: 1, // HTML uses 1
+                    borderWidth: 1, // HTML uses 1
+                    borderDash: [0, 0], // Remove dash for consistency with HTML example if it didn't have it
+                    spanGaps: true,
+                    order: 2,
+                },
+            ],
+        };
+    }, [auroraScoreHistory]);
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
