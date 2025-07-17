@@ -7,13 +7,13 @@ import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
-import annotationPlugin from 'chartjs-plugin-annotation'; // Import the annotation plugin
+import annotationPlugin from 'chartjs-plugin-annotation';
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
-  setCurrentAuroraScore: (score: number | null) => void; // NEW PROP
-  setSubstormActivityStatus: (status: { text: string; color: string } | null) => void; // NEW PROP
+  setCurrentAuroraScore: (score: number | null) => void;
+  setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -24,7 +24,7 @@ interface CelestialTimeData {
 
 // Define a type for the daily history entry
 interface DailyHistoryEntry {
-    date: string;
+    date: string; // "YYYY-MM-DD"
     sun?: { rise: number | null, set: number | null };
     moon?: { rise: number | null, set: number | null, illumination?: number };
 }
@@ -301,7 +301,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [auroraScoreChartTimeRange, setAuroraScoreChartTimeRange] = useState<number>(6 * 3600000);
     const [auroraScoreChartTimeLabel, setAuroraScoreChartTimeLabel] = useState<string>('6 Hr');
 
-    // NEW STATE for daily celestial history
+    // State to hold the daily history of celestial events
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
 
 
@@ -443,7 +443,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     );
 
                     if (!recentSubstormOverlap) {
-                        annotations[`stretching-${currentPoint.time}`] = {
+                        annotations[`stretching-${currentPoint.time}`] = { // CORRECTED LINE HERE
                             type: 'box',
                             xMin: stretchAnalysis.xMin,
                             xMax: stretchAnalysis.xMax,
@@ -464,6 +464,95 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return annotations;
     }, []);
 
+    // NEW getMoonData function
+    const getMoonData = useCallback((illumination: number | null, currentRiseTime: number | null, currentSetTime: number | null, dailyHistory: DailyHistoryEntry[]) => {
+        const moonIllumination = Math.max(0, (illumination ?? 0));
+        let moonEmoji = '🌑';
+        if (moonIllumination > 95) moonEmoji = '🌕';
+        else if (moonIllumination > 55) moonEmoji = '🌖';
+        else if (moonIllumination > 45) moonEmoji = '🌗';
+        else if (moonIllumination > 5) moonEmoji = '🌒';
+
+        const now = Date.now();
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+
+        // Helper to find the next valid event time from a list of timestamps
+        const findNextEvent = (eventTimestamps: (number | null)[]) => {
+            // Filter out null/invalid timestamps and sort them chronologically
+            const sortedTimes = eventTimestamps
+                .filter((t): t is number => t !== null && !isNaN(t))
+                .sort((a, b) => a - b);
+
+            for (const timestamp of sortedTimes) {
+                if (timestamp > now) { // Found a future event
+                    return timestamp;
+                }
+            }
+            return null; // No future event found
+        };
+
+        // Collect all potential future moonrise times
+        const allPotentialRiseTimes: number[] = [];
+        // Add the current forecast's rise time if it's not null, even if it's in the past initially
+        if (currentRiseTime !== null) {
+            allPotentialRiseTimes.push(currentRiseTime);
+        }
+        // Add moonrise times from dailyHistory for today and future days
+        dailyHistory.forEach(day => {
+            const dayDate = new Date(day.date);
+            // Only consider entries for today or future, and only if moonrise is present
+            if (dayDate.setHours(0,0,0,0) >= today.setHours(0,0,0,0) && day.moon?.rise !== null) {
+                allPotentialRiseTimes.push(day.moon.rise);
+            }
+        });
+
+        // Collect all potential future moonset times
+        const allPotentialSetTimes: number[] = [];
+        if (currentSetTime !== null) {
+            allPotentialSetTimes.push(currentSetTime);
+        }
+        dailyHistory.forEach(day => {
+            const dayDate = new Date(day.date);
+            if (dayDate.setHours(0,0,0,0) >= today.setHours(0,0,0,0) && day.moon?.set !== null) {
+                allPotentialSetTimes.push(day.moon.set);
+            }
+        });
+
+        const nextRiseEvent = findNextEvent(allPotentialRiseTimes);
+        const nextSetEvent = findNextEvent(allPotentialSetTimes);
+
+        const formatEventTime = (timestamp: number | null) => {
+            if (!timestamp) return 'N/A';
+            const eventDate = new Date(timestamp);
+            const isToday = eventDate.toDateString() === today.toDateString();
+            const isTomorrow = eventDate.toDateString() === tomorrow.toDateString();
+
+            let dayLabel = '';
+            if (isToday) {
+                dayLabel = 'Today';
+            } else if (isTomorrow) {
+                dayLabel = 'Tomorrow';
+            } else {
+                // If it's more than tomorrow, show the actual date (e.g., 'Fri 19 Jul')
+                dayLabel = eventDate.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short' });
+            }
+
+            return `${dayLabel} ${eventDate.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
+        };
+
+        const riseStr = formatEventTime(nextRiseEvent);
+        const setStr = formatEventTime(nextSetEvent);
+
+        const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`;
+        const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+        const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
+
+        const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`;
+        return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
+    }, []); // Added useCallback for getMoonData
+
     const fetchAllData = useCallback(async (isInitialLoad = false) => {
         if (isInitialLoad) setIsLoading(true);
         const results = await Promise.allSettled([
@@ -476,7 +565,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result] = results;
 
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
-            const { currentForecast, historicalData, dailyHistory } = forecastResult.value; // Destructure dailyHistory
+            const { currentForecast, historicalData, dailyHistory } = forecastResult.value;
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
             setAuroraScore(currentScore);
@@ -484,22 +573,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
-            setGaugeData(prev => ({...prev, power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null) }));
-            if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
-            
-            // NEW: Set dailyCelestialHistory
+
+            // Set dailyCelestialHistory first, so getMoonData can use the most recent data
             if (Array.isArray(dailyHistory)) {
                 setDailyCelestialHistory(dailyHistory);
             } else {
                 setDailyCelestialHistory([]);
             }
 
+            // Pass dailyHistory to getMoonData
+            setGaugeData(prev => ({
+                ...prev,
+                power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
+                bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
+                bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
+                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, dailyHistory || []) // Pass dailyHistory here
+            }));
+            if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
+
         } else {
             console.error("Forecast data failed to load:", forecastResult.reason);
             setAuroraBlurb("Could not load forecast data.");
             setAuroraScoreHistory([]);
             setCurrentAuroraScore(null);
-            setDailyCelestialHistory([]); // Clear history on error
+            setDailyCelestialHistory([]);
         }
 
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
@@ -562,13 +659,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus]);
+    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData]); // Added getMoonData to dependency array for useCallback
 
     useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
-    const getMoonData = (illumination: number | null, riseTime: number | null, setTime: number | null) => { const moonIllumination = Math.max(0, (illumination ?? 0) ); let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒'; const riseStr = riseTime ? new Date(riseTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A'; const setStr = setTime ? new Date(setTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) : 'N/A'; const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`; const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`; const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`; const displayValue = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${CaretUpSvg} ${riseStr}   ${CaretDownSvg} ${setStr}</span>`; return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' }; };
+
 
     useEffect(() => { const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3; if (allPlasmaData.length > 0) { setSolarWindChartData({ datasets: [ { label: 'Speed', data: allPlasmaData.map(p => ({ x: p.time, y: p.speed })), yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)), } }, { label: 'Density', data: allPlasmaData.map(p => ({ x: p.time, y: p.density })), yAxisID: 'y1', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(solarWindTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)), } } ] }); } if (allMagneticData.length > 0) { setMagneticFieldChartData({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)), } }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createGradient(ctx.chart.ctx, ctx.chart.chartArea, getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)), } } ] }); } }, [allPlasmaData, allMagneticData, solarWindTimeRange, magneticFieldTimeRange]);
 
