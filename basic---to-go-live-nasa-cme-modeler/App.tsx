@@ -314,8 +314,8 @@ const App: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        {/* Changed from 'flex-grow min-h-0' to 'flex-grow' as the overflow is now handled by the parent */}
-        <div className="flex-grow"> 
+        {/* FIX: Re-added min-w-0 and h-full to ensure proper sizing for SimulationCanvas */}
+        <div className="flex-grow min-h-0"> 
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
                 <>
@@ -340,14 +340,14 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    {/* Removed min-w-0 h-full to allow content to expand within the scrollable parent */}
-                    <main className="flex-1 relative"> 
+                    {/* FIX: Restored min-w-0 and h-full */}
+                    <main className="flex-1 relative min-w-0 h-full"> 
                         <SimulationCanvas
                         ref={canvasRef}
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCmeId}
+                        currentlyModeledCmeId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
