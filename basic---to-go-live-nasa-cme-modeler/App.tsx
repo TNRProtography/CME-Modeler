@@ -315,7 +315,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        {/* FIX: Re-ensured min-h-0 and h-full for this container to correctly size children, especially the modeler */}
+        {/* FIX: Ensure this container takes up remaining height to correctly size children */}
         <div className="flex flex-grow min-h-0 h-full"> 
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
@@ -348,7 +348,7 @@ const App: React.FC = () => {
                         ref={canvasRef}
                         cmeData={filteredCmes}
                         activeView={activeView}
-                        focusTarget={activeFocus} // This prop is correctly passed from App.tsx
+                        focusTarget={activeFocus} // This prop is passed correctly from App.tsx
                         currentlyModeledCmeId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
