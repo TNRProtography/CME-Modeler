@@ -10,7 +10,7 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Import notification utilities
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -823,7 +823,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         return {
             datasets: [
-                { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'transparent', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 0, spanGaps: true, order: 1, },
+                {
+                    label: 'Spot The Aurora Forecast',
+                    data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
+                    borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getForecastScoreColorKey(ctx.p1?.parsed?.y ?? 0)].solid, // Dynamic border color
+                    backgroundColor: getForecastGradient,
+                    fill: 'origin',
+                    tension: 0.2,
+                    pointRadius: 0,
+                    borderWidth: 1.5, // Increased borderWidth to make the line visible
+                    spanGaps: true,
+                    order: 1,
+                },
                 { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2, },
             ],
         };
@@ -862,7 +873,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel,
         magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel,
         hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel,
-        forceUpdate, // This prop is not declared in the interface for ExpandedGraphContentProps
+        // Removed `forceUpdate` as it was not a prop of this component's interface
         magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel,
         openModal,
         allSpeedData, speedChartData, speedChartOptions,
