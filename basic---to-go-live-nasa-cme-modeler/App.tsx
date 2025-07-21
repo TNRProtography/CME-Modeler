@@ -19,6 +19,7 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
+import RefreshIcon from './components/icons/RefreshIcon'; // NEW: Import RefreshIcon
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -107,6 +108,13 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
+  // NEW: State for tracking last refresh time for display
+  const [lastRefreshTimestamp, setLastRefreshTimestamp] = useState<number | null>(null);
+
+  // NEW: Ref to trigger data refresh from App component.
+  // Incrementing this ref's value will cause useEffects that depend on it to re-run.
+  const refreshTriggerRef = useRef(0);
+
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -151,6 +159,7 @@ const App: React.FC = () => {
         setTimelineMinDate(0);
         setTimelineMaxDate(0);
       }
+      setLastRefreshTimestamp(Date.now()); // Update refresh time on successful CME data load
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -164,11 +173,13 @@ const App: React.FC = () => {
     }
   }, [resetClock, apiKey]);
 
+  // Effect to load CME data when activePage is 'modeler' or when refreshTrigger changes
   useEffect(() => {
     if (activePage === 'modeler') {
       loadCMEData(activeTimeRange);
     }
-  }, [activeTimeRange, loadCMEData, activePage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTimeRange, activePage, refreshTriggerRef.current]); // Add refreshTriggerRef.current
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -269,6 +280,25 @@ const App: React.FC = () => {
     [substormActivityStatus]
   );
 
+  // NEW: Handle a full refresh based on the active page
+  const handleFullRefresh = useCallback(() => {
+    // Increment the ref to trigger data fetching in relevant components
+    refreshTriggerRef.current = refreshTriggerRef.current + 1;
+    // Set a temporary "Loading..." state for the refresh time until data comes in
+    setLastRefreshTimestamp(null);
+  }, []);
+
+  const formatRefreshTime = (timestamp: number | null) => {
+    if (timestamp === null) return "Refreshing...";
+    const date = new Date(timestamp);
+    // Format to NZ local time (e.g., 21/07/2025, 07:00 PM)
+    return date.toLocaleString('en-NZ', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+        timeZone: 'Pacific/Auckland'
+    });
+  };
+
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
@@ -283,7 +313,7 @@ const App: React.FC = () => {
         />
 
         {/* Unified Header Bar for Navigation */}
-        <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
+        <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex items-center justify-between">
             <div className="flex items-center space-x-2">
                 <button 
                 onClick={() => setActivePage('forecast')}
@@ -316,8 +346,18 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
-            {/* NEW: Settings Button */}
-            <div className="flex-grow flex justify-end">
+            {/* NEW: Refresh and Settings Buttons */}
+            <div className="flex items-center space-x-3">
+                <div className="flex flex-col items-center">
+                    <button 
+                        onClick={handleFullRefresh}
+                        className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-colors hover:bg-neutral-700/90"
+                        title="Refresh Data"
+                    >
+                        <RefreshIcon className="w-6 h-6" />
+                    </button>
+                    <span className="text-[0.65rem] text-neutral-400 mt-1 w-24 text-center">{formatRefreshTime(lastRefreshTimestamp)}</span>
+                </div>
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
                     className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-colors hover:bg-neutral-700/90"
@@ -360,7 +400,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId} // Corrected casing here
+                        currentlyModeledCMEId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -476,6 +516,8 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia}
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
+                  refreshTrigger={refreshTriggerRef.current} // Pass trigger to refresh
+                  onDataRefresh={(timestamp: number) => setLastRefreshTimestamp(timestamp)} // Pass callback for last update time
                 />
             )}
 
@@ -484,6 +526,8 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia} 
                   apiKey={apiKey}
                   setLatestXrayFlux={setLatestXrayFlux}
+                  refreshTrigger={refreshTriggerRef.current} // Pass trigger to refresh
+                  onDataRefresh={(timestamp: number) => setLastRefreshTimestamp(timestamp)} // Pass callback for last update time
                 />
             )}
         </div>

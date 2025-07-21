@@ -11,6 +11,8 @@ interface SolarActivityDashboardProps {
   apiKey: string;
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
+  refreshTrigger: number; // NEW: Prop to trigger refresh
+  onDataRefresh: (timestamp: number) => void; // NEW: Callback to send last refresh time to parent
 }
 
 // --- CONSTANTS ---
@@ -24,7 +26,7 @@ const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMII
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
 
-const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
+const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute for automatic refresh
 
 // --- HELPERS ---
 const getCssVar = (name: string): string => {
@@ -71,7 +73,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`} title={`Show data for the last ${hours} hours`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
                     {label}
                 </button>
             ))}
@@ -106,7 +108,7 @@ interface InterplanetaryShock {
 }
 
 
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, refreshTrigger, onDataRefresh }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoHmi, setSdoHmi] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -129,6 +131,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     // NEW: Ref for previous X-ray flux to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
+
+    // Ref to manage the auto-refresh interval
+    const autoRefreshIntervalId = useRef<NodeJS.Timeout | null>(null);
 
 
     const tooltipContent = useMemo(() => ({
@@ -211,10 +216,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 const prevFlux = previousLatestXrayFluxRef.current;
                 
                 if (latestFluxValue !== null && prevFlux !== null) {
-                    // M5+ Flare notification (5e-6 is M0.5, 5e-5 is M5)
-                    if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
-                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M0.5)! Current flux: ${latestFluxValue.toExponential(2)}`);
-                    } else if (latestFluxValue < 5e-6) {
+                    // M1+ Flare notification (1e-6 is C1, 1e-5 is M1)
+                    if (latestFluxValue >= 1e-5 && prevFlux < 1e-5 && canSendNotification('flare-M1', 15 * 60 * 1000)) { // 15 min cooldown
+                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M1.0)! Current flux: ${latestFluxValue.toExponential(2)}`);
+                    } else if (latestFluxValue < 1e-5) {
+                        clearNotificationCooldown('flare-M1');
+                    }
+
+                    // M5+ Flare notification
+                    if (latestFluxValue >= 5e-5 && prevFlux < 5e-5 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
+                        sendNotification('Solar Flare Alert: M5-Class!', `X-ray flux has reached M5.0 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
+                    } else if (latestFluxValue < 5e-5) {
                         clearNotificationCooldown('flare-M5');
                     }
 
@@ -277,22 +289,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         }
     }, []);
 
+    // Effect for initial load and manual refresh trigger
     useEffect(() => {
-        const runAllUpdates = () => {
-            fetchImage(SUVI_131_URL, setSuvi131);
-            fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi, false, false);
-            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
-            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
-            fetchXrayFlux();
-            fetchFlares();
-            fetchSunspots();
-            fetchInterplanetaryShockData(); // Fetch IPS data here
+        const runAllUpdates = async () => {
+            setIsLoading(true); // Indicate loading when refresh is triggered
+            let latestUpdateTimestamp = Date.now(); // Assume current time as initial update
+            
+            await Promise.all([
+                fetchImage(SUVI_131_URL, setSuvi131).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchImage(SUVI_304_URL, setSuvi304).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchImage(SDO_HMI_URL, setSdoHmi, false, false).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchXrayFlux().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchFlares().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchSunspots().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+                fetchInterplanetaryShockData().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
+            ]);
+            
+            onDataRefresh(latestUpdateTimestamp); // Send the latest effective update time back
+            setIsLoading(false); // End loading
         };
-        runAllUpdates();
-        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
-        return () => clearInterval(interval);
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData]);
+
+        runAllUpdates(); // Initial fetch or triggered by refreshTrigger
+
+        // Clear any existing interval to prevent multiple intervals running
+        if (autoRefreshIntervalId.current) {
+            clearInterval(autoRefreshIntervalId.current);
+        }
+
+        // Set up the auto-refresh interval
+        autoRefreshIntervalId.current = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
+
+        // Cleanup on unmount
+        return () => {
+            if (autoRefreshIntervalId.current) {
+                clearInterval(autoRefreshIntervalId.current);
+            }
+        };
+    }, [refreshTrigger, apiKey, fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData, onDataRefresh]); // Added refreshTrigger and onDataRefresh to dependencies
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -480,12 +515,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                                {/* Changed to openModal for information, linking to the relevant tooltipContent */}
                                 <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
-                                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                                {allXrayData.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                             </div>
                         </div>
 
@@ -522,7 +556,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                    {/* CaretIcon is removed from here if it's not imported/needed globally */}
                                     <svg xmlns="http://www.w3.org/2000/svg" className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                                 </button>
                             </div>
