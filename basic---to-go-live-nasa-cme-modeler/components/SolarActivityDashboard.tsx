@@ -5,7 +5,7 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications'; // Import notification utilities
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -22,6 +22,7 @@ const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_region
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -94,6 +95,17 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
+// Define type for NASA Interplanetary Shock (IPS) record (moved here as it's used only in this file now)
+interface InterplanetaryShock {
+    activityID: string;
+    catalog: string;
+    eventTime: string;
+    instruments: { displayName: string }[];
+    location: string;
+    link: string;
+}
+
+
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -101,7 +113,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
 
-    // NEW state for active sun image display
     const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131'); // Default to SUVI 131Å
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
@@ -112,6 +123,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [sunspots, setSunspots] = useState<any[]>([]);
     const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
+
+    const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
+    const [isIpsOpen, setIsIpsOpen] = useState(false);
 
     // NEW: Ref for previous X-ray flux to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
@@ -126,7 +140,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
-    }), []); // Memoize to prevent re-creation on every render
+        'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
+    }), []);
+
+    const openModal = useCallback((id: string) => {
+        const contentData = tooltipContent[id as keyof typeof tooltipContent];
+        if (contentData) {
+            let title = '';
+            if (id === 'xray-flux') title = 'About GOES X-ray Flux';
+            else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
+            else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
+            else if (id === 'sdo-hmi') title = 'About SDO HMI Intensitygram';
+            else if (id === 'sdo-aia-193') title = 'About SDO AIA 193Å Imagery';
+            else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
+            else if (id === 'solar-flares') title = 'About Solar Flares';
+            else if (id === 'active-regions') title = 'About Active Regions / Sunspots';
+            else if (id === 'ips') title = 'About Interplanetary Shocks';
+            else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
+
+            setModalState({ isOpen: true, title: title, content: contentData });
+        }
+    }, [tooltipContent]);
+
+    const closeModal = useCallback(() => setModalState(null), []);
 
     const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
@@ -162,34 +198,34 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     setLoadingXray('No valid X-ray data.');
                     setAllXrayData([]);
                     setLatestXrayFlux(null);
-                    previousLatestXrayFluxRef.current = null; // Reset previous flux if no data
+                    previousLatestXrayFluxRef.current = null;
                     return;
                 }
 
                 setAllXrayData(processedData);
                 setLoadingXray(null);
                 const latestFluxValue = processedData[processedData.length - 1].short;
-                setLatestXrayFlux(latestFluxValue); // Update parent state
+                setLatestXrayFlux(latestFluxValue);
 
                 // --- Notification Logic for X-ray Flux ---
                 const prevFlux = previousLatestXrayFluxRef.current;
                 
                 if (latestFluxValue !== null && prevFlux !== null) {
-                    // M5+ Flare notification
+                    // M5+ Flare notification (5e-6 is M0.5, 5e-5 is M5)
                     if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
-                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M5 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
+                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M0.5)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 5e-6) {
-                        clearNotificationCooldown('flare-M5'); // Clear cooldown if flux drops below M5
+                        clearNotificationCooldown('flare-M5');
                     }
 
                     // X1+ Flare notification
                     if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) { // 30 min cooldown
-                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X1 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
+                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 1e-4) {
-                        clearNotificationCooldown('flare-X1'); // Clear cooldown if flux drops below X1
+                        clearNotificationCooldown('flare-X1');
                     }
                 }
-                previousLatestXrayFluxRef.current = latestFluxValue; // Update ref after comparison
+                previousLatestXrayFluxRef.current = latestFluxValue;
 
             }).catch(e => {
                 console.error('Error fetching X-ray flux:', e);
@@ -220,7 +256,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         setLoadingSunspots('Loading active regions...');
         try {
             const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`); // Changed res.status to response.status
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
             if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
@@ -229,40 +265,79 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, []);
 
+    const fetchInterplanetaryShockData = useCallback(async () => {
+        try {
+            const response = await fetch(`${NASA_IPS_URL}?_=${new Date().getTime()}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data: InterplanetaryShock[] = await response.json();
+            setInterplanetaryShockData(data);
+        } catch (error) {
+            console.error('NASA IPS Fetch Failed:', error);
+            setInterplanetaryShockData([]);
+        }
+    }, []);
+
     useEffect(() => {
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi, false, false); // No cache-buster for SDO
-            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false); // No cache-buster for SDO
+            fetchImage(SDO_HMI_URL, setSdoHmi, false, false);
+            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchFlares();
             fetchSunspots();
+            fetchInterplanetaryShockData(); // Fetch IPS data here
         };
-        runAllUpdates(); // Initial fetch
-        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS); // Refresh every minute
-        return () => clearInterval(interval); // Cleanup on unmount
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots]);
+        runAllUpdates();
+        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
+        return () => clearInterval(interval);
+    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000;
+        // Assuming NZ offset for "Midnight" labels. If not, this could be simplified/removed.
+        const nzOffset = 12 * 3600000; 
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
             const midnight = new Date(d).setUTCHours(12,0,0,0);
             if (midnight > startTime && midnight < now) {
-                midnightAnnotations[`midnight-${midnight}`] = { type: 'line', xMin: midnight, xMax: midnight, borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } };
+                midnightAnnotations[`midnight-${midnight}`] = { 
+                    type: 'line', xMin: midnight, xMax: midnight, 
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], 
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } 
+                };
             }
         }
         
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` } }, annotation: { annotations: midnightAnnotations } },
-            scales: { x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } }
+            plugins: { 
+                legend: { display: false }, 
+                tooltip: { callbacks: { 
+                    label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` 
+                }}, 
+                annotation: { annotations: midnightAnnotations } 
+            },
+            scales: { 
+                x: { 
+                    type: 'time', adapters: { date: { locale: enNZ } }, 
+                    time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, 
+                    min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, 
+                    grid: { color: '#3f3f46' } 
+                }, 
+                y: { 
+                    type: 'logarithmic', min: 1e-9, max: 1e-3, 
+                    ticks: { 
+                        color: '#71717a', 
+                        callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } 
+                    }, 
+                    grid: { color: '#3f3f46' } 
+                } 
+            }
         };
     }, [xrayTimeRange]);
     
@@ -279,7 +354,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     }, [allXrayData]);
     
     return (
-        // This outer div now spans the full height and applies the background/overlay
         <div
             className="w-full h-full bg-neutral-900 text-neutral-300 relative"
             style={{
@@ -289,14 +363,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 backgroundAttachment: 'fixed',
             }}
         >
-            {/* The absolute overlay now covers the entire fixed-height background div */}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
             
-            {/* THIS IS THE NEW SCROLLABLE CONTAINER */}
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
-                {/* Your existing dashboard content goes inside here */}
                 <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
-                <div className="container mx-auto"> {/* This div doesn't need to be relative anymore or z-10 if it's already a child of the z-10 scroll container */}
+                <div className="container mx-auto">
                     <header className="text-center mb-8">
                         <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                         <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
@@ -377,7 +448,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 )}
                                 {activeSunImage === 'SDO_AIA_193' && (
                                     <div
-                                        onClick={() => sdoAia193.url !== '/placeholder.193.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
+                                        onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
                                         title={tooltipContent['sdo-aia-193']}
                                     >
@@ -409,7 +480,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                                <button onClick={() => setViewerMedia({ url: NOAA_XRAY_FLUX_URL, type: 'image' })} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="View GOES X-ray Flux raw image on NOAA SWPC.">?</button>
+                                {/* Changed to openModal for information, linking to the relevant tooltipContent */}
+                                <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
@@ -441,8 +513,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
                             </ul>
                         </div>
+
+                        {/* Interplanetary Shock Events Card (KEEPING THIS AS IT'S RELEVANT TO SOLAR ACTIVITY) */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4">
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
+                                <div className="flex items-center">
+                                    <h2 className="text-xl font-semibold text-neutral-100">Interplanetary Shock Events</h2>
+                                    <button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                </div>
+                                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                    {/* CaretIcon is removed from here if it's not imported/needed globally */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                                </button>
+                            </div>
+                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isIpsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                {interplanetaryShockData.length > 0 ? (
+                                    <div className="space-y-4 text-sm">
+                                        {interplanetaryShockData.slice(0, 5).map((shock) => (
+                                            <div key={shock.activityID} className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
+                                                <p><strong className="text-neutral-300">Shock Time:</strong> <span className="text-yellow-400 font-mono">{formatNZTimestamp(shock.eventTime)}</span></p>
+                                                <p><strong className="text-neutral-300">Location:</strong> {shock.location}</p>
+                                                <p><strong className="text-neutral-300">Source:</strong> {shock.instruments.map(inst => inst.displayName).join(', ')}</p>
+                                                <p><strong className="text-neutral-300">Activity ID:</strong> <a href={shock.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{shock.activityID}</a></p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-center pt-5 text-neutral-400 italic">No recent interplanetary shock data available from NASA.</p>
+                                )}
+                            </div>
+                        </div>
+
                     </main>
-                </div>
+                    <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
+                        <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
+                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, solar flares, active regions (sunspots), and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
+                        <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> Solar activity can be highly unpredictable. While this dashboard provides the latest available data, interpretations are for informational purposes only.</p>
+                        <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a></p><p className="mt-2">Visualization and Development by TNR Protography</p></div>
+                    </footer>
+                 </div>
             </div>
             
             <InfoModal

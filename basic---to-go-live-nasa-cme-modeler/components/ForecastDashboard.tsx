@@ -10,7 +10,7 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications'; // Import notification utilities
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -376,7 +376,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, []);
 
     const analyzeMagnetometerData = (data: any[]) => {
-        const prevSubstormStatusText = previousSubstormStatusRef.current; // Get previous status
+        const prevSubstormStatusText = previousSubstormStatusRef.current;
         
         if (data.length < 30) {
             const status = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' };
@@ -403,7 +403,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         let newStatusText: string;
         let newStatusColor: string;
         
-        // Default to not notifying, then set to true if conditions met
         let shouldNotifySubstormEruption = false;
 
         if (jump > 20) {
@@ -411,18 +410,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`;
             newStatusColor = 'text-green-400 font-bold animate-pulse';
             
-            // Notification condition: substorm eruption mode AND forecast > 40% AND can send notification (cooldown)
-            if (auroraScore !== null && auroraScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 5 * 60 * 1000)) { // 5 min cooldown for substorm
+            if (auroraScore !== null && auroraScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 5 * 60 * 1000)) {
                 shouldNotifySubstormEruption = true;
             }
         } else if (drop < -15) {
             newStatusText = 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.';
             newStatusColor = 'text-yellow-400';
-            clearNotificationCooldown('substorm-eruption'); // Clear eruption cooldown if in stretching
+            clearNotificationCooldown('substorm-eruption');
         } else {
             newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.';
             newStatusColor = 'text-neutral-400';
-            clearNotificationCooldown('substorm-eruption'); // Clear eruption cooldown if stable
+            clearNotificationCooldown('substorm-eruption');
         }
         
         const status = { text: newStatusText, color: newStatusColor };
@@ -581,7 +579,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ]);
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
 
-        // Store previous aurora score for comparison
         const prevAuroraScore = previousAuroraScoreRef.current;
 
 
@@ -680,7 +677,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         if (!anyGoesDataFound) { setLoadingMagnetometer('No valid GOES Magnetometer data available from either satellite for this period.'); } else { setLoadingMagnetometer(null); }
 
-        // NEW: Process IPS data
         if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) {
             setInterplanetaryShockData(ipsResult.value);
         } else {
@@ -734,7 +730,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const createChartOptions = useCallback((rangeMs: number, isDualAxis: boolean, yLabel: string, showLegend: boolean = false, extraAnnotations?: any): ChartOptions<'line'> => {
         const now = Date.now(); const startTime = now - rangeMs; const options: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } } } };
-        if (isDualAxis) options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } };
+        if (isDualAxis) options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } }, y1: { type: 'linear', position: 'right', ticks: { color: '#a3a3a3' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Density (p/cm³)', color: '#a3a3a3' } } } as any; // Cast to any to satisfy TS for dynamic scales
         else options.scales = { ...options.scales, y: { type: 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } } };
         if (extraAnnotations) { options.plugins = { ...options.plugins, annotation: { annotations: extraAnnotations } }; }
         return options;
@@ -866,6 +862,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel,
         magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel,
         hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel,
+        forceUpdate, // This prop is not declared in the interface for ExpandedGraphContentProps
         magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel,
         openModal,
         allSpeedData, speedChartData, speedChartOptions,

@@ -6,7 +6,7 @@ import App from './App';
 import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { requestNotificationPermission } from './utils/notifications'; // Import the new utility
+import { requestNotificationPermission } from './utils/notifications.ts'; // Corrected import path: added .ts extension
 
 ChartJS.register(
   CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale,
