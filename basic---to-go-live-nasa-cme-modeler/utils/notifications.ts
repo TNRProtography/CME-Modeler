@@ -1,4 +1,4 @@
-// src/utils/notifications.ts
+// --- START OF FILE src/utils/notifications.ts ---
 
 // Function to request notification permission from the user
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
@@ -35,6 +35,12 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
     return;
   }
 
+  // Check if the specific notification category is enabled by the user
+  if (options?.tag && !getNotificationPreference(options.tag)) {
+    console.log(`Notification for category '${options.tag}' is disabled by user preference.`);
+    return;
+  }
+
   if (Notification.permission === 'granted') {
     const notificationOptions: NotificationOptions = {
       body: body,
@@ -63,6 +69,12 @@ const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000; // Default cooldown: 30
  * @returns true if the notification can be sent, false otherwise.
  */
 export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS): boolean => {
+  // First, check user preference
+  if (!getNotificationPreference(tag)) {
+    return false; // User has disabled this notification type
+  }
+
+  // Then, check cooldown
   const lastSent = notificationCooldowns.get(tag) || 0;
   const now = Date.now();
 
@@ -81,3 +93,37 @@ export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NO
 export const clearNotificationCooldown = (tag: string) => {
   notificationCooldowns.delete(tag);
 };
+
+// --- User Notification Preferences (localStorage) ---
+const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
+
+/**
+ * Gets the user's preference for a specific notification category.
+ * Defaults to true if no preference is saved.
+ * @param categoryId The ID of the notification category (e.g., 'aurora-50percent').
+ * @returns boolean indicating if the notification is enabled.
+ */
+export const getNotificationPreference = (categoryId: string): boolean => {
+  try {
+    const storedValue = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
+    // If not explicitly set (null), default to true. Otherwise, parse stored boolean.
+    return storedValue === null ? true : JSON.parse(storedValue);
+  } catch (e) {
+    console.error(`Error reading notification preference for ${categoryId}:`, e);
+    return true; // Default to true on error
+  }
+};
+
+/**
+ * Sets the user's preference for a specific notification category.
+ * @param categoryId The ID of the notification category.
+ * @param enabled Whether the notification should be enabled (true) or disabled (false).
+ */
+export const setNotificationPreference = (categoryId: string, enabled: boolean) => {
+  try {
+    localStorage.setItem(NOTIFICATION_PREF_PREFIX + categoryId, JSON.stringify(enabled));
+  } catch (e) {
+    console.error(`Error saving notification preference for ${categoryId}:`, e);
+  }
+};
+// --- END OF FILE src/utils/notifications.ts ---

@@ -1,3 +1,5 @@
+// --- START OF FILE App.tsx ---
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
@@ -23,6 +25,10 @@ import ForecastModelsModal from './components/ForecastModelsModal';
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
+
+// NEW: Settings Modal Import
+import SettingsModal from './components/SettingsModal';
+
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -69,6 +75,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // NEW: State for settings modal
 
   // Display Options State
   const [showLabels, setShowLabels] = useState(true);
@@ -173,7 +180,7 @@ const App: React.FC = () => {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, [filteredCmes, currentlyModeledCmeId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -309,6 +316,16 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
+            {/* NEW: Settings Button */}
+            <div className="flex-grow flex justify-end">
+                <button 
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-colors hover:bg-neutral-700/90"
+                    title="Open Settings"
+                >
+                    <SettingsIcon className="w-6 h-6" />
+                </button>
+            </div>
         </header>
 
         {/* Main Content Area */}
@@ -343,7 +360,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCMEId}
+                        currentlyModeledCmeId={currentlyModeledCmeId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -475,8 +492,15 @@ const App: React.FC = () => {
           media={viewerMedia}
           onClose={() => setViewerMedia(null)}
         />
+
+        {/* NEW: Settings Modal */}
+        <SettingsModal 
+            isOpen={isSettingsOpen} 
+            onClose={() => setIsSettingsOpen(false)} 
+        />
     </div>
   );
 };
 
 export default App;
+// --- END OF FILE App.tsx ---
