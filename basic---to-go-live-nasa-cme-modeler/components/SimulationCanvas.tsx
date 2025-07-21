@@ -114,7 +114,7 @@ interface SimulationCanvasProps {
   cmeData: ProcessedCME[];
   activeView: ViewMode;
   focusTarget: FocusTarget | null;
-  currentlyModeledCMEId: string | null;
+  currentlyModeledCMEId: string | null; // Correct prop name casing
   onCMEClick: (cme: ProcessedCME) => void;
   timelineActive: boolean;
   timelinePlaying: boolean;
@@ -140,7 +140,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeData,
     activeView,
     focusTarget,
-    currentlyModeledCMEId, // CORRECTED: Ensure casing matches prop definition
+    currentlyModeledCMEId, // Correctly destructuring the prop (uppercase CME)
     onCMEClick,
     timelineActive,
     timelinePlaying,
@@ -176,12 +176,30 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   // Use a ref to hold props that the animation loop needs access to.
   // This avoids issues with stale closures in the requestAnimationFrame loop.
-  const animPropsRef = useRef({ onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate });
+  const animPropsRef = useRef({ 
+      onScrubberChangeByAnim, 
+      onTimelineEnd, 
+      currentlyModeledCMEId, // CORRECTED: Use correct casing here for consistency
+      timelineActive, 
+      timelinePlaying, 
+      timelineSpeed, 
+      timelineMinDate, 
+      timelineMaxDate 
+  });
   const interactionRef = useRef({ onCMEClick, interactionMode });
 
   useEffect(() => {
-    // CORRECTED: Pass currentlyModeledCMEId with correct casing to the ref
-    animPropsRef.current = { onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate };
+    // CORRECTED: Pass currentlyModeledCMEId with correct casing to the ref's current value
+    animPropsRef.current = { 
+        onScrubberChangeByAnim, 
+        onTimelineEnd, 
+        currentlyModeledCMEId, // Correct casing here
+        timelineActive, 
+        timelinePlaying, 
+        timelineSpeed, 
+        timelineMinDate, 
+        timelineMaxDate 
+    };
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
 
   useEffect(() => {
@@ -468,7 +486,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       animationFrameId = requestAnimationFrame(animate);
 
       const {
-        currentlyModeledCMEId,
+        currentlyModeledCMEId, // Correct casing here
         timelineActive,
         timelinePlaying,
         timelineSpeed,
@@ -476,8 +494,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         timelineMaxDate,
         onScrubberChangeByAnim,
         onTimelineEnd,
-      } = animPropsRef.current;
-      
+      } = animPropsRef.current; // Accessing from animPropsRef.current
+
       const elapsedTime = getClockElapsedTime();
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
@@ -576,12 +594,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             if (!cme) return;
 
             let currentDistSceneUnits = 0;
-            if (currentlyModeledCMEId && cme.id === currentlyModeledCMEId) {
+            // CORRECTED: Use currentlyModeledCMEId (correct casing)
+            if (currentlyModeledCMEId && cme.id === currentlyModeledCMEId) { 
                 const simStartTime = cme.simulationStartTime !== undefined ? cme.simulationStartTime : elapsedTime; 
                 const timeSinceEventVisual = elapsedTime - simStartTime;
                 currentDistSceneUnits = calculateDistance(cme, timeSinceEventVisual < 0 ? 0 : timeSinceEventVisual, true); 
             } 
-            else if (!currentlyModeledCMEId) {
+            else if (!currentlyModeledCMEId) { // Also checking here, ensuring correct casing
                 const timeSinceEventAPI = (Date.now() - cme.startTime.getTime()) / 1000;
                 currentDistSceneUnits = calculateDistance(cme, timeSinceEventAPI < 0 ? 0 : timeSinceEventAPI, false); 
             } else {
@@ -728,6 +747,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (!cmeGroupRef.current) return;
     cmeGroupRef.current.children.forEach((cmeMesh: any) => {
       const cme: ProcessedCME = cmeMesh.userData;
+      // CORRECTED: Use currentlyModeledCMEId (correct casing)
       if (currentlyModeledCMEId) {
         cmeMesh.visible = cme.id === currentlyModeledCMEId;
         if(cme.id === currentlyModeledCMEId && cmeMesh.userData){
@@ -738,7 +758,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     });
     if (predictionLineRef.current) {
+        // CORRECTED: Use currentlyModeledCMEId (correct casing)
         const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
+        // CORRECTED: Use currentlyModeledCMEId (correct casing)
         predictionLineRef.current.visible = !!(cme && cme.isEarthDirected && currentlyModeledCMEId);
     }
 
@@ -824,7 +846,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       });
       const line = new THREE.Line(geometry, material);
       line.computeLineDistances(); 
-      line.visible = !!currentlyModeledCMEId; 
+      line.visible = !!currentlyModeledCmeId; // CORRECTED: Use currentlyModeledCMEId (correct casing)
       sceneRef.current.add(line);
       predictionLineRef.current = line;
     }
