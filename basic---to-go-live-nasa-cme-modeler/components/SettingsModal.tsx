@@ -7,7 +7,7 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission 
-} from '../utils/notifications'; // Import notification utilities
+} from '../utils/notifications.ts'; // Import notification utilities
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,17 +15,24 @@ interface SettingsModalProps {
 }
 
 // Define categories for notifications. These should match the tags used in sendNotification.
+// UPDATED: M-class flare categories
 const NOTIFICATION_CATEGORIES = [
   { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
   { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
-  { id: 'flare-M5', label: 'Solar Flare M-Class (≥ M0.5)' },
+  { id: 'flare-M1', label: 'Solar Flare M-Class (≥ M1.0)' }, // Changed to M1+
+  { id: 'flare-M5', label: 'Solar Flare M5-Class (≥ M5.0)' }, // NEW: M5+
   { id: 'flare-X1', label: 'Solar Flare X-Class (≥ X1.0)' },
   { id: 'substorm-eruption', label: 'Substorm Eruption Detected' },
 ];
 
+// Key for storing location preference in localStorage
+const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
+  // NEW: State for location preference
+  const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
 
   useEffect(() => {
     if (isOpen) {
@@ -37,11 +44,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       }
 
       // Load saved notification preferences
-      const loadedSettings: Record<string, boolean> = {};
+      const loadedNotificationSettings: Record<string, boolean> = {};
       NOTIFICATION_CATEGORIES.forEach(category => {
-        loadedSettings[category.id] = getNotificationPreference(category.id);
+        loadedNotificationSettings[category.id] = getNotificationPreference(category.id);
       });
-      setNotificationSettings(loadedSettings);
+      setNotificationSettings(loadedNotificationSettings);
+
+      // Load saved location preference
+      const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
+      setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
     }
   }, [isOpen]);
 
@@ -53,6 +64,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const handleRequestPermission = useCallback(async () => {
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
+  }, []);
+
+  // NEW: Handler for location toggle
+  const handleGpsToggle = useCallback((checked: boolean) => {
+    setUseGpsAutoDetect(checked);
+    localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(checked));
   }, []);
 
   if (!isOpen) return null;
@@ -120,11 +137,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             )}
           </section>
 
+          {/* NEW: Location Settings Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
-            <p className="text-sm text-neutral-400">Location settings, such as default viewing area or preferred aurora spotting location, will be configurable here in a future update.</p>
-            <p className="text-sm text-neutral-500 mt-2 italic">For now, your aurora sighting reports automatically use your device's GPS or your manual map click. You can manage your default name for reports directly on the Aurora Sightings map.</p>
+            <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
+            <ToggleSwitch
+              label="Auto-detect Location (GPS)"
+              checked={useGpsAutoDetect}
+              onChange={handleGpsToggle}
+            />
+            <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will always be prompted to place your location manually on the map.</p>
           </section>
+
         </div>
       </div>
     </div>
