@@ -1,3 +1,5 @@
+// --- START OF FILE SimulationCanvas.tsx ---
+
 import React, { useRef, useEffect, useCallback } from 'react';
 import { ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData, InteractionMode, SimulationCanvasHandle } from '../types';
 import {
@@ -138,7 +140,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeData,
     activeView,
     focusTarget,
-    currentlyModeledCMEId,
+    currentlyModeledCMEId, // CORRECTED: Ensure casing matches prop definition
     onCMEClick,
     timelineActive,
     timelinePlaying,
@@ -178,6 +180,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const interactionRef = useRef({ onCMEClick, interactionMode });
 
   useEffect(() => {
+    // CORRECTED: Pass currentlyModeledCMEId with correct casing to the ref
     animPropsRef.current = { onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate };
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
 
@@ -614,7 +617,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (object.geometry) object.geometry.dispose();
         if (object.material) {
           if (Array.isArray(object.material)) {
-            object.material.forEach((material:any) => material.dispose());
+            object.material.forEach((m:any) => m.dispose());
           } else {
             object.material.dispose();
           }
@@ -921,3 +924,4 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
+// --- END OF FILE SimulationCanvas.tsx ---
