@@ -19,7 +19,7 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import RefreshIcon from './components/icons/RefreshIcon'; // NEW: Import RefreshIcon
+import RefreshIcon from './components/icons/RefreshIcon'; // Ensure this import is correct: 'RefreshIcon' is the default export
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -191,7 +191,7 @@ const App: React.FC = () => {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, [filteredCmes, currentlyModeledCmeId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
