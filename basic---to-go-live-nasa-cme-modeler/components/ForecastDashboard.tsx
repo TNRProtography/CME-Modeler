@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// --- START OF FILE ForecastDashboard.tsx ---
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
-import CaretIcon from './icons/CaretIcon'; // Ensure CaretIcon is imported
+import CaretIcon from './icons/CaretIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications'; // Import notification utilities
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -294,6 +297,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
+    // NEW: Refs for previous values to trigger notifications
+    const previousAuroraScoreRef = useRef<number | null>(null);
+    const previousSubstormStatusRef = useRef<string | null>(null); // To store the 'text' part of substormBlurb
 
     const tooltipContent = {
         'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
@@ -370,9 +376,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, []);
 
     const analyzeMagnetometerData = (data: any[]) => {
+        const prevSubstormStatusText = previousSubstormStatusRef.current; // Get previous status
+        
         if (data.length < 30) {
-            setSubstormBlurb({ text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' });
-            setSubstormActivityStatus({ text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' });
+            const status = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' };
+            setSubstormBlurb(status);
+            setSubstormActivityStatus(status);
+            previousSubstormStatusRef.current = status.text;
             return;
         }
         const latestPoint = data[data.length - 1];
@@ -380,27 +390,51 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const oneHourAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 60 * 60 * 1000);
 
         if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) {
-            setSubstormBlurb({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' });
-            setSubstormActivityStatus({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' });
+            const status = { text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' };
+            setSubstormBlurb(status);
+            setSubstormActivityStatus(status);
+            previousSubstormStatusRef.current = status.text;
             return;
         }
 
         const jump = latestPoint.hp - tenMinAgoPoint.hp;
         const drop = latestPoint.hp - oneHourAgoPoint.hp;
 
+        let newStatusText: string;
+        let newStatusColor: string;
+        
+        // Default to not notifying, then set to true if conditions met
+        let shouldNotifySubstormEruption = false;
+
         if (jump > 20) {
             const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-            const status = { text: `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`, color: 'text-green-400 font-bold animate-pulse' };
-            setSubstormBlurb(status);
-            setSubstormActivityStatus(status);
+            newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`;
+            newStatusColor = 'text-green-400 font-bold animate-pulse';
+            
+            // Notification condition: substorm eruption mode AND forecast > 40% AND can send notification (cooldown)
+            if (auroraScore !== null && auroraScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 5 * 60 * 1000)) { // 5 min cooldown for substorm
+                shouldNotifySubstormEruption = true;
+            }
         } else if (drop < -15) {
-            const status = { text: 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.', color: 'text-yellow-400' };
-            setSubstormBlurb(status);
-            setSubstormActivityStatus(status);
+            newStatusText = 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.';
+            newStatusColor = 'text-yellow-400';
+            clearNotificationCooldown('substorm-eruption'); // Clear eruption cooldown if in stretching
         } else {
-            const status = { text: 'The magnetic field appears stable. No immediate signs of substorm development.', color: 'text-neutral-400' };
-            setSubstormBlurb(status);
-            setSubstormActivityStatus(status);
+            newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.';
+            newStatusColor = 'text-neutral-400';
+            clearNotificationCooldown('substorm-eruption'); // Clear eruption cooldown if stable
+        }
+        
+        const status = { text: newStatusText, color: newStatusColor };
+        setSubstormBlurb(status);
+        setSubstormActivityStatus(status);
+        previousSubstormStatusRef.current = newStatusText;
+
+        if (shouldNotifySubstormEruption) {
+            sendNotification(
+                'Substorm Eruption Alert!',
+                `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${auroraScore?.toFixed(1)}%.`
+            );
         }
     };
 
@@ -543,9 +577,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
             fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()) // NEW: Fetch IPS data
+            fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
         ]);
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
+
+        // Store previous aurora score for comparison
+        const prevAuroraScore = previousAuroraScoreRef.current;
+
 
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
             const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
@@ -556,6 +594,25 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
+
+            // --- Notification Logic for Aurora Score ---
+            if (currentScore !== null && prevAuroraScore !== null) {
+                // Notify when hitting 50% or more, if it was previously below 50%
+                if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) { // 30 min cooldown
+                    sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`);
+                } else if (currentScore < 50) { // Clear cooldown if drops below 50
+                    clearNotificationCooldown('aurora-50percent');
+                }
+
+                // Notify when hitting 80% or more, if it was previously below 80%
+                if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) { // 30 min cooldown
+                    sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`);
+                } else if (currentScore < 80) { // Clear cooldown if drops below 80
+                    clearNotificationCooldown('aurora-80percent');
+                }
+            }
+            previousAuroraScoreRef.current = currentScore; // Update ref after comparison
+
 
             if (Array.isArray(dailyHistory)) { setDailyCelestialHistory(dailyHistory); } else { setDailyCelestialHistory([]); }
             if (Array.isArray(owmDailyForecast)) { setOwmDailyForecast(owmDailyForecast); } else { setOwmDailyForecast([]); }
@@ -611,7 +668,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             const processedData18 = goes18Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
-            analyzeMagnetometerData(processedData18);
+            analyzeMagnetometerData(processedData18); // Call analyze here, will handle notification
             if (processedData18.length > 0) anyGoesDataFound = true;
         } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error'); }
 
@@ -633,7 +690,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData]);
+    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData, auroraScore]);
+
 
     useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
@@ -955,7 +1013,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                         <div className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
-                                <h2 className="text-xl font-bold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
+                                <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
                                 <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"> <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} /> </button>
                             </div>
@@ -971,7 +1029,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <div className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
                                 <div className="flex items-center">
-                                    <h2 className="text-xl font-bold text-neutral-100">Interplanetary Shock Events</h2>
+                                    <h2 className="text-xl font-semibold text-neutral-100">Interplanetary Shock Events</h2>
                                     <button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
@@ -1030,3 +1088,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
+// --- END OF FILE ForecastDashboard.tsx ---

@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// --- START OF FILE SolarActivityDashboard.tsx ---
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications'; // Import notification utilities
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -110,6 +113,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
+    // NEW: Ref for previous X-ray flux to trigger notifications
+    const previousLatestXrayFluxRef = useRef<number | null>(null);
+
+
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
@@ -145,25 +152,50 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     const fetchXrayFlux = useCallback(() => {
         setLoadingXray('Loading X-ray flux data...');
-        fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
+        fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
             .then(rawData => {
                 const groupedData = new Map();
                 rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
                 const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
+                
                 if (!processedData.length) {
                     setLoadingXray('No valid X-ray data.');
                     setAllXrayData([]);
                     setLatestXrayFlux(null);
+                    previousLatestXrayFluxRef.current = null; // Reset previous flux if no data
                     return;
                 }
+
                 setAllXrayData(processedData);
                 setLoadingXray(null);
                 const latestFluxValue = processedData[processedData.length - 1].short;
-                setLatestXrayFlux(latestFluxValue);
+                setLatestXrayFlux(latestFluxValue); // Update parent state
+
+                // --- Notification Logic for X-ray Flux ---
+                const prevFlux = previousLatestXrayFluxRef.current;
+                
+                if (latestFluxValue !== null && prevFlux !== null) {
+                    // M5+ Flare notification
+                    if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
+                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M5 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
+                    } else if (latestFluxValue < 5e-6) {
+                        clearNotificationCooldown('flare-M5'); // Clear cooldown if flux drops below M5
+                    }
+
+                    // X1+ Flare notification
+                    if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) { // 30 min cooldown
+                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X1 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
+                    } else if (latestFluxValue < 1e-4) {
+                        clearNotificationCooldown('flare-X1'); // Clear cooldown if flux drops below X1
+                    }
+                }
+                previousLatestXrayFluxRef.current = latestFluxValue; // Update ref after comparison
+
             }).catch(e => {
                 console.error('Error fetching X-ray flux:', e);
                 setLoadingXray(`Error: ${e.message}`);
                 setLatestXrayFlux(null);
+                previousLatestXrayFluxRef.current = null;
             });
     }, [setLatestXrayFlux]);
     
@@ -188,7 +220,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         setLoadingSunspots('Loading active regions...');
         try {
             const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${res.status}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`); // Changed res.status to response.status
             const data = await response.json();
             const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
             if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
@@ -345,7 +377,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 )}
                                 {activeSunImage === 'SDO_AIA_193' && (
                                     <div
-                                        onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
+                                        onClick={() => sdoAia193.url !== '/placeholder.193.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
                                         title={tooltipContent['sdo-aia-193']}
                                     >
@@ -424,3 +456,4 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 };
 
 export default SolarActivityDashboard;
+// --- END OF FILE SolarActivityDashboard.tsx ---
