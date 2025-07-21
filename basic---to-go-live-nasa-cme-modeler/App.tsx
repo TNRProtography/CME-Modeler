@@ -19,7 +19,7 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import { RefreshIcon } from './components/icons/RefreshIcon'; // CORRECTED: Import RefreshIcon as a named export
+import { RefreshIcon } from './components/icons/RefreshIcon'; // Ensure this is a named import
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -67,7 +67,7 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   
-  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
+  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null); // Correct casing: CME
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
 
   // UI/Modal State
@@ -187,11 +187,12 @@ const App: React.FC = () => {
   }, [cmeData, cmeFilter]);
 
   useEffect(() => {
+    // Ensure correct casing when checking against filteredCmes
     if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCmeId]);
+  }, [filteredCmes, currentlyModeledCMEId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -399,8 +400,8 @@ const App: React.FC = () => {
                         ref={canvasRef}
                         cmeData={filteredCmes}
                         activeView={activeView}
-                        focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCmeId}
+                        focusTarget={focusTarget}
+                        currentlyModeledCMEId={currentlyModeledCMEId} // Passing the prop with correct casing
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
