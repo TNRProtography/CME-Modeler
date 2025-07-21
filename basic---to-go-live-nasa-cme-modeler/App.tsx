@@ -180,7 +180,7 @@ const App: React.FC = () => {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
-  }, [filteredCmes, currentlyModeledCmeId]);
+  }, [filteredCmes, currentlyModeledCMEId]);
 
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -360,7 +360,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCmeId={currentlyModeledCmeId}
+                        currentlyModeledCMEId={currentlyModeledCMEId} // Corrected casing here
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
