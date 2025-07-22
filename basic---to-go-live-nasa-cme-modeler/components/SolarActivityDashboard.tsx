@@ -5,7 +5,8 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
+import LoadingSpinner from './icons/LoadingSpinner'; // Ensure this is imported for internal loading indicator
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -26,7 +27,7 @@ const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMII
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
 
-const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute for automatic refresh
+const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
 // --- HELPERS ---
 const getCssVar = (name: string): string => {
@@ -109,6 +110,8 @@ interface InterplanetaryShock {
 
 
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, refreshTrigger, onDataRefresh }) => {
+    // MODIFIED: Internal loading state for this dashboard
+    const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoHmi, setSdoHmi] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -129,7 +132,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
-    // NEW: Ref for previous X-ray flux to trigger notifications
+    // Ref for previous X-ray flux to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
 
     // Ref to manage the auto-refresh interval
@@ -141,7 +144,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
         'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
         'sdo-hmi': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram:</strong> This instrument captures images of the Sun\'s photosphere in visible light. It primarily shows sunspots as dark regions, which are areas of concentrated, strong magnetic fields. These active regions are often the source of flares and CMEs.',
-        'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> Another EUV wavelength from the SDO Atmospheric Imaging Assembly. This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
+        'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
         'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
@@ -216,23 +219,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 const prevFlux = previousLatestXrayFluxRef.current;
                 
                 if (latestFluxValue !== null && prevFlux !== null) {
-                    // M1+ Flare notification (1e-6 is C1, 1e-5 is M1)
+                    // M1+ Flare notification (1e-5 is M1.0)
                     if (latestFluxValue >= 1e-5 && prevFlux < 1e-5 && canSendNotification('flare-M1', 15 * 60 * 1000)) { // 15 min cooldown
                         sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M1.0)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 1e-5) {
                         clearNotificationCooldown('flare-M1');
                     }
 
-                    // M5+ Flare notification
+                    // M5+ Flare notification (5e-5 is M5.0)
                     if (latestFluxValue >= 5e-5 && prevFlux < 5e-5 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
                         sendNotification('Solar Flare Alert: M5-Class!', `X-ray flux has reached M5.0 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 5e-5) {
                         clearNotificationCooldown('flare-M5');
                     }
 
-                    // X1+ Flare notification
+                    // X1+ Flare notification (1e-4 is X1.0)
                     if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) { // 30 min cooldown
-                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1)! Current flux: ${latestFluxValue.toExponential(2)}`);
+                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1.0)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 1e-4) {
                         clearNotificationCooldown('flare-X1');
                     }
@@ -292,10 +295,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     // Effect for initial load and manual refresh trigger
     useEffect(() => {
         const runAllUpdates = async () => {
-            setIsLoading(true); // Indicate loading when refresh is triggered
-            let latestUpdateTimestamp = Date.now(); // Assume current time as initial update
+            setIsLoadingData(true); // Indicate internal dashboard data loading
             
-            await Promise.all([
+            let latestUpdateTimestamp = Date.now(); // To track the latest timestamp from fetched data
+
+            // Use Promise.allSettled to handle multiple fetches concurrently
+            await Promise.allSettled([
                 fetchImage(SUVI_131_URL, setSuvi131).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
                 fetchImage(SUVI_304_URL, setSuvi304).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
                 fetchImage(SDO_HMI_URL, setSdoHmi, false, false).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
@@ -307,17 +312,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 fetchInterplanetaryShockData().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
             ]);
             
-            onDataRefresh(latestUpdateTimestamp); // Send the latest effective update time back
-            setIsLoading(false); // End loading
+            setIsLoadingData(false); // End internal dashboard loading state
+
+            // IMPORTANT: Call onDataRefresh with the latest timestamp collected
+            onDataRefresh(latestUpdateTimestamp);
         };
 
-        runAllUpdates(); // Initial fetch or triggered by refreshTrigger
+        // Run initial update or when refreshTrigger changes
+        runAllUpdates();
 
-        // Clear any existing interval to prevent multiple intervals running
+        // Clear any existing auto-refresh interval before setting a new one
         if (autoRefreshIntervalId.current) {
             clearInterval(autoRefreshIntervalId.current);
         }
-
         // Set up the auto-refresh interval
         autoRefreshIntervalId.current = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
 
@@ -327,14 +334,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 clearInterval(autoRefreshIntervalId.current);
             }
         };
-    }, [refreshTrigger, apiKey, fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData, onDataRefresh]); // Added refreshTrigger and onDataRefresh to dependencies
+    }, [refreshTrigger, apiKey, fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData, onDataRefresh]);
+
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
-        // Assuming NZ offset for "Midnight" labels. If not, this could be simplified/removed.
         const nzOffset = 12 * 3600000; 
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -388,6 +395,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         };
     }, [allXrayData]);
     
+    // MODIFIED: This dashboard's internal loading state now controls its content visibility
+    if (isLoadingData) {
+        return <div className="w-full h-full flex justify-center items-center text-neutral-400">Loading solar activity data... <LoadingSpinner className="ml-2"/></div>;
+    }
+
     return (
         <div
             className="w-full h-full bg-neutral-900 text-neutral-300 relative"

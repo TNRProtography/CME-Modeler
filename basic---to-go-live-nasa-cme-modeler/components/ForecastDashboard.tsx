@@ -6,7 +6,7 @@ import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
-import LoadingSpinner from './icons/LoadingSpinner'; // Keep for potential internal loading indicators
+import LoadingSpinner from './icons/LoadingSpinner'; // Keep for internal loading indicators
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
@@ -18,8 +18,8 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
-  refreshTrigger: number; // NEW: Prop to trigger refresh
-  onDataRefresh: (timestamp: number) => void; // NEW: Callback to send last refresh time to parent
+  refreshTrigger: number; // Prop to trigger refresh
+  onDataRefresh: (timestamp: number) => void; // Callback to send last refresh time to parent
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -253,7 +253,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, refreshTrigger, onDataRefresh }) => {
-    const [isLoading, setIsLoading] = useState(true); // Internal loading state for the dashboard
+    // MODIFIED: Use internal loading state for data fetching specific to this dashboard
+    const [isLoadingData, setIsLoadingData] = useState<boolean>(true); 
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -580,14 +581,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // Effect for data fetching (initial load and triggered by refreshTrigger)
     useEffect(() => {
         const runAllUpdates = async () => {
-            // Set internal loading state for the dashboard's data
-            // (Do NOT affect App.tsx's global isLoading state)
+            setIsLoadingData(true); // Indicate internal dashboard data loading
             setLastUpdated('Loading...'); // Update UI immediately
-            setIsLoading(true);
+            
+            let latestDataTimestamp = Date.now(); // To track the latest timestamp from fetched data
 
-            let latestDataTimestamp = 0; // To track the latest timestamp from fetched data
-
-            const fetchPromises = [
+            // Use Promise.allSettled to handle multiple fetches concurrently
+            const results = await Promise.allSettled([
                 fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
                     if (data.currentForecast?.lastUpdated) {
                         latestDataTimestamp = Math.max(latestDataTimestamp, data.currentForecast.lastUpdated);
@@ -599,7 +599,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         const plasmaHeaders = data[0];
                         const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
                         const latestPlasmaRow = data.slice(1).reverse().find((r: any[]) => r?.[plasmaTimeIdx]);
-                        if (latestPlasmaRow && latestPlasmaRow[plasmaTimeIdx]) {
+                        if (latestPlasmaRow) {
                              const cleanTime = new Date(latestPlasmaRow[plasmaTimeIdx].replace(' ', 'T') + 'Z').getTime();
                              latestDataTimestamp = Math.max(latestDataTimestamp, cleanTime);
                         }
@@ -636,10 +636,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     }
                     return data;
                 }),
-                fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()), // IPS doesn't directly contribute to latestDataTimestamp via time_tag
-            ];
+                fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
+            ]);
 
-            const results = await Promise.allSettled(fetchPromises);
             const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
 
             // Process forecast data
@@ -748,7 +747,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
 
             setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-            setIsLoading(false); // End internal dashboard loading state
+            setIsLoadingData(false); // End internal dashboard loading state
 
             // IMPORTANT: Call onDataRefresh with the latest timestamp collected
             onDataRefresh(latestDataTimestamp);
@@ -926,10 +925,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         };
     }, [auroraScoreHistory]);
 
-    if (isLoading) {
-        // Only show internal spinner if data is explicitly loading for this dashboard
-        // The global LoadingOverlay in App.tsx handles the initial app load/full refresh
-        return <div className="w-full h-full flex justify-center items-center text-neutral-400">Loading forecast data...<LoadingSpinner /></div>;
+    // MODIFIED: This dashboard's internal loading state now controls its content visibility
+    if (isLoadingData) {
+        return <div className="w-full h-full flex justify-center items-center text-neutral-400">Loading forecast data... <LoadingSpinner className="ml-2"/></div>;
     }
 
     const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
