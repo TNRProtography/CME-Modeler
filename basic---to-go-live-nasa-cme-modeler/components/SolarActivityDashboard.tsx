@@ -19,11 +19,14 @@ const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 
-// SDO URLs are now direct NASA links (NO LONGER PROXIED)
-const SDO_HMI_URL = 'https://jsoc1.stanford.edu/data/hmi/images/latest/HMI_latest_color_Mag_1024x1024.jpg';
-const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
+// SDO URLs now correctly point to your NEW Cloudflare Worker proxy
+const SDO_HMI_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev/sdo-hmi';
+const SDO_AIA_193_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev/sdo-aia-193';
 
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Remains proxied as per previous instruction
+// IPS URL remains proxied (if you have a worker set up for it on this domain)
+// If IPS should also use the new sdo-imagery-proxy, that worker needs IPS routing.
+// For now, keeping it as is, assuming IPS worker on thenamesrock.workers.dev is separate or will be migrated.
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -196,28 +199,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 throw new Error(`HTTP ${res.status} for ${url}`);
             }
 
-            // Determine if it's an SDO image based on the URL constant
-            const isSdoImage = url === SDO_HMI_URL || url === SDO_AIA_193_URL;
-
             if (isVideo) {
                 // Video: direct URL for the <video> tag
                 setState({ url: url, loading: null });
-            } else if (isSdoImage) {
-                // SDO Images: Use direct URL to allow <img> tag to attempt display.
-                // NOTE: Console CORS errors might still appear as fetch().blob() is bypassed
-                // and browser security still applies to the resource itself, but visual display
-                // may work. Full programmatic access (e.g., canvas) requires a CORS proxy.
-                setState({ url: url, loading: null });
             } else {
-                // Other images: create object URL from blob (requires CORS headers from source)
+                // All images (including SDO now that they are proxied): create object URL from blob
                 const blob = await res.blob();
                 const objectURL = URL.createObjectURL(blob);
                 setState({ url: objectURL, loading: null });
             }
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
-            const errorMessage = `${isVideo ? 'Video' : 'Image'} failed to load. (CORS issue likely for direct SDO image access)`;
-            setState({ url: isVideo ? '' : '/error.png', loading: errorMessage });
+            // Updated error message to be more generic since the worker should handle the CORS detail
+            setState({ url: isVideo ? '' : '/error.png', loading: `${isVideo ? 'Video' : 'Image'} failed to load. (Check proxy/network)` });
         }
     }, []);
 
@@ -361,8 +355,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi); // Direct NASA URL
-            fetchImage(SDO_AIA_193_URL, setSdoAia193); // Direct NASA URL
+            fetchImage(SDO_HMI_URL, setSdoHmi); // Now using the NEW proxy URL
+            fetchImage(SDO_AIA_193_URL, setSdoAia193); // Now using the NEW proxy URL
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchProtonFlux();
