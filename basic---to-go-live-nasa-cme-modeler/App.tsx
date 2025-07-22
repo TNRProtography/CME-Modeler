@@ -19,7 +19,6 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-// REMOVED: import { RefreshIcon } from './components/icons/RefreshIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -58,8 +57,7 @@ const App: React.FC = () => {
   
   // CME Modeler State
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
-  // MODIFIED: isLoading only for initial mount or explicit refresh. Will be handled by onInitialDataLoaded
-  const [isLoading, setIsLoading] = useState<boolean>(true); 
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
   
@@ -77,7 +75,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // NEW: State for settings modal
 
   // Display Options State
   const [showLabels, setShowLabels] = useState(true);
@@ -109,15 +107,6 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
-  // REMOVED: State for tracking last refresh time for display
-  // REMOVED: Ref to trigger data refresh from App component.
-
-  // Callback for child components to signal their initial data load is complete
-  const onInitialDataLoaded = useCallback(() => {
-    setIsLoading(false); // Only set global loading to false once initial data is loaded
-  }, []);
-
-
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -136,9 +125,7 @@ const App: React.FC = () => {
   }, []);
 
   const loadCMEData = useCallback(async (days: TimeRange) => {
-    // This is explicitly for the Modeler page's data fetching.
-    // It will control the loading state that might overlap with the global one temporarily.
-    // For simplicity, we'll let it manage its own loading indicators implicitly.
+    setIsLoading(true);
     setFetchError(null);
     setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
@@ -164,7 +151,6 @@ const App: React.FC = () => {
         setTimelineMinDate(0);
         setTimelineMaxDate(0);
       }
-      // REMOVED: setLastRefreshTimestamp(Date.now()); // This was tied to the refresh button
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -174,18 +160,15 @@ const App: React.FC = () => {
       }
       setCmeData([]);
     } finally {
-      // For CME Modeler, we don't set global isLoading to false here,
-      // as onInitialDataLoaded handles it for the entire App.
+      setIsLoading(false);
     }
   }, [resetClock, apiKey]);
 
-  // Effect to load CME data when activePage is 'modeler' or when refreshTrigger changes
   useEffect(() => {
     if (activePage === 'modeler') {
       loadCMEData(activeTimeRange);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTimeRange, activePage]); // REMOVED: refreshTriggerRef.current dependency
+  }, [activeTimeRange, loadCMEData, activePage]);
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -286,8 +269,6 @@ const App: React.FC = () => {
     [substormActivityStatus]
   );
 
-  // REMOVED: handleFullRefresh function
-
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
@@ -302,7 +283,7 @@ const App: React.FC = () => {
         />
 
         {/* Unified Header Bar for Navigation */}
-        <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex items-center justify-between">
+        <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
                 <button 
                 onClick={() => setActivePage('forecast')}
@@ -335,7 +316,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
-            {/* REMOVED: Refresh button and its time display */}
+            {/* NEW: Settings Button */}
             <div className="flex-grow flex justify-end">
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
@@ -363,7 +344,7 @@ const App: React.FC = () => {
                             activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange}
                             activeView={activeView} onViewChange={handleViewChange}
                             activeFocus={activeFocus} onFocusChange={handleFocusChange}
-                            isLoading={false} // Always false here, controls panel's own loading is internal
+                            isLoading={isLoading}
                             onClose={() => setIsControlsOpen(false)}
                             onOpenGuide={() => setIsTutorialOpen(true)}
                             showLabels={showLabels} onShowLabelsChange={setShowLabels}
@@ -379,7 +360,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId}
+                        currentlyModeledCMEId={currentlyModeledCMEId} // Corrected casing here
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -449,7 +430,7 @@ const App: React.FC = () => {
                         </div>
 
                         <TimelineControls
-                        isVisible={!isLoading && filteredCmes.length > 0} // Modeler loading not tied to global overlay now
+                        isVisible={!isLoading && filteredCmes.length > 0}
                         isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
                         onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
                         onStepFrame={handleTimelineStep}
@@ -468,8 +449,7 @@ const App: React.FC = () => {
                         <CMEListPanel
                             cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling}
                             selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo}
-                            isLoading={false} // Modeler's list loading is now independent
-                            fetchError={fetchError}
+                            isLoading={isLoading} fetchError={fetchError}
                             onClose={() => setIsCmeListOpen(false)}
                         />
                     </div>
@@ -480,19 +460,22 @@ const App: React.FC = () => {
                             onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }}
                         />
                     )}
+
+                    {isLoading && <LoadingOverlay />}
+                    <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+                    <ForecastModelsModal 
+                      isOpen={isForecastModelsOpen} 
+                      onClose={() => setIsForecastModelsOpen(false)} 
+                      setViewerMedia={setViewerMedia}
+                    />
                 </>
             )}
-
-            {/* MODIFIED: LoadingOverlay now depends on App.tsx's isLoading */}
-            {isLoading && <LoadingOverlay />} 
 
             {activePage === 'forecast' && (
                 <ForecastDashboard 
                   setViewerMedia={setViewerMedia}
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
-                  // REMOVED: refreshTrigger={refreshTriggerRef.current}
-                  onInitialDataLoaded={onInitialDataLoaded} // Pass callback for initial data load
                 />
             )}
 
@@ -501,8 +484,6 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia} 
                   apiKey={apiKey}
                   setLatestXrayFlux={setLatestXrayFlux}
-                  // REMOVED: refreshTrigger={refreshTriggerRef.current}
-                  onInitialDataLoaded={onInitialDataLoaded} // Pass callback for initial data load
                 />
             )}
         </div>
@@ -512,6 +493,7 @@ const App: React.FC = () => {
           onClose={() => setViewerMedia(null)}
         />
 
+        {/* NEW: Settings Modal */}
         <SettingsModal 
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 

@@ -5,15 +5,12 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import LoadingSpinner from './icons/LoadingSpinner'; // Ensure this is imported for internal loading indicator
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
 
 interface SolarActivityDashboardProps {
   apiKey: string;
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
-  refreshTrigger: number; // NEW: Prop to trigger refresh
-  onDataRefresh: (timestamp: number) => void; // NEW: Callback to send last refresh time to parent
 }
 
 // --- CONSTANTS ---
@@ -74,7 +71,7 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`} title={`Show data for the last ${hours} hours`}>
                     {label}
                 </button>
             ))}
@@ -109,9 +106,7 @@ interface InterplanetaryShock {
 }
 
 
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, refreshTrigger, onDataRefresh }) => {
-    // MODIFIED: Internal loading state for this dashboard
-    const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoHmi, setSdoHmi] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -132,11 +127,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
-    // Ref for previous X-ray flux to trigger notifications
+    // NEW: Ref for previous X-ray flux to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
-
-    // Ref to manage the auto-refresh interval
-    const autoRefreshIntervalId = useRef<NodeJS.Timeout | null>(null);
 
 
     const tooltipContent = useMemo(() => ({
@@ -144,7 +136,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
         'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
         'sdo-hmi': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram:</strong> This instrument captures images of the Sun\'s photosphere in visible light. It primarily shows sunspots as dark regions, which are areas of concentrated, strong magnetic fields. These active regions are often the source of flares and CMEs.',
-        'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
+        'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> Another EUV wavelength from the SDO Atmospheric Imaging Assembly. This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
         'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
@@ -219,23 +211,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 const prevFlux = previousLatestXrayFluxRef.current;
                 
                 if (latestFluxValue !== null && prevFlux !== null) {
-                    // M1+ Flare notification (1e-5 is M1.0)
-                    if (latestFluxValue >= 1e-5 && prevFlux < 1e-5 && canSendNotification('flare-M1', 15 * 60 * 1000)) { // 15 min cooldown
-                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M1.0)! Current flux: ${latestFluxValue.toExponential(2)}`);
-                    } else if (latestFluxValue < 1e-5) {
-                        clearNotificationCooldown('flare-M1');
-                    }
-
-                    // M5+ Flare notification (5e-5 is M5.0)
-                    if (latestFluxValue >= 5e-5 && prevFlux < 5e-5 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
-                        sendNotification('Solar Flare Alert: M5-Class!', `X-ray flux has reached M5.0 or greater! Current flux: ${latestFluxValue.toExponential(2)}`);
-                    } else if (latestFluxValue < 5e-5) {
+                    // M5+ Flare notification (5e-6 is M0.5, 5e-5 is M5)
+                    if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
+                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M0.5)! Current flux: ${latestFluxValue.toExponential(2)}`);
+                    } else if (latestFluxValue < 5e-6) {
                         clearNotificationCooldown('flare-M5');
                     }
 
-                    // X1+ Flare notification (1e-4 is X1.0)
+                    // X1+ Flare notification
                     if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) { // 30 min cooldown
-                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1.0)! Current flux: ${latestFluxValue.toExponential(2)}`);
+                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 1e-4) {
                         clearNotificationCooldown('flare-X1');
                     }
@@ -292,56 +277,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         }
     }, []);
 
-    // Effect for initial load and manual refresh trigger
     useEffect(() => {
-        const runAllUpdates = async () => {
-            setIsLoadingData(true); // Indicate internal dashboard data loading
-            
-            let latestUpdateTimestamp = Date.now(); // To track the latest timestamp from fetched data
-
-            // Use Promise.allSettled to handle multiple fetches concurrently
-            await Promise.allSettled([
-                fetchImage(SUVI_131_URL, setSuvi131).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchImage(SUVI_304_URL, setSuvi304).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchImage(SDO_HMI_URL, setSdoHmi, false, false).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true).then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchXrayFlux().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchFlares().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchSunspots().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-                fetchInterplanetaryShockData().then(() => latestUpdateTimestamp = Math.max(latestUpdateTimestamp, Date.now())),
-            ]);
-            
-            setIsLoadingData(false); // End internal dashboard loading state
-
-            // IMPORTANT: Call onDataRefresh with the latest timestamp collected
-            onDataRefresh(latestUpdateTimestamp);
+        const runAllUpdates = () => {
+            fetchImage(SUVI_131_URL, setSuvi131);
+            fetchImage(SUVI_304_URL, setSuvi304);
+            fetchImage(SDO_HMI_URL, setSdoHmi, false, false);
+            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
+            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
+            fetchXrayFlux();
+            fetchFlares();
+            fetchSunspots();
+            fetchInterplanetaryShockData(); // Fetch IPS data here
         };
-
-        // Run initial update or when refreshTrigger changes
         runAllUpdates();
-
-        // Clear any existing auto-refresh interval before setting a new one
-        if (autoRefreshIntervalId.current) {
-            clearInterval(autoRefreshIntervalId.current);
-        }
-        // Set up the auto-refresh interval
-        autoRefreshIntervalId.current = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
-
-        // Cleanup on unmount
-        return () => {
-            if (autoRefreshIntervalId.current) {
-                clearInterval(autoRefreshIntervalId.current);
-            }
-        };
-    }, [refreshTrigger, apiKey, fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData, onDataRefresh]);
-
+        const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
+        return () => clearInterval(interval);
+    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
+        // Assuming NZ offset for "Midnight" labels. If not, this could be simplified/removed.
         const nzOffset = 12 * 3600000; 
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -395,11 +353,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         };
     }, [allXrayData]);
     
-    // MODIFIED: This dashboard's internal loading state now controls its content visibility
-    if (isLoadingData) {
-        return <div className="w-full h-full flex justify-center items-center text-neutral-400">Loading solar activity data... <LoadingSpinner className="ml-2"/></div>;
-    }
-
     return (
         <div
             className="w-full h-full bg-neutral-900 text-neutral-300 relative"
@@ -527,11 +480,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                                {/* Changed to openModal for information, linking to the relevant tooltipContent */}
                                 <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
-                                {allXrayData.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
+                                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                             </div>
                         </div>
 
@@ -568,6 +522,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                    {/* CaretIcon is removed from here if it's not imported/needed globally */}
                                     <svg xmlns="http://www.w3.org/2000/svg" className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                                 </button>
                             </div>

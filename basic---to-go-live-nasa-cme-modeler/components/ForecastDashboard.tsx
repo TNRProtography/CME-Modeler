@@ -6,7 +6,7 @@ import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
-import LoadingSpinner from './icons/LoadingSpinner'; // Keep for internal loading indicators
+import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
@@ -18,8 +18,6 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
-  refreshTrigger: number; // Prop to trigger refresh
-  onDataRefresh: (timestamp: number) => void; // Callback to send last refresh time to parent
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -252,9 +250,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, refreshTrigger, onDataRefresh }) => {
-    // MODIFIED: Use internal loading state for data fetching specific to this dashboard
-    const [isLoadingData, setIsLoadingData] = useState<boolean>(true); 
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus }) => {
+    const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -308,9 +305,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // NEW: State for toggling visibility of celestial annotations
     const [showCelestialAnnotations, setShowCelestialAnnotations] = useState<boolean>(true);
 
-    // Ref to manage the auto-refresh interval
-    const autoRefreshIntervalId = useRef<NodeJS.Timeout | null>(null);
-
 
     const tooltipContent = {
         'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
@@ -318,7 +312,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
         'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thick" looking auroral displays.`,
         'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
-        'bz': `<strong>What it is:</strong> The North-South direction of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
+        'bz': `<strong>What it is:</strong> The North-South direction of the乎Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         // NEW: Tooltip for Interplanetary Shocks
@@ -578,199 +572,129 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
     }, []);
 
-    // Effect for data fetching (initial load and triggered by refreshTrigger)
-    useEffect(() => {
-        const runAllUpdates = async () => {
-            setIsLoadingData(true); // Indicate internal dashboard data loading
-            setLastUpdated('Loading...'); // Update UI immediately
-            
-            let latestDataTimestamp = Date.now(); // To track the latest timestamp from fetched data
+    const fetchAllData = useCallback(async (isInitialLoad = false) => {
+        if (isInitialLoad) setIsLoading(true);
+        const results = await Promise.allSettled([
+            fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
+        ]);
+        const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
 
-            // Use Promise.allSettled to handle multiple fetches concurrently
-            const results = await Promise.allSettled([
-                fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
-                    if (data.currentForecast?.lastUpdated) {
-                        latestDataTimestamp = Math.max(latestDataTimestamp, data.currentForecast.lastUpdated);
-                    }
-                    return data;
-                }),
-                fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
-                    if (Array.isArray(data) && data.length > 1) {
-                        const plasmaHeaders = data[0];
-                        const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
-                        const latestPlasmaRow = data.slice(1).reverse().find((r: any[]) => r?.[plasmaTimeIdx]);
-                        if (latestPlasmaRow) {
-                             const cleanTime = new Date(latestPlasmaRow[plasmaTimeIdx].replace(' ', 'T') + 'Z').getTime();
-                             latestDataTimestamp = Math.max(latestDataTimestamp, cleanTime);
-                        }
-                    }
-                    return data;
-                }),
-                fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
-                    if (Array.isArray(data) && data.length > 1) {
-                        const magHeaders = data[0];
-                        const magTimeIdx = magHeaders.indexOf('time_tag');
-                        const latestMagRow = data.slice(1).reverse().find((r: any[]) => r?.[magTimeIdx]);
-                        if (latestMagRow && latestMagRow[magTimeIdx]) {
-                             const cleanTime = new Date(latestMagRow[magTimeIdx].replace(' ', 'T') + 'Z').getTime();
-                             latestDataTimestamp = Math.max(latestDataTimestamp, cleanTime);
-                        }
-                    }
-                    return data;
-                }),
-                fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
-                    if (Array.isArray(data) && data.length > 0) {
-                        const latestGoes18 = data[data.length - 1];
-                        if (latestGoes18 && latestGoes18.time_tag) {
-                            latestDataTimestamp = Math.max(latestDataTimestamp, new Date(latestGoes18.time_tag).getTime());
-                        }
-                    }
-                    return data;
-                }),
-                fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
-                     if (Array.isArray(data) && data.length > 0) {
-                        const latestGoes19 = data[data.length - 1];
-                        if (latestGoes19 && latestGoes19.time_tag) {
-                            latestDataTimestamp = Math.max(latestDataTimestamp, new Date(latestGoes19.time_tag).getTime());
-                        }
-                    }
-                    return data;
-                }),
-                fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
-            ]);
+        const prevAuroraScore = previousAuroraScoreRef.current;
 
-            const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
 
-            // Process forecast data
-            if (forecastResult.status === 'fulfilled' && forecastResult.value) {
-                const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
-                setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
-                const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
-                setAuroraScore(currentScore);
-                setCurrentAuroraScore(currentScore);
-                setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
-                setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
-                const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
+        if (forecastResult.status === 'fulfilled' && forecastResult.value) {
+            const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
+            setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
+            const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
+            setAuroraScore(currentScore);
+            setCurrentAuroraScore(currentScore);
+            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
+            setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
+            const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
 
-                // Notification Logic for Aurora Score (re-using existing logic)
-                const prevAuroraScore = previousAuroraScoreRef.current;
-                if (currentScore !== null && prevAuroraScore !== null) {
-                    if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) {
-                        sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`);
-                    } else if (currentScore < 50) {
-                        clearNotificationCooldown('aurora-50percent');
-                    }
-                    if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) {
-                        sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`);
-                    } else if (currentScore < 80) {
-                        clearNotificationCooldown('aurora-80percent');
-                    }
+            // --- Notification Logic for Aurora Score ---
+            if (currentScore !== null && prevAuroraScore !== null) {
+                // Notify when hitting 50% or more, if it was previously below 50%
+                if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) { // 30 min cooldown
+                    sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`);
+                } else if (currentScore < 50) { // Clear cooldown if drops below 50
+                    clearNotificationCooldown('aurora-50percent');
                 }
-                previousAuroraScoreRef.current = currentScore;
 
-
-                if (Array.isArray(dailyHistory)) { setDailyCelestialHistory(dailyHistory); } else { setDailyCelestialHistory([]); }
-                if (Array.isArray(owmDailyForecast)) { setOwmDailyForecast(owmDailyForecast); } else { setOwmDailyForecast([]); }
-
-                setGaugeData(prev => ({
-                    ...prev,
-                    power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
-                    bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
-                    bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
-                    moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || [])
-                }));
-                if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
-                if (Array.isArray(rawHistory)) {
-                    setHemisphericPowerHistory(rawHistory.filter((d: any) => typeof d.timestamp === 'number' && typeof d.hemisphericPower === 'number' && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a:any, b:any) => a.timestamp - b.timestamp));
-                } else { setHemisphericPowerHistory([]); }
-            } else {
-                console.error("Forecast data failed to load:", forecastResult.reason);
-                setAuroraBlurb("Could not load forecast data.");
+                // Notify when hitting 80% or more, if it was previously below 80%
+                if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) { // 30 min cooldown
+                    sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`);
+                } else if (currentScore < 80) { // Clear cooldown if drops below 80
+                    clearNotificationCooldown('aurora-80percent');
+                }
             }
+            previousAuroraScoreRef.current = currentScore; // Update ref after comparison
 
-            // Process plasma data
-            if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
-                const plasmaData = plasmaResult.value;
-                const plasmaHeaders = plasmaData[0];
-                const speedIdx = plasmaHeaders.indexOf('speed');
-                const densityIdx = plasmaHeaders.indexOf('density');
-                const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
 
-                const processedPlasma = plasmaData.slice(1).map((r:any[]) => { const rawTime = r[plasmaTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }; });
-                setAllSpeedData(processedPlasma.map(p => ({ x: p.time, y: p.speed })));
-                setAllDensityData(processedPlasma.map(p => ({ x: p.time, y: p.density })));
+            if (Array.isArray(dailyHistory)) { setDailyCelestialHistory(dailyHistory); } else { setDailyCelestialHistory([]); }
+            if (Array.isArray(owmDailyForecast)) { setOwmDailyForecast(owmDailyForecast); } else { setOwmDailyForecast([]); }
 
-                const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
-                const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
-                const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
-                const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx];
-                const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
-
-                setGaugeData(prev => ({
-                    ...prev,
-                    speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`},
-                    density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}
-                }));
-            } else {
-                console.error("Plasma data failed to load:", plasmaResult.reason);
-            }
-
-            // Process magnetic data
-            if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
-                const magData = magResult.value; const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
-                setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
-            } else { console.error("Magnetic data failed to load:", magResult.reason); }
-
-            // Process GOES magnetometer data
-            let anyGoesDataFound = false;
-            if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
-                const processedData18 = goes18Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
-                setGoes18Data(processedData18);
-                analyzeMagnetometerData(processedData18);
-                if (processedData18.length > 0) anyGoesDataFound = true;
-            } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error'); }
-
-            if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
-                const processedData19 = goes19Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
-                setGoes19Data(processedData19);
-                if (processedData19.length > 0) anyGoesDataFound = true;
-            } else { console.error('GOES-19 Fetch Failed:', goes19Result.reason || 'Unknown error'); }
-
-            if (!anyGoesDataFound) { setLoadingMagnetometer('No valid GOES Magnetometer data available from either satellite for this period.'); } else { setLoadingMagnetometer(null); }
-
-            // Process IPS data
-            if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) {
-                setInterplanetaryShockData(ipsResult.value);
-            } else {
-                console.error('NASA IPS Fetch Failed:', ipsResult.reason || 'Unknown error');
-                setInterplanetaryShockData([]);
-            }
-
-            setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-            setIsLoadingData(false); // End internal dashboard loading state
-
-            // IMPORTANT: Call onDataRefresh with the latest timestamp collected
-            onDataRefresh(latestDataTimestamp);
-        };
-
-        // Run initial update or when refreshTrigger changes
-        runAllUpdates();
-
-        // Clear any existing auto-refresh interval before setting a new one
-        if (autoRefreshIntervalId.current) {
-            clearInterval(autoRefreshIntervalId.current);
+            setGaugeData(prev => ({
+                ...prev,
+                power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
+                bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
+                bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
+                moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || [])
+            }));
+            if (Array.isArray(historicalData)) { setAuroraScoreHistory(historicalData.filter((d: any) => typeof d.timestamp === 'number' && typeof d.baseScore === 'number' && typeof d.finalScore === 'number').sort((a, b) => a.timestamp - b.timestamp)); } else { setAuroraScoreHistory([]); }
+            if (Array.isArray(rawHistory)) {
+                setHemisphericPowerHistory(rawHistory.filter((d: any) => typeof d.timestamp === 'number' && typeof d.hemisphericPower === 'number' && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a:any, b:any) => a.timestamp - b.timestamp));
+            } else { setHemisphericPowerHistory([]); }
+        } else {
+            console.error("Forecast data failed to load:", forecastResult.reason);
+            setAuroraBlurb("Could not load forecast data.");
         }
-        // Set up the auto-refresh interval
-        autoRefreshIntervalId.current = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
 
-        // Cleanup on unmount
-        return () => {
-            if (autoRefreshIntervalId.current) {
-                clearInterval(autoRefreshIntervalId.current);
-            }
-        };
-    }, [refreshTrigger, getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData, auroraScore, onDataRefresh]); // Added refreshTrigger and onDataRefresh to dependencies
+        if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
+            const plasmaData = plasmaResult.value;
+            const plasmaHeaders = plasmaData[0];
+            const speedIdx = plasmaHeaders.indexOf('speed');
+            const densityIdx = plasmaHeaders.indexOf('density');
+            const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
 
+            const processedPlasma = plasmaData.slice(1).map((r:any[]) => { const rawTime = r[plasmaTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }; });
+            setAllSpeedData(processedPlasma.map(p => ({ x: p.time, y: p.speed })));
+            setAllDensityData(processedPlasma.map(p => ({ x: p.time, y: p.density })));
+
+            const latestPlasmaRow = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
+            const speedVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[speedIdx]) : null;
+            const densityVal = latestPlasmaRow ? parseFloat(latestPlasmaRow[densityIdx]) : null;
+            const rawPlasmaTime = latestPlasmaRow?.[plasmaTimeIdx];
+            const plasmaTimestamp = rawPlasmaTime ? new Date(rawPlasmaTime.replace(' ', 'T') + 'Z').getTime() : Date.now();
+
+            setGaugeData(prev => ({
+                ...prev,
+                speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`},
+                density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(plasmaTimestamp)}`}
+            }));
+        } else {
+            console.error("Plasma data failed to load:", plasmaResult.reason);
+        }
+
+        if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
+            const magData = magResult.value; const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
+            setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
+        } else { console.error("Magnetic data failed to load:", magResult.reason); }
+
+        let anyGoesDataFound = false;
+        if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
+            const processedData18 = goes18Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
+            setGoes18Data(processedData18);
+            analyzeMagnetometerData(processedData18); // Call analyze here, will handle notification
+            if (processedData18.length > 0) anyGoesDataFound = true;
+        } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error'); }
+
+        if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
+            const processedData19 = goes19Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
+            setGoes19Data(processedData19);
+            if (processedData19.length > 0) anyGoesDataFound = true;
+        } else { console.error('GOES-19 Fetch Failed:', goes19Result.reason || 'Unknown error'); }
+
+        if (!anyGoesDataFound) { setLoadingMagnetometer('No valid GOES Magnetometer data available from either satellite for this period.'); } else { setLoadingMagnetometer(null); }
+
+        if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) {
+            setInterplanetaryShockData(ipsResult.value);
+        } else {
+            console.error('NASA IPS Fetch Failed:', ipsResult.reason || 'Unknown error');
+            setInterplanetaryShockData([]);
+        }
+
+        setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
+        if (isInitialLoad) setIsLoading(false);
+    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData, auroraScore]);
+
+
+    useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
 
     const getAuroraBlurb = (score: number) => { if (score < 10) return 'Little to no auroral activity.'; if (score < 25) return 'Minimal auroral activity likely.'; if (score < 40) return 'Clear auroral activity visible in cameras.'; if (score < 50) return 'Faint naked-eye aurora likely, maybe with color.'; if (score < 80) return 'Good chance of naked-eye color and structure.'; return 'High probability of a significant substorm.'; };
@@ -803,8 +727,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (allMagneticData.length === 0) return { datasets: [] };
         const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3;
         return { datasets: [
-            { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false), } as any,
-            { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true), } as any
+            { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false), } as any, // Cast to any to satisfy TS for conditional properties
+            { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true), } as any // Cast to any
         ] };
     }, [allMagneticData, magneticFieldTimeRange]);
 
@@ -868,7 +792,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (day.moonset) addAnnotation('owm-moonset-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end');
         });
         return annotations;
-    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast, showCelestialAnnotations]);
+    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast, showCelestialAnnotations]); // Added showCelestialAnnotations dependency
 
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -925,10 +849,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         };
     }, [auroraScoreHistory]);
 
-    // MODIFIED: This dashboard's internal loading state now controls its content visibility
-    if (isLoadingData) {
-        return <div className="w-full h-full flex justify-center items-center text-neutral-400">Loading forecast data... <LoadingSpinner className="ml-2"/></div>;
-    }
+    if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
     const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
@@ -1193,3 +1114,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
+// --- END OF FILE ForecastDashboard.tsx ---
