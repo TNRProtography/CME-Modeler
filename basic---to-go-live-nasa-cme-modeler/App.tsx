@@ -1,4 +1,4 @@
-// --- START OF FILE App.tsx ---
+// components/App.tsx
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
@@ -44,17 +44,15 @@ const CmeIcon: React.FC<{className?: string}> = ({ className }) => (
     </svg>
 );
 
-// Define the new media type for the viewer state
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
-  // Set this to `true` to show the "site down" banner, `false` to hide it.
   const [siteIsDown, setSiteIsDown] = useState(true);
 
-  // Global Banner State (MOVED UP TO FIX TDZ ERROR)
+  // Global Banner State (Moved to top as per previous fix attempt)
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
@@ -109,6 +107,12 @@ const App: React.FC = () => {
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
+  // Memoize sunInfo to ensure it's calculated only when planetLabelInfos changes
+  // and to avoid potential TDZ issues during minification.
+  const sunInfo = useMemo(() => {
+    return planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
+  }, [planetLabelInfos]);
+
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
@@ -144,7 +148,7 @@ const App: React.FC = () => {
         const endDate = new Date();
         const futureDate = new Date();
         futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
+        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCme) => Math.min(min, cme.startTime.getTime()), Date.now());
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - days);
         setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
@@ -251,10 +255,9 @@ const App: React.FC = () => {
   const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
   const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
-  const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
-
+  
   // Logic for GlobalBanner conditions (These useMemo hooks should now be fine as state is declared above)
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
+  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
   const flareClass = useMemo(() => {
     if (latestXrayFlux === null) return undefined;
     if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
@@ -274,7 +277,6 @@ const App: React.FC = () => {
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
-        {/* Global Alert Banner */}
         <GlobalBanner
             isSiteDownAlert={siteIsDown}
             isFlareAlert={isFlareAlert}
@@ -285,7 +287,6 @@ const App: React.FC = () => {
             substormText={substormActivityStatus?.text ?? undefined}
         />
 
-        {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
                 <button 
@@ -395,7 +396,7 @@ const App: React.FC = () => {
                                 camera={threeCamera}
                                 rendererDomElement={rendererDomElement}
                                 label={info.name} 
-                                sunMesh={sunInfo ? sunInfo.mesh : null}
+                                sunMesh={sunInfo ? sunInfo.mesh : null} // sunInfo is now memoized
                             />
                         ))}
                         
@@ -501,4 +502,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-// --- END OF FILE App.tsx ---
