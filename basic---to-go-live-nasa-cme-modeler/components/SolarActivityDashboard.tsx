@@ -1,5 +1,3 @@
-// --- START OF FILE SolarActivityDashboard.tsx ---
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
@@ -129,6 +127,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     // NEW: Ref for previous X-ray flux to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
+
+    // State for the InfoModal
+    const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: React.ReactNode} | null>(null);
 
 
     const tooltipContent = useMemo(() => ({
@@ -283,7 +284,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchImage(SUVI_304_URL, setSuvi304);
             fetchImage(SDO_HMI_URL, setSdoHmi, false, false);
             fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
-            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
+            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true); // This call remains here
             fetchXrayFlux();
             fetchFlares();
             fetchSunspots();
@@ -405,16 +406,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 >
                                     SDO AIA 193Å
                                 </button>
-                                <button
-                                    onClick={() => setActiveSunImage('CCOR1_VIDEO')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'CCOR1_VIDEO' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title="Displays the Sun's outer corona with the solar disk blocked, to track CMEs. (CCOR1 Coronagraph)"
-                                >
-                                    CCOR1 Video
-                                </button>
+                                {/* REMOVED CCOR1_VIDEO BUTTON FROM HERE */}
                             </div>
 
-                            {/* Conditional Rendering of the selected image/video */}
+                            {/* Conditional Rendering of the selected image */}
                             <div className="flex-grow flex justify-center items-center relative min-h-0">
                                 {activeSunImage === 'SUVI_131' && (
                                     <div
@@ -456,23 +451,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                         {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
                                     </div>
                                 )}
-                                {activeSunImage === 'CCOR1_VIDEO' && (
-                                    <div
-                                        onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['ccor1-video']}
-                                    >
-                                        {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
-                                        {ccor1Video.url && !ccor1Video.loading ? (
-                                            <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
-                                                <source src={ccor1Video.url} type="video/mp4" />
-                                                Your browser does not support the video tag.
-                                            </video>
-                                        ) : (
-                                            !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
-                                        )}
-                                    </div>
-                                )}
+                                {/* REMOVED CCOR1_VIDEO RENDERING FROM HERE */}
                             </div>
                         </div>
 
@@ -512,6 +491,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                             {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
                             </ul>
+                        </div>
+
+                        {/* NEW: CCOR1 Video Panel (Moved here) */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white text-center mb-4">CCOR1 Coronagraph Video</h2>
+                                <button onClick={() => openModal('ccor1-video')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about CCOR1 Coronagraph Video.">?</button>
+                            </div>
+                            <div
+                                onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
+                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                title={tooltipContent['ccor1-video']}
+                            >
+                                {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
+                                {ccor1Video.url && !ccor1Video.loading ? (
+                                    <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
+                                        <source src={ccor1Video.url} type="video/mp4" />
+                                        Your browser does not support the video tag.
+                                    </video>
+                                ) : (
+                                    !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
+                                )}
+                            </div>
                         </div>
 
                         {/* Interplanetary Shock Events Card (KEEPING THIS AS IT'S RELEVANT TO SOLAR ACTIVITY) */}
@@ -560,9 +562,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 title={`Flare Details: ${selectedFlare?.flareID || ''}`}
                 content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
             />
+            {modalState && (
+                <InfoModal
+                    isOpen={modalState.isOpen}
+                    onClose={closeModal}
+                    title={modalState.title}
+                    content={modalState.content}
+                />
+            )}
         </div>
     );
 };
 
 export default SolarActivityDashboard;
-// --- END OF FILE SolarActivityDashboard.tsx ---
