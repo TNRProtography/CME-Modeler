@@ -1,5 +1,3 @@
-// --- START OF FILE ForecastDashboard.tsx ---
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
@@ -10,48 +8,44 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Import notification utilities
-import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch component
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
+import ToggleSwitch from './ToggleSwitch';
+import InfoModal from './InfoModal'; // Reusing the generic InfoModal
+import { forecastTooltipContent, ForecastTooltipId } from '../constants/forecastTooltips'; // Import tooltip content
 
-// --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
 }
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
 interface CelestialTimeData {
     moon?: { rise: number | null, set: number | null, illumination?: number };
     sun?: { rise: number | null, set: number | null };
 }
 
-// Define a type for the daily history entry (for graph annotations of past days)
 interface DailyHistoryEntry {
-    date: string; // "YYYY-MM-DD"
+    date: string;
     sun?: { rise: number | null, set: number | null };
     moon?: { rise: number | null, set: number | null, illumination?: number };
 }
 
-// Define a type for the OWM Daily Forecast entry (for gauge calculation of next events)
 interface OwmDailyForecastEntry {
-  dt: number; // Daily UTC time, seconds
-  sunrise: number; // Sunrise time, seconds
-  sunset: number; // Sunset time, seconds
-  moonrise: number; // Moonrise time, seconds
-  moonset: number; // Moonset time, seconds
-  moon_phase: number; // Moon phase (0 to 1)
+  dt: number;
+  sunrise: number;
+  sunset: number;
+  moonrise: number;
+  moonset: number;
+  moon_phase: number;
 }
 
-// NEW: Define type for raw history record
 interface RawHistoryRecord {
   timestamp: number;
   baseScore: number;
   finalScore: number;
-  hemisphericPower: number; // Added hemisphericPower
+  hemisphericPower: number;
 }
 
-// NEW: Define type for NASA Interplanetary Shock (IPS) record
 interface InterplanetaryShock {
     activityID: string;
     catalog: string;
@@ -61,19 +55,15 @@ interface InterplanetaryShock {
     link: string;
 }
 
-
-// --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
-// NEW: NASA DONKI API for Interplanetary Shocks (IPS). The API key is handled by the backend worker.
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
-const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
+const REFRESH_INTERVAL_MS = 60 * 1000;
 
-// UPDATED: GAUGE_THRESHOLDS to match the provided HTML
 const GAUGE_THRESHOLDS = {
   speed:   { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
   density: { gray: 5,   yellow: 10,  orange: 15,  red: 20,  purple: 50,  pink: Infinity, maxExpected: 70 },
@@ -82,25 +72,23 @@ const GAUGE_THRESHOLDS = {
   bz:      { gray: -5,  yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }
 };
 
-// UPDATED: GAUGE_COLORS to match the provided HTML (and derive rgba for gradients)
 const GAUGE_COLORS = {
     gray:   { solid: '#808080', semi: 'rgba(128, 128, 128, 0.2)', trans: 'rgba(128, 128, 128, 0)' },
     yellow: { solid: '#FFD700', semi: 'rgba(255, 215, 0, 0.2)', trans: 'rgba(255, 215, 0, 0)' },
     orange: { solid: '#FFA500', semi: 'rgba(255, 165, 0, 0.2)', trans: 'rgba(255, 165, 0, 0)' },
-    red:    { solid: '#FF4500', semi: 'rgba(255, 69, 0, 0.2)', trans: 'rgba(255, 69, 0, 0)' }, // HTML uses FF4500 which is OrangeRed
+    red:    { solid: '#FF4500', semi: 'rgba(255, 69, 0, 0.2)', trans: 'rgba(255, 69, 0, 0)' },
     purple: { solid: '#800080', semi: 'rgba(128, 0, 128, 0.2)', trans: 'rgba(128, 0, 128, 0)' },
     pink:   { solid: '#FF1493', semi: 'rgba(255, 20, 147, 0.2)', trans: 'rgba(255, 20, 147, 0)' }
 };
 
-// UPDATED: GAUGE_EMOJIS to match the provided HTML (Unicode entities)
 const GAUGE_EMOJIS = {
-    gray:   '\u{1F610}', // Neutral Face
-    yellow: '\u{1F642}', // Slightly Smiling Face
-    orange: '\u{1F642}', // Slightly Smiling Face (same as yellow in HTML)
-    red:    '\u{1F604}', // Grinning Face with Smiling Eyes
-    purple: '\u{1F60D}', // Smiling Face with Heart-Eyes
-    pink:   '\u{1F60D}', // Smiling Face with Heart-Eyes (same as purple in HTML)
-    error:  '\u{2753}'   // Question Mark
+    gray:   '\u{1F610}',
+    yellow: '\u{1F642}',
+    orange: '\u{1F642}',
+    red:    '\u{1F604}',
+    purple: '\u{1F60D}',
+    pink:   '\u{1F60D}',
+    error:  '\u{2753}'
 };
 
 const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
@@ -111,7 +99,6 @@ const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: nu
     return 'gray';
 };
 
-// UPDATED: getForecastScoreColorKey to match HTML's thermometer logic
 const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
     if (score >= 80) return 'pink';
     if (score >= 50) return 'purple';
@@ -129,15 +116,14 @@ const getBzScaleColorKey = (value: number, thresholds: { [key: string]: number }
     return 'gray';
 };
 
-// NEW: Function to create a Y-axis gradient across the full scale of the chart for fills
 const createVerticalThresholdGradient = (
-    ctx: ScriptableContext<'line'>, // Use ScriptableContext here
+    ctx: ScriptableContext<'line'>,
     thresholds: { [key: string]: number, maxExpected?: number, maxNegativeExpected?: number },
     isBz: boolean = false
 ) => {
     const chart = ctx.chart;
     const chartArea = chart.chartArea;
-    const yScale = chart.scales.y; // Get the Y-axis scale object
+    const yScale = chart.scales.y;
 
     if (!chartArea || !yScale) return undefined;
 
@@ -183,22 +169,6 @@ const createVerticalThresholdGradient = (
     return gradient;
 };
 
-
-const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1000] flex justify-center items-center p-4" onClick={onClose}>
-      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
-        </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: content }} />
-      </div>
-    </div>
-  );
-};
-
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '3 Hr', hours: 3 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
@@ -210,43 +180,6 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
             ))}
         </div>
     );
-};
-
-const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
-    if (isDaylight) {
-        return {
-            overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
-            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
-        };
-    }
-    let baseSettings: any;
-    if (score === null || score < 10) {
-        baseSettings = {
-            overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.",
-            phone: { android: { iso: "3200-6400 (Max)", shutter: "20-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Might pick up an extremely faint, indiscernible glow."], cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."] }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Simple to try with Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."] } },
-            dslr: { iso: "6400-12800", shutter: "20-30s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Maximizes light gathering for extremely faint conditions."], cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."] }
-        };
-    } else if (score < 20) {
-         baseSettings = {
-            overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
-            phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Might detect very faint light not visible to the eye."], cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."] }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Simple to attempt using Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."] } },
-            dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Better light gathering than phones, higher chance for a faint detection."], cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."] }
-        };
-    } else if (score >= 80) {
-        baseSettings = {
-            overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.",
-            phone: { android: { iso: "400-800", shutter: "1-5s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."], cons: ["May still struggle with extreme brightness or very fast movement."] }, apple: { iso: "Auto or 500-1500 (in third-party app)", shutter: "1-3s (or what auto-selects)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."], cons: ["Less manual control than Android Pro mode for precise settings."] } },
-            dslr: { iso: "800-1600", shutter: "1-5s", aperture: "f/2.8 (or your widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Stunning detail, vibrant colors.", "Can capture movement without blur.", "Minimal noise."], cons: ["May need quick adjustments for fluctuating brightness."] }
-        };
-    } else {
-        baseSettings = {
-            overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
-            phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."], cons: ["Less control over very fast-moving aurora."] }, apple: { iso: "Auto (let it choose), or 1000-2000 (in manual app)", shutter: "3-7s (or what auto selects)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."], cons: ["Less control over very fast-moving aurora."] } },
-            dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."], cons: ["Can still get light pollution if exposure is too long."] }
-        };
-    }
-    return baseSettings;
 };
 
 
@@ -294,37 +227,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
     const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
     
-    // NEW: State for Interplanetary Shock data
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
-    // NEW: Refs for previous values to trigger notifications
     const previousAuroraScoreRef = useRef<number | null>(null);
-    const previousSubstormStatusRef = useRef<string | null>(null); // To store the 'text' part of substormBlurb
+    const previousSubstormStatusRef = useRef<string | null>(null);
 
-    // NEW: State for toggling visibility of celestial annotations
     const [showCelestialAnnotations, setShowCelestialAnnotations] = useState<boolean>(true);
 
-
-    const tooltipContent = {
-        'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness. It is highly accurate for the next 2 hours. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
-        'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
-        'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
-        'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thick" looking auroral displays.`,
-        'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
-        'bz': `<strong>What it is:</strong> The North-South direction of the乎Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
-        'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
-        'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        // NEW: Tooltip for Interplanetary Shocks
-        'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
-        'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
-        'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
-        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Very high power.</li></ul>`,
-        'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
-    };
-
-    const openModal = useCallback((id: string) => {
-        const contentData = tooltipContent[id as keyof typeof tooltipContent];
+    const openModal = useCallback((id: ForecastTooltipId) => {
+        const contentData = forecastTooltipContent[id];
         if (contentData) {
             let title = '';
             if (id === 'forecast') title = 'About The Forecast Score';
@@ -332,12 +244,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             else if (id === 'imf-graph') title = 'About The IMF Graph';
             else if (id === 'goes-mag') title = 'GOES Magnetometer (Hp)';
             else if (id === 'hemispheric-power-graph') title = 'About The Hemispheric Power Graph';
-            else if (id === 'ips') title = 'About Interplanetary Shocks'; // NEW: Title for IPS modal
+            else if (id === 'ips') title = 'About Interplanetary Shocks';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
 
             setModalState({ isOpen: true, title: title, content: contentData });
         }
-    }, [tooltipContent]);
+    }, []);
 
     const closeModal = useCallback(() => setModalState(null), []);
     const formatNZTimestamp = (timestamp: number | string) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } };
@@ -561,9 +473,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             return `${dayLabel} ${eventDate.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
         };
 
-        const riseStr = formatEventTime(nextRiseEvent);
-        const setStr = formatEventTime(nextSetEvent);
-
         const caretSvgPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`;
         const CaretUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
         const CaretDownSvg = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle"><path stroke-linecap="round" stroke-linejoin="round" d="${caretSvgPath}" /></svg>`;
@@ -597,23 +506,20 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
 
-            // --- Notification Logic for Aurora Score ---
             if (currentScore !== null && prevAuroraScore !== null) {
-                // Notify when hitting 50% or more, if it was previously below 50%
-                if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) { // 30 min cooldown
+                if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) {
                     sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`);
-                } else if (currentScore < 50) { // Clear cooldown if drops below 50
+                } else if (currentScore < 50) {
                     clearNotificationCooldown('aurora-50percent');
                 }
 
-                // Notify when hitting 80% or more, if it was previously below 80%
-                if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) { // 30 min cooldown
+                if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) {
                     sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`);
-                } else if (currentScore < 80) { // Clear cooldown if drops below 80
+                } else if (currentScore < 80) {
                     clearNotificationCooldown('aurora-80percent');
                 }
             }
-            previousAuroraScoreRef.current = currentScore; // Update ref after comparison
+            previousAuroraScoreRef.current = currentScore;
 
 
             if (Array.isArray(dailyHistory)) { setDailyCelestialHistory(dailyHistory); } else { setDailyCelestialHistory([]); }
@@ -670,7 +576,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             const processedData18 = goes18Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
-            analyzeMagnetometerData(processedData18); // Call analyze here, will handle notification
+            analyzeMagnetometerData(processedData18);
             if (processedData18.length > 0) anyGoesDataFound = true;
         } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error'); }
 
@@ -727,8 +633,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (allMagneticData.length === 0) return { datasets: [] };
         const lineTension = (range: number) => range >= (12 * 3600000) ? 0.1 : 0.3;
         return { datasets: [
-            { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false), } as any, // Cast to any to satisfy TS for conditional properties
-            { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true), } as any // Cast to any
+            { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false), } as any,
+            { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: lineTension(magneticFieldTimeRange), segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid, }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true), } as any
         ] };
     }, [allMagneticData, magneticFieldTimeRange]);
 
@@ -765,7 +671,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const auroraScoreChartAnnotations = useMemo(() => {
         const annotations: any = {};
-        if (!showCelestialAnnotations) { // Only add annotations if the toggle is ON
+        if (!showCelestialAnnotations) {
             return annotations;
         }
 
@@ -792,7 +698,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (day.moonset) addAnnotation('owm-moonset-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end');
         });
         return annotations;
-    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast, showCelestialAnnotations]); // Added showCelestialAnnotations dependency
+    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast, showCelestialAnnotations]);
 
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -853,6 +759,43 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
+    const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
+        if (isDaylight) {
+            return {
+                overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
+                phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["Enjoy the sunshine!"], cons: ["Aurora is not visible."] } },
+                dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A", pros: ["A great time for landscape photos."], cons: ["Aurora is not visible."] }
+            };
+        }
+        let baseSettings: any;
+        if (score === null || score < 10) {
+            baseSettings = {
+                overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.",
+                phone: { android: { iso: "3200-6400 (Max)", shutter: "20-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Might pick up an extremely faint, indiscernible glow."], cons: ["Very high noise, significant star trails, motion blur, unlikely to see anything substantial. Results may just be faint light pollution."] }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Simple to try with Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."] } },
+                dslr: { iso: "6400-12800", shutter: "20-30s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Maximizes light gathering for extremely faint conditions."], cons: ["Extremely high ISO noise will be very apparent.", "Long exposure causes star trails."] }
+            };
+        } else if (score < 20) {
+             baseSettings = {
+                overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
+                phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Might detect very faint light not visible to the eye."], cons: ["High noise, long exposures lead to star trails. Aurora may be indiscernible."] }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode auto-exposure (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Simple to attempt using Night Mode."], cons: ["Limited control, very high noise, very unlikely to yield any recognizable aurora."] } },
+                dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Better light gathering than phones, higher chance for a faint detection."], cons: ["High ISO can introduce significant noise.", "Long exposure causes star trails."] }
+            };
+        } else if (score >= 80) {
+            baseSettings = {
+                overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.",
+                phone: { android: { iso: "400-800", shutter: "1-5s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Captures dynamic movement with less blur.", "Lower noise.", "Vibrant colors."], cons: ["May still struggle with extreme brightness or very fast movement."] }, apple: { iso: "Auto or 500-1500 (in third-party app)", shutter: "1-3s (or what auto-selects)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Quick results, good for dynamic displays.", "Built-in processing handles noise well."], cons: ["Less manual control than Android Pro mode for precise settings."] } },
+                dslr: { iso: "800-1600", shutter: "1-5s", aperture: "f/2.8 (or your widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Stunning detail, vibrant colors.", "Can capture movement without blur.", "Minimal noise."], cons: ["May need quick adjustments for fluctuating brightness."] }
+            };
+        } else {
+            baseSettings = {
+                overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
+                phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."], cons: ["Less control over very fast-moving aurora."] }, apple: { iso: "Auto (let it choose), or 1000-2000 (in manual app)", shutter: "3-7s (or what auto selects)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K", pros: ["Good balance, easier to get usable shots.", "Built-in processing handles noise well."], cons: ["Less control over very fast-moving aurora."] } },
+                dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K", pros: ["Excellent detail, good color, less noise than faint settings.", "Good for capturing movement."], cons: ["Can still get light pollution if exposure is too long."] }
+            };
+        }
+        return baseSettings;
+    };
+
 
     interface ExpandedGraphContentProps {
         graphId: string;
@@ -868,7 +811,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         magnetometerTimeRange: number;
         setMagnetometerTimeRange: (duration: number, label: string) => void;
         magnetometerTimeLabel: string;
-        openModal: (id: string) => void;
+        openModal: (id: ForecastTooltipId) => void;
         allSpeedData: any[]; speedChartData: any; speedChartOptions: ChartOptions<'line'>;
         allDensityData: any[]; densityChartData: any; densityChartOptions: ChartOptions<'line'>;
         allMagneticData: any[]; magneticFieldChartData: any; magneticFieldOptions: ChartOptions<'line'>;
@@ -1015,7 +958,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                             <button onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)} className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`} disabled={!isGraphable}>
                                                 <div className="flex justify-center items-center">
                                                     <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
-                                                    <button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                                    <button onClick={(e) => { e.stopPropagation(); openModal(key as ForecastTooltipId); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                                 </div>
                                                 <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
                                                 <div className="text-3xl my-2">{data.emoji}</div>
@@ -1051,7 +994,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                         </div>
                         
-                        {/* NEW: Interplanetary Shock Events Card */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
                                 <div className="flex items-center">
@@ -1114,4 +1056,3 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE ForecastDashboard.tsx ---
