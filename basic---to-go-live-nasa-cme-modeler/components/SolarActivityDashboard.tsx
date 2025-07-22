@@ -159,11 +159,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     // State for the InfoModal
     const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
 
-    // NEW: State for the custom hover tooltip
-    const [activeHoverTooltip, setActiveHoverTooltip] = useState<{
-        content: string;
-        rect: DOMRect; // Stores position and dimensions of the hovered element
-    } | null>(null);
+    // Removed: State for the custom hover tooltip (activeHoverTooltip)
 
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
@@ -176,6 +172,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'ccor1-video': '<strong>CCOR1 (Coronal Coronagraph Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun. **Best for: Detecting and tracking Coronal Mass Ejections (CMEs) as they leave the Sun.**',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
+        // NEW: Combined info for Solar Imagery section
+        'solar-imagery': `
+            <p><strong>SUVI 131Å (Angstrom):</strong> Shows hot, flaring regions. Best for: Monitoring solar flares and active regions.</p><br>
+            <p><strong>SUVI 304Å (Angstrom):</strong> Reveals cooler, denser plasma. Best for: Observing prominences and filaments, tracking large-scale solar activity.</p><br>
+            <p><strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> High-resolution view of the hot corona. Best for: Identifying and monitoring coronal holes, understanding solar wind origins.</p><br>
+            <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Continuum (1024px):</strong> Visible light view of the Sun\'s surface. Best for: Detailed observation of sunspot structure and active region morphology.</p><br>
+            <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Higher resolution view of sunspots and magnetic fields. Best for: Tracking the evolution of sunspots and identifying potential flare source regions.</p><br>
+            <p><strong>CCOR1 (Coronal Coronagraph Observation by Optical Reconnaissance) Video:</strong> Captures the faint outer atmosphere. Best for: Detecting and tracking Coronal Mass Ejections (CMEs) as they leave the Sun.</p>
+        `
     }), []);
 
     const openModal = useCallback((id: string) => {
@@ -186,13 +191,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
-            // Simplified SDO modal titles (removed resolution)
             else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
             else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
             else if (id === 'sdo-aia193-2048') title = 'About SDO AIA 193Å Imagery (Coronal Holes)';
             else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
             else if (id === 'solar-flares') title = 'About Solar Flares';
             else if (id === 'ips') title = 'About Interplanetary Shocks';
+            else if (id === 'solar-imagery') title = 'About Solar Imagery Types'; // NEW MODAL TITLE
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
 
             setModalState({ isOpen: true, title: title, content: contentData });
@@ -311,7 +316,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     // S1 Notification
                     if (latestFluxValue >= S1_THRESHOLD && prevFlux < S1_THRESHOLD && canSendNotification('proton-S1', 30 * 60 * 1000)) { // 30 min cooldown
                         sendNotification('Proton Event Alert: S1 Class!', `Proton flux (>=10 MeV) has reached S1 class (>=${S1_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
-                    } else if (latestFluxValue < S1_THRESHOLD) { // Corrected from 3_THRESHOLD to S1_THRESHOLD
+                    } else if (latestFluxValue < S1_THRESHOLD) {
                         clearNotificationCooldown('proton-S1');
                     }
                     
@@ -516,20 +521,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }],
         };
     }, [allProtonData]);
-
-    // NEW: Function to handle mouse enter on imagery buttons for custom tooltip
-    const handleImageButtonMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>, contentKey: string) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        setActiveHoverTooltip({
-            content: tooltipContent[contentKey as keyof typeof tooltipContent],
-            rect: rect,
-        });
-    }, [tooltipContent]);
-
-    // NEW: Function to handle mouse leave for custom tooltip
-    const handleImageButtonMouseLeave = useCallback(() => {
-        setActiveHoverTooltip(null);
-    }, []);
     
     return (
         <div
@@ -553,52 +544,41 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     <main className="grid grid-cols-12 gap-5">
                         {/* Consolidated Solar Imagers Panel */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
-                            <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">Solar Imagery</h2>
+                            <div className="flex justify-center items-center gap-2"> {/* Added div for alignment */}
+                                <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
+                                {/* NEW: Info button for the Solar Imagery section */}
+                                <button onClick={() => openModal('solar-imagery')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Imagery types.">?</button>
+                            </div>
                             <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
                                 <button
                                     onClick={() => setActiveSunImage('SUVI_131')}
-                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'suvi-131')}
-                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['suvi-131']}
                                 >
                                     SUVI 131Å
                                 </button>
                                 <button
                                     onClick={() => setActiveSunImage('SUVI_304')}
-                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'suvi-304')}
-                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['suvi-304']}
                                 >
                                     SUVI 304Å
                                 </button>
                                 {/* SDO AIA 193Å (2048px) as the 3rd option, with no resolution in text */}
                                 <button
                                     onClick={() => setActiveSunImage('SDO_AIA193_2048')}
-                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'sdo-aia193-2048')}
-                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['sdo-aia193-2048']}
                                 >
                                     SDO AIA 193Å
                                 </button>
                                 {/* Remaining 1024px options for SDO, with no resolution in text */}
                                 <button
                                     onClick={() => setActiveSunImage('SDO_HMIBC_1024')}
-                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'sdo-hmibc-1024')}
-                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['sdo-hmibc-1024']}
                                 >
                                     SDO HMI Cont.
                                 </button>
                                 <button
                                     onClick={() => setActiveSunImage('SDO_HMIIF_1024')}
-                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'sdo-hmiif-1024')}
-                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['sdo-hmiif-1024']}
                                 >
                                     SDO HMI Int.
                                 </button>
@@ -678,7 +658,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
                                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
                             </div>
-                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                            <ul className="space-y-2 overflow-y-auto max-h96 styled-scrollbar pr-2">
                                 {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> 
                                 : solarFlares.length > 0 ? solarFlares.map((flare) => {
                                     const { background, text } = getColorForFlareClass(flare.classType);
@@ -762,32 +742,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                  </div>
             </div>
             
-            {/* NEW: Custom Hover Tooltip for Imagery Buttons */}
-            {activeHoverTooltip && activeHoverTooltip.rect && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        // Position slightly below the button, horizontally centered
-                        top: activeHoverTooltip.rect.bottom + window.scrollY + 8,
-                        left: activeHoverTooltip.rect.left + window.scrollX + (activeHoverTooltip.rect.width / 2),
-                        transform: 'translateX(-50%)', // Center horizontally
-                        zIndex: 1000, // Ensure it's on top of other content but below modals
-                        backgroundColor: 'rgba(38, 38, 38, 0.95)', // neutral-800 with opacity
-                        color: 'white',
-                        padding: '8px 12px',
-                        borderRadius: '4px',
-                        maxWidth: '350px', // Limit width for readability
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                        pointerEvents: 'none', // Crucial: prevents tooltip from blocking mouse events on elements beneath it
-                        whiteSpace: 'normal', // Allow text to wrap
-                        textAlign: 'left',
-                    }}
-                    className="text-xs" // Tailwind text size
-                >
-                    {/* Render HTML content safely */}
-                    <div dangerouslySetInnerHTML={{ __html: activeHoverTooltip.content }} />
-                </div>
-            )}
+            {/* Removed: Custom Hover Tooltip for Imagery Buttons */}
+            {/* activeHoverTooltip is no longer needed/rendered here */}
 
             <InfoModal
                 isOpen={!!selectedFlare}
