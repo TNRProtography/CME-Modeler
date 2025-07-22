@@ -273,14 +273,18 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* NEW: Global Alert Banner */}
-        <GlobalBanner
-            isFlareAlert={isFlareAlert}
-            flareClass={flareClass}
-            isAuroraAlert={isAuroraAlert}
-            auroraScore={currentAuroraScore ?? undefined}
-            isSubstormAlert={isSubstormAlert}
-            substormText={substormActivityStatus?.text ?? undefined}
-        />
+            <GlobalBanner
+                // Pass the new state variable as a prop
+                isSiteDownAlert={siteIsDown} // <-- NEW PROP ADDED HERE
+
+                // The rest of the props remain the same
+                isFlareAlert={isFlareAlert}
+                flareClass={flareClass}
+                isAuroraAlert={isAuroraAlert}
+                auroraScore={currentAuroraScore ?? undefined}
+                isSubstormAlert={isSubstormAlert}
+                substormText={substormActivityStatus?.text ?? undefined}
+            />
 
         {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
