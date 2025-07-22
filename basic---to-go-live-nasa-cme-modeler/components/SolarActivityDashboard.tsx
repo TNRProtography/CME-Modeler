@@ -19,12 +19,11 @@ const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 
-// REVERTED: SDO URLs back to direct NASA links
+// SDO URLs are now direct NASA links (NO LONGER PROXIED)
 const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 
-// IPS URL remains proxied, as this is the intended solution if the worker is fixed
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Remains proxied as per previous instruction
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -196,16 +195,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 console.error(`Failed to fetch ${fetchUrl}: HTTP ${res.status} ${res.statusText}`);
                 throw new Error(`HTTP ${res.status} for ${url}`);
             }
+
+            // Determine if it's an SDO image based on the URL constant
+            const isSdoImage = url === SDO_HMI_URL || url === SDO_AIA_193_URL;
+
             if (isVideo) {
+                // Video: direct URL for the <video> tag
+                setState({ url: url, loading: null });
+            } else if (isSdoImage) {
+                // SDO Images: Use direct URL to allow <img> tag to attempt display.
+                // NOTE: Console CORS errors might still appear as fetch().blob() is bypassed
+                // and browser security still applies to the resource itself, but visual display
+                // may work. Full programmatic access (e.g., canvas) requires a CORS proxy.
                 setState({ url: url, loading: null });
             } else {
+                // Other images: create object URL from blob (requires CORS headers from source)
                 const blob = await res.blob();
                 const objectURL = URL.createObjectURL(blob);
                 setState({ url: objectURL, loading: null });
             }
         } catch (error) {
             console.error(`Error fetching ${url}:`, error);
-            setState({ url: isVideo ? '' : '/error.png', loading: `${isVideo ? 'Video' : 'Image'} failed to load.` });
+            const errorMessage = `${isVideo ? 'Video' : 'Image'} failed to load. (CORS issue likely for direct SDO image access)`;
+            setState({ url: isVideo ? '' : '/error.png', loading: errorMessage });
         }
     }, []);
 
@@ -335,7 +347,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     const fetchInterplanetaryShockData = useCallback(async () => {
         try {
-            // This still points to your worker, which needs to be fixed to avoid 503 and CORS.
             const response = await fetch(`${NASA_IPS_URL}?_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data: InterplanetaryShock[] = await response.json();
@@ -350,8 +361,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi); // Reverted to direct NASA URL
-            fetchImage(SDO_AIA_193_URL, setSdoAia193); // Reverted to direct NASA URL
+            fetchImage(SDO_HMI_URL, setSdoHmi); // Direct NASA URL
+            fetchImage(SDO_AIA_193_URL, setSdoAia193); // Direct NASA URL
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchProtonFlux();
