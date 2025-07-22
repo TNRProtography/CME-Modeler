@@ -19,15 +19,15 @@ const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 
-// SDO URLs now point to the NEW Cloudflare Worker proxy and include new variants
+// SDO URLs now point to your Cloudflare Worker proxy, only 1024px and 2048px retained
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
-const SDO_HMI_512_URL = `${SDO_PROXY_BASE_URL}/sdo-hmi-512`;
-const SDO_AIA_193_512_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-512`;
-const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`; // New HMI Continuum
-const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`; // New HMI Intensitygram
-const SDO_AIA_193_2048_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-2048`; // New AIA 193 (Coronal Holes)
+// Removed SDO_HMI_512_URL = `${SDO_PROXY_BASE_URL}/sdo-hmi-512`;
+// Removed SDO_AIA_193_512_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-512`;
+const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`; // HMI Continuum
+const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`; // HMI Intensitygram
+const SDO_AIA_193_2048_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-2048`; // AIA 193 (Coronal Holes)
 
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Ensure this worker is also robustly configured!
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -129,17 +129,18 @@ interface InterplanetaryShock {
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-    // Updated states for SDO images to support new resolutions
-    const [sdoHmi512, setSdoHmi512] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-    const [sdoAia193_512, setSdoAia193_512] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+    // Removed 512px SDO states:
+    // const [sdoHmi512, setSdoHmi512] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+    // const [sdoAia193_512, setSdoAia193_512] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+    // Retained 1024px and 2048px SDO states:
     const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoAia193_2048, setSdoAia193_2048] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
 
     const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
 
-    // Added new active image options
-    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
+    // Set default active image to one of the 1024px options
+    const [activeSunImage, setActiveSunImage] = useState<string>('SDO_HMI_BC_1024');
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
@@ -168,9 +169,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
         'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
-        // Updated SDO HMI/AIA tooltips to differentiate sizes/types
-        'sdo-hmi-512': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (512px):</strong> Shows sunspots and magnetic fields on the Sun\'s photosphere. Lower resolution for quicker loading.',
-        'sdo-aia193-512': '<strong>SDO AIA 193Å (Angstrom) (512px):</strong> Shows hot coronal plasma and coronal holes. Lower resolution for quicker loading.',
+        // Removed 512px SDO tooltips
+        // 'sdo-hmi-512': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (512px):</strong> Shows sunspots and magnetic fields on the Sun\'s photosphere. Lower resolution for quicker loading.',
+        // 'sdo-aia193-512': '<strong>SDO AIA 193Å (Angstrom) (512px):</strong> Shows hot coronal plasma and coronal holes. Lower resolution for quicker loading.',
         'sdo-hmibc-1024': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Continuum (1024px):</strong> Provides a visible light view of the Sun\'s surface, primarily showing sunspots and granulation. Higher resolution.',
         'sdo-hmiif-1024': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Offers a higher resolution view of sunspots and active regions.',
         'sdo-aia193-2048': '<strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> A very high-resolution view of the hot corona, excellent for observing large-scale coronal holes which are sources of fast solar wind.',
@@ -187,8 +188,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
-            else if (id === 'sdo-hmi-512') title = 'About SDO HMI (512px) Imagery';
-            else if (id === 'sdo-aia193-512') title = 'About SDO AIA 193Å (512px) Imagery';
+            // Removed 512px SDO modal titles
+            // else if (id === 'sdo-hmi-512') title = 'About SDO HMI (512px) Imagery';
+            // else if (id === 'sdo-aia193-512') title = 'About SDO AIA 193Å (512px) Imagery';
             else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum (1024px) Imagery';
             else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram (1024px) Imagery';
             else if (id === 'sdo-aia193-2048') title = 'About SDO AIA 193Å (2048px) Imagery (Coronal Holes)';
@@ -366,11 +368,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_512_URL, setSdoHmi512); // Existing 512px HMI
-            fetchImage(SDO_AIA_193_512_URL, setSdoAia193_512); // Existing 512px AIA 193
-            fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024); // New HMI Continuum
-            fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024); // New HMI Intensitygram
-            fetchImage(SDO_AIA_193_2048_URL, setSdoAia193_2048); // New AIA 193 (Coronal Holes)
+            // Removed 512px fetch calls
+            // fetchImage(SDO_HMI_512_URL, setSdoHmi512);
+            // fetchImage(SDO_AIA_193_512_URL, setSdoAia193_512);
+            // Retained 1024px and 2048px fetch calls:
+            fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
+            fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
+            fetchImage(SDO_AIA_193_2048_URL, setSdoAia193_2048);
 
             fetchXrayFlux();
             fetchProtonFlux();
@@ -380,7 +384,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares, fetchInterplanetaryShockData]); // Added new fetch dependencies
+    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares, fetchInterplanetaryShockData]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -559,22 +563,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 >
                                     SUVI 304Å
                                 </button>
-                                {/* Original SDO 512px options */}
-                                <button
-                                    onClick={() => setActiveSunImage('SDO_HMI_512')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMI_512' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['sdo-hmi-512']}
-                                >
-                                    SDO HMI (512Å)
-                                </button>
-                                <button
-                                    onClick={() => setActiveSunImage('SDO_AIA193_512')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_512' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['sdo-aia193-512']}
-                                >
-                                    SDO AIA 193Å (512px)
-                                </button>
-                                {/* NEW SDO 1024px & 2048px options */}
+                                {/* Only 1024px and 2048px options for SDO */}
                                 <button
                                     onClick={() => setActiveSunImage('SDO_HMIBC_1024')}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
@@ -620,28 +609,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                         {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
                                     </div>
                                 )}
-                                {/* Existing SDO 512px renders */}
-                                {activeSunImage === 'SDO_HMI_512' && (
-                                    <div
-                                        onClick={() => sdoHmi512.url !== '/placeholder.png' && sdoHmi512.url !== '/error.png' && setViewerMedia({ url: sdoHmi512.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['sdo-hmi-512']}
-                                    >
-                                        <img src={sdoHmi512.url} alt="SDO HMI 512px" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {sdoHmi512.loading && <p className="absolute text-neutral-400 italic">{sdoHmi512.loading}</p>}
-                                    </div>
-                                )}
-                                {activeSunImage === 'SDO_AIA193_512' && (
-                                    <div
-                                        onClick={() => sdoAia193_512.url !== '/placeholder.png' && sdoAia193_512.url !== '/error.png' && setViewerMedia({ url: sdoAia193_512.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['sdo-aia193-512']}
-                                    >
-                                        <img src={sdoAia193_512.url} alt="SDO AIA 193Å 512px" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {sdoAia193_512.loading && <p className="absolute text-neutral-400 italic">{sdoAia193_512.loading}</p>}
-                                    </div>
-                                )}
-                                {/* NEW SDO 1024px & 2048px renders */}
+                                {/* Removed 512px SDO renders */}
+                                {/* {activeSunImage === 'SDO_HMI_512' && ( ... )} */}
+                                {/* {activeSunImage === 'SDO_AIA193_512' && ( ... )} */}
+                                {/* New SDO 1024px & 2048px renders */}
                                 {activeSunImage === 'SDO_HMIBC_1024' && (
                                     <div
                                         onClick={() => sdoHmiBc1024.url !== '/placeholder.png' && sdoHmiBc1024.url !== '/error.png' && setViewerMedia({ url: sdoHmiBc1024.url, type: 'image' })}
