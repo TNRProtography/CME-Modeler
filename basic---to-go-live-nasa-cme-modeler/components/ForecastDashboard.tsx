@@ -61,6 +61,26 @@ interface InterplanetaryShock {
     link: string;
 }
 
+// --- Batch State Update Type ---
+interface BatchedStateUpdate {
+    auroraScore?: number | null;
+    lastUpdated?: string;
+    auroraBlurb?: string;
+    celestialTimes?: CelestialTimeData;
+    gaugeData?: any;
+    auroraScoreHistory?: any[];
+    hemisphericPowerHistory?: any[];
+    dailyCelestialHistory?: DailyHistoryEntry[];
+    owmDailyForecast?: OwmDailyForecastEntry[];
+    allSpeedData?: any[];
+    allDensityData?: any[];
+    allMagneticData?: any[];
+    goes18Data?: any[];
+    goes19Data?: any[];
+    loadingMagnetometer?: string | null;
+    interplanetaryShockData?: InterplanetaryShock[];
+    epamImageUrl?: string;
+}
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
@@ -304,6 +324,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     // NEW: State for toggling visibility of celestial annotations
     const [showCelestialAnnotations, setShowCelestialAnnotations] = useState<boolean>(true);
+
+    // NEW: Ref to track if initial data has been loaded
+    const hasInitialDataLoadedRef = useRef(false);
 
 
     const tooltipContent = {
