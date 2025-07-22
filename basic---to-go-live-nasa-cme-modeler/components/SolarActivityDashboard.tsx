@@ -159,7 +159,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
 };
 
 // NEW: Simple Loading Spinner Component
-const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
+const LoadingSpinner: React.FC<{ message?: string | null }> = ({ message }) => (
     <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-neutral-400 italic">
         <svg className="animate-spin h-8 w-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -194,19 +194,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
-    const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
+    const [isLoadingXray, setIsLoadingXray] = useState(true); // NEW: dedicated loading flag
+    const [loadingXrayMessage, setLoadingXrayMessage] = useState<string | null>('Loading X-ray flux data...'); // NEW: for message only
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000);
     
     const [allProtonData, setAllProtonData] = useState<any[]>([]);
-    const [loadingProton, setLoadingProton] = useState<string | null>('Loading proton flux data...');
+    const [isLoadingProton, setIsLoadingProton] = useState(true); // NEW
+    const [loadingProtonMessage, setLoadingProtonMessage] = useState<string | null>('Loading proton flux data...'); // NEW
     const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000);
 
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
-    const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
+    const [isLoadingFlares, setIsLoadingFlares] = useState(true); // NEW
+    const [loadingFlaresMessage, setLoadingFlaresMessage] = useState<string | null>('Loading solar flares...'); // NEW
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
-    const [isIpsOpen, setIsIpsOpen] = useState(false);
+    const [isIpsOpen, setIsIpsOpen] = useState(false); // IPS only has toggle state, not separate loading
+    const [loadingIpsMessage, setLoadingIpsMessage] = useState<string | null>(null); // For IPS errors
 
     // Refs for previous flux values to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
@@ -243,7 +247,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'solar-imagery': `
             <p><strong>SUVI 131Å (Angstrom):</strong> Shows hot, flaring regions. Best for: Monitoring solar flares and active regions.</p><br>
             <p><strong>SUVI 304Å (Angstrom):</strong> Reveals cooler, denser plasma. Best for: Observing prominences and filaments, tracking large-scale solar activity.</p><br>
-            <p><strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> High-resolution view of the hot corona. Best for: Identifying and monitoring coronal holes, understanding solar wind origins.</p><br>
+            <p><strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> High-resolution view of the hot corona. Best for: Identifying and monitoring coronal holes, understanding solar wind origins.</p><p><small>(Note: This view often makes coronal holes, dark regions in the corona, very prominent.)</small></p><br>
             <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Continuum (1024px):</strong> Visible light view of the Sun\'s surface, primarily showing sunspots and granulation. Best for: Detailed observation of sunspot structure and active region morphology.</p><br>
             <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Higher resolution view of sunspots and magnetic fields. Best for: Tracking the evolution of sunspots and identifying potential flare source regions.</p>
         `
@@ -297,28 +301,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     }, []);
 
     const fetchXrayFlux = useCallback(() => {
-        setLoadingXray('Loading X-ray flux data...');
+        setIsLoadingXray(true); // Set loading flag to true
+        setLoadingXrayMessage('Loading X-ray flux data...'); // Set loading message
         fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
             .then(rawData => {
                 const groupedData = new Map();
                 rawData.forEach((d: any) => { const time = new Date(d.time_tag).getTime(); if (!groupedData.has(time)) groupedData.set(time, { time, short: null }); if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux); });
                 const processedData = Array.from(groupedData.values()).filter(d => d.short !== null && !isNaN(d.short)).sort((a,b) => a.time - b.time);
                 
-                if (!processedData.length) {
-                    setLoadingXray('No valid X-ray data.');
-                    setAllXrayData([]);
-                    setLatestXrayFlux(null);
-                    setCurrentXraySummary({ flux: null, class: 'N/A' }); // Update summary
-                    previousLatestXrayFluxRef.current = null;
-                    setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
-                    return;
-                }
-
                 setAllXrayData(processedData);
-                setLoadingXray(null);
-                const latestFluxValue = processedData[processedData.length - 1].short;
+                setLoadingXrayMessage(null); // Clear loading message on success
+                const latestFluxValue = processedData.length > 0 ? processedData[processedData.length - 1].short : null;
                 setLatestXrayFlux(latestFluxValue);
-                setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) }); // Update summary
+                setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) });
 
                 // --- Notification Logic for X-ray Flux ---
                 const prevFlux = previousLatestXrayFluxRef.current;
@@ -343,19 +338,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
             }).catch(e => {
                 console.error('Error fetching X-ray flux:', e);
-                setLoadingXray(`Error: ${e.message}`);
+                setLoadingXrayMessage(`Error: ${e.message}`); // Set error message
+                setAllXrayData([]); // Clear data on error
                 setLatestXrayFlux(null);
-                setCurrentXraySummary({ flux: null, class: 'N/A' }); // Update summary
+                setCurrentXraySummary({ flux: null, class: 'N/A' });
                 previousLatestXrayFluxRef.current = null;
                 setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+            }).finally(() => {
+                setIsLoadingXray(false); // Always set loading flag to false when done
             });
     }, [setLatestXrayFlux]);
 
     const fetchProtonFlux = useCallback(() => {
-        setLoadingProton('Loading proton flux data...');
+        setIsLoadingProton(true); // Set loading flag to true
+        setLoadingProtonMessage('Loading proton flux data...'); // Set loading message
         fetch(`${NOAA_PROTON_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
             .then(rawData => {
-                // Filter for ">=10 MeV" and parse data
                 const processedData = rawData
                     .filter((d: any) => d.energy === ">=10 MeV" && d.flux !== null && !isNaN(d.flux))
                     .map((d: any) => ({
@@ -364,98 +362,84 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     }))
                     .sort((a: any, b: any) => a.time - b.time);
 
-                if (!processedData.length) {
-                    setLoadingProton('No valid >=10 MeV proton data.');
-                    setAllProtonData([]);
-                    setCurrentProtonSummary({ flux: null, class: 'N/A' }); // Update summary
-                    previousLatestProtonFluxRef.current = null;
-                    setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
-                    return;
-                }
-
                 setAllProtonData(processedData);
-                setLoadingProton(null);
-                const latestFluxValue = processedData[processedData.length - 1].flux;
-                setCurrentProtonSummary({ flux: latestFluxValue, class: getProtonClass(latestFluxValue) }); // Update summary
+                setLoadingProtonMessage(null); // Clear loading message on success
+                const latestFluxValue = processedData.length > 0 ? processedData[processedData.length - 1].flux : null;
+                setCurrentProtonSummary({ flux: latestFluxValue, class: getProtonClass(latestFluxValue) });
 
                 // --- Notification Logic for Proton Flux (S-scale) ---
                 const prevFlux = previousLatestProtonFluxRef.current;
                 
-                // Thresholds for S-levels (particles/(cm^2*s*sr) or pfu)
                 const S1_THRESHOLD = 10;
-                const S2_THRESHOLD = 100;
                 const S3_THRESHOLD = 1000;
-                // const S4_THRESHOLD = 10000; // Unused constant, removed for brevity
-                // const S5_THRESHOLD = 100000; // Unused constant, removed for brevity
 
                 if (latestFluxValue !== null && prevFlux !== null) {
-                    // S1 Notification
-                    if (latestFluxValue >= S1_THRESHOLD && prevFlux < S1_THRESHOLD && canSendNotification('proton-S1', 30 * 60 * 1000)) { // 30 min cooldown
+                    if (latestFluxValue >= S1_THRESHOLD && prevFlux < S1_THRESHOLD && canSendNotification('proton-S1', 30 * 60 * 1000)) {
                         sendNotification('Proton Event Alert: S1 Class!', `Proton flux (>=10 MeV) has reached S1 class (>=${S1_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
                     } else if (latestFluxValue < S1_THRESHOLD) {
                         clearNotificationCooldown('proton-S1');
                     }
                     
-                    // S3 Notification (or higher) - Can combine S2-S5 if desired, here for S3+
-                    if (latestFluxValue >= S3_THRESHOLD && prevFlux < S3_THRESHOLD && canSendNotification('proton-S3', 60 * 60 * 1000)) { // 1 hour cooldown
+                    if (latestFluxValue >= S3_THRESHOLD && prevFlux < S3_THRESHOLD && canSendNotification('proton-S3', 60 * 60 * 1000)) {
                         sendNotification('Major Proton Event Alert: S3+ Class!', `Proton flux (>=10 MeV) has reached S3 class (>=${S3_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
                     } else if (latestFluxValue < S3_THRESHOLD) { 
                         clearNotificationCooldown('proton-S3');
                     }
                 }
                 previousLatestProtonFluxRef.current = latestFluxValue;
-                setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+                setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
 
             }).catch(e => {
                 console.error('Error fetching proton flux:', e);
-                setLoadingProton(`Error: ${e.message}`);
-                setCurrentProtonSummary({ flux: null, class: 'N/A' }); // Update summary
+                setLoadingProtonMessage(`Error: ${e.message}`); // Set error message
+                setAllProtonData([]); // Clear data on error
+                setCurrentProtonSummary({ flux: null, class: 'N/A' });
                 previousLatestProtonFluxRef.current = null;
-                setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+                setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+            }).finally(() => {
+                setIsLoadingProton(false); // Always set loading flag to false when done
             });
     }, []);
 
     const fetchFlares = useCallback(async () => {
-        setLoadingFlares('Loading solar flares...');
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const startDate = yesterday.toISOString().split('T')[0];
-        const endDate = new Date().toISOString().split('T')[0];
-        
+        setIsLoadingFlares(true); // Set loading flag to true
+        setLoadingFlaresMessage('Loading solar flares...'); // Set loading message
         try {
-            const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
+            const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]}&endDate=${new Date().toISOString().split('T')[0]}&api_key=${apiKey}&_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (!data || data.length === 0) { 
-                setLoadingFlares('No solar flares in the last 24 hours.'); 
-                setSolarFlares([]); 
-                setLatestRelevantEvent(prev => prev === null ? null : prev); // Don't overwrite if another event is newer
-                setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
-                return; 
-            }
-            const processedData = data.map((flare: any) => ({ ...flare, hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false, }));
-            const sortedFlares = processedData.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
-            setSolarFlares(sortedFlares);
-            setLoadingFlares(null);
+            
+            setSolarFlares(data || []); // Ensure data is an array
+            setLoadingFlaresMessage(null); // Clear loading message on success
 
-            // Update latestRelevantEvent if this flare is newer than current
-            if (sortedFlares.length > 0) {
+            if (data && data.length > 0) {
+                const sortedFlares = data.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
+                setSolarFlares(sortedFlares);
+
+                // Update latestRelevantEvent if this flare is newer than current
                 const latestFlare = sortedFlares[0];
                 const flareTime = new Date(latestFlare.peakTime).getTime();
-                const currentEventTime = latestRelevantEvent ? new Date(latestRelevantEvent.split('@')[1]).getTime() : 0; // Crude time extraction
+                const currentEventTime = latestRelevantEvent ? (latestRelevantEvent.includes('Flare') ? new Date(latestRelevantEvent.split('at ')[1]).getTime() : 0) : 0; // Crude time extraction
                 
                 if (flareTime > currentEventTime) {
                      setLatestRelevantEvent(`${latestFlare.classType} Flare at ${formatNZTimestamp(latestFlare.peakTime)}`);
                 }
+            } else {
+                setSolarFlares([]); // Explicitly set to empty if no data
             }
-            setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+            setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
         } catch (error) { 
             console.error('Error fetching flares:', error); 
-            setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); 
-            setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+            setLoadingFlaresMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); // Set error message
+            setSolarFlares([]); // Clear data on error
+            setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+        } finally {
+            setIsLoadingFlares(false); // Always set loading flag to false when done
         }
-    }, [apiKey, latestRelevantEvent]); // Add latestRelevantEvent to deps for comparison
+    }, [apiKey, latestRelevantEvent]);
 
     const fetchInterplanetaryShockData = useCallback(async () => {
+        setLoadingIpsMessage(null); // Clear previous errors or messages
         try {
             const response = await fetch(`${NASA_IPS_URL}?_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -466,19 +450,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             if (data.length > 0) {
                 const latestShock = data[0];
                 const shockTime = new Date(latestShock.eventTime).getTime();
-                const currentEventTime = latestRelevantEvent ? new Date(latestRelevantEvent.split('@')[1]).getTime() : 0; // Crude time extraction
+                const currentEventTime = latestRelevantEvent ? (latestRelevantEvent.includes('Shock') ? new Date(latestRelevantEvent.split('at ')[1]).getTime() : 0) : 0; // Crude time extraction
                 
                 if (shockTime > currentEventTime) {
                     setLatestRelevantEvent(`Interplanetary Shock detected at ${formatNZTimestamp(latestShock.eventTime)}`);
                 }
             }
-            setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+            setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ'));
         } catch (error) {
             console.error('NASA IPS Fetch Failed:', error);
             setInterplanetaryShockData([]);
-            setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ')); // Update timestamp
+            setLoadingIpsMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); // Set error message
+            setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ'));
         }
-    }, [latestRelevantEvent]); // Add latestRelevantEvent to deps for comparison
+    }, [latestRelevantEvent]);
 
     // Effect to update overall status when summaries change
     useEffect(() => {
@@ -785,7 +770,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                             <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
-                                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <LoadingSpinner message={loadingXray} />}
+                                {isLoadingXray || loadingXrayMessage ? (
+                                    <LoadingSpinner message={loadingXrayMessage} />
+                                ) : (
+                                    xrayChartData.datasets[0]?.data.length > 0 ? (
+                                        <Line data={xrayChartData} options={xrayChartOptions} />
+                                    ) : (
+                                        <p className="text-center pt-10 text-neutral-400 italic">No valid X-ray data.</p>
+                                    )
+                                )}
                             </div>
                             <div className="text-right text-xs text-neutral-500 mt-2">
                                 Last updated: {lastXrayUpdate || 'N/A'}
@@ -799,12 +792,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
                             </div>
                             <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                                {loadingFlares ? <LoadingSpinner message={loadingFlares} />
-                                : solarFlares.length > 0 ? solarFlares.map((flare) => {
-                                    const { background, text } = getColorForFlareClass(flare.classType);
-                                    const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
-                                    return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) 
-                                : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
+                                {isLoadingFlares || loadingFlaresMessage ? ( // Show spinner if loading or has an explicit error message
+                                    <LoadingSpinner message={loadingFlaresMessage} />
+                                ) : solarFlares.length > 0 ? ( // Otherwise, if flares exist, map them
+                                    solarFlares.map((flare) => {
+                                        const { background, text } = getColorForFlareClass(flare.classType);
+                                        const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
+                                        return (
+                                            <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}>
+                                                <div className="flex justify-between items-center">
+                                                    <span>
+                                                        <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong>
+                                                        <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span>
+                                                    </span>
+                                                    {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
+                                                </div>
+                                            </li>
+                                        );
+                                    })
+                                ) : ( // If not loading and no flares, show the specific message without spinner
+                                    <li className="text-center text-neutral-400 italic">No recent flares found.</li>
+                                )}
                             </ul>
                             <div className="text-right text-xs text-neutral-500 mt-2">
                                 Last updated: {lastFlaresUpdate || 'N/A'}
@@ -838,12 +846,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         {/* GOES Proton Flux Graph */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
+                                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux (>=10 MeV)</h2>
                                 <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['proton-flux']}>
-                                {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <LoadingSpinner message={loadingProton} />}
+                                {isLoadingProton || loadingProtonMessage ? (
+                                    <LoadingSpinner message={loadingProtonMessage} />
+                                ) : (
+                                    protonChartData.datasets[0]?.data.length > 0 ? (
+                                        <Line data={protonChartData} options={protonChartOptions} />
+                                    ) : (
+                                        <p className="text-center pt-10 text-neutral-400 italic">No valid Proton data.</p>
+                                    )
+                                )}
                             </div>
                             <div className="text-right text-xs text-neutral-500 mt-2">
                                 Last updated: {lastProtonUpdate || 'N/A'}
@@ -874,7 +890,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                         ))}
                                     </div>
                                 ) : (
-                                    <p className="text-center pt-5 text-neutral-400 italic">No recent interplanetary shock data available from NASA.</p>
+                                    // IPS always shows this message if empty, no specific loading message
+                                    loadingIpsMessage ? (
+                                        <p className="text-center pt-5 text-neutral-400 italic">{loadingIpsMessage}</p>
+                                    ) : (
+                                        <p className="text-center pt-5 text-neutral-400 italic">No recent interplanetary shock data available from NASA.</p>
+                                    )
                                 )}
                             </div>
                             <div className="text-right text-xs text-neutral-500 mt-2">
