@@ -13,7 +13,7 @@ interface SolarActivityDashboardProps {
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
-const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json'; // NEW CONSTANT
+const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
@@ -35,6 +35,17 @@ const getColorForFlux = (value: number, opacity: number = 1): string => {
     else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';    // Purple for X1-X4.9
     else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';    // OrangeRed for M
     else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow
+    return `rgba(${rgb}, ${opacity})`;
+};
+
+// NEW HELPER: For Proton Flux colors based on S-scale
+const getColorForProtonFlux = (value: number, opacity: number = 1): string => {
+    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Default Green (S0 and below)
+    if (value >= 10) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow (S1)
+    if (value >= 100) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0'; // OrangeRed (S2)
+    if (value >= 1000) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219'; // Purple (S3)
+    if (value >= 10000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Hot Pink (S4)
+    if (value >= 100000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Re-using hot pink for S5 (highest severity)
     return `rgba(${rgb}, ${opacity})`;
 };
 
@@ -76,7 +87,6 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     );
 };
 
-// UPDATED: InfoModalProps content type and rendering logic
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
@@ -88,9 +98,9 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
-          {typeof content === 'string' ? ( // If content is a string, assume it's HTML and use dangerouslySetInnerHTML
+          {typeof content === 'string' ? (
             <div dangerouslySetInnerHTML={{ __html: content }} />
-          ) : ( // Otherwise, render it directly as ReactNode (e.g., JSX)
+          ) : (
             content
           )}
         </div>
@@ -117,16 +127,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
 
-    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131'); // Default to SUVI 131Å
+    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
-    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
+    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000);
     
-    // NEW STATE FOR PROTON FLUX
     const [allProtonData, setAllProtonData] = useState<any[]>([]);
     const [loadingProton, setLoadingProton] = useState<string | null>('Loading proton flux data...');
-    const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
+    const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000);
 
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
@@ -137,14 +146,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     // Refs for previous flux values to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
-    const previousLatestProtonFluxRef = useRef<number | null>(null); // NEW REF
+    const previousLatestProtonFluxRef = useRef<number | null>(null);
 
     // State for the InfoModal
-    const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null); // UPDATED STATE TYPE
+    const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
 
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
-        // FIX APPLIED HERE: Changed `(>=10 MeV)` to `(>=10 MeV)` for the title attribute safety and consistent display.
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
         'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
@@ -160,7 +168,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         if (contentData) {
             let title = '';
             if (id === 'xray-flux') title = 'About GOES X-ray Flux';
-            else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)'; // NEW MODAL TITLE
+            else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
             else if (id === 'sdo-hmi') title = 'About SDO HMI Intensitygram';
@@ -247,7 +255,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             });
     }, [setLatestXrayFlux]);
 
-    // NEW FUNCTION: Fetch Proton Flux
     const fetchProtonFlux = useCallback(() => {
         setLoadingProton('Loading proton flux data...');
         fetch(`${NOAA_PROTON_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
@@ -343,21 +350,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
-            fetchProtonFlux(); // NEW FETCH CALL
+            fetchProtonFlux();
             fetchFlares();
             fetchInterplanetaryShockData();
         };
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares, fetchInterplanetaryShockData]); // Add fetchProtonFlux to deps
+    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares, fetchInterplanetaryShockData]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
-        // Assuming NZ offset for "Midnight" labels. If not, this could be simplified/removed.
         const nzOffset = 12 * 3600000; 
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -411,7 +417,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         };
     }, [allXrayData]);
 
-    // NEW MEMOS FOR PROTON CHART
     const protonChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
         const startTime = now - protonTimeRange;
@@ -457,7 +462,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 }, 
                 y: { 
                     type: 'logarithmic',
-                    // FIX: Adjusted min to a lower value to visualize background flux
                     min: 1e-4, // e.g., 0.0001 pfu to make very low background flux visible
                     max: 1000000, // 1,000,000 pfu
                     ticks: { 
@@ -469,7 +473,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             if (value === 100) return 'S2';
                             if (value === 10) return 'S1';
                             if (value === 1) return 'S0';
-                            // Also show specific numerical values for lower bounds if useful
                             if (value === 0.1 || value === 0.01 || value === 0.001 || value === 0.0001) return value.toString();
                             return null;
                         }
@@ -486,9 +489,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             datasets: [{
                 label: 'Proton Flux (>=10 MeV)', 
                 data: allProtonData.map(d => ({x: d.time, y: d.flux})),
-                borderColor: 'rgba(255, 204, 0, 1)', // Yellowish line
-                backgroundColor: 'rgba(255, 204, 0, 0.2)', // Yellowish fill
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
+                // Apply color segments based on proton flux S-levels
+                segment: {
+                    borderColor: (ctx: any) => getColorForProtonFlux(ctx.p1.parsed.y, 1),
+                    backgroundColor: (ctx: any) => getColorForProtonFlux(ctx.p1.parsed.y, 0.2),
+                }
             }],
         };
     }, [allProtonData]);
@@ -643,15 +649,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                         </div>
 
-                        {/* NEW SECTION: GOES Proton Flux Graph */}
+                        {/* GOES Proton Flux Graph */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
+                                {/* Using >= as requested to avoid JSX parsing issues */}
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
                                 <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['proton-flux']}>
-                                {/* This condition checks if there's data to plot. If not, it shows the loading/error message. */}
                                 {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingProton}</p>}
                             </div>
                         </div>
@@ -699,7 +705,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 isOpen={!!selectedFlare}
                 onClose={() => setSelectedFlare(null)}
                 title={`Flare Details: ${selectedFlare?.flareID || ''}`}
-                content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
+                content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
             />
             {modalState && (
                 <InfoModal
