@@ -6,7 +6,7 @@ import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
-import LoadingSpinner from './icons/LoadingSpinner';
+import LoadingSpinner from './icons/LoadingSpinner'; // Keep for potential internal loading indicators
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
@@ -253,7 +253,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, refreshTrigger, onDataRefresh }) => {
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true); // Internal loading state for the dashboard
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
     const [auroraBlurb, setAuroraBlurb] = useState<string>('Loading forecast...');
@@ -577,16 +577,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return { value: displayValue, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
     }, []);
 
-    // Effect for initial load and manual refresh trigger
+    // Effect for data fetching (initial load and triggered by refreshTrigger)
     useEffect(() => {
         const runAllUpdates = async () => {
-            setIsLoading(true); // Indicate loading when refresh is triggered
-            let latestUpdateTimestamp = Date.now(); // Assume current time as initial update
-            
-            // Wait for all fetches to complete and get their timestamps
+            // Set internal loading state for the dashboard's data
+            // (Do NOT affect App.tsx's global isLoading state)
+            setLastUpdated('Loading...'); // Update UI immediately
+            setIsLoading(true);
+
+            let latestDataTimestamp = 0; // To track the latest timestamp from fetched data
+
             const fetchPromises = [
-                fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()).then(data => { 
-                    latestUpdateTimestamp = Math.max(latestUpdateTimestamp, data.currentForecast?.lastUpdated ?? 0);
+                fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
+                    if (data.currentForecast?.lastUpdated) {
+                        latestDataTimestamp = Math.max(latestDataTimestamp, data.currentForecast.lastUpdated);
+                    }
                     return data;
                 }),
                 fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()).then(data => {
@@ -594,10 +599,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         const plasmaHeaders = data[0];
                         const plasmaTimeIdx = plasmaHeaders.indexOf('time_tag');
                         const latestPlasmaRow = data.slice(1).reverse().find((r: any[]) => r?.[plasmaTimeIdx]);
-                        if (latestPlasmaRow) {
-                             const rawTime = latestPlasmaRow[plasmaTimeIdx];
-                             const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
-                             latestUpdateTimestamp = Math.max(latestUpdateTimestamp, cleanTime);
+                        if (latestPlasmaRow && latestPlasmaRow[plasmaTimeIdx]) {
+                             const cleanTime = new Date(latestPlasmaRow[plasmaTimeIdx].replace(' ', 'T') + 'Z').getTime();
+                             latestDataTimestamp = Math.max(latestDataTimestamp, cleanTime);
                         }
                     }
                     return data;
@@ -607,10 +611,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         const magHeaders = data[0];
                         const magTimeIdx = magHeaders.indexOf('time_tag');
                         const latestMagRow = data.slice(1).reverse().find((r: any[]) => r?.[magTimeIdx]);
-                        if (latestMagRow) {
-                             const rawTime = latestMagRow[magTimeIdx];
-                             const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime();
-                             latestUpdateTimestamp = Math.max(latestUpdateTimestamp, cleanTime);
+                        if (latestMagRow && latestMagRow[magTimeIdx]) {
+                             const cleanTime = new Date(latestMagRow[magTimeIdx].replace(' ', 'T') + 'Z').getTime();
+                             latestDataTimestamp = Math.max(latestDataTimestamp, cleanTime);
                         }
                     }
                     return data;
@@ -619,7 +622,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     if (Array.isArray(data) && data.length > 0) {
                         const latestGoes18 = data[data.length - 1];
                         if (latestGoes18 && latestGoes18.time_tag) {
-                            latestUpdateTimestamp = Math.max(latestUpdateTimestamp, new Date(latestGoes18.time_tag).getTime());
+                            latestDataTimestamp = Math.max(latestDataTimestamp, new Date(latestGoes18.time_tag).getTime());
                         }
                     }
                     return data;
@@ -628,18 +631,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                      if (Array.isArray(data) && data.length > 0) {
                         const latestGoes19 = data[data.length - 1];
                         if (latestGoes19 && latestGoes19.time_tag) {
-                            latestUpdateTimestamp = Math.max(latestUpdateTimestamp, new Date(latestGoes19.time_tag).getTime());
+                            latestDataTimestamp = Math.max(latestDataTimestamp, new Date(latestGoes19.time_tag).getTime());
                         }
                     }
                     return data;
                 }),
-                fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()), // IPS doesn't have time_tag
+                fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()), // IPS doesn't directly contribute to latestDataTimestamp via time_tag
             ];
 
             const results = await Promise.allSettled(fetchPromises);
             const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
 
-
+            // Process forecast data
             if (forecastResult.status === 'fulfilled' && forecastResult.value) {
                 const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
                 setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
@@ -650,7 +653,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
                 const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
 
-                // --- Notification Logic for Aurora Score ---
+                // Notification Logic for Aurora Score (re-using existing logic)
                 const prevAuroraScore = previousAuroraScoreRef.current;
                 if (currentScore !== null && prevAuroraScore !== null) {
                     if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) {
@@ -664,7 +667,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         clearNotificationCooldown('aurora-80percent');
                     }
                 }
-                previousAuroraScoreRef.current = currentScore; // Update ref after comparison
+                previousAuroraScoreRef.current = currentScore;
 
 
                 if (Array.isArray(dailyHistory)) { setDailyCelestialHistory(dailyHistory); } else { setDailyCelestialHistory([]); }
@@ -686,6 +689,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 setAuroraBlurb("Could not load forecast data.");
             }
 
+            // Process plasma data
             if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
                 const plasmaData = plasmaResult.value;
                 const plasmaHeaders = plasmaData[0];
@@ -712,16 +716,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 console.error("Plasma data failed to load:", plasmaResult.reason);
             }
 
+            // Process magnetic data
             if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
                 const magData = magResult.value; const magHeaders = magData[0]; const magBtIdx = magHeaders.indexOf('bt'); const magBzIdx = magHeaders.indexOf('bz_gsm'); const magTimeIdx = magHeaders.indexOf('time_tag');
                 setAllMagneticData(magData.slice(1).map((r: any[]) => { const rawTime = r[magTimeIdx]; const cleanTime = new Date(rawTime.replace(' ', 'T') + 'Z').getTime(); return { time: cleanTime, bt: parseFloat(r[magBtIdx]) > -9999 ? parseFloat(r[magBtIdx]) : null, bz: parseFloat(r[magBzIdx]) > -9999 ? parseFloat(r[magBzIdx]) : null }; }));
             } else { console.error("Magnetic data failed to load:", magResult.reason); }
 
+            // Process GOES magnetometer data
             let anyGoesDataFound = false;
             if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
                 const processedData18 = goes18Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
                 setGoes18Data(processedData18);
-                analyzeMagnetometerData(processedData18); // Call analyze here, will handle notification
+                analyzeMagnetometerData(processedData18);
                 if (processedData18.length > 0) anyGoesDataFound = true;
             } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error'); }
 
@@ -733,6 +739,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
             if (!anyGoesDataFound) { setLoadingMagnetometer('No valid GOES Magnetometer data available from either satellite for this period.'); } else { setLoadingMagnetometer(null); }
 
+            // Process IPS data
             if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) {
                 setInterplanetaryShockData(ipsResult.value);
             } else {
@@ -741,16 +748,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
 
             setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-            setIsLoading(false); // Only set loading to false after all data is processed
+            setIsLoading(false); // End internal dashboard loading state
+
+            // IMPORTANT: Call onDataRefresh with the latest timestamp collected
+            onDataRefresh(latestDataTimestamp);
         };
 
-        runAllUpdates(); // Initial fetch or triggered by refreshTrigger
+        // Run initial update or when refreshTrigger changes
+        runAllUpdates();
 
-        // Clear any existing interval to prevent multiple intervals running
+        // Clear any existing auto-refresh interval before setting a new one
         if (autoRefreshIntervalId.current) {
             clearInterval(autoRefreshIntervalId.current);
         }
-
         // Set up the auto-refresh interval
         autoRefreshIntervalId.current = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
 
@@ -859,7 +869,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (day.moonset) addAnnotation('owm-moonset-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end');
         });
         return annotations;
-    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast, showCelestialAnnotations]); // Added showCelestialAnnotations dependency
+    }, [auroraScoreChartTimeRange, dailyCelestialHistory, owmDailyForecast, showCelestialAnnotations]);
 
     const auroraScoreChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -916,7 +926,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         };
     }, [auroraScoreHistory]);
 
-    if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
+    if (isLoading) {
+        // Only show internal spinner if data is explicitly loading for this dashboard
+        // The global LoadingOverlay in App.tsx handles the initial app load/full refresh
+        return <div className="w-full h-full flex justify-center items-center text-neutral-400">Loading forecast data...<LoadingSpinner /></div>;
+    }
 
     const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ.</p></div></div>`;
 
@@ -1181,4 +1195,3 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE ForecastDashboard.tsx ---
