@@ -3,7 +3,7 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -13,10 +13,10 @@ interface SolarActivityDashboardProps {
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
+const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json'; // NEW CONSTANT
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
-// const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json'; // Removed, no longer needed
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
@@ -57,7 +57,6 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
     return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B/Unknown
 };
 
-
 const formatNZTimestamp = (isoString: string | null) => {
     if (!isoString) return 'N/A';
     try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
@@ -93,7 +92,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-// Define type for NASA Interplanetary Shock (IPS) record (moved here as it's used only in this file now)
+// Define type for NASA Interplanetary Shock (IPS) record
 interface InterplanetaryShock {
     activityID: string;
     catalog: string;
@@ -116,31 +115,35 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
+    
+    // NEW STATE FOR PROTON FLUX
+    const [allProtonData, setAllProtonData] = useState<any[]>([]);
+    const [loadingProton, setLoadingProton] = useState<string | null>('Loading proton flux data...');
+    const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
+
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
-    // const [sunspots, setSunspots] = useState<any[]>([]); // Removed
-    // const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...'); // Removed
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
-    // NEW: Ref for previous X-ray flux to trigger notifications
+    // Refs for previous flux values to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
+    const previousLatestProtonFluxRef = useRef<number | null>(null); // NEW REF
 
     // State for the InfoModal
     const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: React.ReactNode} | null>(null);
 
-
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
+        'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
         'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
         'sdo-hmi': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram:</strong> This instrument captures images of the Sun\'s photosphere in visible light. It primarily shows sunspots as dark regions, which are areas of concentrated, strong magnetic fields. These active regions are often the source of flares and CMEs.',
         'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> Another EUV wavelength from the SDO Atmospheric Imaging Assembly. This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
         'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
-        // 'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.', // Removed
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
     }), []);
 
@@ -149,13 +152,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         if (contentData) {
             let title = '';
             if (id === 'xray-flux') title = 'About GOES X-ray Flux';
+            else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)'; // NEW MODAL TITLE
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
             else if (id === 'sdo-hmi') title = 'About SDO HMI Intensitygram';
             else if (id === 'sdo-aia-193') title = 'About SDO AIA 193Å Imagery';
             else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
             else if (id === 'solar-flares') title = 'About Solar Flares';
-            // else if (id === 'active-regions') title = 'About Active Regions / Sunspots'; // Removed
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
 
@@ -235,7 +238,66 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 previousLatestXrayFluxRef.current = null;
             });
     }, [setLatestXrayFlux]);
-    
+
+    // NEW FUNCTION: Fetch Proton Flux
+    const fetchProtonFlux = useCallback(() => {
+        setLoadingProton('Loading proton flux data...');
+        fetch(`${NOAA_PROTON_FLUX_URL}?_=${new Date().getTime()}`).then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+            .then(rawData => {
+                // Filter for ">=10 MeV" and parse data
+                const processedData = rawData
+                    .filter((d: any) => d.energy === ">=10 MeV" && d.flux !== null && !isNaN(d.flux))
+                    .map((d: any) => ({
+                        time: new Date(d.time_tag).getTime(),
+                        flux: parseFloat(d.flux)
+                    }))
+                    .sort((a: any, b: any) => a.time - b.time);
+
+                if (!processedData.length) {
+                    setLoadingProton('No valid >=10 MeV proton data.');
+                    setAllProtonData([]);
+                    previousLatestProtonFluxRef.current = null;
+                    return;
+                }
+
+                setAllProtonData(processedData);
+                setLoadingProton(null);
+                const latestFluxValue = processedData[processedData.length - 1].flux;
+
+                // --- Notification Logic for Proton Flux (S-scale) ---
+                const prevFlux = previousLatestProtonFluxRef.current;
+                
+                // Thresholds for S-levels (particles/(cm^2*s*sr) or pfu)
+                const S1_THRESHOLD = 10;
+                const S2_THRESHOLD = 100;
+                const S3_THRESHOLD = 1000;
+                const S4_THRESHOLD = 10000;
+                const S5_THRESHOLD = 100000;
+
+                if (latestFluxValue !== null && prevFlux !== null) {
+                    // S1 Notification
+                    if (latestFluxValue >= S1_THRESHOLD && prevFlux < S1_THRESHOLD && canSendNotification('proton-S1', 30 * 60 * 1000)) { // 30 min cooldown
+                        sendNotification('Proton Event Alert: S1 Class!', `Proton flux (>=10 MeV) has reached S1 class (>=${S1_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
+                    } else if (latestFluxValue < S1_THRESHOLD) {
+                        clearNotificationCooldown('proton-S1');
+                    }
+                    
+                    // S3 Notification (or higher) - Can combine S2-S5 if desired, here for S3+
+                    if (latestFluxValue >= S3_THRESHOLD && prevFlux < S3_THRESHOLD && canSendNotification('proton-S3', 60 * 60 * 1000)) { // 1 hour cooldown
+                        sendNotification('Major Proton Event Alert: S3+ Class!', `Proton flux (>=10 MeV) has reached S3 class (>=${S3_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
+                    } else if (latestFluxValue < S3_THRESHOLD) {
+                        clearNotificationCooldown('proton-S3');
+                    }
+                }
+                previousLatestProtonFluxRef.current = latestFluxValue;
+
+            }).catch(e => {
+                console.error('Error fetching proton flux:', e);
+                setLoadingProton(`Error: ${e.message}`);
+                previousLatestProtonFluxRef.current = null;
+            });
+    }, []);
+
     const fetchFlares = useCallback(async () => {
         setLoadingFlares('Loading solar flares...');
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -252,20 +314,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             setLoadingFlares(null);
         } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, [apiKey]);
-
-    // Removed fetchSunspots function
-    // const fetchSunspots = useCallback(async () => {
-    //     setLoadingSunspots('Loading active regions...');
-    //     try {
-    //         const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
-    //         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    //         const data = await response.json();
-    //         const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
-    //         if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
-    //         setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
-    //         setLoadingSunspots(null);
-    //     } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
-    // }, []);
 
     const fetchInterplanetaryShockData = useCallback(async () => {
         try {
@@ -287,15 +335,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
+            fetchProtonFlux(); // NEW FETCH CALL
             fetchFlares();
-            // fetchSunspots(); // Removed
-            fetchInterplanetaryShockData(); // Fetch IPS data here
+            fetchInterplanetaryShockData();
         };
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
-        // Removed fetchSunspots from dependency array
         return () => clearInterval(interval);
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchInterplanetaryShockData]);
+    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares, fetchInterplanetaryShockData]); // Add fetchProtonFlux to deps
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -355,6 +402,83 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }],
         };
     }, [allXrayData]);
+
+    // NEW MEMOS FOR PROTON CHART
+    const protonChartOptions = useMemo((): ChartOptions<'line'> => {
+        const now = Date.now();
+        const startTime = now - protonTimeRange;
+
+        const midnightAnnotations: any = {};
+        const nzOffset = 12 * 3600000; 
+        const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
+        for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
+            const midnight = new Date(d).setUTCHours(12,0,0,0);
+            if (midnight > startTime && midnight < now) {
+                midnightAnnotations[`midnight-${midnight}`] = { 
+                    type: 'line', xMin: midnight, xMax: midnight, 
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], 
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } 
+                };
+            }
+        }
+        
+        return {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { 
+                legend: { display: false }, 
+                tooltip: { callbacks: { 
+                    label: (c: any) => {
+                        const flux = c.parsed.y;
+                        let sClass = 'S0';
+                        if (flux >= 100000) sClass = 'S5';
+                        else if (flux >= 10000) sClass = 'S4';
+                        else if (flux >= 1000) sClass = 'S3';
+                        else if (flux >= 100) sClass = 'S2';
+                        else if (flux >= 10) sClass = 'S1';
+                        return `Flux: ${flux.toFixed(2)} pfu (${sClass}-class)`;
+                    } 
+                }}, 
+                annotation: { annotations: midnightAnnotations } 
+            },
+            scales: { 
+                x: { 
+                    type: 'time', adapters: { date: { locale: enNZ } }, 
+                    time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, 
+                    min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, 
+                    grid: { color: '#3f3f46' } 
+                }, 
+                y: { 
+                    type: 'logarithmic', min: 1, max: 1000000, // 1 pfu to 1,000,000 pfu
+                    ticks: { 
+                        color: '#71717a', 
+                        callback: (value: any) => {
+                            if (value === 100000) return 'S5';
+                            if (value === 10000) return 'S4';
+                            if (value === 1000) return 'S3';
+                            if (value === 100) return 'S2';
+                            if (value === 10) return 'S1';
+                            if (value === 1) return 'S0'; // Or just '1 pfu'
+                            return null;
+                        }
+                    }, 
+                    grid: { color: '#3f3f46' } 
+                } 
+            }
+        };
+    }, [protonTimeRange]);
+
+    const protonChartData = useMemo(() => {
+        if (allProtonData.length === 0) return { datasets: [] };
+        return {
+            datasets: [{
+                label: 'Proton Flux (>=10 MeV)', 
+                data: allProtonData.map(d => ({x: d.time, y: d.flux})),
+                borderColor: 'rgba(255, 204, 0, 1)', // Yellowish line
+                backgroundColor: 'rgba(255, 204, 0, 0.2)', // Yellowish fill
+                pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
+            }],
+        };
+    }, [allProtonData]);
     
     return (
         <div
@@ -408,7 +532,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 >
                                     SDO AIA 193Å
                                 </button>
-                                {/* REMOVED CCOR1_VIDEO BUTTON FROM HERE */}
                             </div>
 
                             {/* Conditional Rendering of the selected image */}
@@ -453,7 +576,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                         {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
                                     </div>
                                 )}
-                                {/* REMOVED CCOR1_VIDEO RENDERING FROM HERE */}
                             </div>
                         </div>
 
@@ -461,7 +583,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                                {/* Changed to openModal for information, linking to the relevant tooltipContent */}
                                 <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
@@ -471,7 +592,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         </div>
 
                         {/* Solar Flares (now full width) */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]"> {/* Changed from lg:col-span-6 to col-span-12 */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
                                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
@@ -485,18 +606,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
                             </ul>
                         </div>
-                        {/* Removed Active Regions Div */}
-                        {/* <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
-                                <button onClick={() => openModal('active-regions')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Active Regions/Sunspots.">?</button>
-                            </div>
-                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                            {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
-                            </ul>
-                        </div> */}
 
-                        {/* NEW: CCOR1 Video Panel (Moved here) */}
+                        {/* CCOR1 Video Panel */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">CCOR1 Coronagraph Video</h2>
@@ -519,7 +630,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                         </div>
 
-                        {/* Interplanetary Shock Events Card (KEEPING THIS AS IT'S RELEVANT TO SOLAR ACTIVITY) */}
+                        {/* NEW SECTION: GOES Proton Flux Graph */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                            <div className="flex justify-center items-center gap-2">
+                                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
+                                <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
+                            </div>
+                            <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
+                            <div className="flex-grow relative mt-2" title={tooltipContent['proton-flux']}>
+                                {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingProton}</p>}
+                            </div>
+                        </div>
+
+                        {/* Interplanetary Shock Events Card */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
                                 <div className="flex items-center">
@@ -527,7 +650,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                    {/* CaretIcon is removed from here if it's not imported/needed globally */}
                                     <svg xmlns="http://www.w3.org/2000/svg" className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                                 </button>
                             </div>
@@ -552,7 +674,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     </main>
                     <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
-                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
+                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, proton flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p> {/* UPDATED TEXT */}
                         <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> Solar activity can be highly unpredictable. While this dashboard provides the latest available data, interpretations are for informational purposes only.</p>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a></p><p className="mt-2">Visualization and Development by TNR Protography</p></div>
                     </footer>
