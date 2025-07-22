@@ -134,8 +134,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
 
-    // Set default active image to one of the 1024px options
-    const [activeSunImage, setActiveSunImage] = useState<string>('SDO_HMI_BC_1024');
+    // Set default active image to SUVI_131
+    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
@@ -162,12 +162,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
-        'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
-        'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
-        'sdo-hmibc-1024': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Continuum (1024px):</strong> Provides a visible light view of the Sun\'s surface, primarily showing sunspots and granulation. Higher resolution.',
-        'sdo-hmiif-1024': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Offers a higher resolution view of sunspots and active regions.',
-        'sdo-aia193-2048': '<strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> A very high-resolution view of the hot corona, excellent for observing large-scale coronal holes which are sources of fast solar wind.',
-        'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
+        'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy, especially bursts from solar flares. **Best for: Monitoring solar flares and active regions.**',
+        'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk). **Best for: Observing prominences and filaments, tracking large-scale solar activity.**',
+        'sdo-hmibc-1024': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Continuum (1024px):</strong> Provides a visible light view of the Sun\'s surface, primarily showing sunspots and granulation. It\'s like a high-resolution "photograph" of the Sun. **Best for: Detailed observation of sunspot structure and active region morphology.**',
+        'sdo-hmiif-1024': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Offers a higher resolution view of sunspots and active regions, highlighting magnetic field concentrations. **Best for: Tracking the evolution of sunspots and identifying potential flare source regions.**',
+        'sdo-aia193-2048': '<strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> A very high-resolution view of the hot corona, excellent for observing large-scale coronal holes which are sources of fast solar wind. These dark regions are crucial for predicting geomagnetic storm potential. **Best for: Identifying and monitoring coronal holes, understanding solar wind origins.**',
+        'ccor1-video': '<strong>CCOR1 (Coronal Coronagraph Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun. **Best for: Detecting and tracking Coronal Mass Ejections (CMEs) as they leave the Sun.**',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
     }), []);
@@ -538,18 +538,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 <button
                                     onClick={() => setActiveSunImage('SUVI_131')}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title="Displays the Sun in 131 Angstroms, highlighting hot, flaring regions. (SUVI)"
+                                    title={tooltipContent['suvi-131']}
                                 >
                                     SUVI 131Å
                                 </button>
                                 <button
                                     onClick={() => setActiveSunImage('SUVI_304')}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title="Displays the Sun in 304 Angstroms, showing cooler plasma, prominences, and filaments. (SUVI)"
+                                    title={tooltipContent['suvi-304']}
                                 >
                                     SUVI 304Å
                                 </button>
-                                {/* Only 1024px and 2048px options for SDO, with resolution removed from button text */}
+                                {/* SDO AIA 193Å (2048px) as the 3rd option, with no resolution in text */}
+                                <button
+                                    onClick={() => setActiveSunImage('SDO_AIA193_2048')}
+                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    title={tooltipContent['sdo-aia193-2048']}
+                                >
+                                    SDO AIA 193Å
+                                </button>
+                                {/* Remaining 1024px options for SDO, with no resolution in text */}
                                 <button
                                     onClick={() => setActiveSunImage('SDO_HMIBC_1024')}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
@@ -563,13 +571,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     title={tooltipContent['sdo-hmiif-1024']}
                                 >
                                     SDO HMI Int.
-                                </button>
-                                <button
-                                    onClick={() => setActiveSunImage('SDO_AIA193_2048')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    title={tooltipContent['sdo-aia193-2048']}
-                                >
-                                    SDO AIA 193Å
                                 </button>
                             </div>
 
@@ -596,6 +597,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     </div>
                                 )}
                                 {/* SDO 1024px & 2048px renders, with simplified alt text */}
+                                {activeSunImage === 'SDO_AIA193_2048' && ( // This is now the 3rd option
+                                    <div
+                                        onClick={() => sdoAia193_2048.url !== '/placeholder.png' && sdoAia193_2048.url !== '/error.png' && setViewerMedia({ url: sdoAia193_2048.url, type: 'image' })}
+                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                        title={tooltipContent['sdo-aia193-2048']}
+                                    >
+                                        <img src={sdoAia193_2048.url} alt="SDO AIA 193Å (Coronal Holes)" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                        {sdoAia193_2048.loading && <p className="absolute text-neutral-400 italic">{sdoAia193_2048.loading}</p>}
+                                    </div>
+                                )}
                                 {activeSunImage === 'SDO_HMIBC_1024' && (
                                     <div
                                         onClick={() => sdoHmiBc1024.url !== '/placeholder.png' && sdoHmiBc1024.url !== '/error.png' && setViewerMedia({ url: sdoHmiBc1024.url, type: 'image' })}
@@ -614,16 +625,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     >
                                         <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
                                         {sdoHmiIf1024.loading && <p className="absolute text-neutral-400 italic">{sdoHmiIf1024.loading}</p>}
-                                    </div>
-                                )}
-                                {activeSunImage === 'SDO_AIA193_2048' && (
-                                    <div
-                                        onClick={() => sdoAia193_2048.url !== '/placeholder.png' && sdoAia193_2048.url !== '/error.png' && setViewerMedia({ url: sdoAia193_2048.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['sdo-aia193-2048']}
-                                    >
-                                        <img src={sdoAia193_2048.url} alt="SDO AIA 193Å (Coronal Holes)" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {sdoAia193_2048.loading && <p className="absolute text-neutral-400 italic">{sdoAia193_2048.loading}</p>}
                                     </div>
                                 )}
                             </div>
