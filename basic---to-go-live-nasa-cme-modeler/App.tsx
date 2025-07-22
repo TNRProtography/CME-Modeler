@@ -1,4 +1,4 @@
-// components/App.tsx
+// --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
@@ -26,6 +26,7 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
+// NEW: Settings Modal Import
 import SettingsModal from './components/SettingsModal';
 
 
@@ -44,18 +45,16 @@ const CmeIcon: React.FC<{className?: string}> = ({ className }) => (
     </svg>
 );
 
+// Define the new media type for the viewer state
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
+  // --- THIS IS THE ONLY LINE ADDED ---
+  // Set this to `true` to show the "site down" banner, `false` to hide it.
   const [siteIsDown, setSiteIsDown] = useState(true);
-
-  // Global Banner State (Moved to top as per previous fix attempt)
-  const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
-  const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
-  const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
   // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -80,7 +79,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // NEW: State for settings modal
 
   // Display Options State
   const [showLabels, setShowLabels] = useState(true);
@@ -107,11 +106,10 @@ const App: React.FC = () => {
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
-  // Memoize sunInfo to ensure it's calculated only when planetLabelInfos changes
-  // and to avoid potential TDZ issues during minification.
-  const sunInfo = useMemo(() => {
-    return planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
-  }, [planetLabelInfos]);
+  // Global Banner State
+  const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
+  const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
+  const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
   useEffect(() => {
     if (!clockRef.current && window.THREE) {
@@ -148,7 +146,7 @@ const App: React.FC = () => {
         const endDate = new Date();
         const futureDate = new Date();
         futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCme) => Math.min(min, cme.startTime.getTime()), Date.now());
+        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - days);
         setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
@@ -255,9 +253,10 @@ const App: React.FC = () => {
   const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
   const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
-  
-  // Logic for GlobalBanner conditions (These useMemo hooks should now be fine as state is declared above)
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
+  const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
+
+  // Logic for GlobalBanner conditions
+  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
   const flareClass = useMemo(() => {
     if (latestXrayFlux === null) return undefined;
     if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
@@ -270,13 +269,14 @@ const App: React.FC = () => {
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus !== null && 
     substormActivityStatus.text.includes('stretching') && 
-    !substormActivityStatus.text.includes('substorm signature detected'),
+    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
     [substormActivityStatus]
   );
 
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
+        {/* Global Alert Banner */}
         <GlobalBanner
             isSiteDownAlert={siteIsDown}
             isFlareAlert={isFlareAlert}
@@ -287,6 +287,7 @@ const App: React.FC = () => {
             substormText={substormActivityStatus?.text ?? undefined}
         />
 
+        {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
                 <button 
@@ -320,6 +321,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
+            {/* NEW: Settings Button */}
             <div className="flex-grow flex justify-end">
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
@@ -331,7 +333,9 @@ const App: React.FC = () => {
             </div>
         </header>
 
+        {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
+            {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
                 <>
                     <div className={`
@@ -361,7 +365,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId}
+                        currentlyModeledCMEId={currentlyModeledCMEId} // Corrected casing here
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
@@ -396,10 +400,11 @@ const App: React.FC = () => {
                                 camera={threeCamera}
                                 rendererDomElement={rendererDomElement}
                                 label={info.name} 
-                                sunMesh={sunInfo ? sunInfo.mesh : null} // sunInfo is now memoized
+                                sunMesh={sunInfo ? sunInfo.mesh : null}
                             />
                         ))}
                         
+                        {/* Floating UI Controls Over Canvas */}
                         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                             <div className="flex items-center space-x-2 pointer-events-auto">
                                 <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
@@ -493,6 +498,7 @@ const App: React.FC = () => {
           onClose={() => setViewerMedia(null)}
         />
 
+        {/* NEW: Settings Modal */}
         <SettingsModal 
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
@@ -502,3 +508,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+// --- END OF FILE App.tsx ---

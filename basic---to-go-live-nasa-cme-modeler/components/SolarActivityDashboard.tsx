@@ -1,11 +1,11 @@
-// components/SolarActivityDashboard.tsx
+// --- START OF FILE SolarActivityDashboard.tsx ---
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
-import InfoModal from './InfoModal'; // New import for the reusable modal
-import { solarTooltipContent, SolarTooltipId } from './solarTooltips';
+import CloseIcon from './icons/CloseIcon';
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Corrected import path: added .ts extension
 
 interface SolarActivityDashboardProps {
   apiKey: string;
@@ -13,6 +13,7 @@ interface SolarActivityDashboardProps {
   setLatestXrayFlux: (flux: number | null) => void;
 }
 
+// --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
@@ -21,20 +22,21 @@ const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_region
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
 
-const REFRESH_INTERVAL_MS = 60 * 1000;
+const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
+// --- HELPERS ---
 const getCssVar = (name: string): string => {
   try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
 };
 
 const getColorForFlux = (value: number, opacity: number = 1): string => {
-    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94';
-    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180';
-    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';
-    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';
-    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11';
+    let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Green
+    if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Hot Pink for X5+
+    else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';    // Purple for X1-X4.9
+    else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';    // OrangeRed for M
+    else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow
     return `rgba(${rgb}, ${opacity})`;
 };
 
@@ -44,17 +46,17 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
 
     if (type === 'X') {
         if (magnitude >= 5) {
-            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' };
+            return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' }; // Hot Pink
         }
-        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' }; // Purple
     }
     if (type === 'M') {
-        return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' };
+        return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' }; // OrangeRed
     }
     if (type === 'C') {
-        return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' };
+        return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' }; // Yellow
     }
-    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
+    return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' }; // Green for A/B/Unknown
 };
 
 
@@ -63,6 +65,7 @@ const formatNZTimestamp = (isoString: string | null) => {
     try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
 };
 
+// --- REUSABLE COMPONENTS ---
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '4 Hr', hours: 4 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
@@ -76,6 +79,23 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     );
 };
 
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1000] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">{content}</div>
+      </div>
+    </div>
+  );
+};
+
+// Define type for NASA Interplanetary Shock (IPS) record (moved here as it's used only in this file now)
 interface InterplanetaryShock {
     activityID: string;
     catalog: string;
@@ -93,11 +113,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [sdoAia193, setSdoAia193] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
 
-    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
+    const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131'); // Default to SUVI 131Å
 
     const [allXrayData, setAllXrayData] = useState<any[]>([]);
     const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
-    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000);
+    const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
     const [sunspots, setSunspots] = useState<any[]>([]);
@@ -107,12 +127,24 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
+    // NEW: Ref for previous X-ray flux to trigger notifications
     const previousLatestXrayFluxRef = useRef<number | null>(null);
 
-    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: React.ReactNode } | null>(null);
 
-    const openModal = useCallback((id: SolarTooltipId) => {
-        const contentData = solarTooltipContent[id];
+    const tooltipContent = useMemo(() => ({
+        'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
+        'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
+        'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
+        'sdo-hmi': '<strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram:</strong> This instrument captures images of the Sun\'s photosphere in visible light. It primarily shows sunspots as dark regions, which are areas of concentrated, strong magnetic fields. These active regions are often the source of flares and CMEs.',
+        'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> Another EUV wavelength from the SDO Atmospheric Imaging Assembly. This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
+        'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
+        'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
+        'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
+        'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
+    }), []);
+
+    const openModal = useCallback((id: string) => {
+        const contentData = tooltipContent[id as keyof typeof tooltipContent];
         if (contentData) {
             let title = '';
             if (id === 'xray-flux') title = 'About GOES X-ray Flux';
@@ -128,7 +160,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
             setModalState({ isOpen: true, title: title, content: contentData });
         }
-    }, []);
+    }, [tooltipContent]);
 
     const closeModal = useCallback(() => setModalState(null), []);
 
@@ -175,16 +207,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 const latestFluxValue = processedData[processedData.length - 1].short;
                 setLatestXrayFlux(latestFluxValue);
 
+                // --- Notification Logic for X-ray Flux ---
                 const prevFlux = previousLatestXrayFluxRef.current;
                 
                 if (latestFluxValue !== null && prevFlux !== null) {
-                    if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) {
+                    // M5+ Flare notification (5e-6 is M0.5, 5e-5 is M5)
+                    if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) { // 15 min cooldown
                         sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M0.5)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 5e-6) {
                         clearNotificationCooldown('flare-M5');
                     }
 
-                    if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) {
+                    // X1+ Flare notification
+                    if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) { // 30 min cooldown
                         sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1)! Current flux: ${latestFluxValue.toExponential(2)}`);
                     } else if (latestFluxValue < 1e-4) {
                         clearNotificationCooldown('flare-X1');
@@ -252,7 +287,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchXrayFlux();
             fetchFlares();
             fetchSunspots();
-            fetchInterplanetaryShockData();
+            fetchInterplanetaryShockData(); // Fetch IPS data here
         };
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
@@ -264,6 +299,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const startTime = now - xrayTimeRange;
         
         const midnightAnnotations: any = {};
+        // Assuming NZ offset for "Midnight" labels. If not, this could be simplified/removed.
         const nzOffset = 12 * 3600000; 
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
@@ -337,6 +373,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
                     </header>
                     <main className="grid grid-cols-12 gap-5">
+                        {/* Consolidated Solar Imagers Panel */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
                             <h2 className="text-xl font-semibold text-center text-white mb-2 flex-shrink-0">Solar Imagery</h2>
                             <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
@@ -377,12 +414,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 </button>
                             </div>
 
+                            {/* Conditional Rendering of the selected image/video */}
                             <div className="flex-grow flex justify-center items-center relative min-h-0">
                                 {activeSunImage === 'SUVI_131' && (
                                     <div
                                         onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={solarTooltipContent['suvi-131']}
+                                        title={tooltipContent['suvi-131']}
                                     >
                                         <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
                                         {suvi131.loading && <p className="absolute text-neutral-400 italic">{suvi131.loading}</p>}
@@ -392,7 +430,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <div
                                         onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={solarTooltipContent['suvi-304']}
+                                        title={tooltipContent['suvi-304']}
                                     >
                                         <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
                                         {suvi304.loading && <p className="absolute text-neutral-400 italic">{suvi304.loading}</p>}
@@ -402,7 +440,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <div
                                         onClick={() => sdoHmi.url !== '/placeholder.png' && sdoHmi.url !== '/error.png' && setViewerMedia({ url: sdoHmi.url, type: 'image' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={solarTooltipContent['sdo-hmi']}
+                                        title={tooltipContent['sdo-hmi']}
                                     >
                                         <img src={sdoHmi.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
                                         {sdoHmi.loading && <p className="absolute text-neutral-400 italic">{sdoHmi.loading}</p>}
@@ -412,7 +450,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <div
                                         onClick={() => sdoAia193.url !== '/placeholder.png' && sdoAia193.url !== '/error.png' && setViewerMedia({ url: sdoAia193.url, type: 'image' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={solarTooltipContent['sdo-aia-193']}
+                                        title={tooltipContent['sdo-aia-193']}
                                     >
                                         <img src={sdoAia193.url} alt="SDO AIA 193Å" className="max-w-full max-h-full object-contain rounded-lg"/>
                                         {sdoAia193.loading && <p className="absolute text-neutral-400 italic">{sdoAia193.loading}</p>}
@@ -422,7 +460,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <div
                                         onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
                                         className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={solarTooltipContent['ccor1-video']}
+                                        title={tooltipContent['ccor1-video']}
                                     >
                                         {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
                                         {ccor1Video.url && !ccor1Video.loading ? (
@@ -438,17 +476,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                         </div>
 
+                        {/* GOES X-ray Flux Graph */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                                {/* Changed to openModal for information, linking to the relevant tooltipContent */}
                                 <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
-                            <div className="flex-grow relative mt-2" title={solarTooltipContent['xray-flux']}>
+                            <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
                                 {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingXray}</p>}
                             </div>
                         </div>
 
+                        {/* Solar Flares & Active Regions */}
                         <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
@@ -473,6 +514,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </ul>
                         </div>
 
+                        {/* Interplanetary Shock Events Card (KEEPING THIS AS IT'S RELEVANT TO SOLAR ACTIVITY) */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
                                 <div className="flex items-center">
@@ -480,6 +522,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     <button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
                                 <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                    {/* CaretIcon is removed from here if it's not imported/needed globally */}
                                     <svg xmlns="http://www.w3.org/2000/svg" className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                                 </button>
                             </div>
@@ -511,15 +554,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                  </div>
             </div>
             
-            {modalState && (
-                <InfoModal
-                    isOpen={modalState.isOpen}
-                    onClose={closeModal}
-                    title={modalState.title}
-                    content={modalState.content}
-                />
-            )}
-
             <InfoModal
                 isOpen={!!selectedFlare}
                 onClose={() => setSelectedFlare(null)}
@@ -531,3 +565,4 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 };
 
 export default SolarActivityDashboard;
+// --- END OF FILE SolarActivityDashboard.tsx ---
