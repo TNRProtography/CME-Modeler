@@ -1,12 +1,12 @@
 // components/InfoModal.tsx
 import React from 'react';
-import CloseIcon from './icons/CloseIcon'; // Path relative to InfoModal.tsx
+import CloseIcon from './icons/CloseIcon';
 
 interface InfoModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
-  content: string; // This was corrected in a previous step
+  content: string; // This was previously React.ReactNode, crucial correction
 }
 
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -24,5 +24,4 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-// !!! ENSURE THIS LINE IS PRESENT AND EXACTLY AS SHOWN !!!
 export default InfoModal;
