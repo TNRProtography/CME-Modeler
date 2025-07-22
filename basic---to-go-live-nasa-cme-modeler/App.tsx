@@ -19,7 +19,7 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import { RefreshIcon } from './components/icons/RefreshIcon';
+// REMOVED: import { RefreshIcon } from './components/icons/RefreshIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -58,7 +58,7 @@ const App: React.FC = () => {
   
   // CME Modeler State
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
-  // MODIFIED: isLoading only for initial mount or explicit refresh
+  // MODIFIED: isLoading only for initial mount or explicit refresh. Will be handled by onInitialDataLoaded
   const [isLoading, setIsLoading] = useState<boolean>(true); 
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
@@ -109,11 +109,8 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
-  // State for tracking last refresh time for display
-  const [lastRefreshTimestamp, setLastRefreshTimestamp] = useState<number | null>(null);
-
-  // Ref to trigger data refresh from App component.
-  const refreshTriggerRef = useRef(0);
+  // REMOVED: State for tracking last refresh time for display
+  // REMOVED: Ref to trigger data refresh from App component.
 
   // Callback for child components to signal their initial data load is complete
   const onInitialDataLoaded = useCallback(() => {
@@ -167,7 +164,7 @@ const App: React.FC = () => {
         setTimelineMinDate(0);
         setTimelineMaxDate(0);
       }
-      setLastRefreshTimestamp(Date.now()); // Update refresh time on successful CME data load
+      // REMOVED: setLastRefreshTimestamp(Date.now()); // This was tied to the refresh button
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -187,9 +184,8 @@ const App: React.FC = () => {
     if (activePage === 'modeler') {
       loadCMEData(activeTimeRange);
     }
-    // No onInitialDataLoaded for modeler specific data because it doesn't affect the global loading overlay directly for initial page render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTimeRange, activePage, refreshTriggerRef.current]);
+  }, [activeTimeRange, activePage]); // REMOVED: refreshTriggerRef.current dependency
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -290,23 +286,7 @@ const App: React.FC = () => {
     [substormActivityStatus]
   );
 
-  // Handle a full refresh triggered by the button
-  const handleFullRefresh = useCallback(() => {
-    setIsLoading(true); // Show global loading overlay immediately
-    refreshTriggerRef.current = refreshTriggerRef.current + 1; // Trigger re-fetch in children
-    setLastRefreshTimestamp(null); // Clear displayed time
-  }, []);
-
-  const formatRefreshTime = (timestamp: number | null) => {
-    if (timestamp === null) return "Refreshing...";
-    const date = new Date(timestamp);
-    // Format to NZ local time (e.g., 21/07/2025, 07:00 PM)
-    return date.toLocaleString('en-NZ', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: true,
-        timeZone: 'Pacific/Auckland'
-    });
-  };
+  // REMOVED: handleFullRefresh function
 
 
   return (
@@ -355,18 +335,8 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
-            {/* NEW: Refresh and Settings Buttons */}
-            <div className="flex items-center space-x-3">
-                <div className="flex flex-col items-center">
-                    <button 
-                        onClick={handleFullRefresh}
-                        className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-colors hover:bg-neutral-700/90"
-                        title="Refresh Data"
-                    >
-                        <RefreshIcon className="w-6 h-6" />
-                    </button>
-                    <span className="text-[0.65rem] text-neutral-400 mt-1 w-24 text-center">{formatRefreshTime(lastRefreshTimestamp)}</span>
-                </div>
+            {/* REMOVED: Refresh button and its time display */}
+            <div className="flex-grow flex justify-end">
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
                     className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-colors hover:bg-neutral-700/90"
@@ -521,11 +491,8 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia}
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
-                  refreshTrigger={refreshTriggerRef.current}
-                  onDataRefresh={(timestamp: number) => {
-                      setLastRefreshTimestamp(timestamp);
-                      onInitialDataLoaded(); // Signal App that initial data for this page is loaded
-                  }}
+                  // REMOVED: refreshTrigger={refreshTriggerRef.current}
+                  onInitialDataLoaded={onInitialDataLoaded} // Pass callback for initial data load
                 />
             )}
 
@@ -534,11 +501,8 @@ const App: React.FC = () => {
                   setViewerMedia={setViewerMedia} 
                   apiKey={apiKey}
                   setLatestXrayFlux={setLatestXrayFlux}
-                  refreshTrigger={refreshTriggerRef.current}
-                  onDataRefresh={(timestamp: number) => {
-                      setLastRefreshTimestamp(timestamp);
-                      onInitialDataLoaded(); // Signal App that initial data for this page is loaded
-                  }}
+                  // REMOVED: refreshTrigger={refreshTriggerRef.current}
+                  onInitialDataLoaded={onInitialDataLoaded} // Pass callback for initial data load
                 />
             )}
         </div>
