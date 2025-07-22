@@ -28,11 +28,22 @@ const NOTIFICATION_CATEGORIES = [
 // Key for storing location preference in localStorage
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
 
+// Icon component for install button
+const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
-  // NEW: State for location preference
+  // State for location preference
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
+  // NEW: State for PWA install
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -53,8 +64,46 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       // Load saved location preference
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
+
+      // Check if app is already installed
+      checkAppInstallationStatus();
     }
   }, [isOpen]);
+
+  // NEW: Setup PWA install event listeners
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Store the event so it can be triggered later
+      setDeferredPrompt(e);
+      setIsAppInstallable(true);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setIsAppInstallable(false);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  // NEW: Check if app is already installed
+  const checkAppInstallationStatus = useCallback(() => {
+    // Check if running in standalone mode (already installed)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    // Check if running as PWA on mobile
+    const isPWA = window.navigator.standalone === true;
+    
+    setIsAppInstalled(isStandalone || isPWA);
+  }, []);
 
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
@@ -66,11 +115,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setNotificationStatus(permission);
   }, []);
 
-  // NEW: Handler for location toggle
+  // Handler for location toggle
   const handleGpsToggle = useCallback((checked: boolean) => {
     setUseGpsAutoDetect(checked);
     localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(checked));
   }, []);
+
+  // NEW: Handle app installation
+  const handleInstallApp = useCallback(async () => {
+    if (!deferredPrompt) return;
+
+    try {
+      // Show the install prompt
+      deferredPrompt.prompt();
+      
+      // Wait for the user to respond to the prompt
+      const { outcome } = await deferredPrompt.userChoice;
+      
+      if (outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      } else {
+        console.log('User dismissed the install prompt');
+      }
+      
+      // Clear the deferredPrompt since it can only be used once
+      setDeferredPrompt(null);
+      setIsAppInstallable(false);
+    } catch (error) {
+      console.error('Error during app installation:', error);
+    }
+  }, [deferredPrompt]);
 
   if (!isOpen) return null;
 
@@ -91,6 +165,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         </div>
         
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6">
+          {/* NEW: App Installation Section */}
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
+            {isAppInstalled ? (
+              <div className="bg-green-900/30 border border-green-700/50 rounded-md p-3 text-sm">
+                <p className="text-green-300 flex items-center">
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  App is installed and ready to use offline!
+                </p>
+              </div>
+            ) : isAppInstallable ? (
+              <div className="space-y-3">
+                <p className="text-sm text-neutral-400">Install this app on your device for faster access and offline capabilities.</p>
+                <button
+                  onClick={handleInstallApp}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 border border-blue-500/50 rounded-md text-blue-300 hover:bg-blue-500/30 hover:border-blue-400 transition-colors"
+                >
+                  <DownloadIcon className="w-4 h-4" />
+                  <span>Install App</span>
+                </button>
+              </div>
+            ) : (
+              <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-3 text-sm">
+                <p className="text-neutral-400">App installation is not currently available. This may be because:</p>
+                <ul className="mt-2 ml-4 text-xs text-neutral-500 space-y-1">
+                  <li>• The app is already installed</li>
+                  <li>• Your browser doesn't support PWA installation</li>
+                  <li>• Installation criteria haven't been met yet</li>
+                </ul>
+              </div>
+            )}
+          </section>
+
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
             {notificationStatus === 'unsupported' && (
@@ -137,7 +246,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             )}
           </section>
 
-          {/* NEW: Location Settings Section */}
+          {/* Location Settings Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
