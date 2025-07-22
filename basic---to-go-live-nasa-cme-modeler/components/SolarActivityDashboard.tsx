@@ -5,7 +5,7 @@ import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 import InfoModal from './InfoModal'; // New import for the reusable modal
-import { solarTooltipContent, SolarTooltipId } from '../constants/solarTooltips';
+import { solarTooltipContent, SolarTooltipId } from './solarTooltips';
 
 interface SolarActivityDashboardProps {
   apiKey: string;

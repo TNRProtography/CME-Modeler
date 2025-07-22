@@ -11,7 +11,7 @@ import annotationPlugin from 'chartjs-plugin-annotation';
 import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 import ToggleSwitch from './ToggleSwitch';
 import InfoModal from './InfoModal'; // Reusing the generic InfoModal
-import { forecastTooltipContent, ForecastTooltipId } from '../constants/forecastTooltips'; // Import tooltip content
+import { forecastTooltipContent, ForecastTooltipId } from './forecastTooltips';
 
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
