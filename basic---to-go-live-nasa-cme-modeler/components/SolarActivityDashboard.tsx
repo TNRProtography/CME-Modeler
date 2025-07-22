@@ -19,18 +19,12 @@ const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 
-// Original SDO URLs (kept for reference, but will use proxies)
-// const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
-// const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
+// REVERTED: SDO URLs back to direct NASA links
+const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
+const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 
-// NEW: Proxied SDO URLs (assuming you have a worker like spottheaurora.thenamesrock.workers.dev configured)
-// Example Cloudflare Worker setup for these:
-// For /sdo-hmi: fetch('https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg', {cf: {cacheTtl: 300}}).then(res => { const newRes = new Response(res.body, res); newRes.headers.set('Access-Control-Allow-Origin', '*'); return newRes; });
-// For /sdo-aia-193: fetch('https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg', {cf: {cacheTtl: 300}}).then(res => { const newRes = new Response(res.body, res); newRes.headers.set('Access-Control-Allow-Origin', '*'); return newRes; });
-const SDO_HMI_PROXY_URL = 'https://spottheaurora.thenamesrock.workers.dev/sdo-hmi';
-const SDO_AIA_193_PROXY_URL = 'https://spottheaurora.thenamesrock.workers.dev/sdo-aia-193';
-
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
+// IPS URL remains proxied, as this is the intended solution if the worker is fixed
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -341,6 +335,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 
     const fetchInterplanetaryShockData = useCallback(async () => {
         try {
+            // This still points to your worker, which needs to be fixed to avoid 503 and CORS.
             const response = await fetch(`${NASA_IPS_URL}?_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data: InterplanetaryShock[] = await response.json();
@@ -355,8 +350,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_PROXY_URL, setSdoHmi); // Use PROXY URL here
-            fetchImage(SDO_AIA_193_PROXY_URL, setSdoAia193); // Use PROXY URL here
+            fetchImage(SDO_HMI_URL, setSdoHmi); // Reverted to direct NASA URL
+            fetchImage(SDO_AIA_193_URL, setSdoAia193); // Reverted to direct NASA URL
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchProtonFlux();
@@ -499,7 +494,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 label: 'Proton Flux (>=10 MeV)', 
                 data: allProtonData.map(d => ({x: d.time, y: d.flux})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-                // Apply color segments based on proton flux S-levels
                 segment: {
                     borderColor: (ctx: any) => getColorForProtonFlux(ctx.p1.parsed.y, 1),
                     backgroundColor: (ctx: any) => getColorForProtonFlux(ctx.p1.parsed.y, 0.2),
@@ -661,7 +655,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         {/* GOES Proton Flux Graph */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
+                                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux (>=10 MeV)</h2>
                                 <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
                             </div>
                             <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
