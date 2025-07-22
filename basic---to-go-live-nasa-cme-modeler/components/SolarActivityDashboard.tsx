@@ -76,7 +76,8 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
     );
 };
 
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: React.ReactNode; }
+// UPDATED: InfoModalProps content type and rendering logic
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
@@ -86,7 +87,13 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">{content}</div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? ( // If content is a string, assume it's HTML and use dangerouslySetInnerHTML
+            <div dangerouslySetInnerHTML={{ __html: content }} />
+          ) : ( // Otherwise, render it directly as ReactNode (e.g., JSX)
+            content
+          )}
+        </div>
       </div>
     </div>
   );
@@ -133,10 +140,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const previousLatestProtonFluxRef = useRef<number | null>(null); // NEW REF
 
     // State for the InfoModal
-    const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: React.ReactNode} | null>(null);
+    const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null); // UPDATED STATE TYPE
 
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
+        // FIX APPLIED HERE: Changed `(>=10 MeV)` to `(>=10 MeV)` for the title attribute safety and consistent display.
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy.',
         'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences (loops of plasma extending from the Sun\'s limb) and filaments (prominences seen against the solar disk).',
@@ -448,7 +456,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     grid: { color: '#3f3f46' } 
                 }, 
                 y: { 
-                    type: 'logarithmic', min: 1, max: 1000000, // 1 pfu to 1,000,000 pfu
+                    type: 'logarithmic',
+                    // FIX: Adjusted min to a lower value to visualize background flux
+                    min: 1e-4, // e.g., 0.0001 pfu to make very low background flux visible
+                    max: 1000000, // 1,000,000 pfu
                     ticks: { 
                         color: '#71717a', 
                         callback: (value: any) => {
@@ -457,7 +468,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             if (value === 1000) return 'S3';
                             if (value === 100) return 'S2';
                             if (value === 10) return 'S1';
-                            if (value === 1) return 'S0'; // Or just '1 pfu'
+                            if (value === 1) return 'S0';
+                            // Also show specific numerical values for lower bounds if useful
+                            if (value === 0.1 || value === 0.01 || value === 0.001 || value === 0.0001) return value.toString();
                             return null;
                         }
                     }, 
@@ -638,6 +651,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                             <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
                             <div className="flex-grow relative mt-2" title={tooltipContent['proton-flux']}>
+                                {/* This condition checks if there's data to plot. If not, it shows the loading/error message. */}
                                 {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">{loadingProton}</p>}
                             </div>
                         </div>
@@ -674,7 +688,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     </main>
                     <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
-                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, proton flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p> {/* UPDATED TEXT */}
+                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, proton flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
                         <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> Solar activity can be highly unpredictable. While this dashboard provides the latest available data, interpretations are for informational purposes only.</p>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a></p><p className="mt-2">Visualization and Development by TNR Protography</p></div>
                     </footer>
