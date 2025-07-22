@@ -16,7 +16,7 @@ const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xra
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
-const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
+// const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json'; // Removed, no longer needed
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
@@ -118,8 +118,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000); // DEFAULT TO 24 HOURS
     const [solarFlares, setSolarFlares] = useState<any[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
-    const [sunspots, setSunspots] = useState<any[]>([]);
-    const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...');
+    // const [sunspots, setSunspots] = useState<any[]>([]); // Removed
+    // const [loadingSunspots, setLoadingSunspots] = useState<string | null>('Loading active regions...'); // Removed
     const [selectedFlare, setSelectedFlare] = useState<any | null>(null);
 
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
@@ -140,7 +140,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'sdo-aia-193': '<strong>SDO AIA 193Å (Angstrom):</strong> Another EUV wavelength from the SDO Atmospheric Imaging Assembly. This view shows regions of the Sun\'s corona that are hot, including coronal holes (which appear as dark, open magnetic field regions from which fast solar wind streams) and hot flare plasma.',
         'ccor1-video': '<strong>CCOR1 (Coronal Coronal Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun.',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
-        'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.',
+        // 'active-regions': 'A list of currently active regions or sunspots on the Sun. These are areas of strong magnetic fields that can be the source of solar flares and CMEs. "Earth-facing" means they are currently oriented towards Earth, making them more relevant for space weather effects on our planet.', // Removed
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
     }), []);
 
@@ -155,7 +155,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             else if (id === 'sdo-aia-193') title = 'About SDO AIA 193Å Imagery';
             else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
             else if (id === 'solar-flares') title = 'About Solar Flares';
-            else if (id === 'active-regions') title = 'About Active Regions / Sunspots';
+            // else if (id === 'active-regions') title = 'About Active Regions / Sunspots'; // Removed
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
 
@@ -253,18 +253,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         } catch (error) { console.error('Error fetching flares:', error); setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
     }, [apiKey]);
 
-    const fetchSunspots = useCallback(async () => {
-        setLoadingSunspots('Loading active regions...');
-        try {
-            const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
-            if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
-            setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
-            setLoadingSunspots(null);
-        } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
-    }, []);
+    // Removed fetchSunspots function
+    // const fetchSunspots = useCallback(async () => {
+    //     setLoadingSunspots('Loading active regions...');
+    //     try {
+    //         const response = await fetch(`${NOAA_SOLAR_REGIONS_URL}?_=${new Date().getTime()}`);
+    //         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    //         const data = await response.json();
+    //         const earthFacingRegions = data.filter((region: any) => Math.abs(parseFloat(region.longitude)) <= 90);
+    //         if (earthFacingRegions.length === 0) { setLoadingSunspots('No Earth-facing active regions found.'); setSunspots([]); return; }
+    //         setSunspots(earthFacingRegions.sort((a: any, b: any) => parseInt(b.region) - parseInt(a.region)));
+    //         setLoadingSunspots(null);
+    //     } catch (error) { console.error('Error fetching sunspots:', error); setLoadingSunspots(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); }
+    // }, []);
 
     const fetchInterplanetaryShockData = useCallback(async () => {
         try {
@@ -284,16 +285,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchImage(SUVI_304_URL, setSuvi304);
             fetchImage(SDO_HMI_URL, setSdoHmi, false, false);
             fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
-            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true); // This call remains here
+            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchFlares();
-            fetchSunspots();
+            // fetchSunspots(); // Removed
             fetchInterplanetaryShockData(); // Fetch IPS data here
         };
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
+        // Removed fetchSunspots from dependency array
         return () => clearInterval(interval);
-    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchSunspots, fetchInterplanetaryShockData]);
+    }, [fetchImage, fetchXrayFlux, fetchFlares, fetchInterplanetaryShockData]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
         const now = Date.now();
@@ -468,8 +470,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                         </div>
 
-                        {/* Solar Flares & Active Regions */}
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
+                        {/* Solar Flares (now full width) */}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]"> {/* Changed from lg:col-span-6 to col-span-12 */}
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
                                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
@@ -483,7 +485,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
                             </ul>
                         </div>
-                        <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
+                        {/* Removed Active Regions Div */}
+                        {/* <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">Active Regions</h2>
                                 <button onClick={() => openModal('active-regions')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Active Regions/Sunspots.">?</button>
@@ -491,7 +494,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                             {loadingSunspots ? <li className="text-center text-neutral-400 italic">{loadingSunspots}</li> : sunspots.length > 0 ? sunspots.map((spot) => <li key={spot.region} className="bg-neutral-800 p-2 rounded text-sm"><strong>Region {spot.region}</strong> ({spot.location}) - Mag Class: {spot.mag_class}</li>) : <li className="text-center text-neutral-400 italic">No Earth-facing regions found.</li>}
                             </ul>
-                        </div>
+                        </div> */}
 
                         {/* NEW: CCOR1 Video Panel (Moved here) */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
@@ -549,7 +552,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     </main>
                     <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
-                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, solar flares, active regions (sunspots), and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
+                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
                         <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> Solar activity can be highly unpredictable. While this dashboard provides the latest available data, interpretations are for informational purposes only.</p>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a></p><p className="mt-2">Visualization and Development by TNR Protography</p></div>
                     </footer>
