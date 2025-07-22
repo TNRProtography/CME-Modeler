@@ -172,14 +172,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         'ccor1-video': '<strong>CCOR1 (Coronal Coronagraph Observation by Optical Reconnaissance) Video:</strong> This coronagraph imagery captures the faint outer atmosphere of the Sun (the corona) by blocking out the bright solar disk. It is primarily used to detect and track Coronal Mass Ejections (CMEs) as they erupt and propagate away from the Sun. **Best for: Detecting and tracking Coronal Mass Ejections (CMEs) as they leave the Sun.**',
         'solar-flares': 'A list of the latest detected solar flares. Flares are sudden bursts of radiation from the Sun. Pay attention to the class type (M or X) as these are stronger events. A "CME Event" tag means a Coronal Mass Ejection was also observed with the flare, potentially leading to Earth impacts.',
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
-        // NEW: Combined info for Solar Imagery section
+        // Updated: Combined info for Solar Imagery section, NO LONGER includes CCOR1
         'solar-imagery': `
             <p><strong>SUVI 131Å (Angstrom):</strong> Shows hot, flaring regions. Best for: Monitoring solar flares and active regions.</p><br>
             <p><strong>SUVI 304Å (Angstrom):</strong> Reveals cooler, denser plasma. Best for: Observing prominences and filaments, tracking large-scale solar activity.</p><br>
             <p><strong>SDO AIA 193Å (Angstrom) (2048px) - Coronal Holes:</strong> High-resolution view of the hot corona. Best for: Identifying and monitoring coronal holes, understanding solar wind origins.</p><br>
             <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Continuum (1024px):</strong> Visible light view of the Sun\'s surface. Best for: Detailed observation of sunspot structure and active region morphology.</p><br>
-            <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Higher resolution view of sunspots and magnetic fields. Best for: Tracking the evolution of sunspots and identifying potential flare source regions.</p><br>
-            <p><strong>CCOR1 (Coronal Coronagraph Observation by Optical Reconnaissance) Video:</strong> Captures the faint outer atmosphere. Best for: Detecting and tracking Coronal Mass Ejections (CMEs) as they leave the Sun.</p>
+            <p><strong>SDO HMI (Helioseismic and Magnetic Imager) Intensitygram (1024px):</strong> Higher resolution view of sunspots and magnetic fields. Best for: Tracking the evolution of sunspots and identifying potential flare source regions.</p>
         `
     }), []);
 
@@ -191,10 +190,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
+            // Simplified SDO modal titles (removed resolution)
             else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
             else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
             else if (id === 'sdo-aia193-2048') title = 'About SDO AIA 193Å Imagery (Coronal Holes)';
-            else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
+            else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video'; // Kept this specific title
             else if (id === 'solar-flares') title = 'About Solar Flares';
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else if (id === 'solar-imagery') title = 'About Solar Imagery Types'; // NEW MODAL TITLE
@@ -323,7 +323,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     // S3 Notification (or higher) - Can combine S2-S5 if desired, here for S3+
                     if (latestFluxValue >= S3_THRESHOLD && prevFlux < S3_THRESHOLD && canSendNotification('proton-S3', 60 * 60 * 1000)) { // 1 hour cooldown
                         sendNotification('Major Proton Event Alert: S3+ Class!', `Proton flux (>=10 MeV) has reached S3 class (>=${S3_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
-                    } else if (latestFluxValue < S3_THRESHOLD) { // Corrected from 3_THRESHOLD to S3_THRESHOLD
+                    } else if (latestFluxValue < S3_THRESHOLD) { 
                         clearNotificationCooldown('proton-S3');
                     }
                 }
@@ -521,6 +521,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }],
         };
     }, [allProtonData]);
+
+    // Removed: Function to handle mouse enter/leave on imagery buttons for custom tooltip
     
     return (
         <div
@@ -658,7 +660,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
                                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
                             </div>
-                            <ul className="space-y-2 overflow-y-auto max-h96 styled-scrollbar pr-2">
+                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
                                 {loadingFlares ? <li className="text-center text-neutral-400 italic">{loadingFlares}</li> 
                                 : solarFlares.length > 0 ? solarFlares.map((flare) => {
                                     const { background, text } = getColorForFlareClass(flare.classType);
@@ -668,16 +670,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </ul>
                         </div>
 
-                        {/* CCOR1 Video Panel */}
+                        {/* CCOR1 Video Panel (Now with its own info button) */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white text-center mb-4">CCOR1 Coronagraph Video</h2>
+                                {/* NEW: Info button for CCOR1 video */}
                                 <button onClick={() => openModal('ccor1-video')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about CCOR1 Coronagraph Video.">?</button>
                             </div>
                             <div
                                 onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
                                 className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                title={tooltipContent['ccor1-video']}
+                                // Removed title attribute here as info is now via modal
                             >
                                 {ccor1Video.loading && <p className="absolute text-neutral-400 italic">{ccor1Video.loading}</p>}
                                 {ccor1Video.url && !ccor1Video.loading ? (
