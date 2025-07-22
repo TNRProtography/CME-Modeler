@@ -18,8 +18,18 @@ const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
-const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
-const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
+
+// Original SDO URLs (kept for reference, but will use proxies)
+// const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg';
+// const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
+
+// NEW: Proxied SDO URLs (assuming you have a worker like spottheaurora.thenamesrock.workers.dev configured)
+// Example Cloudflare Worker setup for these:
+// For /sdo-hmi: fetch('https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIF.jpg', {cf: {cacheTtl: 300}}).then(res => { const newRes = new Response(res.body, res); newRes.headers.set('Access-Control-Allow-Origin', '*'); return newRes; });
+// For /sdo-aia-193: fetch('https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg', {cf: {cacheTtl: 300}}).then(res => { const newRes = new Response(res.body, res); newRes.headers.set('Access-Control-Allow-Origin', '*'); return newRes; });
+const SDO_HMI_PROXY_URL = 'https://spottheaurora.thenamesrock.workers.dev/sdo-hmi';
+const SDO_AIA_193_PROXY_URL = 'https://spottheaurora.thenamesrock.workers.dev/sdo-aia-193';
+
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
 
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
@@ -38,7 +48,6 @@ const getColorForFlux = (value: number, opacity: number = 1): string => {
     return `rgba(${rgb}, ${opacity})`;
 };
 
-// NEW HELPER: For Proton Flux colors based on S-scale
 const getColorForProtonFlux = (value: number, opacity: number = 1): string => {
     let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'; // Default Green (S0 and below)
     if (value >= 10) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11'; // Yellow (S1)
@@ -346,8 +355,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const runAllUpdates = () => {
             fetchImage(SUVI_131_URL, setSuvi131);
             fetchImage(SUVI_304_URL, setSuvi304);
-            fetchImage(SDO_HMI_URL, setSdoHmi, false, false);
-            fetchImage(SDO_AIA_193_URL, setSdoAia193, false, false);
+            fetchImage(SDO_HMI_PROXY_URL, setSdoHmi); // Use PROXY URL here
+            fetchImage(SDO_AIA_193_PROXY_URL, setSdoAia193); // Use PROXY URL here
             fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchProtonFlux();
@@ -652,7 +661,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         {/* GOES Proton Flux Graph */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
-                                {/* Using >= as requested to avoid JSX parsing issues */}
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
                                 <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
                             </div>
@@ -705,7 +713,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 isOpen={!!selectedFlare}
                 onClose={() => setSelectedFlare(null)}
                 title={`Flare Details: ${selectedFlare?.flareID || ''}`}
-                content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
+                content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )}
             />
             {modalState && (
                 <InfoModal
