@@ -20,7 +20,7 @@ const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 
 // SDO URLs are now direct NASA links (NO LONGER PROXIED)
-const SDO_HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIBC.jpg';
+const SDO_HMI_URL = 'https://jsoc1.stanford.edu/data/hmi/images/latest/HMI_latest_color_Mag_1024x1024.jpg';
 const SDO_AIA_193_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg';
 
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Remains proxied as per previous instruction
