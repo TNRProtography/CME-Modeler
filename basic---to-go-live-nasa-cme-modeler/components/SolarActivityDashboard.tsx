@@ -159,6 +159,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     // State for the InfoModal
     const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
 
+    // NEW: State for the custom hover tooltip
+    const [activeHoverTooltip, setActiveHoverTooltip] = useState<{
+        content: string;
+        rect: DOMRect; // Stores position and dimensions of the hovered element
+    } | null>(null);
+
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
@@ -305,14 +311,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                     // S1 Notification
                     if (latestFluxValue >= S1_THRESHOLD && prevFlux < S1_THRESHOLD && canSendNotification('proton-S1', 30 * 60 * 1000)) { // 30 min cooldown
                         sendNotification('Proton Event Alert: S1 Class!', `Proton flux (>=10 MeV) has reached S1 class (>=${S1_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
-                    } else if (latestFluxValue < S1_THRESHOLD) {
+                    } else if (latestFluxValue < S1_THRESHOLD) { // Corrected from 3_THRESHOLD to S1_THRESHOLD
                         clearNotificationCooldown('proton-S1');
                     }
                     
                     // S3 Notification (or higher) - Can combine S2-S5 if desired, here for S3+
                     if (latestFluxValue >= S3_THRESHOLD && prevFlux < S3_THRESHOLD && canSendNotification('proton-S3', 60 * 60 * 1000)) { // 1 hour cooldown
                         sendNotification('Major Proton Event Alert: S3+ Class!', `Proton flux (>=10 MeV) has reached S3 class (>=${S3_THRESHOLD} pfu)! Current flux: ${latestFluxValue.toFixed(2)} pfu.`);
-                    } else if (latestFluxValue < S3_THRESHOLD) {
+                    } else if (latestFluxValue < S3_THRESHOLD) { // Corrected from 3_THRESHOLD to S3_THRESHOLD
                         clearNotificationCooldown('proton-S3');
                     }
                 }
@@ -510,6 +516,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             }],
         };
     }, [allProtonData]);
+
+    // NEW: Function to handle mouse enter on imagery buttons for custom tooltip
+    const handleImageButtonMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>, contentKey: string) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setActiveHoverTooltip({
+            content: tooltipContent[contentKey as keyof typeof tooltipContent],
+            rect: rect,
+        });
+    }, [tooltipContent]);
+
+    // NEW: Function to handle mouse leave for custom tooltip
+    const handleImageButtonMouseLeave = useCallback(() => {
+        setActiveHoverTooltip(null);
+    }, []);
     
     return (
         <div
@@ -537,6 +557,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
                                 <button
                                     onClick={() => setActiveSunImage('SUVI_131')}
+                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'suvi-131')}
+                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     title={tooltipContent['suvi-131']}
                                 >
@@ -544,6 +566,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 </button>
                                 <button
                                     onClick={() => setActiveSunImage('SUVI_304')}
+                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'suvi-304')}
+                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     title={tooltipContent['suvi-304']}
                                 >
@@ -552,6 +576,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 {/* SDO AIA 193Å (2048px) as the 3rd option, with no resolution in text */}
                                 <button
                                     onClick={() => setActiveSunImage('SDO_AIA193_2048')}
+                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'sdo-aia193-2048')}
+                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     title={tooltipContent['sdo-aia193-2048']}
                                 >
@@ -560,6 +586,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 {/* Remaining 1024px options for SDO, with no resolution in text */}
                                 <button
                                     onClick={() => setActiveSunImage('SDO_HMIBC_1024')}
+                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'sdo-hmibc-1024')}
+                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     title={tooltipContent['sdo-hmibc-1024']}
                                 >
@@ -567,6 +595,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 </button>
                                 <button
                                     onClick={() => setActiveSunImage('SDO_HMIIF_1024')}
+                                    onMouseEnter={(e) => handleImageButtonMouseEnter(e, 'sdo-hmiif-1024')}
+                                    onMouseLeave={handleImageButtonMouseLeave}
                                     className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     title={tooltipContent['sdo-hmiif-1024']}
                                 >
@@ -732,6 +762,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                  </div>
             </div>
             
+            {/* NEW: Custom Hover Tooltip for Imagery Buttons */}
+            {activeHoverTooltip && activeHoverTooltip.rect && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        // Position slightly below the button, horizontally centered
+                        top: activeHoverTooltip.rect.bottom + window.scrollY + 8,
+                        left: activeHoverTooltip.rect.left + window.scrollX + (activeHoverTooltip.rect.width / 2),
+                        transform: 'translateX(-50%)', // Center horizontally
+                        zIndex: 1000, // Ensure it's on top of other content but below modals
+                        backgroundColor: 'rgba(38, 38, 38, 0.95)', // neutral-800 with opacity
+                        color: 'white',
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        maxWidth: '350px', // Limit width for readability
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                        pointerEvents: 'none', // Crucial: prevents tooltip from blocking mouse events on elements beneath it
+                        whiteSpace: 'normal', // Allow text to wrap
+                        textAlign: 'left',
+                    }}
+                    className="text-xs" // Tailwind text size
+                >
+                    {/* Render HTML content safely */}
+                    <div dangerouslySetInnerHTML={{ __html: activeHoverTooltip.content }} />
+                </div>
+            )}
+
             <InfoModal
                 isOpen={!!selectedFlare}
                 onClose={() => setSelectedFlare(null)}
