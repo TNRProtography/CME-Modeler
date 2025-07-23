@@ -401,7 +401,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
         }
         const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
-        const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x525252, transparent: true, opacity: 0.5 });
+        const orbitMaterial = new THREE.LineBasicMaterial({ color: 0xCCCCCC, transparent: true, opacity: 0.5 });
         const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
         orbitLine.name = 'moon-orbit'; // Name for easy selection
         parentBody.mesh.add(orbitLine); // Add orbit line to parent
