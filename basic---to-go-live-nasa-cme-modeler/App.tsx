@@ -278,7 +278,6 @@ const App: React.FC = () => {
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* Global Alert Banner */}
         <GlobalBanner
-            isSiteDownAlert={siteIsDown}
             isFlareAlert={isFlareAlert}
             flareClass={flareClass}
             isAuroraAlert={isAuroraAlert}
