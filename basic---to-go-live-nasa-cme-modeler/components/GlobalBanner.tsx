@@ -49,60 +49,58 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   useEffect(() => {
     const fetchGlobalBanner = async () => {
       try {
-        console.log('Fetching global banner from:', BANNER_API_URL);
+        console.log('GlobalBanner: Attempting to fetch from:', BANNER_API_URL);
         const response = await fetch(BANNER_API_URL, {
             headers: {
-                'Cache-Control': 'no-cache' // Ensure we bypass browser cache for fresh data
+                // Ensure we bypass browser cache for fresh data from the worker (worker handles its own caching with s-maxage)
+                'Cache-Control': 'no-cache' 
             }
         });
         if (!response.ok) {
-          console.error(`Failed to fetch global banner: HTTP ${response.status} ${response.statusText}`);
+          console.error(`GlobalBanner: Failed to fetch (HTTP ${response.status} ${response.statusText})`);
           setGlobalBanner(null);
           return;
         }
         const data: BannerData = await response.json();
-        console.log('Fetched global banner data:', data);
+        console.log('GlobalBanner: Fetched data:', data);
 
-        // Determine a unique ID for the fetched banner. Prefer 'id' if provided.
+        // Determine a unique ID for the fetched banner. Prefer 'id' if provided, otherwise use message.
         const currentBannerUniqueId = data.id || data.message; 
         
         // Update the global banner state with the new data
         setGlobalBanner(data);
 
-        // --- NEW LOGIC FOR DISMISSAL ---
+        // --- CORE LOGIC FOR DISMISSAL ---
         if (data.isActive) {
-          // If the banner is active according to the admin:
-          // Check if *this specific banner ID* was previously dismissed by the user.
+          // If the banner is active from the Worker:
+          // Check local storage for dismissal *only for this specific banner ID*.
           const wasPreviouslyDismissedByUser = localStorage.getItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + currentBannerUniqueId) === 'true';
           setIsGlobalBannerDismissed(wasPreviouslyDismissedByUser);
-          console.log(`Banner active by admin. Unique ID: "${currentBannerUniqueId}". Was dismissed by user: ${wasPreviouslyDismissedByUser}`);
+          console.log(`GlobalBanner: Admin says ACTIVE. Unique ID: "${currentBannerUniqueId}". Was dismissed by user: ${wasPreviouslyDismissedByUser}`);
         } else {
-          // If the banner is NOT active according to the admin:
-          // It should never be considered "dismissed" by the user at this point.
-          // This clears any lingering dismissal status for this banner,
-          // ensuring it will show again if the admin re-activates it later.
+          // If the banner is NOT active from the Worker (admin turned it off):
+          // It should never be considered "dismissed" by the user at this point for its current state.
+          // This ensures that if the admin later *re-activates* the banner, it will show up again for users.
           setIsGlobalBannerDismissed(false);
-          console.log(`Banner inactive by admin. Clearing user dismissal state for this banner.`);
-          // Optionally, also remove from local storage to keep it clean, though not strictly necessary.
+          console.log(`GlobalBanner: Admin says INACTIVE. Resetting user dismissal state for this banner.`);
+          // Optionally, also remove from local storage to keep it clean, though not strictly necessary for functionality.
           localStorage.removeItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + currentBannerUniqueId);
         }
-        // Update the ref to track the unique ID of the banner just processed
-        lastProcessedBannerUniqueIdRef.current = currentBannerUniqueId;
-
+        
       } catch (error) {
-        console.error('Error fetching global banner:', error);
-        setGlobalBanner(null);
-        // On error, we might want to also ensure it's not dismissed if it was active
-        setIsGlobalBannerDismissed(false); // Assume not dismissed on error loading
+        console.error('GlobalBanner: Error during fetch:', error);
+        setGlobalBanner(null); // Clear banner on error
+        setIsGlobalBannerDismissed(false); // Ensure it's not considered dismissed on error
       }
     };
 
     fetchGlobalBanner();
-    const interval = setInterval(fetchGlobalBanner, 60 * 1000); // Fetch every minute
+    // Fetch every minute to pick up changes from the admin panel
+    const interval = setInterval(fetchGlobalBanner, 60 * 1000); 
     return () => clearInterval(interval);
-  }, []); // Empty dependency array, as the effect itself manages re-evaluation based on data.id/message
+  }, []); // Empty dependency array means this effect runs once on mount. It re-fetches via setInterval.
 
-  // Effect for internal alerts visibility
+  // Effect for internal alerts visibility (independent of global banner)
   useEffect(() => {
     setIsInternalAlertVisible((isFlareAlert || isAuroraAlert || isSubstormAlert) && !internalAlertClosedManually);
   }, [isFlareAlert, isAuroraAlert, isSubstormAlert, internalAlertClosedManually]);
@@ -111,11 +109,11 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     setIsGlobalBannerDismissed(true);
     // Persist dismissal to local storage using the banner's unique ID
     if (globalBanner) {
-      const uniqueId = globalBanner.id || globalBanner.message;
+      const uniqueId = globalBanner.id || globalBanner.message; // Use current banner's unique ID
       localStorage.setItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + uniqueId, 'true');
-      console.log('Banner dismissed and saved to local storage:', uniqueId);
+      console.log('GlobalBanner: Banner dismissed by user and state saved to local storage for ID:', uniqueId);
     }
-  }, [globalBanner]);
+  }, [globalBanner]); // Dependency on globalBanner to get its ID/message
 
   const handleInternalAlertClose = useCallback(() => {
     setIsInternalAlertVisible(false);
@@ -126,39 +124,42 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   // 1. Prioritize the global banner if active and not dismissed
   if (globalBanner && globalBanner.isActive && !isGlobalBannerDismissed) {
-    console.log('Rendering global banner:', globalBanner.message);
+    console.log('GlobalBanner: Rendering active global banner.');
     const isCustom = globalBanner.type === 'custom';
     const bgColor = globalBanner.backgroundColor; 
     const textColor = globalBanner.textColor;
 
     let predefinedClass = '';
-    let defaultTextColorClass = 'text-white'; 
-
+    
     if (!isCustom) {
       if (globalBanner.type === 'info') {
         predefinedClass = 'bg-gradient-to-r from-blue-600 via-sky-500 to-sky-600';
       } else if (globalBanner.type === 'warning') {
         predefinedClass = 'bg-gradient-to-r from-yellow-500 via-orange-400 to-orange-500';
-        defaultTextColorClass = 'text-gray-900'; 
+        // Note: For warning, text is handled by the inline style if not custom
       } else if (globalBanner.type === 'alert') {
         predefinedClass = 'bg-gradient-to-r from-red-600 via-pink-500 to-pink-600';
       }
     }
 
-    // Apply the correct text color. Use specific hex for custom; default class or derived hex for predefined.
-    const finalTextColor = isCustom ? (textColor || '#ffffff') : (defaultTextColorClass === 'text-gray-900' ? '#1a202c' : '#ffffff');
+    // Determine final text color: custom hex, or a predefined Tailwind class if not custom
+    const finalTextColorStyle = isCustom ? { color: textColor || '#ffffff' } : {};
+    const finalTextColorClass = (globalBanner.type === 'warning' && !isCustom) ? 'text-gray-900' : 'text-white';
+
 
     return (
       <div 
-        className={`text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center ${predefinedClass}`}
+        className={`text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center ${predefinedClass} ${finalTextColorClass}`}
         style={isCustom ? { backgroundColor: bgColor || '#000000', color: textColor || '#ffffff' } : {}} 
       >
-        <div className={`container mx-auto flex items-center justify-center gap-2`} style={isCustom ? {} : { color: finalTextColor }}>
+        <div className={`container mx-auto flex items-center justify-center gap-2`}>
           {globalBanner.emojis && <span role="img" aria-label="Emoji">{globalBanner.emojis}</span>}
           <span>{globalBanner.message}</span>
           {globalBanner.link && globalBanner.link.url && globalBanner.link.text && (
             <a href={globalBanner.link.url} target="_blank" rel="noopener noreferrer" 
-               className={`underline ml-2 ${isCustom ? '' : (globalBanner.type === 'warning' ? 'text-blue-800' : 'text-blue-200 hover:text-blue-50')}`}>
+               className={`underline ml-2 ${isCustom ? '' : (globalBanner.type === 'warning' ? 'text-blue-800' : 'text-blue-200 hover:text-blue-50')}`}
+               style={isCustom ? {color: (textColor || '#ffffff') } : {}} // Ensure link color works with custom banners
+               >
               {globalBanner.link.text}
             </a>
           )}
@@ -178,7 +179,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   // 2. Fallback to original internal alerts if no global banner or it's dismissed
   if (isInternalAlertVisible) {
-    console.log('Displaying internal alert.');
+    console.log('GlobalBanner: Displaying internal alert.');
     return (
       <div className="bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-600 text-white text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-2">
@@ -214,7 +215,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     );
   }
 
-  console.log('No banner or internal alert to display.');
+  console.log('GlobalBanner: No banner or internal alert to display.');
   return null; // Nothing to show
 };
 
