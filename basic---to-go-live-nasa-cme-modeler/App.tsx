@@ -1,4 +1,4 @@
-// --- START OF FILE App.tsx ---
+// --- START OF FILE src/App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
@@ -52,15 +52,15 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
-  // REMOVED: `siteIsDown` state, as this banner will now be controlled via the Worker
-  // const [siteIsDown, setSiteIsDown] = useState(true);
-
+  // Global Library Loading State
+  const [areLibsLoaded, setAreLibsLoaded] = useState(false); // NEW: Track if THREE.js and GSAP are loaded
+  
   // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
   // CME Modeler State
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(true); // For API data loading
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
   
@@ -78,7 +78,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // NEW: State for settings modal
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Display Options State
   const [showLabels, setShowLabels] = useState(true);
@@ -100,7 +100,8 @@ const App: React.FC = () => {
   const [threeCamera, setThreeCamera] = useState<any>(null);
 
   // Refs
-  const clockRef = useRef<any>(null);
+  const clockRef = useRef<any>(null); // For THREE.Clock
+
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
@@ -110,11 +111,24 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
+  // NEW: Effect to check for global THREE.js and GSAP libraries
   useEffect(() => {
-    if (!clockRef.current && window.THREE) {
-        clockRef.current = new window.THREE.Clock();
-    }
-  }, []);
+    const checkLibraries = () => {
+        if (window.THREE && window.gsap) {
+            setAreLibsLoaded(true);
+            // Initialize clock only AFTER THREE is confirmed available
+            if (!clockRef.current) {
+                clockRef.current = new window.THREE.Clock();
+                console.log("THREE.js Clock initialized in App.tsx.");
+            }
+        } else {
+            // If not loaded, check again after a short delay
+            console.log("Waiting for THREE.js and GSAP to load...");
+            setTimeout(checkLibraries, 50); // Poll every 50ms
+        }
+    };
+    checkLibraries(); // Start checking when component mounts
+  }, []); // Empty dependency array means this runs once on mount
 
   const getClockElapsedTime = useCallback(() => {
     return clockRef.current ? clockRef.current.getElapsedTime() : 0;
@@ -168,10 +182,11 @@ const App: React.FC = () => {
   }, [resetClock, apiKey]);
 
   useEffect(() => {
-    if (activePage === 'modeler') {
+    // Only load CME data if libraries are loaded AND it's the modeler page
+    if (activePage === 'modeler' && areLibsLoaded) {
       loadCMEData(activeTimeRange);
     }
-  }, [activeTimeRange, loadCMEData, activePage]);
+  }, [activeTimeRange, loadCMEData, activePage, areLibsLoaded]); // Add areLibsLoaded to dependency array
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -255,7 +270,7 @@ const App: React.FC = () => {
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
   // Logic for GlobalBanner conditions (for internal alerts)
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
+  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
   const flareClass = useMemo(() => {
     if (latestXrayFlux === null) return undefined;
     if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
@@ -268,7 +283,7 @@ const App: React.FC = () => {
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus !== null && 
     substormActivityStatus.text.includes('stretching') && 
-    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
+    !substormActivityStatus.text.includes('substorm signature detected'),
     [substormActivityStatus]
   );
 
@@ -276,7 +291,6 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* Global Alert Banner */}
-        {/* The `isSiteDownAlert` prop has been removed here */}
         <GlobalBanner
             isFlareAlert={isFlareAlert}
             flareClass={flareClass}
@@ -320,7 +334,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
-            {/* NEW: Settings Button */}
+            {/* Settings Button */}
             <div className="flex-grow flex justify-end">
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
@@ -335,7 +349,13 @@ const App: React.FC = () => {
         {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
             {/* Conditional Rendering for Main Content */}
-            {activePage === 'modeler' && (
+            {activePage === 'modeler' && !areLibsLoaded && (
+                // Show a loading overlay specifically for THREE.js/GSAP
+                <LoadingOverlay message="Initializing 3D Simulation..." /> 
+            )}
+
+            {activePage === 'modeler' && areLibsLoaded && (
+                // Only render the modeler content if libraries are loaded
                 <>
                     <div className={`
                         flex-shrink-0 lg:p-5
@@ -348,7 +368,7 @@ const App: React.FC = () => {
                             activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange}
                             activeView={activeView} onViewChange={handleViewChange}
                             activeFocus={activeFocus} onFocusChange={handleFocusChange}
-                            isLoading={isLoading}
+                            isLoading={isLoading} // This isLoading is for API data
                             onClose={() => setIsControlsOpen(false)}
                             onOpenGuide={() => setIsTutorialOpen(true)}
                             showLabels={showLabels} onShowLabelsChange={setShowLabels}
@@ -385,6 +405,7 @@ const App: React.FC = () => {
                         interactionMode={interactionMode}
                         />
 
+                        {/* Only render planet labels if THREE.js camera/renderer are ready */}
                         {showLabels && rendererDomElement && threeCamera && planetLabelInfos
                         .filter((info: PlanetLabelInfo) => {
                             const name = info.name.toUpperCase();
@@ -464,16 +485,12 @@ const App: React.FC = () => {
                             onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }}
                         />
                     )}
-
-                    {isLoading && <LoadingOverlay />}
-                    <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-                    <ForecastModelsModal 
-                      isOpen={isForecastModelsOpen} 
-                      onClose={() => setIsForecastModelsOpen(false)} 
-                      setViewerMedia={setViewerMedia}
-                    />
                 </>
             )}
+
+            {/* Existing LoadingOverlay will still handle API loading */}
+            {isLoading && activePage === 'modeler' && areLibsLoaded && <LoadingOverlay />}
+
 
             {activePage === 'forecast' && (
                 <ForecastDashboard 
@@ -497,7 +514,7 @@ const App: React.FC = () => {
           onClose={() => setViewerMedia(null)}
         />
 
-        {/* NEW: Settings Modal */}
+        {/* Settings Modal */}
         <SettingsModal 
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
@@ -507,4 +524,4 @@ const App: React.FC = () => {
 };
 
 export default App;
-// --- END OF FILE App.tsx ---
+// --- END OF FILE src/App.tsx ---

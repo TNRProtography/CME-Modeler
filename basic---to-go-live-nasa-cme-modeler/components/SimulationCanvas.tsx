@@ -1,4 +1,6 @@
 // --- START OF FILE src/components/SimulationCanvas.tsx ---
+// (Identical to the one provided in the previous detailed response, should be correct)
+// ... (Paste the entire SimulationCanvas.tsx content from the previous long response here)
 import React, { useRef, useEffect, useCallback } from 'react';
 import { ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData, InteractionMode, SimulationCanvasHandle } from '../types';
 import {
@@ -499,7 +501,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Moons orbit their parent body (local coordinates)
         else {
             body.mesh.position.x = bodyData.radius * Math.sin(angle);
-            body.mesh.position.z = data.radius * Math.cos(angle); // Corrected: data.radius should be bodyData.radius
+            // Corrected: bodyData.radius for consistency with moon orbit calculation
+            body.mesh.position.z = bodyData.radius * Math.cos(angle); 
         }
       });
       
@@ -613,7 +616,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           if (Array.isArray(object.material)) {
             object.material.forEach((material:any) => material.dispose());
           } else {
-            // Corrected disposal of a single material
             object.material.dispose();
           }
         }
@@ -635,7 +637,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (Array.isArray(child.material)) {
           child.material.forEach((m:any) => m.dispose());
         } else {
-          // Corrected disposal for a single material on a child object
           child.material.dispose(); 
         }
       }
@@ -717,7 +718,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeGroupRef.current.add(cmeParticleSystem);
     });
 
-  }, [cmeData]); // Removed THREE from dependencies as it's not a reactive prop
+  }, [cmeData]);
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     if (!cameraRef.current || !controlsRef.current || !window.gsap || !window.THREE) return; // Check for both
