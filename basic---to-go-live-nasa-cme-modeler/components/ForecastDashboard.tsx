@@ -10,8 +10,107 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Import notification utilities
+import { sendNotification, canSendNotification, clearNotificationCooldown, requestNotificationPermission, getNotificationPreference, setNotificationPreference } from '../utils/notifications.ts'; // Import ALL notification utilities
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch component
+
+// --- Define BellIcon as it may not exist in the project ---
+const BellIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+    </svg>
+);
+
+// --- Notification Manager Component ---
+const notificationCategories = [
+    { id: 'aurora-40percent', label: 'Visible Activity (>= 40%)' },
+    { id: 'aurora-50percent', label: 'Moderate Activity (>= 50%)' },
+    { id: 'aurora-80percent', label: 'High Activity (>= 80%)' },
+    { id: 'substorm-eruption', label: 'Substorm Eruption' },
+];
+
+const NotificationManager: React.FC = () => {
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [preferences, setPreferences] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!('Notification' in window)) {
+      setPermission('unsupported');
+      return;
+    }
+    setPermission(Notification.permission);
+
+    const initialPrefs: Record<string, boolean> = {};
+    notificationCategories.forEach(cat => {
+      initialPrefs[cat.id] = getNotificationPreference(cat.id);
+    });
+    setPreferences(initialPrefs);
+  }, []);
+
+  const handleRequestPermission = async () => {
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === 'granted') {
+      setIsPanelOpen(true);
+    }
+  };
+
+  const handlePreferenceChange = (categoryId: string, enabled: boolean) => {
+    setNotificationPreference(categoryId, enabled);
+    setPreferences(prev => ({ ...prev, [categoryId]: enabled }));
+  };
+
+  const getButtonContent = () => {
+    switch (permission) {
+      case 'granted':
+        return { text: 'Manage Notifications', action: () => setIsPanelOpen(!isPanelOpen), color: 'bg-green-600/80 hover:bg-green-700/90' };
+      case 'denied':
+        return { text: 'Notifications Blocked', action: () => {}, color: 'bg-red-600/80 cursor-not-allowed', disabled: true };
+      case 'unsupported':
+        return { text: 'Notifications Not Supported', action: () => {}, color: 'bg-neutral-600/80 cursor-not-allowed', disabled: true };
+      default:
+        return { text: 'Enable Notifications', action: handleRequestPermission, color: 'bg-sky-600/80 hover:bg-sky-700/90' };
+    }
+  };
+
+  const { text, action, color, disabled } = getButtonContent();
+
+  return (
+    <div className="relative">
+      <button
+        onClick={action}
+        disabled={disabled}
+        className={`flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors ${color}`}
+      >
+        <BellIcon className="w-5 h-5" />
+        <span>{text}</span>
+      </button>
+
+      {permission === 'denied' && (
+         <p className="text-xs text-neutral-400 mt-2 text-center max-w-xs mx-auto">You have blocked notifications. To enable them, please check your browser's site settings.</p>
+      )}
+
+      {isPanelOpen && permission === 'granted' && (
+        <div className="absolute bottom-full mb-2 w-72 left-1/2 -translate-x-1/2 bg-neutral-900/95 border border-neutral-700 rounded-lg shadow-2xl p-4 backdrop-blur-sm z-50">
+          <h4 className="text-md font-semibold text-neutral-100 text-center mb-3">Notification Settings</h4>
+          <div className="space-y-3">
+            {notificationCategories.map(category => (
+              <ToggleSwitch
+                key={category.id}
+                label={category.label}
+                checked={preferences[category.id] ?? true}
+                onChange={(checked) => handlePreferenceChange(category.id, checked)}
+              />
+            ))}
+          </div>
+           <p className="text-xs text-neutral-500 mt-4 pt-2 border-t border-neutral-700 text-center">
+                <strong>Important:</strong> These are browser notifications, not mobile push alerts. They will only appear if this webpage is open in a browser tab.
+           </p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -436,7 +535,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (shouldNotifySubstormEruption) {
             sendNotification(
                 'Substorm Eruption Alert!',
-                `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${auroraScore?.toFixed(1)}%.`
+                `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${auroraScore?.toFixed(1)}%.`,
+                { tag: 'substorm-eruption' }
             );
         }
     };
@@ -599,16 +699,35 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
             // --- Notification Logic for Aurora Score ---
             if (currentScore !== null && prevAuroraScore !== null) {
+                // NEW: Notify when hitting 40% or more, if it was previously below 40%
+                if (currentScore >= 40 && prevAuroraScore < 40 && canSendNotification('aurora-40percent', 30 * 60 * 1000)) { // 30 min cooldown
+                    sendNotification(
+                        'Aurora Alert: Visible Activity!',
+                        `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! A faint naked-eye aurora may be possible.`,
+                        { tag: 'aurora-40percent' }
+                    );
+                } else if (currentScore < 40) { // Clear cooldown if drops below 40
+                    clearNotificationCooldown('aurora-40percent');
+                }
+
                 // Notify when hitting 50% or more, if it was previously below 50%
                 if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) { // 30 min cooldown
-                    sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`);
+                     sendNotification(
+                        'Aurora Alert: Moderate Activity!',
+                        `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`,
+                        { tag: 'aurora-50percent' }
+                    );
                 } else if (currentScore < 50) { // Clear cooldown if drops below 50
                     clearNotificationCooldown('aurora-50percent');
                 }
 
                 // Notify when hitting 80% or more, if it was previously below 80%
                 if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) { // 30 min cooldown
-                    sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`);
+                    sendNotification(
+                        'Aurora Alert: HIGH Activity!',
+                        `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`,
+                        { tag: 'aurora-80percent' }
+                    );
                 } else if (currentScore < 80) { // Clear cooldown if drops below 80
                     clearNotificationCooldown('aurora-80percent');
                 }
@@ -1097,11 +1216,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
                         <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides a highly localized, 2-hour aurora forecast specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.</p>
                         <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.</p>
-                        <div className="mt-6">
+                        <div className="mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
                             <button onClick={() => setIsFaqOpen(true)} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors">
                                 <GuideIcon className="w-5 h-5" />
                                 <span>Frequently Asked Questions</span>
                             </button>
+                            <NotificationManager />
                         </div>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a> | Live Camera by <a href="https://queenstown.roundshot.com/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Roundshot</a></p><p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p></div>
                     </footer>
@@ -1114,4 +1234,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE ForecastDashboard.tsx ---
+// --- END OF FILE ForecastDashboard.tsx 
