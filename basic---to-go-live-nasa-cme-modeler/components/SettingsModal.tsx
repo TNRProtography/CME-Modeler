@@ -3,11 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch'; // Re-use the existing ToggleSwitch
-import { 
-  getNotificationPreference, 
+import {
+  getNotificationPreference,
   setNotificationPreference,
-  requestNotificationPermission 
-} from '../utils/notifications.ts'; // Import notification utilities
+  requestNotificationPermission,
+  sendNotification, // Import the in-app notification function
+  subscribeUserToPush // Import the push subscription function
+} from '../utils/notifications'; // Adjust path if necessary
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -37,6 +39,7 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false); // Renamed from isSubscribed for clarity
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   // State for location preference
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
@@ -45,14 +48,34 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
 
+  // Function to check and update notification & push subscription status
+  const updateNotificationAndPushStatus = useCallback(async () => {
+    if (!('Notification' in window)) {
+      setNotificationStatus('unsupported');
+      return;
+    }
+
+    const status = Notification.permission;
+    setNotificationStatus(status);
+
+    if (status === 'granted' && 'serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        setIsPushSubscribed(!!subscription);
+      } catch (error) {
+        console.error('Error checking push subscription:', error);
+        setIsPushSubscribed(false);
+      }
+    } else {
+      setIsPushSubscribed(false);
+    }
+  }, []);
+
+
   useEffect(() => {
     if (isOpen) {
-      // Check current notification permission status
-      if (!('Notification' in window)) {
-        setNotificationStatus('unsupported');
-      } else {
-        setNotificationStatus(Notification.permission);
-      }
+      updateNotificationAndPushStatus(); // Update status when modal opens
 
       // Load saved notification preferences
       const loadedNotificationSettings: Record<string, boolean> = {};
@@ -68,7 +91,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       // Check if app is already installed
       checkAppInstallationStatus();
     }
-  }, [isOpen]);
+  }, [isOpen, updateNotificationAndPushStatus, checkAppInstallationStatus]); // Dependencies for useEffect
 
   // NEW: Setup PWA install event listeners
   useEffect(() => {
@@ -100,8 +123,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     // Check if running in standalone mode (already installed)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
     // Check if running as PWA on mobile
-    const isPWA = window.navigator.standalone === true;
-    
+    // Note: window.navigator.standalone is Safari-specific
+    const isPWA = (window.navigator as any).standalone === true;
+
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
 
@@ -110,10 +134,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setNotificationPreference(id, checked);
   }, []);
 
-  const handleRequestPermission = useCallback(async () => {
+  // Updated handler to request permission and subscribe to push
+  const handleRequestAndSubscribe = useCallback(async () => {
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
-  }, []);
+
+    if (permission === 'granted') {
+      const subscription = await subscribeUserToPush(); // Attempt to subscribe to push
+      setIsPushSubscribed(!!subscription);
+      alert('Notifications enabled and subscribed! (Check console for details)');
+      // Send a welcome in-app notification immediately
+      sendNotification('Welcome!', 'You will now receive solar dashboard alerts.', { tag: 'welcome' });
+    } else {
+      alert(`Permission ${permission}. Cannot enable notifications.`);
+    }
+  }, [setNotificationStatus, setIsPushSubscribed]); // Added setters to dependencies
+
 
   // Handler for location toggle
   const handleGpsToggle = useCallback((checked: boolean) => {
@@ -128,16 +164,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     try {
       // Show the install prompt
       deferredPrompt.prompt();
-      
+
       // Wait for the user to respond to the prompt
       const { outcome } = await deferredPrompt.userChoice;
-      
+
       if (outcome === 'accepted') {
         console.log('User accepted the install prompt');
       } else {
         console.log('User dismissed the install prompt');
       }
-      
+
       // Clear the deferredPrompt since it can only be used once
       setDeferredPrompt(null);
       setIsAppInstallable(false);
@@ -146,14 +182,71 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   }, [deferredPrompt]);
 
+  // NEW: Handle sending a test notification (both in-app and push)
+  const handleSendTestNotification = useCallback(async () => {
+    // 1. Always send an in-app notification if permission is granted
+    if (notificationStatus === 'granted') {
+      sendNotification('Test Notification', 'This is an in-app test notification.', { tag: 'test-in-app' });
+    } else {
+      console.warn('Notification permission not granted for in-app test.');
+    }
+
+    // 2. Attempt to send a push notification if subscribed
+    if (isPushSubscribed) {
+      alert('Attempting to send push from worker. Check your device!');
+      try {
+        // !!! IMPORTANT: Replace with YOUR ACTUAL Cloudflare Worker URL !!!
+        // This is your worker's domain, including your unique subdomain.
+        const workerUrl = 'https://solar-dashboard-push-worker.<YOUR_SUBDOMAIN>.workers.dev/api/send-notification';
+
+        // !!! SECURITY WARNING !!!
+        // For production, you MUST secure this endpoint on your Cloudflare Worker.
+        // If your worker expects an API key or JWT, you need to include it here.
+        // For development/testing, you might temporarily relax worker authentication,
+        // or use a simple shared API key.
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        // Example if your worker requires an API key in the Authorization header:
+        // headers['Authorization'] = 'Bearer YOUR_VERY_SECRET_API_KEY_HERE'; // <--- ADD THIS IF REQUIRED
+
+        const response = await fetch(workerUrl, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            title: 'Solar Test Push!',
+            body: 'This is a test notification from your Cloudflare Worker. It should appear even if the app is closed!',
+            tag: 'test-push',
+            url: '/' // What URL to open on click (e.g., '/dashboard', or '/')
+          })
+        });
+
+        if (response.ok) {
+          console.log('Test push trigger successful (via worker).');
+        } else {
+          const errorText = await response.text();
+          console.error('Test push trigger failed (via worker):', response.status, errorText);
+          alert(`Failed to trigger push from worker (${response.status}): ${errorText}`);
+        }
+      } catch (err: any) {
+        console.error('Error triggering test push (via worker):', err);
+        alert('Error triggering push from worker: ' + err.message);
+      }
+    } else {
+      console.log('Not subscribed to push. Only an in-app notification was sent (if permission granted).');
+      if (notificationStatus === 'granted') {
+        alert('You are not subscribed to push notifications. Only an in-app notification was sent.');
+      }
+    }
+  }, [notificationStatus, isPushSubscribed]); // Dependencies for useCallback
+
+
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
       onClick={onClose}
     >
-      <div 
+      <div
         className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-neutral-300 flex flex-col"
         onClick={e => e.stopPropagation()} // Prevent click from closing modal
       >
@@ -163,7 +256,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <CloseIcon className="w-6 h-6" />
           </button>
         </div>
-        
+
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6">
           {/* NEW: App Installation Section */}
           <section>
@@ -208,8 +301,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {notificationStatus === 'denied' && (
               <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm">
                 <p className="text-red-300 mb-2">Notification permission denied. Please enable notifications for this site in your browser settings to receive alerts.</p>
-                <button 
-                  onClick={handleRequestPermission} 
+                <button
+                  onClick={handleRequestAndSubscribe} // Use the combined handler
                   className="px-3 py-1 bg-red-600/50 border border-red-500 rounded-md text-white hover:bg-red-500/50 text-xs"
                 >
                   Re-request Permission
@@ -219,8 +312,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
                 <p className="text-orange-300 mb-2">Notifications are not enabled. Click below to allow them.</p>
-                <button 
-                  onClick={handleRequestPermission} 
+                <button
+                  onClick={handleRequestAndSubscribe} // Use the combined handler
                   className="px-3 py-1 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 text-xs"
                 >
                   Enable Notifications
@@ -242,6 +335,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     onChange={(checked) => handleNotificationToggle(category.id, checked)}
                   />
                 ))}
+
+                {/* NEW: Test Notification Button */}
+                <button
+                  onClick={handleSendTestNotification}
+                  className="mt-4 px-4 py-2 bg-purple-600/20 border border-purple-500/50 rounded-md text-purple-300 hover:bg-purple-500/30 hover:border-purple-400 transition-colors flex items-center space-x-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17l-3 3m0 0l-3-3m3 3V3"></path></svg>
+                  <span>Send Test Notification</span>
+                </button>
+                {isPushSubscribed ? (
+                  <p className="text-xs text-green-500 mt-1">Push notifications are active. Test button will send a push.</p>
+                ) : (
+                  <p className="text-xs text-yellow-500 mt-1">You are not subscribed to push. Test button will only send an in-app notification.</p>
+                )}
               </div>
             )}
           </section>
