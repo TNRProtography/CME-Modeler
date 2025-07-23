@@ -26,7 +26,7 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
-// NEW: Settings Modal Import
+// Settings Modal Import
 import SettingsModal from './components/SettingsModal';
 
 
@@ -52,8 +52,7 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
-  // Global Library Loading State
-  const [areLibsLoaded, setAreLibsLoaded] = useState(false); // NEW: Track if THREE.js and GSAP are loaded
+  // REMOVED: areLibsLoaded state is no longer needed here.
   
   // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -101,7 +100,6 @@ const App: React.FC = () => {
 
   // Refs
   const clockRef = useRef<any>(null); // For THREE.Clock
-
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
@@ -111,24 +109,12 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
-  // NEW: Effect to check for global THREE.js and GSAP libraries
+  // Initialize clock once, now that we know THREE is loaded before App renders.
   useEffect(() => {
-    const checkLibraries = () => {
-        if (window.THREE && window.gsap) {
-            setAreLibsLoaded(true);
-            // Initialize clock only AFTER THREE is confirmed available
-            if (!clockRef.current) {
-                clockRef.current = new window.THREE.Clock();
-                console.log("THREE.js Clock initialized in App.tsx.");
-            }
-        } else {
-            // If not loaded, check again after a short delay
-            console.log("Waiting for THREE.js and GSAP to load...");
-            setTimeout(checkLibraries, 50); // Poll every 50ms
-        }
-    };
-    checkLibraries(); // Start checking when component mounts
-  }, []); // Empty dependency array means this runs once on mount
+    if (!clockRef.current) {
+        clockRef.current = new window.THREE.Clock();
+    }
+  }, []);
 
   const getClockElapsedTime = useCallback(() => {
     return clockRef.current ? clockRef.current.getElapsedTime() : 0;
@@ -182,11 +168,10 @@ const App: React.FC = () => {
   }, [resetClock, apiKey]);
 
   useEffect(() => {
-    // Only load CME data if libraries are loaded AND it's the modeler page
-    if (activePage === 'modeler' && areLibsLoaded) {
+    if (activePage === 'modeler') {
       loadCMEData(activeTimeRange);
     }
-  }, [activeTimeRange, loadCMEData, activePage, areLibsLoaded]); // Add areLibsLoaded to dependency array
+  }, [activeTimeRange, loadCMEData, activePage]);
 
   const filteredCmes = useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
@@ -349,13 +334,8 @@ const App: React.FC = () => {
         {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
             {/* Conditional Rendering for Main Content */}
-            {activePage === 'modeler' && !areLibsLoaded && (
-                // Show a loading overlay specifically for THREE.js/GSAP
-                <LoadingOverlay message="Initializing 3D Simulation..." /> 
-            )}
-
-            {activePage === 'modeler' && areLibsLoaded && (
-                // Only render the modeler content if libraries are loaded
+            {activePage === 'modeler' && (
+                // The modeler page now renders directly, as index.tsx ensures libs are loaded.
                 <>
                     <div className={`
                         flex-shrink-0 lg:p-5
@@ -405,7 +385,6 @@ const App: React.FC = () => {
                         interactionMode={interactionMode}
                         />
 
-                        {/* Only render planet labels if THREE.js camera/renderer are ready */}
                         {showLabels && rendererDomElement && threeCamera && planetLabelInfos
                         .filter((info: PlanetLabelInfo) => {
                             const name = info.name.toUpperCase();
@@ -485,12 +464,10 @@ const App: React.FC = () => {
                             onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }}
                         />
                     )}
+
+                    {isLoading && <LoadingOverlay />}
                 </>
             )}
-
-            {/* Existing LoadingOverlay will still handle API loading */}
-            {isLoading && activePage === 'modeler' && areLibsLoaded && <LoadingOverlay />}
-
 
             {activePage === 'forecast' && (
                 <ForecastDashboard 

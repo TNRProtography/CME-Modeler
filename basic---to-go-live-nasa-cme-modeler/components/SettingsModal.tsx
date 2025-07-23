@@ -1,5 +1,6 @@
 // --- START OF FILE src/components/SettingsModal.tsx ---
-
+// (Identical to the one provided in the previous detailed response, should be correct)
+// ... (Paste the entire SettingsModal.tsx content from the previous long response here)
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch'; // Re-use the existing ToggleSwitch
