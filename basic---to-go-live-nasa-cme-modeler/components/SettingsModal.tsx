@@ -336,19 +336,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   />
                 ))}
 
-                {/* NEW: Test Notification Button */}
-                <button
-                  onClick={handleSendTestNotification}
-                  className="mt-4 px-4 py-2 bg-purple-600/20 border border-purple-500/50 rounded-md text-purple-300 hover:bg-purple-500/30 hover:border-purple-400 transition-colors flex items-center space-x-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17l-3 3m0 0l-3-3m3 3V3"></path></svg>
-                  <span>Send Test Notification</span>
-                </button>
-                {isPushSubscribed ? (
-                  <p className="text-xs text-green-500 mt-1">Push notifications are active. Test button will send a push.</p>
-                ) : (
-                  <p className="text-xs text-yellow-500 mt-1">You are not subscribed to push. Test button will only send an in-app notification.</p>
-                )}
+                {/* NEW: Container for Test Notification Button and its status text */}
+                <div className="space-y-1"> {/* This div manages internal spacing for its children */}
+                  <button
+                    onClick={handleSendTestNotification}
+                    // Removed mt-4 to let the parent's space-y-3 handle top margin
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600/20 border border-purple-500/50 rounded-md text-purple-300 hover:bg-purple-500/30 hover:border-purple-400 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17l-3 3m0 0l-3-3m3 3V3"></path></svg>
+                    <span>Send Test Notification</span>
+                  </button>
+                  {isPushSubscribed ? (
+                    // Removed mt-1. space-y-1 on parent div now handles spacing.
+                    <p className="text-xs text-center text-green-500">Push notifications are active. Test button will send a push.</p>
+                  ) : (
+                    // Removed mt-1. space-y-1 on parent div now handles spacing.
+                    <p className="text-xs text-center text-yellow-500">You are not subscribed to push. Test button will only send an in-app notification.</p>
+                  )}
+                </div>
               </div>
             )}
           </section>
