@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
 
 // Define the shape of the banner object returned by your worker
@@ -11,14 +11,12 @@ interface BannerData {
   emojis?: string;
   dismissible?: boolean;
   link?: { url: string; text: string };
-  // Add a unique ID for the banner if your worker provides one,
-  // useful for more precise dismissal tracking
-  id?: string; 
+  id?: string; // Added an optional ID for more precise dismissal tracking
 }
 
 // URL for your banner API worker (adjust if different)
 const BANNER_API_URL = 'https://banner-api.thenamesrock.workers.dev/banner';
-const LOCAL_STORAGE_DISMISS_KEY_PREFIX = 'globalBannerDismissed_'; // Prefix for unique banner IDs
+const LOCAL_STORAGE_DISMISS_KEY_PREFIX = 'globalBannerDismissed_'; // Prefix for unique banner IDs in local storage
 
 interface GlobalBannerProps {
   isFlareAlert: boolean;
@@ -40,7 +38,8 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   // State for the admin-set global banner
   const [globalBanner, setGlobalBanner] = useState<BannerData | null>(null);
   const [isGlobalBannerDismissed, setIsGlobalBannerDismissed] = useState(false);
-  const previousBannerIdRef = React.useRef<string | undefined>(undefined); // To track if banner content changed
+  // Ref to keep track of the *last processed* banner's unique ID for comparison
+  const lastProcessedBannerUniqueIdRef = useRef<string | undefined>(undefined);
 
   // State for other dynamic alerts (flare, aurora, substorm)
   const [isInternalAlertVisible, setIsInternalAlertVisible] = useState(true);
@@ -53,11 +52,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
         console.log('Fetching global banner from:', BANNER_API_URL);
         const response = await fetch(BANNER_API_URL, {
             headers: {
-                // 'Cache-Control': 'no-cache' // This sends Cache-Control: no-cache to the worker
-                                            // The worker itself handles `s-maxage` for CDN and `max-age` for browser
-                                            // Leaving this line out might be fine, or you can explicitly use
-                                            // Cache-Control: no-cache on the client side if you always want fresh.
-                                            // For debugging, `no-cache` ensures you bypass browser cache.
+                'Cache-Control': 'no-cache' // Ensure we bypass browser cache for fresh data
             }
         });
         if (!response.ok) {
@@ -68,30 +63,44 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
         const data: BannerData = await response.json();
         console.log('Fetched global banner data:', data);
 
-        // Check if the banner content has truly changed or if it's a new banner (if it has an ID)
-        const currentBannerId = data.id || data.message; // Use message as ID if no explicit ID
-        const wasPreviouslyDismissed = localStorage.getItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + currentBannerId) === 'true';
-
-        // Only update dismissal state if the banner content is truly different
-        // or if it's a fresh banner that wasn't previously dismissed
-        if (previousBannerIdRef.current !== currentBannerId || (data.isActive && !wasPreviouslyDismissed)) {
-            setIsGlobalBannerDismissed(wasPreviouslyDismissed);
-        }
+        // Determine a unique ID for the fetched banner. Prefer 'id' if provided.
+        const currentBannerUniqueId = data.id || data.message; 
         
+        // Update the global banner state with the new data
         setGlobalBanner(data);
-        previousBannerIdRef.current = currentBannerId; // Update ref for next render cycle
-        
+
+        // --- NEW LOGIC FOR DISMISSAL ---
+        if (data.isActive) {
+          // If the banner is active according to the admin:
+          // Check if *this specific banner ID* was previously dismissed by the user.
+          const wasPreviouslyDismissedByUser = localStorage.getItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + currentBannerUniqueId) === 'true';
+          setIsGlobalBannerDismissed(wasPreviouslyDismissedByUser);
+          console.log(`Banner active by admin. Unique ID: "${currentBannerUniqueId}". Was dismissed by user: ${wasPreviouslyDismissedByUser}`);
+        } else {
+          // If the banner is NOT active according to the admin:
+          // It should never be considered "dismissed" by the user at this point.
+          // This clears any lingering dismissal status for this banner,
+          // ensuring it will show again if the admin re-activates it later.
+          setIsGlobalBannerDismissed(false);
+          console.log(`Banner inactive by admin. Clearing user dismissal state for this banner.`);
+          // Optionally, also remove from local storage to keep it clean, though not strictly necessary.
+          localStorage.removeItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + currentBannerUniqueId);
+        }
+        // Update the ref to track the unique ID of the banner just processed
+        lastProcessedBannerUniqueIdRef.current = currentBannerUniqueId;
+
       } catch (error) {
         console.error('Error fetching global banner:', error);
         setGlobalBanner(null);
+        // On error, we might want to also ensure it's not dismissed if it was active
+        setIsGlobalBannerDismissed(false); // Assume not dismissed on error loading
       }
     };
 
     fetchGlobalBanner();
-    // Fetch every minute to pick up changes from the admin panel
-    const interval = setInterval(fetchGlobalBanner, 60 * 1000); 
+    const interval = setInterval(fetchGlobalBanner, 60 * 1000); // Fetch every minute
     return () => clearInterval(interval);
-  }, []); // Empty dependency array, as banner content change is handled internally
+  }, []); // Empty dependency array, as the effect itself manages re-evaluation based on data.id/message
 
   // Effect for internal alerts visibility
   useEffect(() => {
@@ -100,11 +109,11 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   const handleGlobalBannerDismiss = useCallback(() => {
     setIsGlobalBannerDismissed(true);
-    // Persist dismissal to local storage
-    if (globalBanner && (globalBanner.id || globalBanner.message)) {
-      const currentBannerId = globalBanner.id || globalBanner.message;
-      localStorage.setItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + currentBannerId, 'true');
-      console.log('Banner dismissed and saved to local storage:', currentBannerId);
+    // Persist dismissal to local storage using the banner's unique ID
+    if (globalBanner) {
+      const uniqueId = globalBanner.id || globalBanner.message;
+      localStorage.setItem(LOCAL_STORAGE_DISMISS_KEY_PREFIX + uniqueId, 'true');
+      console.log('Banner dismissed and saved to local storage:', uniqueId);
     }
   }, [globalBanner]);
 
@@ -117,12 +126,13 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   // 1. Prioritize the global banner if active and not dismissed
   if (globalBanner && globalBanner.isActive && !isGlobalBannerDismissed) {
+    console.log('Rendering global banner:', globalBanner.message);
     const isCustom = globalBanner.type === 'custom';
     const bgColor = globalBanner.backgroundColor; 
     const textColor = globalBanner.textColor;
 
     let predefinedClass = '';
-    let defaultTextColorClass = 'text-white'; // Default for predefined types
+    let defaultTextColorClass = 'text-white'; 
 
     if (!isCustom) {
       if (globalBanner.type === 'info') {
@@ -135,8 +145,8 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
       }
     }
 
-    // Apply the correct text color class based on type
-    const finalTextColor = isCustom ? textColor : (defaultTextColorClass === 'text-gray-900' ? '#1a202c' : '#ffffff'); // Use specific hex for custom/tailwind fallback
+    // Apply the correct text color. Use specific hex for custom; default class or derived hex for predefined.
+    const finalTextColor = isCustom ? (textColor || '#ffffff') : (defaultTextColorClass === 'text-gray-900' ? '#1a202c' : '#ffffff');
 
     return (
       <div 
