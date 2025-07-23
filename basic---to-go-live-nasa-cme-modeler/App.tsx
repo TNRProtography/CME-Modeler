@@ -33,7 +33,7 @@ import SettingsModal from './components/SettingsModal';
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
   </svg>
 );
 
@@ -52,9 +52,8 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
-  // --- THIS IS THE ONLY LINE ADDED ---
-  // Set this to `true` to show the "site down" banner, `false` to hide it.
-  const [siteIsDown, setSiteIsDown] = useState(true);
+  // REMOVED: `siteIsDown` state, as this banner will now be controlled via the Worker
+  // const [siteIsDown, setSiteIsDown] = useState(true);
 
   // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -255,7 +254,7 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
-  // Logic for GlobalBanner conditions
+  // Logic for GlobalBanner conditions (for internal alerts)
   const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
   const flareClass = useMemo(() => {
     if (latestXrayFlux === null) return undefined;
@@ -277,6 +276,7 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* Global Alert Banner */}
+        {/* The `isSiteDownAlert` prop has been removed here */}
         <GlobalBanner
             isFlareAlert={isFlareAlert}
             flareClass={flareClass}
@@ -364,7 +364,7 @@ const App: React.FC = () => {
                         cmeData={filteredCmes}
                         activeView={activeView}
                         focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId} // Corrected casing here
+                        currentlyModeledCMEId={currentlyModeledCMEId}
                         onCMEClick={handleCMEClickFromCanvas}
                         timelineActive={timelineActive}
                         timelinePlaying={timelinePlaying}
