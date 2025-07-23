@@ -7,7 +7,8 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  sendTestNotification // Import the new test function
+  // We don't need sendTestNotification for now, but no harm in keeping the import
+  sendTestNotification 
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
@@ -15,6 +16,7 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+// These categories are no longer displayed, but we can keep the definition for when the feature is ready.
 const NOTIFICATION_CATEGORIES = [
   { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
   { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
@@ -34,6 +36,7 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  // We keep the state logic, even if the UI is hidden, so it doesn't break anything.
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -82,15 +85,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const isPWA = (window.navigator as any).standalone === true;
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
-
-  const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
-    setNotificationSettings(prev => ({ ...prev, [id]: checked }));
-    setNotificationPreference(id, checked);
-  }, []);
-
+  
   const handleRequestPermission = useCallback(async () => {
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
+  }, []);
+
+  // Other handlers are kept for when we re-enable the features.
+  const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
+    setNotificationSettings(prev => ({ ...prev, [id]: checked }));
+    setNotificationPreference(id, checked);
   }, []);
 
   const handleGpsToggle = useCallback((checked: boolean) => {
@@ -111,11 +115,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       console.error('Error during app installation:', error);
     }
   }, [deferredPrompt]);
-  
-  // Handler for the test notification button
-  const handleSendTestNotification = useCallback(() => {
-    sendTestNotification();
-  }, []);
 
   if (!isOpen) return null;
 
@@ -135,8 +134,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
         
-        {/* IMPORTANT: Added `flex-1` here to fix the scrolling issue */}
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6 flex-1">
+          {/* App Installation Section - Unchanged */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
             {isAppInstalled ? (
@@ -161,40 +160,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             )}
           </section>
 
+          {/* --- MODIFIED NOTIFICATION SECTION --- */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
+            {/* These permission states are still relevant */}
             {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser does not support web notifications.</p>}
-            {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings.</p></div>}
+            {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings to receive future alerts.</p></div>}
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
-                <p className="text-orange-300 mb-2">Notifications are not enabled. Click below to allow them.</p>
+                <p className="text-orange-300 mb-2">Enable notifications to be alerted of major space weather events.</p>
                 <button onClick={handleRequestPermission} className="px-3 py-1 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 text-xs">Enable Notifications</button>
               </div>
             )}
             
+            {/* If permission is granted, show the new "Coming Soon" message */}
             {notificationStatus === 'granted' && (
               <div className="space-y-4">
                 <p className="text-green-400 text-sm">Notifications are enabled.</p>
-                <h4 className="font-semibold text-neutral-400">Receive alerts for:</h4>
-                <div className="space-y-3">
-                  {NOTIFICATION_CATEGORIES.map(category => (
-                    <ToggleSwitch key={category.id} label={category.label} checked={notificationSettings[category.id] ?? true} onChange={(checked) => handleNotificationToggle(category.id, checked)} />
-                  ))}
-                </div>
                 
-                {/* NEW: Test Notification Button Section */}
-                <div className="pt-4 border-t border-neutral-800/60">
-                  <p className="text-sm text-neutral-400 mb-3">
-                    Click the button below to receive a sample alert to confirm your setup.
-                  </p>
-                  <button onClick={handleSendTestNotification} className="px-4 py-2 bg-neutral-700/50 border border-neutral-600/80 rounded-md text-neutral-300 hover:bg-neutral-600/50 transition-colors">
-                    Send Test Notification
-                  </button>
+                <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-4 text-center">
+                    <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
+                    <p className="text-sm text-neutral-400 mt-2">
+                        The ability to customize which alerts you receive is under development.
+                        For now, your device is ready to receive critical notifications once the feature is fully launched.
+                    </p>
                 </div>
               </div>
             )}
           </section>
 
+          {/* Location Settings Section - Unchanged */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
