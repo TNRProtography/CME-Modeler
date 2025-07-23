@@ -77,7 +77,7 @@ const formatNZTimestamp = (isoString: string | null) => {
     try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
 };
 
-// NEW: Helper for X-ray class string (e.g., "M1.5")
+// Helper for X-ray class string (e.g., "M1.5")
 const getXrayClass = (value: number | null): string => {
     if (value === null) return 'N/A';
     if (value >= 1e-4) return `X${(value / 1e-4).toFixed(1)}`;
@@ -87,7 +87,7 @@ const getXrayClass = (value: number | null): string => {
     return `A${(value / 1e-8).toFixed(1)}`;
 };
 
-// NEW: Helper for Proton class string (e.g., "S1")
+// Helper for Proton class string (e.g., "S1")
 const getProtonClass = (value: number | null): string => {
     if (value === null) return 'N/A';
     if (value >= 100000) return 'S5';
@@ -98,7 +98,7 @@ const getProtonClass = (value: number | null): string => {
     return 'S0';
 };
 
-// NEW: Helper for Overall Activity Status
+// Helper for Overall Activity Status
 const getOverallActivityStatus = (xrayClass: string, protonClass: string): 'Quiet' | 'Moderate' | 'High' | 'Very High' | 'N/A' => {
     if (xrayClass === 'N/A' && protonClass === 'N/A') return 'N/A';
 
@@ -158,7 +158,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-// NEW: Simple Loading Spinner Component for visual feedback
+// Simple Loading Spinner Component for visual feedback
 const LoadingSpinner: React.FC<{ message?: string | null }> = ({ message }) => (
     <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-neutral-400 italic">
         <svg className="animate-spin h-8 w-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -673,7 +673,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
                     </header>
                     <main className="grid grid-cols-12 gap-5">
-                        {/* NEW: Dashboard Overview/Summary Section (from brainstorming point 1) */}
+                        {/* Dashboard Overview/Summary Section */}
                         <div className="col-span-12 card bg-neutral-950/80 p-4 mb-4 flex flex-col sm:flex-row justify-between items-center text-sm">
                             <div className="flex-1 text-center sm:text-left mb-2 sm:mb-0">
                                 <h3 className="text-neutral-200 font-semibold mb-1">Current Status: <span className={`font-bold ${overallActivityStatus === 'Quiet' ? 'text-green-400' : overallActivityStatus === 'Moderate' ? 'text-yellow-400' : overallActivityStatus === 'High' ? 'text-orange-400' : 'text-red-500'}`}>{overallActivityStatus}</span></h3>
