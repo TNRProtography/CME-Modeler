@@ -26,9 +26,9 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
-// NEW: Settings Modal Import
+// Modal Imports
 import SettingsModal from './components/SettingsModal';
-
+import FirstVisitTutorial from './components/FirstVisitTutorial'; // Import the new tutorial
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -45,16 +45,14 @@ const CmeIcon: React.FC<{className?: string}> = ({ className }) => (
     </svg>
 );
 
-// Define the new media type for the viewer state
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
-const App: React.FC = () => {
-  // REMOVED: `siteIsDown` state, as this banner will now be controlled via the Worker
-  // const [siteIsDown, setSiteIsDown] = useState(true);
+const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 
+const App: React.FC = () => {
   // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
@@ -78,7 +76,8 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // NEW: State for settings modal
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
 
   // Display Options State
   const [showLabels, setShowLabels] = useState(true);
@@ -111,9 +110,19 @@ const App: React.FC = () => {
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
   useEffect(() => {
+    const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
+    if (!hasSeenTutorial) {
+      setIsFirstVisitTutorialOpen(true);
+    }
+
     if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
     }
+  }, []);
+  
+  const handleCloseFirstVisitTutorial = useCallback(() => {
+    localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
+    setIsFirstVisitTutorialOpen(false);
   }, []);
 
   const getClockElapsedTime = useCallback(() => {
@@ -254,8 +263,7 @@ const App: React.FC = () => {
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
-  // Logic for GlobalBanner conditions (for internal alerts)
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
+  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
   const flareClass = useMemo(() => {
     if (latestXrayFlux === null) return undefined;
     if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
@@ -268,15 +276,13 @@ const App: React.FC = () => {
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus !== null && 
     substormActivityStatus.text.includes('stretching') && 
-    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
+    !substormActivityStatus.text.includes('substorm signature detected'),
     [substormActivityStatus]
   );
 
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
-        {/* Global Alert Banner */}
-        {/* The `isSiteDownAlert` prop has been removed here */}
         <GlobalBanner
             isFlareAlert={isFlareAlert}
             flareClass={flareClass}
@@ -286,10 +292,10 @@ const App: React.FC = () => {
             substormText={substormActivityStatus?.text ?? undefined}
         />
 
-        {/* Unified Header Bar for Navigation */}
-        <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
+        <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
             <div className="flex items-center space-x-2">
                 <button 
+                id="nav-forecast"
                 onClick={() => setActivePage('forecast')}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-colors
                             ${activePage === 'forecast' 
@@ -300,6 +306,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">Aurora Forecast</span>
                 </button>
                 <button 
+                id="nav-solar-activity"
                 onClick={() => setActivePage('solar-activity')} 
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-colors
                             ${activePage === 'solar-activity' 
@@ -310,6 +317,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
                  <button 
+                id="nav-modeler"
                 onClick={() => setActivePage('modeler')}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-colors
                             ${activePage === 'modeler' 
@@ -320,9 +328,9 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
-            {/* NEW: Settings Button */}
             <div className="flex-grow flex justify-end">
                 <button 
+                    id="nav-settings"
                     onClick={() => setIsSettingsOpen(true)}
                     className="p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-colors hover:bg-neutral-700/90"
                     title="Open Settings"
@@ -332,9 +340,7 @@ const App: React.FC = () => {
             </div>
         </header>
 
-        {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
-            {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
                 <>
                     <div className={`
@@ -403,7 +409,6 @@ const App: React.FC = () => {
                             />
                         ))}
                         
-                        {/* Floating UI Controls Over Canvas */}
                         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                             <div className="flex items-center space-x-2 pointer-events-auto">
                                 <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
@@ -497,10 +502,14 @@ const App: React.FC = () => {
           onClose={() => setViewerMedia(null)}
         />
 
-        {/* NEW: Settings Modal */}
         <SettingsModal 
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
+        />
+        
+        <FirstVisitTutorial
+          isOpen={isFirstVisitTutorialOpen}
+          onClose={handleCloseFirstVisitTutorial}
         />
     </div>
   );
