@@ -1,6 +1,8 @@
 // --- START OF FILE App.tsx ---
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+// CHANGED: Import React as a namespace to explicitly reference hooks (React.useState, etc.)
+// This is a troubleshooting step for environments where named hook imports might be problematic.
+import * as React from 'react'; 
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
@@ -24,7 +26,7 @@ import ForecastModelsModal from './components/ForecastModelsModal';
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
-import GlobalBanner from './components/GlobalBanner'; // The component we've been working on
+import GlobalBanner from './components/GlobalBanner'; 
 
 // Settings Modal Import
 import SettingsModal from './components/SettingsModal';
@@ -53,82 +55,78 @@ type ViewerMedia =
 
 const App: React.FC = () => {
   // Page State for navigation
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
+  const [activePage, setActivePage] = React.useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
   // CME Modeler specific states
-  const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [dataVersion, setDataVersion] = useState<number>(0); // Used to force canvas refresh
+  const [cmeData, setCmeData] = React.useState<ProcessedCME[]>([]);
+  const [isLoading, setIsLoading] = React.useState<boolean>(true);
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
+  const [dataVersion, setDataVersion] = React.useState<number>(0); 
   
-  const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>(TimeRange.D3);
-  const [activeView, setActiveView] = useState<ViewMode>(ViewMode.TOP);
-  const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
+  const [activeTimeRange, setActiveTimeRange] = React.useState<TimeRange>(TimeRange.D3);
+  const [activeView, setActiveView] = React.useState<ViewMode>(ViewMode.TOP);
+  const [activeFocus, setActiveFocus] = React.useState<FocusTarget | null>(FocusTarget.EARTH);
+  const [interactionMode, setInteractionMode] = React.useState<InteractionMode>(InteractionMode.MOVE);
   
-  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
-  const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
+  const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = React.useState<string | null>(null);
+  const [selectedCMEForInfo, setSelectedCMEForInfo] = React.useState<ProcessedCME | null>(null);
 
   // UI/Modal State (for various modals and side panels)
-  const [isControlsOpen, setIsControlsOpen] = useState(false);
-  const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
-  const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null); // For media viewer modal
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // State for settings modal
+  const [isControlsOpen, setIsControlsOpen] = React.useState(false);
+  const [isCmeListOpen, setIsCmeListOpen] = React.useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = React.useState(false);
+  const [isForecastModelsOpen, setIsForecastModelsOpen] = React.useState(false);
+  const [viewerMedia, setViewerMedia] = React.useState<ViewerMedia | null>(null); 
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false); 
 
   // Display Options State (controlled by ControlsPanel)
-  const [showLabels, setShowLabels] = useState(true);
-  const [showExtraPlanets, setShowExtraPlanets] = useState(true);
-  const [showMoonL1, setShowMoonL1] = useState(false);
-  const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
+  const [showLabels, setShowLabels] = React.useState(true);
+  const [showExtraPlanets, setShowExtraPlanets] = React.useState(true);
+  const [showMoonL1, setShowMoonL1] = React.useState(false);
+  const [cmeFilter, setCmeFilter] = React.useState<CMEFilter>(CMEFilter.ALL);
 
   // Timeline State (for CME Modeler)
-  const [timelineActive, setTimelineActive] = useState<boolean>(false);
-  const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
-  const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
-  const [timelineSpeed, setTimelineSpeed] = useState<number>(1);
-  const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
-  const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
+  const [timelineActive, setTimelineActive] = React.useState<boolean>(false);
+  const [timelinePlaying, setTimelinePlaying] = React.useState<boolean>(false);
+  const [timelineScrubberValue, setTimelineScrubberValue] = React.useState<number>(0);
+  const [timelineSpeed, setTimelineSpeed] = React.useState<number>(1);
+  const [timelineMinDate, setTimelineMinDate] = React.useState<number>(0);
+  const [timelineMaxDate, setTimelineMaxDate] = React.useState<number>(0);
 
   // Three.js specific state (passed to SimulationCanvas)
-  const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
-  const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
-  const [threeCamera, setThreeCamera] = useState<any>(null);
+  const [planetLabelInfos, setPlanetLabelInfos] = React.useState<PlanetLabelInfo[]>([]);
+  const [rendererDomElement, setRendererDomElement] = React.useState<HTMLCanvasElement | null>(null);
+  const [threeCamera, setThreeCamera] = React.useState<any>(null);
 
-  // Refs for external libraries/components
-  const clockRef = useRef<any>(null);
-  const canvasRef = useRef<SimulationCanvasHandle>(null);
+  // Refs
+  const clockRef = React.useRef<any>(null);
+  const canvasRef = React.useRef<SimulationCanvasHandle>(null);
 
-  // NASA API Key (from environment variables)
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   
-  // States to pass to GlobalBanner for internal, app-specific alerts
-  const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
-  const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
-  const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
+  // Global Banner State for internal alerts
+  const [latestXrayFlux, setLatestXrayFlux] = React.useState<number | null>(null);
+  const [currentAuroraScore, setCurrentAuroraScore] = React.useState<number | null>(null);
+  const [substormActivityStatus, setSubstormActivityStatus] = React.useState<{ text: string; color: string } | null>(null);
 
-  // Initialize Three.js clock once
-  useEffect(() => {
+  React.useEffect(() => {
     if (!clockRef.current && window.THREE) {
-        clockRef.current = new window.THREE.Clock();
+        clockRef.current = new (window as any).THREE.Clock(); // Explicitly cast for window.THREE
     }
   }, []);
 
-  // Callbacks for clock management
-  const getClockElapsedTime = useCallback(() => {
+  const getClockElapsedTime = React.useCallback(() => {
     return clockRef.current ? clockRef.current.getElapsedTime() : 0;
   }, []);
   
-  const resetClock = useCallback(() => {
+  const resetClock = React.useCallback(() => {
     if (clockRef.current) {
         clockRef.current.stop();
         clockRef.current.start();
     }
   }, []);
 
-  // Function to load CME data from NASA service
-  const loadCMEData = useCallback(async (days: TimeRange) => {
+  const loadCMEData = React.useCallback(async (days: TimeRange) => {
     setIsLoading(true);
     setFetchError(null);
     setCurrentlyModeledCMEId(null);
@@ -137,7 +135,7 @@ const App: React.FC = () => {
     setTimelinePlaying(false);
     setTimelineScrubberValue(0);
     resetClock();
-    setDataVersion((v: number) => v + 1); // Increment to signal data change to canvas
+    setDataVersion((v: number) => v + 1);
 
     try {
       const data = await fetchCMEData(days, apiKey);
@@ -145,10 +143,10 @@ const App: React.FC = () => {
       if (data.length > 0) {
         const endDate = new Date();
         const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3); // Forecast 3 days into future
+        futureDate.setDate(endDate.getDate() + 3);
         const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - days); // Historical data based on time range
+        startDate.setDate(endDate.getDate() - days);
         setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
         setTimelineMaxDate(futureDate.getTime());
       } else {
@@ -168,125 +166,115 @@ const App: React.FC = () => {
     }
   }, [resetClock, apiKey]);
 
-  // Effect to load CME data when the modeler page is active or time range changes
-  useEffect(() => {
+  React.useEffect(() => {
     if (activePage === 'modeler') {
       loadCMEData(activeTimeRange);
     }
   }, [activeTimeRange, loadCMEData, activePage]);
 
-  // Memoized filtered CME data based on the selected filter
-  const filteredCmes = useMemo(() => {
+  const filteredCmes = React.useMemo(() => {
     if (cmeFilter === CMEFilter.ALL) return cmeData;
     return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected);
   }, [cmeData, cmeFilter]);
 
-  // Clear selected CME if it's no longer in the filtered list
-  useEffect(() => {
+  React.useEffect(() => {
     if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) {
       setCurrentlyModeledCMEId(null);
       setSelectedCMEForInfo(null);
     }
   }, [filteredCmes, currentlyModeledCMEId]);
 
-  // Handlers for controls panel
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
 
-  // Handler for resetting 3D view
-  const handleResetView = useCallback(() => {
+  const handleResetView = React.useCallback(() => {
     setActiveView(ViewMode.TOP);
     setActiveFocus(FocusTarget.EARTH);
-    canvasRef.current?.resetView(); // Call method on the SimulationCanvas ref
+    canvasRef.current?.resetView();
   }, []);
 
-  // Handlers for CME selection and timeline interaction
-  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
+  const handleSelectCMEForModeling = React.useCallback((cme: ProcessedCME | null) => {
     setCurrentlyModeledCMEId(cme ? cme.id : null);
     setSelectedCMEForInfo(cme);
     if (cme) {
-        setTimelineActive(false); // Stop timeline playback when a specific CME is selected
+        setTimelineActive(false);
         setTimelinePlaying(false);
     } else {
-        setInteractionMode(InteractionMode.MOVE); // Default back to move mode if no CME selected
+        setInteractionMode(InteractionMode.MOVE);
     }
-    setIsCmeListOpen(false); // Close CME list panel
+    setIsCmeListOpen(false);
   }, []);
 
-  const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
+  const handleCMEClickFromCanvas = React.useCallback((cme: ProcessedCME) => {
     setCurrentlyModeledCMEId(cme.id);
     setSelectedCMEForInfo(cme);
-    setTimelineActive(false); // Stop timeline playback if user clicks a CME on canvas
+    setTimelineActive(false);
     setTimelinePlaying(false);
-    setIsCmeListOpen(true); // Open CME list panel to show details
+    setIsCmeListOpen(true); 
   }, []);
 
-  const handleTimelinePlayPause = useCallback(() => {
-    if (filteredCmes.length === 0) return; // Only play if there's data
-    setTimelineActive(true); // Ensure timeline is active for scrubbing
-    setTimelinePlaying((prev: boolean) => !prev); // Toggle play/pause
-    setCurrentlyModeledCMEId(null); // Deselect any specific CME when playing timeline
-    setSelectedCMEForInfo(null);
-  }, [filteredCmes]);
-
-  const handleTimelineScrub = useCallback((value: number) => {
+  const handleTimelinePlayPause = React.useCallback(() => {
     if (filteredCmes.length === 0) return;
-    setTimelineActive(true); // Ensure timeline is active for scrubbing
-    setTimelinePlaying(false); // Pause playback during manual scrub
-    setTimelineScrubberValue(value);
-    setCurrentlyModeledCMEId(null); // Deselect any specific CME
+    setTimelineActive(true);
+    setTimelinePlaying((prev: boolean) => !prev);
+    setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes]);
 
-  const handleTimelineStep = useCallback((direction: -1 | 1) => {
+  const handleTimelineScrub = React.useCallback((value: number) => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying(false);
+    setTimelineScrubberValue(value);
+    setCurrentlyModeledCMEId(null);
+    setSelectedCMEForInfo(null);
+  }, [filteredCmes]);
+
+  const handleTimelineStep = React.useCallback((direction: -1 | 1) => {
     if (filteredCmes.length === 0) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     const timeRange = timelineMaxDate - timelineMinDate;
     if (timeRange > 0) {
-      const oneHourInMillis = 3600_000; // 1 hour in milliseconds
-      const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000; // Convert to 0-1000 scale
+      const oneHourInMillis = 3600_000;
+      const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000;
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep)));
     } else {
-      // Fallback for very short or invalid time ranges
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
     setCurrentlyModeledCMEId(null);
     setSelectedCMEForInfo(null);
   }, [filteredCmes, timelineMinDate, timelineMaxDate]);
 
-  const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
-  const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
-  const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
-  const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
-  const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun'); // Find Sun mesh for PlanetLabel
+  const handleTimelineSetSpeed = React.useCallback((speed: number) => setTimelineSpeed(speed), []);
+  const handleScrubberChangeByAnim = React.useCallback((value: number) => setTimelineScrubberValue(value), []);
+  const handleTimelineEnd = React.useCallback(() => setTimelinePlaying(false), []);
+  const handleSetPlanetMeshes = React.useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
+  const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
-  // Logic for internal GlobalBanner conditions (derived from real-time dashboard data)
-  // These props are passed to GlobalBanner, which then decides whether to display them
-  // based on if a global admin-set banner is active.
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
-  const flareClass = useMemo(() => {
+  // Logic for GlobalBanner conditions (for internal alerts)
+  const isFlareAlert = React.useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); 
+  const flareClass = React.useMemo(() => {
     if (latestXrayFlux === null) return undefined;
     if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
     if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`;
     return undefined;
   }, [latestXrayFlux]);
 
-  const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
+  const isAuroraAlert = React.useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
 
-  const isSubstormAlert = useMemo(() => 
+  const isSubstormAlert = React.useMemo(() => 
     substormActivityStatus !== null && 
     substormActivityStatus.text.includes('stretching') && 
-    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
+    !substormActivityStatus.text.includes('substorm signature detected'), 
     [substormActivityStatus]
   );
 
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
-        {/* Global Alert Banner Component */}
-        {/* This component handles fetching the admin-set banner internally */}
+        {/* Global Alert Banner */}
         <GlobalBanner
             isFlareAlert={isFlareAlert}
             flareClass={flareClass}
@@ -296,7 +284,7 @@ const App: React.FC = () => {
             substormText={substormActivityStatus?.text ?? undefined}
         />
 
-        {/* Unified Header Bar for Page Navigation */}
+        {/* Unified Header Bar for Navigation */}
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4">
             <div className="flex items-center space-x-2">
                 <button 
@@ -342,12 +330,11 @@ const App: React.FC = () => {
             </div>
         </header>
 
-        {/* Main Content Area (conditionally renders different dashboards/simulations) */}
+        {/* Main Content Area */}
         <div className="flex flex-grow min-h-0">
-            {/* CME Modeler Page Content */}
+            {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
-                <>
-                    {/* Controls Panel (left sidebar) */}
+                <React.Fragment>
                     <div className={`
                         flex-shrink-0 lg:p-5
                         lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs
@@ -369,65 +356,60 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    {/* Simulation Canvas (main area) */}
                     <main className="flex-1 relative min-w-0 h-full">
                         <SimulationCanvas
-                            ref={canvasRef}
-                            cmeData={filteredCmes}
-                            activeView={activeView}
-                            focusTarget={activeFocus}
-                            currentlyModeledCMEId={currentlyModeledCMEId}
-                            onCMEClick={handleCMEClickFromCanvas}
-                            timelineActive={timelineActive}
-                            timelinePlaying={timelinePlaying}
-                            timelineSpeed={timelineSpeed}
-                            timelineValue={timelineScrubberValue}
-                            timelineMinDate={timelineMinDate}
-                            timelineMaxDate={timelineMaxDate}
-                            setPlanetMeshesForLabels={handleSetPlanetMeshes}
-                            setRendererDomElement={setRendererDomElement}
-                            onCameraReady={setThreeCamera}
-                            getClockElapsedTime={getClockElapsedTime}
-                            resetClock={resetClock}
-                            onScrubberChangeByAnim={handleScrubberChangeByAnim}
-                            onTimelineEnd={handleTimelineEnd}
-                            showExtraPlanets={showExtraPlanets}
-                            showMoonL1={showMoonL1}
-                            dataVersion={dataVersion}
-                            interactionMode={interactionMode}
+                        ref={canvasRef}
+                        cmeData={filteredCmes}
+                        activeView={activeView}
+                        focusTarget={activeFocus}
+                        currentlyModeledCMEId={currentlyModeledCMEId}
+                        onCMEClick={handleCMEClickFromCanvas}
+                        timelineActive={timelineActive}
+                        timelinePlaying={timelinePlaying}
+                        timelineSpeed={timelineSpeed}
+                        timelineValue={timelineScrubberValue}
+                        timelineMinDate={timelineMinDate}
+                        timelineMaxDate={timelineMaxDate}
+                        setPlanetMeshesForLabels={handleSetPlanetMeshes}
+                        setRendererDomElement={setRendererDomElement}
+                        onCameraReady={setThreeCamera}
+                        getClockElapsedTime={getClockElapsedTime}
+                        resetClock={resetClock}
+                        onScrubberChangeByAnim={handleScrubberChangeByAnim}
+                        onTimelineEnd={handleTimelineEnd}
+                        showExtraPlanets={showExtraPlanets}
+                        showMoonL1={showMoonL1}
+                        dataVersion={dataVersion}
+                        interactionMode={interactionMode}
                         />
 
-                        {/* Planet Labels overlaid on canvas */}
                         {showLabels && rendererDomElement && threeCamera && planetLabelInfos
-                            .filter((info: PlanetLabelInfo) => {
-                                const name = info.name.toUpperCase();
-                                if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; 
-                                if (['MOON', 'L1'].includes(name)) return showMoonL1;
-                                return true;
-                            })
-                            .map((info: PlanetLabelInfo) => (
-                                <PlanetLabel 
-                                    key={info.id} 
-                                    planetMesh={info.mesh} 
-                                    camera={threeCamera}
-                                    rendererDomElement={rendererDomElement}
-                                    label={info.name} 
-                                    sunMesh={sunInfo ? sunInfo.mesh : null}
-                                />
+                        .filter((info: PlanetLabelInfo) => {
+                            const name = info.name.toUpperCase();
+                            if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; 
+                            if (['MOON', 'L1'].includes(name)) return showMoonL1;
+                            return true;
+                        })
+                        .map((info: PlanetLabelInfo) => (
+                            <PlanetLabel 
+                                key={info.id} 
+                                planetMesh={info.mesh} 
+                                camera={threeCamera}
+                                rendererDomElement={rendererDomElement}
+                                label={info.name} 
+                                sunMesh={sunInfo ? sunInfo.mesh : null}
+                            />
                         ))}
                         
-                        {/* Floating UI Controls Over Canvas (left/right aligned) */}
+                        {/* Floating UI Controls Over Canvas */}
                         <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                             <div className="flex items-center space-x-2 pointer-events-auto">
-                                {/* Button to open Controls Panel on small screens */}
                                 <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Controls">
                                     <SettingsIcon className="w-6 h-6" />
                                 </button>
-                                {/* Button to reset camera view */}
                                 <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
                                     <CmeIcon className="w-6 h-6" />
                                 </button>
-                                {/* Button to open Forecast Models Modal */}
                                 <button 
                                     onClick={() => setIsForecastModelsOpen(true)}
                                     className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
@@ -436,7 +418,6 @@ const App: React.FC = () => {
                                 </button>
                             </div>
                             <div className="flex items-center space-x-2 pointer-events-auto">
-                                {/* Button to toggle interaction mode (move/select) */}
                                 <button 
                                     onClick={() => setInteractionMode((prev: InteractionMode) => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} 
                                     className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"
@@ -444,25 +425,22 @@ const App: React.FC = () => {
                                 >
                                     {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />}
                                 </button>
-                                {/* Button to open CME List Panel on small screens */}
                                 <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform">
                                     <ListIcon className="w-6 h-6" />
                                 </button>
                             </div>
                         </div>
 
-                        {/* Timeline Controls */}
                         <TimelineControls
-                            isVisible={!isLoading && filteredCmes.length > 0}
-                            isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
-                            onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
-                            onStepFrame={handleTimelineStep}
-                            playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed}
-                            minDate={timelineMinDate} maxDate={timelineMaxDate}
+                        isVisible={!isLoading && filteredCmes.length > 0}
+                        isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause}
+                        onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue}
+                        onStepFrame={handleTimelineStep}
+                        playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed}
+                        minDate={timelineMinDate} maxDate={timelineMaxDate}
                         />
                     </main>
 
-                    {/* CME List Panel (right sidebar) */}
                     <div className={`
                         flex-shrink-0 lg:p-5
                         lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md
@@ -478,7 +456,6 @@ const App: React.FC = () => {
                         />
                     </div>
                     
-                    {/* Overlay for side panels on small screens */}
                     {(isControlsOpen || isCmeListOpen) && (
                         <div 
                             className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
@@ -486,7 +463,6 @@ const App: React.FC = () => {
                         />
                     )}
 
-                    {/* Full-screen loading overlay */}
                     {isLoading && <LoadingOverlay />}
                     <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
                     <ForecastModelsModal 
@@ -494,31 +470,26 @@ const App: React.FC = () => {
                       onClose={() => setIsForecastModelsOpen(false)} 
                       setViewerMedia={setViewerMedia}
                     />
-                </>
+                </React.Fragment>
             )}
 
-            {/* Forecast Dashboard Page Content */}
             {activePage === 'forecast' && (
                 <ForecastDashboard 
                   setViewerMedia={setViewerMedia}
-                  // These setters update state in App.tsx, which then feeds into GlobalBanner
                   setCurrentAuroraScore={setCurrentAuroraScore}
                   setSubstormActivityStatus={setSubstormActivityStatus}
                 />
             )}
 
-            {/* Solar Activity Dashboard Page Content */}
             {activePage === 'solar-activity' && (
                 <SolarActivityDashboard 
                   setViewerMedia={setViewerMedia} 
                   apiKey={apiKey}
-                  // This setter updates state in App.tsx, which then feeds into GlobalBanner
                   setLatestXrayFlux={setLatestXrayFlux}
                 />
             )}
         </div>
         
-        {/* Media Viewer Modal (for showing full-size images/videos) */}
         <MediaViewerModal 
           media={viewerMedia}
           onClose={() => setViewerMedia(null)}
