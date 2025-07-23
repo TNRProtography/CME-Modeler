@@ -127,6 +127,16 @@ export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NO
   return false;
 };
 
+/**
+ * **FIX:** RESTORED a missing function.
+ * Clears the cooldown for a specific notification tag.
+ * Useful if conditions change significantly and you want to allow immediate re-notification.
+ * @param tag The unique string identifier for the notification type.
+ */
+export const clearNotificationCooldown = (tag: string) => {
+  notificationCooldowns.delete(tag);
+};
+
 
 // --- Web Push Subscription Logic (More Advanced) ---
 // This part remains unchanged from what you provided, as it's for server-side push.
