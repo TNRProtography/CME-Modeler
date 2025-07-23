@@ -131,7 +131,7 @@ export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NO
 // --- Web Push Subscription Logic (More Advanced) ---
 // This part remains unchanged from what you provided, as it's for server-side push.
 
-const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE'; // <-- REPLACE THIS!
+const VAPID_PUBLIC_KEY = 'BJFhRHKlybzXdM37Hz0Tv0chiN0mkTP9YuUe_-RWWJJnkWs-Xt1asrQ99OYf5QiUAD77hyZTxrrh0S5768lhVms'; // <-- REPLACE THIS!
 
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
