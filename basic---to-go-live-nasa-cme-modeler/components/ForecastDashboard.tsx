@@ -1,6 +1,6 @@
 // --- START OF FILE ForecastDashboard.tsx ---
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // <-- THIS LINE IS FIXED
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
@@ -1234,4 +1234,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE ForecastDashboard.tsx 
+// --- END OF FILE ForecastDashboard.tsx
