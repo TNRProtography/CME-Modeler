@@ -27,7 +27,7 @@ interface CustomNotificationOptions extends NotificationOptions {
     tag?: string; // Custom tag for grouping/replacing notifications
 }
 
-// Function to send a notification
+// Function to send a notification (This is for *in-app* notifications, not push)
 export const sendNotification = (title: string, body: string, options?: CustomNotificationOptions) => {
   // Ensure notifications are supported and permission is granted
   if (!('Notification' in window)) {
@@ -36,6 +36,8 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
   }
 
   // Check if the specific notification category is enabled by the user
+  // This preference is local and won't affect server-sent push notifications directly
+  // unless you also send it to your backend for filtering there.
   if (options?.tag && !getNotificationPreference(options.tag)) {
     console.log(`Notification for category '${options.tag}' is disabled by user preference.`);
     return;
@@ -50,12 +52,117 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
       ...options, // Allow overriding default options
     };
 
-    new Notification(title, notificationOptions);
-    console.log('Notification sent:', title, body);
+    new Notification(title, notificationOptions); // This is the Web Notification API
+    console.log('Notification sent (in-app):', title, body);
   } else {
-    console.warn('Notification not sent. Permission:', Notification.permission);
+    console.warn('Notification not sent (in-app). Permission:', Notification.permission);
   }
 };
+
+// --- New: Web Push Subscription Logic ---
+
+// You need to generate these VAPID keys on your backend server.
+// For example, using the 'web-push' library in Node.js:
+// webpush.generateVAPIDKeys();
+// Store these securely on your server.
+// The public key goes here (replace with your actual public key).
+const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE'; // <-- REPLACE THIS!
+
+/**
+ * Helper function to convert a Base64 URL-safe string to a Uint8Array.
+ * Required for PushManager.subscribe's applicationServerKey option.
+ */
+const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+};
+
+/**
+ * Subscribes the user to Web Push Notifications.
+ * This should be called after notification permission is granted, ideally from a user interaction.
+ * @returns The PushSubscription object if successful, or null.
+ */
+export const subscribeUserToPush = async (): Promise<PushSubscription | null> => {
+  // Check for service worker and push manager support
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.warn('Service Workers or Push Messaging are not supported by this browser.');
+    return null;
+  }
+
+  // Ensure notification permission is granted
+  const permission = await requestNotificationPermission();
+  if (permission !== 'granted') {
+    console.warn('Notification permission not granted. Cannot subscribe to push.');
+    return null;
+  }
+
+  try {
+    // Get the service worker registration
+    const registration = await navigator.serviceWorker.ready;
+
+    // Check if there's an existing subscription
+    const existingSubscription = await registration.pushManager.getSubscription();
+    if (existingSubscription) {
+      console.log('User already has a push subscription:', existingSubscription);
+      // Optionally, you might want to send this subscription to your backend again
+      // to ensure your server has the latest one.
+      // sendPushSubscriptionToServer(existingSubscription);
+      return existingSubscription;
+    }
+
+    // Subscribe to push notifications
+    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    const options = { userVisibleOnly: true, applicationServerKey: applicationServerKey };
+    const subscription = await registration.pushManager.subscribe(options);
+
+    console.log('Successfully subscribed to push:', subscription);
+    // TODO: Send this subscription object to your backend server.
+    // Your backend will store this unique subscription for this user
+    // and use it to send push messages later.
+    await sendPushSubscriptionToServer(subscription); // See function below
+    return subscription;
+
+  } catch (error) {
+    console.error('Failed to subscribe the user to push:', error);
+    if (Notification.permission === 'denied') {
+        console.warn('User denied push permission or blocked notifications.');
+    }
+    return null;
+  }
+};
+
+/**
+ * Sends the PushSubscription object to your backend server.
+ * Replace with your actual API endpoint.
+ */
+const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
+  try {
+    const response = await fetch('/api/save-push-subscription', { // <-- REPLACE WITH YOUR BACKEND ENDPOINT
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(subscription),
+    });
+
+    if (response.ok) {
+      console.log('Push subscription sent to server successfully.');
+    } else {
+      console.error('Failed to send push subscription to server:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Error sending push subscription to server:', error);
+  }
+};
+
 
 // --- Cooldown Mechanism to Prevent Notification Spam ---
 const notificationCooldowns: Map<string, number> = new Map(); // Stores last notification timestamp for each tag
