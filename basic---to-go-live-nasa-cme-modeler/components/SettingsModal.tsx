@@ -1,28 +1,26 @@
-// --- START OF FILE src/components/SettingsModal.tsx ---
-// (Identical to the one provided in the previous detailed response, should be correct)
-// ... (Paste the entire SettingsModal.tsx content from the previous long response here)
+// --- START OF FILE SettingsModal.tsx ---
+
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch'; // Re-use the existing ToggleSwitch
-import {
-  getNotificationPreference,
+import { 
+  getNotificationPreference, 
   setNotificationPreference,
-  requestNotificationPermission,
-  sendNotification, // Import the in-app notification function
-  subscribeUserToPush // Import the push subscription function
-} from '../utils/notifications'; // Adjust path if necessary
+  requestNotificationPermission 
+} from '../utils/notifications.ts'; // Import notification utilities
 
 interface SettingsModalProps {
-  isOpen: boolean; // This prop from App.tsx controls if the modal is visible
-  onClose: () => void; // This prop from App.tsx is called to close the modal
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 // Define categories for notifications. These should match the tags used in sendNotification.
+// UPDATED: M-class flare categories
 const NOTIFICATION_CATEGORIES = [
   { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
   { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
-  { id: 'flare-M1', label: 'Solar Flare M-Class (≥ M1.0)' },
-  { id: 'flare-M5', label: 'Solar Flare M5-Class (≥ M5.0)' },
+  { id: 'flare-M1', label: 'Solar Flare M-Class (≥ M1.0)' }, // Changed to M1+
+  { id: 'flare-M5', label: 'Solar Flare M5-Class (≥ M5.0)' }, // NEW: M5+
   { id: 'flare-X1', label: 'Solar Flare X-Class (≥ X1.0)' },
   { id: 'substorm-eruption', label: 'Substorm Eruption Detected' },
 ];
@@ -39,72 +37,71 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
+  // State for location preference
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
+  // NEW: State for PWA install
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
 
-  const updateNotificationAndPushStatus = useCallback(async () => {
-    if (!('Notification' in window)) {
-      setNotificationStatus('unsupported');
-      return;
-    }
-
-    const status = Notification.permission;
-    setNotificationStatus(status);
-
-    if (status === 'granted' && 'serviceWorker' in navigator && 'PushManager' in window) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        setIsPushSubscribed(!!subscription);
-      } catch (error) {
-        console.error('Error checking push subscription:', error);
-        setIsPushSubscribed(false);
-      }
-    } else {
-      setIsPushSubscribed(false);
-    }
-  }, []);
-
   useEffect(() => {
-    if (isOpen) { // Only run this effect when modal is opening
-      updateNotificationAndPushStatus();
+    if (isOpen) {
+      // Check current notification permission status
+      if (!('Notification' in window)) {
+        setNotificationStatus('unsupported');
+      } else {
+        setNotificationStatus(Notification.permission);
+      }
+
+      // Load saved notification preferences
       const loadedNotificationSettings: Record<string, boolean> = {};
       NOTIFICATION_CATEGORIES.forEach(category => {
         loadedNotificationSettings[category.id] = getNotificationPreference(category.id);
       });
       setNotificationSettings(loadedNotificationSettings);
+
+      // Load saved location preference
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
+
+      // Check if app is already installed
       checkAppInstallationStatus();
     }
-  }, [isOpen, updateNotificationAndPushStatus, checkAppInstallationStatus]);
+  }, [isOpen]);
 
+  // NEW: Setup PWA install event listeners
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
+      // Store the event so it can be triggered later
       setDeferredPrompt(e);
       setIsAppInstallable(true);
     };
+
     const handleAppInstalled = () => {
       setIsAppInstalled(true);
       setIsAppInstallable(false);
       setDeferredPrompt(null);
     };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
+  // NEW: Check if app is already installed
   const checkAppInstallationStatus = useCallback(() => {
+    // Check if running in standalone mode (already installed)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    const isPWA = (window.navigator as any).standalone === true; // Safari-specific check
+    // Check if running as PWA on mobile
+    const isPWA = window.navigator.standalone === true;
+    
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
 
@@ -113,34 +110,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setNotificationPreference(id, checked);
   }, []);
 
-  const handleRequestAndSubscribe = useCallback(async () => {
+  const handleRequestPermission = useCallback(async () => {
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
-    if (permission === 'granted') {
-      const subscription = await subscribeUserToPush();
-      setIsPushSubscribed(!!subscription);
-      alert('Notifications enabled and subscribed! (Check console for details)');
-      sendNotification('Welcome!', 'You will now receive solar dashboard alerts.', { tag: 'welcome' });
-    } else {
-      alert(`Permission ${permission}. Cannot enable notifications.`);
-    }
-  }, []); // Dependencies are handled by updateNotificationAndPushStatus for state updates
+  }, []);
 
+  // Handler for location toggle
   const handleGpsToggle = useCallback((checked: boolean) => {
     setUseGpsAutoDetect(checked);
     localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(checked));
   }, []);
 
+  // NEW: Handle app installation
   const handleInstallApp = useCallback(async () => {
     if (!deferredPrompt) return;
+
     try {
+      // Show the install prompt
       deferredPrompt.prompt();
+      
+      // Wait for the user to respond to the prompt
       const { outcome } = await deferredPrompt.userChoice;
+      
       if (outcome === 'accepted') {
         console.log('User accepted the install prompt');
       } else {
         console.log('User dismissed the install prompt');
       }
+      
+      // Clear the deferredPrompt since it can only be used once
       setDeferredPrompt(null);
       setIsAppInstallable(false);
     } catch (error) {
@@ -148,69 +146,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   }, [deferredPrompt]);
 
-  const handleSendTestNotification = useCallback(async () => {
-    if (notificationStatus === 'granted') {
-      sendNotification('Test Notification', 'This is an in-app test notification.', { tag: 'test-in-app' });
-    } else {
-      console.warn('Notification permission not granted for in-app test.');
-    }
-
-    if (isPushSubscribed) {
-      alert('Attempting to send push from worker. Check your device!');
-      try {
-        const workerUrl = 'https://solar-dashboard-push-worker.<YOUR_SUBDOMAIN>.workers.dev/api/send-notification'; // REPLACE THIS
-        const headers: HeadersInit = { 'Content-Type': 'application/json' };
-        // If your worker requires an API key:
-        // headers['Authorization'] = 'Bearer YOUR_VERY_SECRET_API_KEY_HERE';
-
-        const response = await fetch(workerUrl, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify({
-            title: 'Solar Test Push!',
-            body: 'This is a test notification from your Cloudflare Worker. It should appear even if the app is closed!',
-            tag: 'test-push',
-            url: '/'
-          })
-        });
-        if (response.ok) {
-          console.log('Test push trigger successful (via worker).');
-        } else {
-          const errorText = await response.text();
-          console.error('Test push trigger failed (via worker):', response.status, errorText);
-          alert(`Failed to trigger push from worker (${response.status}): ${errorText}`);
-        }
-      } catch (err: any) {
-        console.error('Error triggering test push (via worker):', err);
-        alert('Error triggering push from worker: ' + err.message);
-      }
-    } else {
-      console.log('Not subscribed to push. Only an in-app notification was sent (if permission granted).');
-      if (notificationStatus === 'granted') {
-        alert('You are not subscribed to push notifications. Only an in-app notification was sent.');
-      }
-    }
-  }, [notificationStatus, isPushSubscribed]);
-
-
-  // THIS IS THE CRITICAL LINE THAT CONTROLS MODAL VISIBILITY:
-  // If `isOpen` is false (meaning the modal should be closed), the component renders nothing (`null`).
-  // This prevents it from taking up space or being visible when not needed.
   if (!isOpen) return null;
 
   return (
-    // This is the outermost div. It creates the fixed, full-screen overlay (backdrop)
-    // that appears behind the modal content and captures clicks to close the modal.
-    <div
+    <div 
       className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
-      onClick={onClose} // Clicking on the translucent backdrop will close the modal
+      onClick={onClose}
     >
-      {/* This is the inner div. It contains the actual modal content (the white box).
-          Its `stopPropagation` prevents clicks on the modal content from bubbling up
-          to the backdrop and closing the modal unintentionally. */}
-      <div
+      <div 
         className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-neutral-300 flex flex-col"
-        onClick={e => e.stopPropagation()} // Crucial: Prevents clicks inside the modal from closing it
+        onClick={e => e.stopPropagation()} // Prevent click from closing modal
       >
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
           <h2 className={`text-2xl font-bold text-neutral-200`}>App Settings</h2>
@@ -218,9 +163,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <CloseIcon className="w-6 h-6" />
           </button>
         </div>
-
+        
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6">
-          {/* App Installation Section */}
+          {/* NEW: App Installation Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
             {isAppInstalled ? (
@@ -263,8 +208,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {notificationStatus === 'denied' && (
               <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm">
                 <p className="text-red-300 mb-2">Notification permission denied. Please enable notifications for this site in your browser settings to receive alerts.</p>
-                <button
-                  onClick={handleRequestAndSubscribe}
+                <button 
+                  onClick={handleRequestPermission} 
                   className="px-3 py-1 bg-red-600/50 border border-red-500 rounded-md text-white hover:bg-red-500/50 text-xs"
                 >
                   Re-request Permission
@@ -274,8 +219,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
                 <p className="text-orange-300 mb-2">Notifications are not enabled. Click below to allow them.</p>
-                <button
-                  onClick={handleRequestAndSubscribe}
+                <button 
+                  onClick={handleRequestPermission} 
                   className="px-3 py-1 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 text-xs"
                 >
                   Enable Notifications
@@ -293,26 +238,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <ToggleSwitch
                     key={category.id}
                     label={category.label}
-                    checked={notificationSettings[category.id] ?? true}
+                    checked={notificationSettings[category.id] ?? true} // Default to true if not set
                     onChange={(checked) => handleNotificationToggle(category.id, checked)}
                   />
                 ))}
-
-                {/* Container for Test Notification Button and its status text */}
-                <div className="space-y-1">
-                  <button
-                    onClick={handleSendTestNotification}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600/20 border border-purple-500/50 rounded-md text-purple-300 hover:bg-purple-500/30 hover:border-purple-400 transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17l-3 3m0 0l-3-3m3 3V3"></path></svg>
-                    <span>Send Test Notification</span>
-                  </button>
-                  {isPushSubscribed ? (
-                    <p className="text-xs text-center text-green-500">Push notifications are active. Test button will send a push.</p>
-                  ) : (
-                    <p className="text-xs text-center text-yellow-500">You are not subscribed to push. Test button will only send an in-app notification.</p>
-                  )}
-                </div>
               </div>
             )}
           </section>
@@ -336,4 +265,4 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 };
 
 export default SettingsModal;
-// --- END OF FILE src/components/SettingsModal.tsx ---
+// --- END OF FILE SettingsModal.tsx ---

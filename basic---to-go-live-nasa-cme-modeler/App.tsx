@@ -1,4 +1,4 @@
-// --- START OF FILE src/App.tsx ---
+// --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
@@ -26,7 +26,7 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
-// Settings Modal Import
+// NEW: Settings Modal Import
 import SettingsModal from './components/SettingsModal';
 
 
@@ -52,14 +52,15 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const App: React.FC = () => {
-  // REMOVED: areLibsLoaded state is no longer needed here.
-  
+  // REMOVED: `siteIsDown` state, as this banner will now be controlled via the Worker
+  // const [siteIsDown, setSiteIsDown] = useState(true);
+
   // Page State
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   
   // CME Modeler State
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true); // For API data loading
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
   
@@ -77,7 +78,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // NEW: State for settings modal
 
   // Display Options State
   const [showLabels, setShowLabels] = useState(true);
@@ -99,7 +100,7 @@ const App: React.FC = () => {
   const [threeCamera, setThreeCamera] = useState<any>(null);
 
   // Refs
-  const clockRef = useRef<any>(null); // For THREE.Clock
+  const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
 
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
@@ -109,9 +110,8 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
 
-  // Initialize clock once, now that we know THREE is loaded before App renders.
   useEffect(() => {
-    if (!clockRef.current) {
+    if (!clockRef.current && window.THREE) {
         clockRef.current = new window.THREE.Clock();
     }
   }, []);
@@ -255,7 +255,7 @@ const App: React.FC = () => {
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
 
   // Logic for GlobalBanner conditions (for internal alerts)
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
+  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]); // M-class (1e-5) or X-class (1e-4) and above
   const flareClass = useMemo(() => {
     if (latestXrayFlux === null) return undefined;
     if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`;
@@ -268,7 +268,7 @@ const App: React.FC = () => {
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus !== null && 
     substormActivityStatus.text.includes('stretching') && 
-    !substormActivityStatus.text.includes('substorm signature detected'),
+    !substormActivityStatus.text.includes('substorm signature detected'), // Ensure it's the "about to happen" phase
     [substormActivityStatus]
   );
 
@@ -276,6 +276,7 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         {/* Global Alert Banner */}
+        {/* The `isSiteDownAlert` prop has been removed here */}
         <GlobalBanner
             isFlareAlert={isFlareAlert}
             flareClass={flareClass}
@@ -319,7 +320,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
                 </button>
             </div>
-            {/* Settings Button */}
+            {/* NEW: Settings Button */}
             <div className="flex-grow flex justify-end">
                 <button 
                     onClick={() => setIsSettingsOpen(true)}
@@ -335,7 +336,6 @@ const App: React.FC = () => {
         <div className="flex flex-grow min-h-0">
             {/* Conditional Rendering for Main Content */}
             {activePage === 'modeler' && (
-                // The modeler page now renders directly, as index.tsx ensures libs are loaded.
                 <>
                     <div className={`
                         flex-shrink-0 lg:p-5
@@ -348,7 +348,7 @@ const App: React.FC = () => {
                             activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange}
                             activeView={activeView} onViewChange={handleViewChange}
                             activeFocus={activeFocus} onFocusChange={handleFocusChange}
-                            isLoading={isLoading} // This isLoading is for API data
+                            isLoading={isLoading}
                             onClose={() => setIsControlsOpen(false)}
                             onOpenGuide={() => setIsTutorialOpen(true)}
                             showLabels={showLabels} onShowLabelsChange={setShowLabels}
@@ -466,6 +466,12 @@ const App: React.FC = () => {
                     )}
 
                     {isLoading && <LoadingOverlay />}
+                    <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+                    <ForecastModelsModal 
+                      isOpen={isForecastModelsOpen} 
+                      onClose={() => setIsForecastModelsOpen(false)} 
+                      setViewerMedia={setViewerMedia}
+                    />
                 </>
             )}
 
@@ -491,7 +497,7 @@ const App: React.FC = () => {
           onClose={() => setViewerMedia(null)}
         />
 
-        {/* Settings Modal */}
+        {/* NEW: Settings Modal */}
         <SettingsModal 
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
@@ -501,4 +507,4 @@ const App: React.FC = () => {
 };
 
 export default App;
-// --- END OF FILE src/App.tsx ---
+// --- END OF FILE App.tsx ---

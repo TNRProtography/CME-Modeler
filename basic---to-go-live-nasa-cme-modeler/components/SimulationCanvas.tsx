@@ -1,6 +1,3 @@
-// --- START OF FILE src/components/SimulationCanvas.tsx ---
-// (Identical to the one provided in the previous detailed response, should be correct)
-// ... (Paste the entire SimulationCanvas.tsx content from the previous long response here)
 import React, { useRef, useEffect, useCallback } from 'react';
 import { ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData, InteractionMode, SimulationCanvasHandle } from '../types';
 import {
@@ -13,14 +10,10 @@ import {
 // Cache for the particle texture to avoid recreating it
 let particleTextureCache: any = null;
 
-// Helper functions: These functions are outside the component.
-// They must check for window.THREE or receive it as an argument.
-const createParticleTexture = (THREE_LIB: any) => { // Accept THREE as an argument
+// Creates a soft, radial gradient texture for the particles
+const createParticleTexture = (THREE: any) => {
     if (particleTextureCache) return particleTextureCache;
-    if (!THREE_LIB || typeof document === 'undefined') {
-      console.error("createParticleTexture called without THREE_LIB or in non-browser env.");
-      return null;
-    }
+    if (!THREE || typeof document === 'undefined') return null;
 
     const canvas = document.createElement('canvas');
     canvas.width = 128;
@@ -36,64 +29,80 @@ const createParticleTexture = (THREE_LIB: any) => { // Accept THREE as an argume
     context.fillStyle = gradient;
     context.fillRect(0, 0, 128, 128);
 
-    particleTextureCache = new THREE_LIB.CanvasTexture(canvas);
+    particleTextureCache = new THREE.CanvasTexture(canvas);
     return particleTextureCache;
 };
 
-// Functions that directly use window.THREE must check it every time they are called.
+// Calculates CME opacity based on speed (km/s)
 const getCmeOpacity = (speed: number): number => {
-    if (!window.THREE) { console.warn("getCmeOpacity: window.THREE is not defined."); return 0.1; }
-    const THREE_LIB = window.THREE;
+    const THREE = window.THREE;
+    if (!THREE) return 0.1; // Default opacity if THREE is not loaded
+
     const minSpeed = 300;
     const maxSpeed = 3000;
     const minOpacity = 0.01;
     const maxOpacity = 0.60;
-    const clampedSpeed = THREE_LIB.MathUtils.clamp(speed, minSpeed, maxSpeed);
-    return THREE_LIB.MathUtils.mapLinear(clampedSpeed, minSpeed, maxSpeed, minOpacity, maxOpacity);
+
+    // Clamp speed to the defined range before mapping
+    const clampedSpeed = THREE.MathUtils.clamp(speed, minSpeed, maxSpeed);
+
+    // Map the clamped speed to the opacity range
+    return THREE.MathUtils.mapLinear(clampedSpeed, minSpeed, maxSpeed, minOpacity, maxOpacity);
 };
 
+// Calculates CME particle count based on speed (km/s)
 const getCmeParticleCount = (speed: number): number => {
-    if (!window.THREE) { console.warn("getCmeParticleCount: window.THREE is not defined."); return 4000; }
-    const THREE_LIB = window.THREE;
+    const THREE = window.THREE;
+    if (!THREE) return 4000; // Default if THREE isn't loaded
+
     const minSpeed = 300;
     const maxSpeed = 3000;
     const minParticles = 1500;
     const maxParticles = 7000;
-    const clampedSpeed = THREE_LIB.MathUtils.clamp(speed, minSpeed, maxSpeed);
-    const particleCount = THREE_LIB.MathUtils.mapLinear(clampedSpeed, minSpeed, maxSpeed, minParticles, maxParticles);
+
+    const clampedSpeed = THREE.MathUtils.clamp(speed, minSpeed, maxSpeed);
+    const particleCount = THREE.MathUtils.mapLinear(clampedSpeed, minSpeed, maxSpeed, minParticles, maxParticles);
+    
     return Math.floor(particleCount);
 };
 
+// Calculates CME particle size based on speed (km/s)
 const getCmeParticleSize = (speed: number, scale: number): number => {
-    if (!window.THREE) { console.warn("getCmeParticleSize: window.THREE is not defined."); return 0.05 * scale; }
-    const THREE_LIB = window.THREE;
+    const THREE = window.THREE;
+    if (!THREE) return 0.05 * scale; // Default size
+
     const minSpeed = 300;
     const maxSpeed = 3000;
     const minSize = 0.04 * scale;
     const maxSize = 0.08 * scale;
-    const clampedSpeed = THREE_LIB.MathUtils.clamp(speed, minSpeed, maxSpeed);
-    return THREE_LIB.MathUtils.mapLinear(clampedSpeed, minSpeed, maxSpeed, minSize, maxSize);
+
+    const clampedSpeed = THREE.MathUtils.clamp(speed, minSpeed, maxSpeed);
+    
+    return THREE.MathUtils.mapLinear(clampedSpeed, minSpeed, maxSpeed, minSize, maxSize);
 };
 
+// Determines the core color of the CME based on its speed
 const getCmeCoreColor = (speed: number): any /* THREE.Color */ => {
-    if (!window.THREE) { console.warn("getCmeCoreColor: window.THREE is not defined."); return new (class { constructor(hex: any) {} setHex() { return this; } })(0xffffff); }
-    const THREE_LIB = window.THREE;
+    const THREE = window.THREE;
+    if (!THREE) return new (class { constructor(hex: any) {} setHex() { return this; } })(0xffffff); // Default color
+
     if (speed >= 2500) {
-        return new THREE_LIB.Color(0xff69b4); // Hot Pink
+        return new THREE.Color(0xff69b4); // Hot Pink
     } else if (speed >= 1800) {
-        return new THREE_LIB.Color(0x9370db); // Medium Purple
+        return new THREE.Color(0x9370db); // Medium Purple
     } else if (speed >= 1000) {
-        return new THREE_LIB.Color(0xff4500); // OrangeRed
+        return new THREE.Color(0xff4500); // OrangeRed
     } else if (speed >= 800) {
-        return new THREE_LIB.Color(0xffa500); // Orange
+        return new THREE.Color(0xffa500); // Orange
     } else if (speed >= 500) {
-        return new THREE_LIB.Color(0xffff00); // Yellow
+        return new THREE.Color(0xffff00); // Yellow
     } else if (speed < 350) {
-        return new THREE_LIB.Color(0x808080); // Grey
+        return new THREE.Color(0x808080); // Grey
     } else {
-        const grey = new THREE_LIB.Color(0x808080);
-        const yellow = new THREE_LIB.Color(0xffff00);
-        const t = THREE_LIB.MathUtils.mapLinear(speed, 350, 500, 0, 1);
+        // Linear interpolation for speeds between 350 and 500 for a smooth transition
+        const grey = new THREE.Color(0x808080);
+        const yellow = new THREE.Color(0xffff00);
+        const t = THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1);
         return grey.lerp(yellow, t);
     }
 };
@@ -176,15 +185,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     interactionRef.current = { onCMEClick, interactionMode };
   }, [onCMEClick, interactionMode]);
 
-  // Removed: const THREE = window.THREE; // Access THREE from global scope
-  // Removed: const gsap = window.gsap; // Access GSAP from global scope
+
+  const THREE = window.THREE; // Access THREE from global scope
+  const gsap = window.gsap; // Access GSAP from global scope
   
   useEffect(() => {
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
   const calculateDistance = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number, useDeceleration: boolean): number => {
-    // No direct THREE or GSAP usage here
     const speed_km_per_sec = cme.speed;
     const speed_AU_per_sec = speed_km_per_sec / AU_IN_KM;
 
@@ -209,8 +218,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
 
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
-    if (!window.THREE) return; // Check for window.THREE directly
-    const THREE_LIB = window.THREE; // Use a local alias for clarity
+    if (!THREE) return;
     
     const sunRadius = PLANET_DATA_MAP.SUN.size;
 
@@ -226,7 +234,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const cmeLength = distTraveledInSceneUnits - sunRadius;
 
     // The CME's local +Y is its direction of travel. Get this direction in world space.
-    const direction = new THREE_LIB.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+    const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
 
     // Position the tip of the particle cone at the Sun's surface.
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
@@ -235,45 +243,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // Scale the unit cone to its current length. The width also scales with length to maintain the cone shape.
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
 
-  }, []);
+  }, [THREE]);
+
 
   // Initialize Scene
   useEffect(() => {
-    if (!mountRef.current) return; // Must have mount point first
-    // Check for THREE and GSAP *before* using them
-    if (!window.THREE || !window.gsap) {
-        console.warn('THREE.js or GSAP not globally available yet. Delaying SimulationCanvas initialization.');
-        return;
-    }
-    const THREE_LIB = window.THREE; // Use a local alias for clarity
-    const GSAP_LIB = window.gsap; // Use a local alias for clarity
-
+    if (!mountRef.current || !THREE) return;
     if (rendererRef.current) return; // Already initialized
 
     resetClock();
     lastTimeRef.current = getClockElapsedTime();
 
 
-    const scene = new THREE_LIB.Scene();
+    const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    const camera = new THREE_LIB.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 100 * SCENE_SCALE);
+    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 100 * SCENE_SCALE);
     cameraRef.current = camera;
     onCameraReady(camera); // Pass camera up to App
    
-    const renderer = new THREE_LIB.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
     setRendererDomElement(renderer.domElement);
 
-    const ambientLight = new THREE_LIB.AmbientLight(0xffffff, 0.5); 
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); 
     scene.add(ambientLight);
-    const pointLight = new THREE_LIB.PointLight(0xffffff, 2.5, 200 * SCENE_SCALE); 
+    const pointLight = new THREE.PointLight(0xffffff, 2.5, 200 * SCENE_SCALE); 
     scene.add(pointLight);
 
-    const controls = new THREE_LIB.OrbitControls(camera, renderer.domElement);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.screenSpacePanning = false;
@@ -281,28 +282,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     controls.maxDistance = 50 * SCENE_SCALE;
     controlsRef.current = controls;
 
-    cmeGroupRef.current = new THREE_LIB.Group();
+    cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
     const starVertices = [];
     for (let i = 0; i < 15000; i++) { 
-      starVertices.push(THREE_LIB.MathUtils.randFloatSpread(300 * SCENE_SCALE)); 
-      starVertices.push(THREE_LIB.MathUtils.randFloatSpread(300 * SCENE_SCALE)); 
-      starVertices.push(THREE_LIB.MathUtils.randFloatSpread(300 * SCENE_SCALE)); 
+      starVertices.push(THREE.MathUtils.randFloatSpread(300 * SCENE_SCALE)); 
+      starVertices.push(THREE.MathUtils.randFloatSpread(300 * SCENE_SCALE)); 
+      starVertices.push(THREE.MathUtils.randFloatSpread(300 * SCENE_SCALE)); 
     }
-    const starGeometry = new THREE_LIB.BufferGeometry();
-    starGeometry.setAttribute('position', new THREE_LIB.Float32BufferAttribute(starVertices, 3));
-    const starMaterial = new THREE_LIB.PointsMaterial({ color: 0xaaaaaa, size: 0.01 * SCENE_SCALE, sizeAttenuation: true }); 
-    const starField = new THREE_LIB.Points(starGeometry, starMaterial);
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const starMaterial = new THREE.PointsMaterial({ color: 0xaaaaaa, size: 0.01 * SCENE_SCALE, sizeAttenuation: true }); 
+    const starField = new THREE.Points(starGeometry, starMaterial);
     scene.add(starField);
 
-    const sunGeometry = new THREE_LIB.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
-    const sunMaterial = new THREE_LIB.ShaderMaterial({
+    const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
+    const sunMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: SUN_VERTEX_SHADER,
       fragmentShader: SUN_FRAGMENT_SHADER,
     });
-    const sunMesh = new THREE_LIB.Mesh(sunGeometry, sunMaterial);
+    const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
     scene.add(sunMesh);
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
@@ -312,9 +313,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return; // Skip sun and moons for now
       
-      const planetGeometry = new THREE_LIB.SphereGeometry(data.size, 32, 32);
-      const planetMaterial = new THREE_LIB.MeshPhongMaterial({ color: data.color, shininess: 30 });
-      const planetMesh = new THREE_LIB.Mesh(planetGeometry, planetMaterial);
+      const planetGeometry = new THREE.SphereGeometry(data.size, 32, 32);
+      const planetMaterial = new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 });
+      const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
       // Corrected Coordinate System: 0 angle on +Z axis
       planetMesh.position.x = data.radius * Math.sin(data.angle);
       planetMesh.position.z = data.radius * Math.cos(data.angle);
@@ -326,26 +327,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (name === 'EARTH') {
         const earthData = data as PlanetData;
         // Atmosphere
-        const atmosphereGeo = new THREE_LIB.SphereGeometry(earthData.size * 1.2, 32, 32); 
-        const atmosphereMat = new THREE_LIB.ShaderMaterial({
+        const atmosphereGeo = new THREE.SphereGeometry(earthData.size * 1.2, 32, 32); 
+        const atmosphereMat = new THREE.ShaderMaterial({
           vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER,
           fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-          blending: THREE_LIB.AdditiveBlending,
-          side: THREE_LIB.BackSide,
+          blending: THREE.AdditiveBlending,
+          side: THREE.BackSide,
           transparent: true,
           uniforms: { uImpactTime: { value: 0.0 }, uTime: { value: 0.0 } }
         });
-        const atmosphereMesh = new THREE_LIB.Mesh(atmosphereGeo, atmosphereMat);
+        const atmosphereMesh = new THREE.Mesh(atmosphereGeo, atmosphereMat);
         atmosphereMesh.name = 'atmosphere'; // Name it for identification
         planetMesh.add(atmosphereMesh);
 
         // Aurora
-        const auroraGeo = new THREE_LIB.SphereGeometry(earthData.size * 1.25, 64, 64);
-        const auroraMat = new THREE_LIB.ShaderMaterial({
+        const auroraGeo = new THREE.SphereGeometry(earthData.size * 1.25, 64, 64);
+        const auroraMat = new THREE.ShaderMaterial({
             vertexShader: AURORA_VERTEX_SHADER,
             fragmentShader: AURORA_FRAGMENT_SHADER,
-            blending: THREE_LIB.AdditiveBlending,
-            side: THREE_LIB.BackSide,
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
             transparent: true,
             depthWrite: false,
             uniforms: {
@@ -354,7 +355,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                 uImpactTime: { value: 0.0 }
             }
         });
-        const auroraMesh = new THREE_LIB.Mesh(auroraGeo, auroraMat);
+        const auroraMesh = new THREE.Mesh(auroraGeo, auroraMat);
         auroraMesh.name = 'aurora';
         planetMesh.add(auroraMesh);
       }
@@ -362,13 +363,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const orbitPoints = [];
       const orbitSegments = 128;
       for (let i = 0; i <= orbitSegments; i++) {
-        const angle = (i / orbitSegments) * THREE_LIB.MathUtils.PI * 2; // Use THREE_LIB.MathUtils.PI
+        const angle = (i / orbitSegments) * Math.PI * 2;
         // Corrected Coordinate System
-        orbitPoints.push(new THREE_LIB.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
+        orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
       }
-      const orbitGeometry = new THREE_LIB.BufferGeometry().setFromPoints(orbitPoints);
-      const orbitMaterial = new THREE_LIB.LineBasicMaterial({ color: 0xAAAAAA, transparent: true, opacity: 0.6 });
-      const orbitLine = new THREE_LIB.Line(orbitGeometry, orbitMaterial);
+      const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+      const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x404040, transparent: true, opacity: 0.4 });
+      const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
       scene.add(orbitLine);
       orbitsRef.current[name] = orbitLine;
     });
@@ -379,9 +380,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const parentBody = celestialBodiesRef.current[data.orbits];
         if (!parentBody) return; // Ensure parent exists
 
-        const moonGeometry = new THREE_LIB.SphereGeometry(data.size, 16, 16);
-        const moonMaterial = new THREE_LIB.MeshPhongMaterial({ color: data.color, shininess: 5 });
-        const moonMesh = new THREE_LIB.Mesh(moonGeometry, moonMaterial);
+        const moonGeometry = new THREE.SphereGeometry(data.size, 16, 16);
+        const moonMaterial = new THREE.MeshPhongMaterial({ color: data.color, shininess: 5 });
+        const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
         // Corrected Coordinate System
         moonMesh.position.x = data.radius * Math.sin(data.angle);
         moonMesh.position.z = data.radius * Math.cos(data.angle);
@@ -395,13 +396,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const orbitPoints = [];
         const orbitSegments = 64;
         for (let i = 0; i <= orbitSegments; i++) {
-            const angle = (i / orbitSegments) * THREE_LIB.MathUtils.PI * 2; // Use THREE_LIB.MathUtils.PI
+            const angle = (i / orbitSegments) * Math.PI * 2;
             // Corrected Coordinate System
-            orbitPoints.push(new THREE_LIB.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
+            orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
         }
-        const orbitGeometry = new THREE_LIB.BufferGeometry().setFromPoints(orbitPoints);
-        const orbitMaterial = new THREE_LIB.LineBasicMaterial({ color: 0xCCCCCC, transparent: true, opacity: 0.7 });
-        const orbitLine = new THREE_LIB.Line(orbitGeometry, orbitMaterial);
+        const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+        const orbitMaterial = new THREE.LineBasicMaterial({ color: 0xCCCCCC, transparent: true, opacity: 0.5 });
+        const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
         orbitLine.name = 'moon-orbit'; // Name for easy selection
         parentBody.mesh.add(orbitLine); // Add orbit line to parent
     });
@@ -409,9 +410,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // Create Points of Interest (L1)
     Object.entries(POI_DATA_MAP).forEach(([name, data]) => {
         // Using a Tetrahedron for a simple satellite shape
-        const poiGeometry = new THREE_LIB.TetrahedronGeometry(data.size, 0);
-        const poiMaterial = new THREE_LIB.MeshBasicMaterial({ color: data.color });
-        const poiMesh = new THREE_LIB.Mesh(poiGeometry, poiMaterial);
+        const poiGeometry = new THREE.TetrahedronGeometry(data.size, 0);
+        const poiMaterial = new THREE.MeshBasicMaterial({ color: data.color });
+        const poiMesh = new THREE.Mesh(poiGeometry, poiMaterial);
         poiMesh.userData = data;
         
         scene.add(poiMesh);
@@ -435,16 +436,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const { onCMEClick: clickHandler, interactionMode: currentInteractionMode } = interactionRef.current;
         if (currentInteractionMode !== InteractionMode.SELECT) return;
 
-        if (!mountRef.current || !cameraRef.current || !cmeGroupRef.current || !window.THREE) return; // Check for window.THREE
-        const THREE_LIB = window.THREE; // Local alias
+        if (!mountRef.current || !cameraRef.current || !cmeGroupRef.current) return;
         
         const rect = mountRef.current.getBoundingClientRect();
-        const mouse = new THREE_LIB.Vector2();
+        const mouse = new THREE.Vector2();
         mouse.x = ((event.clientX - rect.left) / mountRef.current.clientWidth) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / mountRef.current.clientHeight) * 2 + 1;
 
-        const raycaster = new THREE_LIB.Raycaster();
-        raycaster.params.Points.threshold = 0.1 * SCENE_SCALE; // Adjust raycaster threshold for points
+        const raycaster = new THREE.Raycaster();
+        // Adjust raycaster threshold for points
+        raycaster.params.Points.threshold = 0.1 * SCENE_SCALE;
         raycaster.setFromCamera(mouse, cameraRef.current);
         
         const intersects = raycaster.intersectObjects(cmeGroupRef.current.children, true);
@@ -462,11 +463,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-
-      // Animation loop always needs THREE and GSAP, so check them here.
-      if (!window.THREE || !window.gsap) return;
-      const THREE_LIB = window.THREE;
-      const GSAP_LIB = window.gsap;
 
       const {
         currentlyModeledCMEId,
@@ -490,7 +486,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const bodyData = body.userData as PlanetData | undefined;
         if (!bodyData || !bodyData.orbitalPeriodDays) return;
 
-        const angularVelocity = (2 * THREE_LIB.MathUtils.PI) / (bodyData.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE;
+        // The angular velocity is scaled up for visualization purposes
+        const angularVelocity = (2 * Math.PI) / (bodyData.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE;
         const angle = bodyData.angle + angularVelocity * elapsedTime;
         
         // Planets orbit the scene origin (0,0,0)
@@ -501,8 +498,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Moons orbit their parent body (local coordinates)
         else {
             body.mesh.position.x = bodyData.radius * Math.sin(angle);
-            // Corrected: bodyData.radius for consistency with moon orbit calculation
-            body.mesh.position.z = bodyData.radius * Math.cos(angle); 
+            body.mesh.position.z = bodyData.radius * Math.cos(angle);
         }
       });
       
@@ -510,10 +506,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const l1Body = celestialBodiesRef.current['L1'];
       const earthBody = celestialBodiesRef.current['EARTH'];
       if (l1Body && earthBody) {
-          const earthPos = new THREE_LIB.Vector3();
+          const earthPos = new THREE.Vector3();
           earthBody.mesh.getWorldPosition(earthPos);
+          // Get direction from sun (origin) to earth
           const sunToEarthDir = earthPos.clone().normalize();
           const l1Data = l1Body.userData as POIData;
+          // Position L1 between sun and earth
           const l1Pos = earthPos.clone().sub(sunToEarthDir.multiplyScalar(l1Data.distanceFromParent));
           l1Body.mesh.position.copy(l1Pos);
           l1Body.mesh.lookAt(earthPos); // Point satellite towards Earth
@@ -523,7 +521,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
       }
       if (celestialBodiesRef.current.EARTH) {
+        // Rotate Earth on its axis
         celestialBodiesRef.current.EARTH.mesh.rotation.y += 0.05 * delta; // a bit slower rotation
+        // Update shaders for atmosphere and aurora
         const earthMesh = celestialBodiesRef.current.EARTH.mesh;
         earthMesh.children.forEach(child => {
             if ((child as any).material?.uniforms?.uTime) {
@@ -623,11 +623,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       rendererRef.current = null; 
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataVersion]); // Removed THREE from dependencies as it's not a reactive prop
+  }, [THREE, dataVersion]);
+
 
   useEffect(() => {
-    if (!window.THREE || !cmeGroupRef.current || !sceneRef.current) return; // Check for window.THREE
-    const THREE_LIB = window.THREE; // Local alias
+    if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
 
     while (cmeGroupRef.current.children.length > 0) {
       const child = cmeGroupRef.current.children[0];
@@ -637,32 +637,32 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (Array.isArray(child.material)) {
           child.material.forEach((m:any) => m.dispose());
         } else {
-          child.material.dispose(); 
+          child.material.dispose();
         }
       }
     }
 
-    const particleTexture = createParticleTexture(THREE_LIB); // Pass THREE_LIB to helper
+    const particleTexture = createParticleTexture(THREE);
 
     cmeData.forEach(cme => {
       const particleCount = getCmeParticleCount(cme.speed);
       const positions = [];
       const colors = [];
 
-      const coneHalfAngleRad = THREE_LIB.MathUtils.degToRad(cme.halfAngle);
+      const coneHalfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
       const coneHeight = 1; // Unit height for scaling
       const coneRadius = coneHeight * Math.tan(coneHalfAngleRad);
 
       const bulgeFactor = 0.5;
 
-      const shockColor = new THREE_LIB.Color(0xffaaaa); 
-      const wakeColor = new THREE_LIB.Color(0x8888ff); 
+      const shockColor = new THREE.Color(0xffaaaa); 
+      const wakeColor = new THREE.Color(0x8888ff); 
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < particleCount; i++) {
-        const y = coneHeight * THREE_LIB.MathUtils.cbrt(Math.random());
+        const y = coneHeight * Math.cbrt(Math.random()); 
         const radiusAtY = (y / coneHeight) * coneRadius;
-        const theta = Math.random() * 2 * THREE_LIB.MathUtils.PI;
+        const theta = Math.random() * 2 * Math.PI;
         const r = coneRadius > 0 ? Math.sqrt(Math.random()) * radiusAtY : 0;
 
         const x = r * Math.cos(theta);
@@ -676,7 +676,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         positions.push(x, finalY, z);
         
         const relativePos = y / coneHeight;
-        const finalColor = new THREE_LIB.Color();
+        const finalColor = new THREE.Color();
         const wakeEnd = 0.3; 
         const coreEnd = 0.9; 
         
@@ -692,59 +692,79 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
       
-      const particlesGeometry = new THREE_LIB.BufferGeometry();
-      particlesGeometry.setAttribute('position', new THREE_LIB.Float32BufferAttribute(positions, 3));
-      particlesGeometry.setAttribute('color', new THREE_LIB.Float32BufferAttribute(colors, 3));
+      const particlesGeometry = new THREE.BufferGeometry();
+      particlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      particlesGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       
-      const cmeMaterial = new THREE_LIB.PointsMaterial({
+      const cmeMaterial = new THREE.PointsMaterial({
           size: getCmeParticleSize(cme.speed, SCENE_SCALE),
           sizeAttenuation: true,
           map: particleTexture,
           transparent: true,
           opacity: getCmeOpacity(cme.speed),
-          blending: THREE_LIB.AdditiveBlending,
+          blending: THREE.AdditiveBlending,
           depthWrite: false,
           vertexColors: true,
       });
       
-      const cmeParticleSystem = new THREE_LIB.Points(particlesGeometry, cmeMaterial);
+      const cmeParticleSystem = new THREE.Points(particlesGeometry, cmeMaterial);
       cmeParticleSystem.userData = cme;
 
-      const direction = new THREE_LIB.Vector3();
-      direction.setFromSphericalCoords(1, THREE_LIB.MathUtils.degToRad(90 - cme.latitude), THREE_LIB.MathUtils.degToRad(cme.longitude));
+      const direction = new THREE.Vector3();
+      direction.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       
-      cmeParticleSystem.quaternion.setFromUnitVectors(new THREE_LIB.Vector3(0, 1, 0), direction);
+      cmeParticleSystem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
       
       cmeGroupRef.current.add(cmeParticleSystem);
     });
 
-  }, [cmeData]);
+  }, [cmeData, THREE, getClockElapsedTime]);
+
+
+  useEffect(() => {
+    if (!cmeGroupRef.current) return;
+    cmeGroupRef.current.children.forEach((cmeMesh: any) => {
+      const cme: ProcessedCME = cmeMesh.userData;
+      if (currentlyModeledCMEId) {
+        cmeMesh.visible = cme.id === currentlyModeledCMEId;
+        if(cme.id === currentlyModeledCMEId && cmeMesh.userData){
+            cmeMesh.userData.simulationStartTime = getClockElapsedTime(); 
+        }
+      } else {
+        cmeMesh.visible = true; 
+      }
+    });
+    if (predictionLineRef.current) {
+        const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
+        predictionLineRef.current.visible = !!(cme && cme.isEarthDirected && currentlyModeledCMEId);
+    }
+
+  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, gsap, THREE]);
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
-    if (!cameraRef.current || !controlsRef.current || !window.gsap || !window.THREE) return; // Check for both
-    const THREE_LIB = window.THREE;
-    const GSAP_LIB = window.gsap;
+    if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return; 
 
-    const targetPosition = new THREE_LIB.Vector3(0, 0, 0); 
+    const targetPosition = new THREE.Vector3(0, 0, 0); 
     if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) {
       celestialBodiesRef.current.EARTH.mesh.getWorldPosition(targetPosition);
     }
+    // If focus is SUN or null, the target position defaults to (0,0,0) which is correct.
 
-    let camPos = new THREE_LIB.Vector3();
+    let camPos = new THREE.Vector3();
     if (view === ViewMode.TOP) {
       camPos.set(targetPosition.x, targetPosition.y + SCENE_SCALE * 4, targetPosition.z + 0.01); 
     } else { // Side View
       camPos.set(targetPosition.x + SCENE_SCALE * 1.8, targetPosition.y + SCENE_SCALE * 0.3 , targetPosition.z); 
     }
     
-    GSAP_LIB.to(cameraRef.current.position, {
+    gsap.to(cameraRef.current.position, {
       duration: 1.2,
       x: camPos.x,
       y: camPos.y,
       z: camPos.z,
       ease: "power2.inOut"
     });
-    GSAP_LIB.to(controlsRef.current.target, {
+    gsap.to(controlsRef.current.target, {
       duration: 1.2,
       x: targetPosition.x,
       y: targetPosition.y,
@@ -752,7 +772,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       ease: "power2.inOut",
       onUpdate: () => controlsRef.current.update() 
     });
-  }, []);
+  }, [gsap, THREE]);
 
   // Effect to move camera based on UI selections
   useEffect(() => {
@@ -777,9 +797,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [interactionMode]);
 
   useEffect(() => {
-    if (!window.THREE || !sceneRef.current || !celestialBodiesRef.current.EARTH) return; // Check for window.THREE
-    const THREE_LIB = window.THREE;
-    
+    if (!THREE || !sceneRef.current || !celestialBodiesRef.current.EARTH) return; 
     if (predictionLineRef.current) {
       sceneRef.current.remove(predictionLineRef.current);
       predictionLineRef.current.geometry.dispose();
@@ -789,25 +807,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
     if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) {
-      const earthPos = new THREE_LIB.Vector3();
+      const earthPos = new THREE.Vector3();
       celestialBodiesRef.current.EARTH.mesh.getWorldPosition(earthPos);
       
-      const points = [new THREE_LIB.Vector3(0, 0, 0), earthPos]; 
-      const geometry = new THREE_LIB.BufferGeometry().setFromPoints(points);
-      const material = new THREE_LIB.LineDashedMaterial({ 
+      const points = [new THREE.Vector3(0, 0, 0), earthPos]; 
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineDashedMaterial({ 
         color: 0xffff00, 
         transparent: true, 
         opacity: 0.8,
         dashSize: 0.05 * SCENE_SCALE, 
         gapSize: 0.02 * SCENE_SCALE 
       });
-      const line = new THREE_LIB.Line(geometry, material);
+      const line = new THREE.Line(geometry, material);
       line.computeLineDistances(); 
       line.visible = !!currentlyModeledCMEId; 
       sceneRef.current.add(line);
       predictionLineRef.current = line;
     }
-  }, [currentlyModeledCMEId, cmeData, SCENE_SCALE]);
+  }, [currentlyModeledCMEId, cmeData, THREE, SCENE_SCALE]); 
 
   // Toggle visibility for extra planets
   useEffect(() => {
@@ -840,14 +858,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
 
   const checkImpacts = useCallback(() => {
-    if (!window.THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0; // Check for window.THREE
-    const THREE_LIB = window.THREE;
+    if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
 
     let maxImpactSpeed = 0;
     const earthRadiusVisual = PLANET_DATA_MAP.EARTH.size;
     const earthOrbitRadius = PLANET_DATA_MAP.EARTH.radius;
 
-    const earthWorldPos = new THREE_LIB.Vector3();
+    const earthWorldPos = new THREE.Vector3();
     celestialBodiesRef.current.EARTH.mesh.getWorldPosition(earthWorldPos);
 
     cmeGroupRef.current.children.forEach((cmeObject: any) => {
@@ -859,10 +876,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const distTraveled = cmeTipPosition + cmeScaledLength;
 
         if (distTraveled >= earthOrbitRadius - (earthRadiusVisual * 10) && distTraveled <= earthOrbitRadius + (earthRadiusVisual * 10)) {
-            const cmeDirection = new THREE_LIB.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion).normalize();
+            const cmeDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion).normalize();
             const earthDirection = earthWorldPos.clone().normalize();
             const angleBetween = cmeDirection.angleTo(earthDirection);
-            const cmeHalfAngleRad = THREE_LIB.MathUtils.degToRad(cme.halfAngle);
+            const cmeHalfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
             
             if (angleBetween <= cmeHalfAngleRad) {
                 maxImpactSpeed = Math.max(maxImpactSpeed, cme.speed);
@@ -871,15 +888,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
 
     return maxImpactSpeed;
-  }, []);
+  }, [THREE]);
 
   const updateImpactEffects = useCallback((maxImpactSpeed: number, elapsedTime: number) => {
-    // If you need window.THREE here for other purposes, add the check
     if (!orbitsRef.current.EARTH || !celestialBodiesRef.current.EARTH) return;
     
     // Update orbit color
-    orbitsRef.current.EARTH.material.color.set(maxImpactSpeed > 0 ? 0xff4444 : 0xAAAAAA);
-    orbitsRef.current.EARTH.material.opacity = maxImpactSpeed > 0 ? 0.9 : 0.6;
+    orbitsRef.current.EARTH.material.color.set(maxImpactSpeed > 0 ? 0xff4444 : 0x404040);
+    orbitsRef.current.EARTH.material.opacity = maxImpactSpeed > 0 ? 0.9 : 0.4;
 
     const earthMesh = celestialBodiesRef.current.EARTH.mesh;
     const atmosphereMesh = earthMesh.children.find(c => c.name === 'atmosphere') as any;
@@ -905,4 +921,3 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
-// --- END OF FILE src/components/SimulationCanvas.tsx ---
