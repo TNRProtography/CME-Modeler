@@ -1,6 +1,6 @@
 // --- START OF FILE ForecastDashboard.tsx ---
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // <-- THIS LINE IS FIXED
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
@@ -10,8 +10,37 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { sendNotification, canSendNotification, clearNotificationCooldown, requestNotificationPermission, getNotificationPreference, setNotificationPreference } from '../utils/notifications.ts'; // Import ALL notification utilities
-import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch component
+import { sendNotification, canSendNotification, clearNotificationCooldown, requestNotificationPermission, getNotificationPreference, setNotificationPreference } from '../utils/notifications.ts';
+import ToggleSwitch from './ToggleSwitch';
+
+// Import Chart.js components
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  TimeScale,
+  Filler,
+} from 'chart.js';
+import 'chartjs-adapter-date-fns';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  TimeScale,
+  Filler,
+  annotationPlugin
+);
 
 // --- Define BellIcon as it may not exist in the project ---
 const BellIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -411,7 +440,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'speed': `<strong>What it is:</strong> The speed of the charged particles flowing from the Sun, measured in kilometers per second (km/s).<br><br><strong>Effect on Aurora:</strong> Faster particles hit Earth's magnetic field with more energy, leading to more dynamic and vibrant auroras with faster-moving structures.`,
         'density': `<strong>What it is:</strong> The number of particles within a cubic centimeter of the solar wind, measured in protons per cm³. Higher density means more particles are available to collide with our atmosphere, resulting in more widespread and "thick" looking auroral displays.`,
         'bt': `<strong>What it is:</strong> The total strength of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT).<br><br><strong>Effect on Aurora:</strong> A high Bt value indicates a strong magnetic field. While not a guarantee on its own, a strong field can carry more energy and lead to powerful events if the Bz is also favorable.`,
-        'bz': `<strong>What it is:</strong> The North-South direction of the乎Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
+        'bz': `<strong>What it is:</strong> The North-South direction of the Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
         // NEW: Tooltip for Interplanetary Shocks
@@ -479,7 +508,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
 
-    const analyzeMagnetometerData = (data: any[]) => {
+    const analyzeMagnetometerData = useCallback((data: any[]) => {
         const prevSubstormStatusText = previousSubstormStatusRef.current;
         
         if (data.length < 30) {
@@ -539,7 +568,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 { tag: 'substorm-eruption' }
             );
         }
-    };
+    }, [auroraScore, setSubstormActivityStatus]);
 
     const getMagnetometerAnnotations = useCallback((data: any[]) => {
         const annotations: any = {};
@@ -810,7 +839,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData, auroraScore]);
+    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData, auroraScore, analyzeMagnetometerData]);
 
 
     useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
