@@ -164,7 +164,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
         
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6">
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6 flex-1">
           {/* NEW: App Installation Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
