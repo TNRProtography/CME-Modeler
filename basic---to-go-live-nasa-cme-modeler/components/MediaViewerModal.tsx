@@ -130,9 +130,33 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
             {media.type === 'image' && (
                 <img ref={contentRef as React.RefObject<HTMLImageElement>} src={media.url} alt="Full screen media" className="max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()} />
             )}
+            
+            {/* === START: CORRECTED VIDEO RENDERING BLOCK === */}
             {media.type === 'video' && (
-                <video ref={contentRef as React.RefObject<HTMLVideoElement>} src={media.url} autoPlay loop muted playsInline className="max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()}>Your browser does not support the video tag.</video>
+                // This wrapper div now handles all interactions (panning, zooming) by acting as a transparent overlay.
+                <div
+                    className="relative max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing"
+                    style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}
+                    onMouseDown={handleMouseDown}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <video
+                        ref={contentRef as React.RefObject<HTMLVideoElement>}
+                        src={media.url}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        // The video now has no interactive classes or direct event handlers.
+                        // It simply fills its parent container, allowing the parent to handle events.
+                        className="w-full h-full"
+                    >
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
             )}
+            {/* === END: CORRECTED VIDEO RENDERING BLOCK === */}
+            
             {media.type === 'animation' && media.urls.length > 0 && (
                 <img ref={contentRef as React.RefObject<HTMLImageElement>} src={media.urls[currentFrame]} alt={`Animation frame ${currentFrame + 1}`} className="max-w-[90vw] max-h-[80vh] cursor-grab active:cursor-grabbing" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()} />
             )}
@@ -142,7 +166,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
         {media.type === 'animation' && media.urls.length > 0 && (
             <div 
                 className="absolute bottom-5 w-11/12 max-w-xl bg-neutral-900/80 backdrop-blur-sm p-4 rounded-lg shadow-2xl z-10 space-y-3"
-                onClick={(e) => e.stopPropagation()} // ** THE FIX: Stop clicks inside the player from closing the modal **
+                onClick={(e) => e.stopPropagation()}
             >
                  <input type="range" min="0" max={media.urls.length - 1} value={currentFrame} onChange={handleScrub} className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer" />
                  <div className="flex justify-between items-center">
