@@ -12,8 +12,10 @@ const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 60 * 60 * 1000;
 
-const NZ_SOUTH_ISLAND_BOUNDS: L.LatLngBoundsLiteral = [[-47.5, 166.0], [-40.0, 175.5]];
-const MAP_ZOOM = 6;
+// UPDATED: Changed to cover all of New Zealand
+const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
+// UPDATED: Zoomed out slightly to fit the whole country
+const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10; // Zoom level when highlighting a marker
 
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; }[] = [
@@ -273,13 +275,13 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                  <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                     <MapContainer
-                        center={[(NZ_SOUTH_ISLAND_BOUNDS[0][0] + NZ_SOUTH_ISLAND_BOUNDS[1][0]) / 2, (NZ_SOUTH_ISLAND_BOUNDS[0][1] + NZ_SOUTH_ISLAND_BOUNDS[1][1]) / 2]}
+                        center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
                         zoom={MAP_ZOOM}
                         scrollWheelZoom={false}
                         dragging={!L.Browser.mobile}
                         touchZoom={true}
                         minZoom={MAP_ZOOM}
-                        maxBounds={NZ_SOUTH_ISLAND_BOUNDS}
+                        maxBounds={NZ_BOUNDS}
                         className="h-full w-full bg-neutral-800"
                     >
                         {/* NEW: Map controller component */}
