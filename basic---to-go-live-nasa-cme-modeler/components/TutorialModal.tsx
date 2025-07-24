@@ -1,78 +1,79 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
+type PanelType = 'controls' | 'cmeList' | 'none';
+
 interface TutorialStep {
   targetId: string;
   title: string;
   content: string;
   placement: 'bottom' | 'top' | 'left' | 'right';
   widthClass?: string;
-  offsetY?: number; // Optional vertical offset for fine-tuning
-  offsetX?: number; // Optional horizontal offset for fine-tuning
-  panel?: 'controls' | 'cmeList'; // New prop: indicates if element is inside a panel
-  disableNext?: boolean; // Added for consistency, though currently not used in CME_VISUALIZATION_STEPS
+  offsetY?: number; 
+  offsetX?: number; 
+  panel?: PanelType; // Indicates if element is inside a panel
+  disableNext?: boolean;
 }
 
-// --- DEFINE CME VISUALIZATION TUTORIAL STEPS ---
 const CME_VISUALIZATION_STEPS: TutorialStep[] = [
   {
     targetId: 'mobile-controls-button',
     title: 'CME Controls Panel (Mobile)',
-    content: 'On smaller screens, tap here to open the main controls for time range, view, focus, and display options. On desktop, the panel is always visible on the left.',
+    content: 'On smaller screens, tap here to open the main controls. On desktop, the panel is on the left.',
     placement: 'right',
     widthClass: 'w-72',
     offsetY: 0, 
     offsetX: 10,
-    panel: 'controls', // This step specifically points to the mobile button that opens controls
+    panel: 'controls', 
   },
   {
     targetId: 'controls-panel-container', 
     title: 'CME Controls Panel',
-    content: 'This panel lets you configure the simulation: adjust the time range of CMEs, change your view, focus on specific celestial bodies, and toggle display options.',
-    placement: 'right', // Assuming panel is open on desktop, tooltip can be on its right
+    content: 'This panel lets you configure the simulation: adjust the time range of CMEs, change your view, focus on celestial bodies, and toggle display options.',
+    placement: 'right', 
     widthClass: 'w-80',
     offsetY: 0, 
     offsetX: 10,
-    panel: 'controls', // This step refers to the whole panel
+    panel: 'controls',
   },
   {
-    targetId: 'time-range-3d-button', // Using 3-day button as example for range selection
+    targetId: 'time-range-3d-button',
     title: 'Time Range Selection',
     content: 'Choose between 24 hours, 3 days, or 7 days of historical CME data to load into the simulation.',
     placement: 'bottom',
     widthClass: 'w-72',
-    panel: 'controls', // This button is inside the controls panel
+    panel: 'controls',
   },
   {
-    targetId: 'view-top-button', // Using Top-Down button as example for view selection
+    targetId: 'view-top-button',
     title: 'View Modes',
     content: 'Switch between Top-Down and Side views of the solar system to observe CMEs from different perspectives.',
     placement: 'bottom',
     widthClass: 'w-72',
-    panel: 'controls', // This button is inside the controls panel
+    panel: 'controls',
   },
   {
-    targetId: 'focus-earth-button', // Using Earth button as example for focus selection
+    targetId: 'focus-earth-button',
     title: 'Focus Target',
     content: 'Direct the camera to focus on the Sun or Earth, bringing the selected body to the center of your view.',
     placement: 'bottom',
     widthClass: 'w-72',
-    panel: 'controls', // This button is inside the controls panel
+    panel: 'controls',
   },
   {
     targetId: 'show-labels-toggle',
     title: 'Display Options',
-    content: 'Toggle visibility of planet labels, show/hide Mercury, Venus, Mars, and the Earth\'s Moon/L1 point for a cleaner or more detailed view.',
+    content: 'Toggle visibility of planet labels, other planets, and the Earth\'s Moon/L1 point for a cleaner or more detailed view.',
     placement: 'bottom',
     widthClass: 'w-80',
-    panel: 'controls', // This toggle is inside the controls panel
+    panel: 'controls',
   },
   {
-    targetId: 'cme-filter-all-button', // Using All button as example for filter
+    targetId: 'cme-filter-all-button',
     title: 'CME Filter',
     content: 'Filter the displayed CMEs by all, Earth-directed, or non-Earth-directed events to quickly find what you\'re looking for.',
     placement: 'bottom',
     widthClass: 'w-72',
-    panel: 'controls', // This button is inside the controls panel
+    panel: 'controls',
   },
   {
     targetId: 'controls-panel-guide-button',
@@ -80,7 +81,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'You can always click this button in the controls panel to revisit this guide for help.',
     placement: 'bottom',
     widthClass: 'w-72',
-    panel: 'controls', // This button is inside the controls panel
+    panel: 'controls',
   },
   {
     targetId: 'reset-view-button',
@@ -90,15 +91,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     widthClass: 'w-64',
     offsetY: 0, 
     offsetX: 10,
-  },
-  {
-    targetId: 'forecast-models-button',
-    title: 'Other Forecast Models',
-    content: 'Access external resources and different CME forecast models for comparative analysis and further insights.',
-    placement: 'right', 
-    widthClass: 'w-72',
-    offsetY: 0, 
-    offsetX: 10,
+    panel: 'none',
   },
   {
     targetId: 'interaction-mode-button',
@@ -108,26 +101,27 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     widthClass: 'w-72',
     offsetY: 0, 
     offsetX: 10,
+    panel: 'none',
   },
   {
     targetId: 'mobile-cme-list-button', 
     title: 'CME List (Mobile)',
-    content: 'On smaller screens, tap here to open the list of all loaded CMEs and their detailed information. On desktop, the list is on the right.',
+    content: 'On smaller screens, tap here to open the list of all loaded CMEs. On desktop, this list is on the right.',
     placement: 'left',
     widthClass: 'w-72',
     offsetY: 0, 
     offsetX: 10,
-    panel: 'cmeList', // This step specifically points to the mobile button that opens CME list
+    panel: 'cmeList',
   },
   {
-    targetId: 'cme-list-panel-container', // This targets the entire panel when it's open (desktop/mobile)
+    targetId: 'cme-list-panel-container', 
     title: 'CME List Panel',
-    content: 'This panel displays a list of Coronal Mass Ejections loaded for the selected time range. Click on a CME here, or directly in the simulation, to see its details.',
-    placement: 'left', // Assuming panel is open on desktop, tooltip can be on its left
+    content: 'This panel displays a list of Coronal Mass Ejections. Click on a CME here, or directly in the simulation, to see its details.',
+    placement: 'left', 
     widthClass: 'w-80',
     offsetY: 0, 
     offsetX: 10,
-    panel: 'cmeList', // This step refers to the whole panel
+    panel: 'cmeList',
   },
   {
     targetId: 'timeline-play-pause-button',
@@ -135,179 +129,86 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'These buttons allow you to play/pause the simulation, and step forward or backward by one hour.',
     placement: 'top',
     widthClass: 'w-72',
-  },
-  {
-    targetId: 'timeline-scrubber',
-    title: 'Timeline Scrubber',
-    content: 'Drag this slider to manually scrub through the simulation time and observe CME propagation at any specific point.',
-    placement: 'top',
-    widthClass: 'w-80',
-  },
-  {
-    targetId: 'timeline-speed-1x-button', // Corrected target ID for speed select
-    title: 'Playback Speed',
-    content: 'Adjust the speed of the timeline animation to fast-forward or slow down the simulation playback.',
-    placement: 'top',
-    widthClass: 'w-72',
+    panel: 'none',
   },
 ];
-
-// Placeholder for other tutorial types if they were defined elsewhere (e.g., in a constants file)
-const FIRST_VISIT_STEPS: TutorialStep[] = [
-  // This will be replaced by the actual STEPS from FirstVisitTutorial.tsx if needed
-  // For now, it's consistent with App.tsx's FirstVisitTutorial state management.
-  { targetId: 'nav-forecast', title: 'Aurora Forecast (First Visit)', content: 'This is the first visit tutorial content for the Forecast page.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-solar-activity', title: 'Solar Activity (First Visit)', content: 'This is the first visit tutorial content for Solar Activity.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-modeler', title: 'CME Visualization (First Visit)', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! Click the highlighted "CME Visualization" button above to proceed and learn more about this feature.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
-  { targetId: 'nav-settings', title: 'App Settings (First Visit)', content: 'This is the first visit tutorial content for App Settings.', placement: 'left', widthClass: 'w-72' },
-];
-
 
 interface TutorialModalProps {
   isOpen: boolean;
   onClose: () => void;
-  tutorialType: 'cmeViz' | 'firstVisit'; // New prop to differentiate tutorial content
-  onStepChange: (id: string | null) => void; // Prop from App.tsx to update highlighted element
-  // New props for panel control
-  openControlsPanel: () => void;
-  closeControlsPanel: () => void;
-  isControlsPanelOpen: boolean;
-  openCmeListPanel: () => void;
-  closeCmeListPanel: () => void;
-  isCmeListPanelOpen: boolean;
+  onStepChange: (id: string | null) => void;
+  onRequestPanelStateChange: (panel: PanelType) => void;
 }
 
-const PANEL_TRANSITION_DURATION = 350; // Milliseconds, should match CSS transition duration
+const PANEL_TRANSITION_DURATION = 350;
 
 const TutorialModal: React.FC<TutorialModalProps> = ({ 
   isOpen, 
   onClose, 
-  tutorialType, 
   onStepChange,
-  openControlsPanel,
-  closeControlsPanel,
-  isControlsPanelOpen,
-  openCmeListPanel,
-  closeCmeListPanel,
-  isCmeListPanelOpen,
+  onRequestPanelStateChange
 }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const stepsToUse = CME_VISUALIZATION_STEPS;
 
-  // Select steps based on tutorialType
-  const stepsToUse = useMemo(() => {
-    if (tutorialType === 'firstVisit') {
-      return FIRST_VISIT_STEPS;
-    }
-    return CME_VISUALIZATION_STEPS;
-  }, [tutorialType]);
-
-  // Effect for initializing stepIndex when tutorial opens
   useEffect(() => {
     if (isOpen) {
-      setStepIndex(0); // Always start from the first step when the modal opens
-    } else {
-      // When closing, ensure all panels are closed and highlight is cleared
-      closeControlsPanel();
-      closeCmeListPanel();
-      onStepChange(null);
+      setStepIndex(0);
     }
-  }, [isOpen, closeControlsPanel, closeCmeListPanel, onStepChange]);
+  }, [isOpen]);
 
-  // Effect for handling step changes and highlighting
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    let panelDelayTimeout: NodeJS.Timeout | null = null;
+    if (!isOpen) return;
 
-    if (!isOpen) {
-      // Handled in the previous useEffect
+    const currentStep = stepsToUse[stepIndex];
+    if (!currentStep) {
+      onClose();
       return;
     }
 
-    const currentStep = stepsToUse[stepIndex];
+    // Request App.tsx to manage the panel state
+    onRequestPanelStateChange(currentStep.panel || 'none');
 
-    // Ensure stepIndex is within bounds and currentStep is valid
-    if (!currentStep) {
-        onClose(); // Close tutorial if steps are exhausted or invalid
-        return;
-    }
-    
-    const handleStepLogic = async () => {
-        // First, close any active panels that are NOT related to the current step's target,
-        // unless it's a mobile specific button *that opens* a panel for the *next* step.
-        // For simplicity: close both panels, then open if needed by the current step.
-        // This is safer against previous steps leaving panels open.
-        if (currentStep.panel !== 'controls' && isControlsPanelOpen) {
-            closeControlsPanel();
-        }
-        if (currentStep.panel !== 'cmeList' && isCmeListPanelOpen) {
-            closeCmeListPanel();
-        }
+    // Delay finding the element to allow for panel transitions
+    const timer = setTimeout(() => {
+      onStepChange(currentStep.targetId);
+      const element = document.getElementById(currentStep.targetId);
+      if (element) {
+        setTargetRect(element.getBoundingClientRect());
+      } else {
+        console.warn(`TutorialModal: Target element "${currentStep.targetId}" not found.`);
+        setTargetRect(null);
+      }
+    }, PANEL_TRANSITION_DURATION);
 
-        let delayBeforeHighlight = 50; // Default small delay for rendering
-
-        // Handle panel opening
-        if (currentStep.panel === 'controls') {
-            if (!isControlsPanelOpen) { // Only open if not already open
-                openControlsPanel();
-                delayBeforeHighlight = PANEL_TRANSITION_DURATION + 50; // Add transition time + small buffer
-            }
-        } else if (currentStep.panel === 'cmeList') {
-            if (!isCmeListPanelOpen) { // Only open if not already open
-                openCmeListPanel();
-                delayBeforeHighlight = PANEL_TRANSITION_DURATION + 50; // Add transition time + small buffer
-            }
-        }
-        
-        // Ensure the element is ready and get its position after potential panel opening
-        panelDelayTimeout = setTimeout(() => {
-            onStepChange(currentStep.targetId); // Inform App.tsx to highlight the element
-            const element = document.getElementById(currentStep.targetId);
-            if (element) {
-                setTargetRect(element.getBoundingClientRect());
-            } else {
-                console.warn(`TutorialModal: Target element "${currentStep.targetId}" not found. Cannot highlight.`);
-                setTargetRect(null); // Clear targetRect to hide the tooltip if element is missing
-            }
-        }, delayBeforeHighlight);
+    const handleResize = () => {
+      const element = document.getElementById(currentStep.targetId);
+      if (element) setTargetRect(element.getBoundingClientRect());
     };
+    window.addEventListener('resize', handleResize);
 
-    handleStepLogic();
-
-    window.addEventListener('resize', () => {
-        const element = document.getElementById(currentStep.targetId);
-        if (element) {
-            setTargetRect(element.getBoundingClientRect());
-        } else {
-            setTargetRect(null); // Clear targetRect if element disappears on resize
-        }
-    });
-    
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      if (panelDelayTimeout) clearTimeout(panelDelayTimeout);
-      window.removeEventListener('resize', () => { /* re-attach logic via new render */ });
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
     };
-  }, [isOpen, stepIndex, stepsToUse, onStepChange, onClose,
-      openControlsPanel, closeControlsPanel, isControlsPanelOpen,
-      openCmeListPanel, closeCmeListPanel, isCmeListPanelOpen
-  ]);
-
+  }, [isOpen, stepIndex, stepsToUse, onStepChange, onClose, onRequestPanelStateChange]);
 
   const handleNext = () => {
-    // Only allow progression if currentStep exists and its disableNext is false (or undefined)
-    if (stepsToUse[stepIndex] && !stepsToUse[stepIndex].disableNext && stepIndex < stepsToUse.length - 1) {
+    if (stepIndex < stepsToUse.length - 1) {
+      onStepChange(null); // Clear previous highlight immediately
+      setTargetRect(null); // Hide tooltip during transition
       setStepIndex(stepIndex + 1);
-    } else if (stepsToUse[stepIndex] && !stepsToUse[stepIndex].disableNext && stepIndex === stepsToUse.length - 1) {
-      onClose(); // End of tutorial
+    } else {
+      onClose();
     }
   };
   
   const handleClose = () => {
-    onClose(); // Close the modal (useEffect will handle clearing highlight and closing panels)
+    onClose();
   };
 
-  const currentStep = stepsToUse[stepIndex]; // Re-get currentStep for rendering purposes
+  const currentStep = stepsToUse[stepIndex];
 
   const { tooltipStyle, arrowStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
@@ -315,13 +216,11 @@ const TutorialModal: React.FC<TutorialModalProps> = ({
     }
 
     const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256);
-    const tooltipHeight = 160; // Assuming a consistent height for all tooltips for layout calculations
+    const tooltipHeight = 160; 
     const margin = 16; 
 
-    let top = 0;
-    let left = 0;
+    let top = 0, left = 0;
 
-    // Calculate initial top and left based on placement
     switch (currentStep.placement) {
       case 'bottom':
         top = targetRect.bottom + margin;
@@ -341,97 +240,42 @@ const TutorialModal: React.FC<TutorialModalProps> = ({
         break;
     }
 
-    // Apply custom offsets before clamping
     top += (currentStep.offsetY || 0);
     left += (currentStep.offsetX || 0);
 
-
-    // Clamp positions to stay within viewport
     const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
     const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
 
-    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2003 }; // Ensure tooltip is above backdrop
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2003 };
     let arStyle: React.CSSProperties = {};
 
-    // Calculate arrow position relative to the clamped tooltip position
     switch (currentStep.placement) {
         case 'bottom':
-            arStyle = { 
-                bottom: '100%', 
-                left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, // Arrow points to target center relative to clamped tooltip left
-                transform: 'translateX(-50%)', 
-                borderBottom: '8px solid #404040', 
-                borderLeft: '8px solid transparent', 
-                borderRight: '8px solid transparent' 
-            };
+            arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
             break;
         case 'top':
-            arStyle = { 
-                top: '100%', 
-                left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`,
-                transform: 'translateX(-50%)', 
-                borderTop: '8px solid #404040', 
-                borderLeft: '8px solid transparent', 
-                borderRight: '8px solid transparent' 
-            };
+            arStyle = { top: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
             break;
         case 'left':
-            arStyle = { 
-                right: '100%', 
-                top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, // Arrow points to target center relative to clamped tooltip top
-                transform: 'translateY(-50%)', 
-                borderRight: '8px solid #404040', 
-                borderTop: '8px solid transparent', 
-                borderBottom: '8px solid transparent' 
-            };
+            arStyle = { right: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%)', borderRight: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
             break;
         case 'right':
-            arStyle = { 
-                left: '100%', 
-                top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`,
-                transform: 'translateY(-50%)', 
-                borderLeft: '8px solid #404040', 
-                borderTop: '8px solid transparent', 
-                borderBottom: '8px solid transparent' 
-            };
+            arStyle = { left: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%)', borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
             break;
     }
     
     ttStyle.opacity = 1;
     ttStyle.visibility = 'visible';
-
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
-  }, [targetRect, stepIndex, stepsToUse]);
+  }, [targetRect, currentStep]);
 
-
-  if (!isOpen || !currentStep) {
-    return null;
-  }
-
-  // Determine if the background should be less blurred/opaque.
-  // This applies to the first visit's forecast step, AND all steps of the CME Viz tutorial.
-  const shouldUnblurBackground = 
-    (tutorialType === 'firstVisit' && currentStep?.targetId === 'nav-forecast') ||
-    (tutorialType === 'cmeViz'); // <--- Key change: Unblur for all CME Viz tutorial steps
-
-  // Conditionally apply classes to the backdrop div
-  const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 ${
-    shouldUnblurBackground ? 'bg-black/20 backdrop-filter-none' : 'bg-black/75 backdrop-blur-sm'
-  }`;
-
+  if (!isOpen || !currentStep) return null;
+  
+  const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 bg-black/20 backdrop-filter-none`;
 
   return (
-    <div 
-      className={backdropClasses}
-      // No onClick on backdrop, as the tutorial logic will manage steps and closing.
-      // Clicks should go through to the highlighted element.
-    >
-      <div
-        className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass || 'w-64'}`}
-        style={tooltipStyle}
-        // Prevent event propagation from tooltip content to background
-        onClick={(e) => e.stopPropagation()} 
-      >
+    <div className={backdropClasses}>
+      <div className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass || 'w-64'}`} style={tooltipStyle} onClick={(e) => e.stopPropagation()}>
         <div className="absolute w-0 h-0" style={arrowStyle} />
         <div className="flex justify-between items-start mb-2">
             <h3 className="text-lg font-bold text-sky-400">{currentStep.title}</h3>
@@ -440,10 +284,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({
         <p className="text-sm text-neutral-300 leading-relaxed mb-4">{currentStep.content}</p>
         <div className="flex justify-end items-center gap-4">
             <button onClick={handleClose} className="px-3 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">Skip Guide</button>
-            <button
-                onClick={handleNext}
-                className="px-4 py-1.5 bg-sky-600 text-white rounded-md text-sm font-semibold hover:bg-sky-500 transition-colors"
-            >
+            <button onClick={handleNext} className="px-4 py-1.5 bg-sky-600 text-white rounded-md text-sm font-semibold hover:bg-sky-500 transition-colors">
                 {stepIndex === stepsToUse.length - 1 ? 'Finish' : 'Next'}
             </button>
         </div>

@@ -1,12 +1,10 @@
-// --- START OF FILE App.tsx ---
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
+import TutorialModal from './components/TutorialModal';
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
@@ -27,8 +25,8 @@ import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
-import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
+import SettingsModal from './components/SettingsModal';
+import FirstVisitTutorial from './components/FirstVisitTutorial';
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -51,7 +49,9 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.2beta'; // Define your app version here
+const APP_VERSION = 'v0.2beta';
+
+type PanelType = 'controls' | 'cmeList' | 'none';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -68,16 +68,14 @@ const App: React.FC = () => {
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   
-  // Tutorial States
-  // Using one boolean to rule all tutorial modals
-  const [isTutorialActive, setIsTutorialActive] = useState(false); // True if ANY tutorial is showing
-  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null); // Type of the active tutorial
+  const [isTutorialActive, setIsTutorialActive] = useState(false);
+  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null);
   
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
 
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // This is for the global App SettingsModal
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
 
   const [showLabels, setShowLabels] = useState(true);
@@ -103,38 +101,37 @@ const App: React.FC = () => {
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
-      setIsTutorialActive(true); // Activate tutorial system
-      setCurrentTutorialType('firstVisit'); // Start with the first visit tutorial
+      setIsTutorialActive(true);
+      setCurrentTutorialType('firstVisit');
     }
     if (!clockRef.current && window.THREE) {
       clockRef.current = new window.THREE.Clock();
     }
   }, []);
   
-  // Universal handler to close any active tutorial
   const handleCloseTutorial = useCallback(() => {
-    setIsTutorialActive(false);
-    setCurrentTutorialType(null);
-    setHighlightedElementId(null);
-    // Persist first visit tutorial completion
     if (currentTutorialType === 'firstVisit') {
       localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
     }
+    setIsTutorialActive(false);
+    setCurrentTutorialType(null);
+    setHighlightedElementId(null);
+    setIsControlsOpen(false); // Close panels when tutorial ends
+    setIsCmeListOpen(false);
   }, [currentTutorialType]);
 
-  // Handler to open CME Visualization tutorial
   const handleOpenCmeVizTutorial = useCallback(() => {
     setIsTutorialActive(true);
     setCurrentTutorialType('cmeViz');
-    // For mobile, ensure controls panel opens for the tutorial to work
-    if (window.innerWidth < 1024) { 
-      setIsControlsOpen(true);
-    }
   }, []);
 
-  // Universal handler for setting highlighted element ID based on tutorial step
   const handleTutorialStepChange = useCallback((id: string | null) => {
     setHighlightedElementId(id);
+  }, []);
+
+  const handlePanelStateRequest = useCallback((panel: PanelType) => {
+    setIsControlsOpen(panel === 'controls');
+    setIsCmeListOpen(panel === 'cmeList');
   }, []);
 
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
@@ -181,7 +178,7 @@ const App: React.FC = () => {
 
   useEffect(() => { if (activePage === 'modeler') { loadCMEData(activeTimeRange); } }, [activeTimeRange, loadCMEData, activePage]);
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
-  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCmeId]);
+  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
@@ -201,28 +198,18 @@ const App: React.FC = () => {
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
   const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching') && !substormActivityStatus.text.includes('substorm signature detected'), [substormActivityStatus]);
 
-  // Handler for viewing a CME in the Visualization page from Solar Activity Dashboard
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
     setCurrentlyModeledCMEId(cmeId);
     setIsCmeListOpen(true);
   }, []);
 
-  // Handler for clicking the CME Visualization button in the main header
   const handleCmeVizNavClick = useCallback(() => {
-    // If FirstVisitTutorial is active and highlighting this button, complete its step
     if (isTutorialActive && currentTutorialType === 'firstVisit' && highlightedElementId === 'nav-modeler') {
-      setIsTutorialActive(false); // Close FirstVisitTutorial
-      setCurrentTutorialType(null); // Clear its type
-      localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true'); // Mark FirstVisit as seen
-
-      setActivePage('modeler'); // Navigate to modeler page
-      // Immediately open the CME Visualization tutorial
-      setIsTutorialActive(true);
+      localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
+      setActivePage('modeler');
       setCurrentTutorialType('cmeViz');
-      // No need to call handleTutorialStepChange here, TutorialModal's useEffect will do it.
     } else {
-      // Normal navigation
       setActivePage('modeler');
     }
   }, [isTutorialActive, currentTutorialType, highlightedElementId]);
@@ -268,7 +255,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
                  <button 
-                id="nav-modeler" onClick={handleCmeVizNavClick} // Use the new handler here
+                id="nav-modeler" onClick={handleCmeVizNavClick}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
@@ -291,7 +278,6 @@ const App: React.FC = () => {
         <div className="flex flex-grow min-h-0">
             {activePage === 'modeler' && ( <>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* ControlsPanel now calls handleOpenCmeVizTutorial */}
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenCmeVizTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
@@ -316,20 +302,12 @@ const App: React.FC = () => {
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
 
-                {/* Conditional Rendering for Tutorials */}
                 {isTutorialActive && currentTutorialType === 'cmeViz' && (
                     <TutorialModal
-                        isOpen={true} // TutorialModal should be open if isTutorialActive and current type matches
+                        isOpen={true}
                         onClose={handleCloseTutorial}
-                        tutorialType="cmeViz"
                         onStepChange={handleTutorialStepChange}
-                        // Panel Control Props for TutorialModal
-                        openControlsPanel={() => setIsControlsOpen(true)}
-                        closeControlsPanel={() => setIsControlsOpen(false)}
-                        isControlsPanelOpen={isControlsOpen}
-                        openCmeListPanel={() => setIsCmeListOpen(true)}
-                        closeCmeListPanel={() => setIsCmeListOpen(false)}
-                        isCmeListPanelOpen={isCmeListOpen}
+                        onRequestPanelStateChange={handlePanelStateRequest}
                     />
                 )}
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
@@ -348,11 +326,10 @@ const App: React.FC = () => {
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
-        {/* FirstVisitTutorial */}
         {isTutorialActive && currentTutorialType === 'firstVisit' && (
             <FirstVisitTutorial
-                isOpen={true} // FirstVisitTutorial should be open if isTutorialActive and current type matches
-                onClose={handleCloseTutorial} // Universal close handler
+                isOpen={true}
+                onClose={handleCloseTutorial}
                 onStepChange={handleTutorialStepChange}
             />
         )}
