@@ -46,7 +46,8 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         return;
     }
 
-    onStepChange(currentStep.targetId); // Update the highlighted element in App.tsx
+    // This callback is kept in case the parent component needs to know the current step
+    onStepChange(currentStep.targetId);
 
     // Function to calculate and set the position of the tooltip
     const updatePosition = () => {
@@ -54,13 +55,12 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        // If element not found, hide tooltip but don't auto-progress to avoid loops
         console.warn(`FirstVisitTutorial: Target element "${currentStep.targetId}" not found.`);
         setTargetRect(null);
       }
     };
 
-    // Use a small delay to ensure the DOM is ready, especially after panel transitions
+    // Use a small delay to ensure the DOM is ready
     const timer = setTimeout(updatePosition, 50);
     window.addEventListener('resize', updatePosition);
     
@@ -68,7 +68,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       clearTimeout(timer);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [isOpen, stepIndex, onStepChange, onClose]); // This hook now correctly depends on stepIndex
+  }, [isOpen, stepIndex, onStepChange, onClose]);
 
 
   const handleNext = () => {
@@ -84,17 +84,21 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     onClose();
   };
 
-  const currentStep = STEPS[stepIndex]; // Get the current step for rendering
+  const currentStep = STEPS[stepIndex];
 
-  const { tooltipStyle, arrowStyle } = useMemo(() => {
+  const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
-      return { tooltipStyle: { opacity: 0, visibility: 'hidden' }, arrowStyle: {} };
+      return { 
+          tooltipStyle: { opacity: 0, visibility: 'hidden' }, 
+          arrowStyle: {},
+          highlightStyle: { display: 'none' } 
+        };
     }
 
+    // --- Tooltip Position Calculation ---
     const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256);
-    const tooltipHeight = 160;
-    const margin = 16; 
-
+    const tooltipHeight = 160; 
+    const margin = 16;
     let top = 0, left = 0;
 
     switch (currentStep.placement) {
@@ -106,7 +110,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
         left = targetRect.left - tooltipWidth - margin;
         break;
-      default: // Fallback for 'top' and 'right' if added later
+      default:
         top = targetRect.bottom + margin;
         left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
     }
@@ -114,10 +118,12 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
     const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
     
-    // Z-INDEX is high to appear above panels. z-[2002] for backdrop, z-[2003] for highlight, z-[2006] for tooltip.
-    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006 };
-    let arStyle: React.CSSProperties = {};
+    // --- Style Definitions ---
+    // Tooltip Style (z-index: 2006)
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006, opacity: 1, visibility: 'visible' };
     
+    // Arrow Style
+    let arStyle: React.CSSProperties = {};
     switch (currentStep.placement) {
         case 'bottom':
             arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
@@ -129,21 +135,35 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
             arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
     }
     
-    ttStyle.opacity = 1;
-    ttStyle.visibility = 'visible';
-    return { tooltipStyle: ttStyle, arrowStyle: arStyle };
+    // Highlight and Backdrop Style (z-index: 2002)
+    const isForecastStep = currentStep.targetId === 'nav-forecast';
+    const backdropColor = isForecastStep ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.6)';
+    const PADDING = 4;
+
+    const hlStyle: React.CSSProperties = {
+        position: 'fixed',
+        top: `${targetRect.top - PADDING}px`,
+        left: `${targetRect.left - PADDING}px`,
+        width: `${targetRect.width + PADDING * 2}px`,
+        height: `${targetRect.height + PADDING * 2}px`,
+        borderRadius: '8px',
+        boxShadow: `0 0 0 9999px ${backdropColor}`,
+        zIndex: 2002,
+        pointerEvents: 'none',
+        transition: 'top 0.3s, left 0.3s, width 0.3s, height 0.3s',
+    };
+
+    return { tooltipStyle: ttStyle, arrowStyle: arStyle, highlightStyle: hlStyle };
   }, [targetRect, currentStep]);
 
   if (!isOpen || !currentStep) return null;
 
-  // This logic now correctly re-evaluates every time the currentStep changes
-  const isForecastStep = currentStep.targetId === 'nav-forecast';
-  const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 ${
-    isForecastStep ? 'bg-black/20 backdrop-filter-none' : 'bg-black/60 backdrop-blur-sm'
-  }`;
-
   return (
-    <div className={backdropClasses}>
+    <>
+      {/* This single div creates both the backdrop and the highlight "hole" */}
+      <div style={highlightStyle} />
+
+      {/* The tooltip itself, which appears above the highlight overlay */}
       <div className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`} style={tooltipStyle} onClick={(e) => e.stopPropagation()}>
         <div className="absolute w-0 h-0" style={arrowStyle} />
         <div className="flex justify-between items-start mb-2">
@@ -160,7 +180,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
             )}
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
