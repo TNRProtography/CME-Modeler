@@ -8,6 +8,7 @@ interface TutorialStep {
   widthClass?: string;
   offsetY?: number; // Optional vertical offset for fine-tuning
   offsetX?: number; // Optional horizontal offset for fine-tuning
+  disableNext?: boolean; // Added for consistency, though currently not used in CME_VISUALIZATION_STEPS
 }
 
 // --- DEFINE CME VISUALIZATION TUTORIAL STEPS ---
@@ -133,10 +134,11 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
 
 // Placeholder for other tutorial types if they were defined elsewhere (e.g., in a constants file)
 const FIRST_VISIT_STEPS: TutorialStep[] = [
-  // Define your first visit steps here, for now just a dummy entry
+  // This will be replaced by the actual STEPS from FirstVisitTutorial.tsx if needed
+  // For now, it's consistent with App.tsx's FirstVisitTutorial state management.
   { targetId: 'nav-forecast', title: 'Aurora Forecast (First Visit)', content: 'This is the first visit tutorial content for the Forecast page.', placement: 'bottom', widthClass: 'w-80' },
   { targetId: 'nav-solar-activity', title: 'Solar Activity (First Visit)', content: 'This is the first visit tutorial content for Solar Activity.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-modeler', title: 'CME Visualization (First Visit)', content: 'This is the first visit tutorial content for CME Viz.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-modeler', title: 'CME Visualization (First Visit)', content: 'This is the first visit tutorial content for CME Viz.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
   { targetId: 'nav-settings', title: 'App Settings (First Visit)', content: 'This is the first visit tutorial content for App Settings.', placement: 'left', widthClass: 'w-72' },
 ];
 
@@ -154,140 +156,168 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, tutorial
 
   // Select steps based on tutorialType
   const stepsToUse = useMemo(() => {
+    // In a production app, you might import FIRST_VISIT_STEPS from a shared constants file
     if (tutorialType === 'firstVisit') {
       return FIRST_VISIT_STEPS;
     }
     return CME_VISUALIZATION_STEPS;
-  }, [tutorialType]);
+  }, [tutorialType]); // Re-calculate if tutorialType changes
 
-  const currentStep = stepsToUse[stepIndex];
+  // Effect for initializing stepIndex when tutorial opens
+  useEffect(() => {
+    if (isOpen) {
+      setStepIndex(0); // Always start from the first step when the modal opens
+    }
+  }, [isOpen]);
 
-  // Callback to inform the parent about which element to highlight
-  const informParentAboutHighlight = useCallback((id: string | null) => {
-    onStepChange(id);
-  }, [onStepChange]);
 
-
+  // Effect for handling step changes and highlighting
   useEffect(() => {
     if (!isOpen) {
-      informParentAboutHighlight(null); // Clear highlight when modal closes
+      onStepChange(null); // Clear highlight when modal closes
       return;
     }
 
-    // Reset step index when opened or if it's a new tutorial type
-    if (stepIndex !== 0 && tutorialType === 'cmeViz') { // Only reset for CME Viz if not already at step 0
-        setStepIndex(0);
-    } else if (tutorialType === 'firstVisit' && stepIndex !== 0) {
-        setStepIndex(0); // Always start FirstVisit from 0
+    // Ensure stepIndex is within bounds and currentStep is valid
+    if (stepIndex >= stepsToUse.length || !stepsToUse[stepIndex]) {
+        onClose(); // Close tutorial if steps are exhausted or invalid
+        return;
     }
 
-    if (!currentStep) return;
+    const currentStep = stepsToUse[stepIndex]; // Get the current step based on the state
 
-    // Trigger highlighting in the parent (App.tsx)
-    informParentAboutHighlight(currentStep.targetId);
+    onStepChange(currentStep.targetId); // Inform App.tsx to highlight the element
 
     const updatePosition = () => {
       const element = document.getElementById(currentStep.targetId);
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        console.warn(`Tutorial target element not found: ${currentStep.targetId}. Skipping step.`);
-        handleNext(); // Skip to next step if element not found
+        // Log a warning if element is not found. Do NOT auto-skip to prevent infinite loops.
+        console.warn(`TutorialModal: Target element "${currentStep.targetId}" not found. Cannot highlight.`);
+        setTargetRect(null); // Clear targetRect to hide the tooltip if element is missing
       }
     };
 
-    const timer = setTimeout(updatePosition, 50); // Small delay for DOM layout
+    const timer = setTimeout(updatePosition, 50); // Small delay for DOM layout to settle
     window.addEventListener('resize', updatePosition);
     
     return () => {
       clearTimeout(timer);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [isOpen, stepIndex, currentStep, informParentAboutHighlight, stepsToUse, tutorialType]);
+  }, [isOpen, stepIndex, onStepChange, onClose, stepsToUse]); // Dependencies for this effect
+
 
   const handleNext = () => {
-    if (stepIndex < stepsToUse.length - 1) {
+    // Only allow progression if currentStep.disableNext is false (or undefined)
+    if (currentStep && !currentStep.disableNext && stepIndex < stepsToUse.length - 1) {
       setStepIndex(stepIndex + 1);
-    } else {
+    } else if (currentStep && !currentStep.disableNext && stepIndex === stepsToUse.length - 1) {
       onClose(); // End of tutorial
     }
   };
   
   const handleClose = () => {
-    informParentAboutHighlight(null); // Ensure target highlight is removed
+    onStepChange(null); // Ensure target highlight is removed
     onClose(); // Close the modal
   };
+
+  const currentStep = stepsToUse[stepIndex]; // Re-get currentStep for rendering purposes
 
   const { tooltipStyle, arrowStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { tooltipStyle: { opacity: 0, visibility: 'hidden' }, arrowStyle: {} };
     }
 
-    const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256); // Default 256 if no class
-    const tooltipHeight = 160; // Approximate height for tooltip content
-    const margin = 16; // Space from target and screen edges
+    const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256);
+    const tooltipHeight = 160; // Assuming a consistent height for all tooltips for layout calculations
+    const margin = 16; 
 
-    let ttStyle: React.CSSProperties = { zIndex: 2003 }; // Ensure tooltip is above backdrop
-    let arStyle: React.CSSProperties = {};
+    let top = 0;
+    let left = 0;
 
-    let top = 0, left = 0;
-
+    // Calculate initial top and left based on placement
     switch (currentStep.placement) {
       case 'bottom':
-        top = targetRect.bottom + margin + (currentStep.offsetY || 0);
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + (currentStep.offsetX || 0);
-        arStyle = { 
-            bottom: '100%', left: '50%', transform: 'translateX(-50%)',
-            borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' 
-        };
+        top = targetRect.bottom + margin;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
         break;
       case 'top':
-        top = targetRect.top - tooltipHeight - margin + (currentStep.offsetY || 0);
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + (currentStep.offsetX || 0);
-        arStyle = { 
-            top: '100%', left: '50%', transform: 'translateX(-50%)',
-            borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' 
-        };
+        top = targetRect.top - tooltipHeight - margin;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
         break;
       case 'left':
-        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + (currentStep.offsetY || 0);
-        left = targetRect.left - tooltipWidth - margin + (currentStep.offsetX || 0);
-        arStyle = { 
-            right: '100%', top: '50%', transform: 'translateY(-50%)',
-            borderRight: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' 
-        };
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+        left = targetRect.left - tooltipWidth - margin;
         break;
       case 'right':
-        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + (currentStep.offsetY || 0);
-        left = targetRect.right + margin + (currentStep.offsetX || 0);
-        arStyle = { 
-            left: '100%', top: '50%', transform: 'translateY(-50%)',
-            borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' 
-        };
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+        left = targetRect.right + margin;
         break;
     }
 
+    // Apply custom offsets before clamping
+    top += (currentStep.offsetY || 0);
+    left += (currentStep.offsetX || 0);
+
+
     // Clamp positions to stay within viewport
-    ttStyle.top = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
-    ttStyle.left = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
+    const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
+    const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
 
-    // For horizontal arrows, adjust left of arrow based on clamped top/left
-    if (currentStep.placement === 'top' || currentStep.placement === 'bottom') {
-        // Arrow's left should be relative to tooltip's top-left origin
-        arStyle.left = `${targetRect.left + targetRect.width / 2 - (ttStyle.left as number)}px`;
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2003 }; // Ensure tooltip is above backdrop
+    let arStyle: React.CSSProperties = {};
+
+    // Calculate arrow position relative to the clamped tooltip position
+    switch (currentStep.placement) {
+        case 'bottom':
+            arStyle = { 
+                bottom: '100%', 
+                left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, // Arrow points to target center relative to clamped tooltip left
+                transform: 'translateX(-50%)', 
+                borderBottom: '8px solid #404040', 
+                borderLeft: '8px solid transparent', 
+                borderRight: '8px solid transparent' 
+            };
+            break;
+        case 'top':
+            arStyle = { 
+                top: '100%', 
+                left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`,
+                transform: 'translateX(-50%)', 
+                borderTop: '8px solid #404040', 
+                borderLeft: '8px solid transparent', 
+                borderRight: '8px solid transparent' 
+            };
+            break;
+        case 'left':
+            arStyle = { 
+                right: '100%', 
+                top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, // Arrow points to target center relative to clamped tooltip top
+                transform: 'translateY(-50%)', 
+                borderRight: '8px solid #404040', 
+                borderTop: '8px solid transparent', 
+                borderBottom: '8px solid transparent' 
+            };
+            break;
+        case 'right':
+            arStyle = { 
+                left: '100%', 
+                top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`,
+                transform: 'translateY(-50%)', 
+                borderLeft: '8px solid #404040', 
+                borderTop: '8px solid transparent', 
+                borderBottom: '8px solid transparent' 
+            };
+            break;
     }
-    // For vertical arrows, adjust top of arrow based on clamped top/left
-    if (currentStep.placement === 'left' || currentStep.placement === 'right') {
-        // Arrow's top should be relative to tooltip's top-left origin
-        arStyle.top = `${targetRect.top + targetRect.height / 2 - (ttStyle.top as number)}px`;
-    }
-
-
+    
     ttStyle.opacity = 1;
     ttStyle.visibility = 'visible';
 
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
-  }, [targetRect, currentStep]);
+  }, [targetRect, stepIndex, stepsToUse]); // Added stepsToUse to dependencies of useMemo
 
 
   if (!isOpen || !currentStep) {

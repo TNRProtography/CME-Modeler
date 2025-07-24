@@ -11,9 +11,9 @@ interface TutorialStep {
 
 const STEPS: TutorialStep[] = [
   { targetId: 'nav-forecast', title: 'Aurora Forecast', content: 'This is your go-to page for live aurora forecasts, substorm detection, and sighting maps. Check here to see if an aurora might be visible tonight!', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-solar-activity', title: 'Solar Activity', content: 'Dive deep into the latest solar data. This dashboard shows real-time solar flares, proton flux, and the latest imagery directly from the Sun.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-solar-activity', title: 'Solar Activity', content: 'Dive deep into the latest solar data and active regions. See real-time solar flares and imagery directly from the Sun.', placement: 'bottom', widthClass: 'w-80' },
   // MODIFIED STEP: Instruct user to click the CME Visualization button directly
-  { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! Click the "CME Visualization" button above to proceed and learn more about this feature.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
+  { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! Click the highlighted "CME Visualization" button above to proceed and learn more about this feature.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
   { targetId: 'nav-settings', title: 'App Settings', content: 'Finally, here you can configure app settings, manage notifications, and install the app to your device for a better experience.', placement: 'left', widthClass: 'w-72' },
 ];
 
@@ -27,49 +27,60 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
-  const currentStep = STEPS[stepIndex];
+  // Effect for initializing stepIndex when tutorial opens
+  useEffect(() => {
+    if (isOpen) {
+      setStepIndex(0); // Always start from the first step when the modal opens
+    }
+  }, [isOpen]);
 
+  // Effect for handling step changes and highlighting
   useEffect(() => {
     if (!isOpen) {
-      onStepChange(null);
+      onStepChange(null); // Clear highlight when modal closes
       return;
     }
 
-    // Always reset to first step when opened/re-opened to ensure consistent flow
-    if (stepIndex !== 0) { // Only reset if not already at the first step
-        setStepIndex(0);
+    // Ensure stepIndex is within bounds and currentStep is valid
+    if (stepIndex >= STEPS.length || !STEPS[stepIndex]) {
+        onClose(); // Close tutorial if steps are exhausted or invalid
+        return;
     }
-    
-    // Ensure the highlight is applied for the *current* (potentially reset) step
-    const initialTargetId = STEPS[0]?.targetId || null;
-    onStepChange(currentStep?.targetId || initialTargetId);
 
+    const currentStep = STEPS[stepIndex]; // Get the current step based on the state
+
+    onStepChange(currentStep.targetId); // Inform App.tsx to highlight the element
 
     const updatePosition = () => {
       const element = document.getElementById(currentStep.targetId);
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        console.warn(`Tutorial target element not found: ${currentStep.targetId}. Skipping step.`);
-        handleNext(); 
+        // Log a warning if element is not found. Do NOT auto-skip to prevent infinite loops.
+        console.warn(`FirstVisitTutorial: Target element "${currentStep.targetId}" not found. Cannot highlight.`);
+        setTargetRect(null); // Clear targetRect to hide the tooltip if element is missing
       }
     };
 
-    const timer = setTimeout(updatePosition, 50);
+    const timer = setTimeout(updatePosition, 50); // Small delay for DOM layout to settle
     window.addEventListener('resize', updatePosition);
     
     return () => {
       clearTimeout(timer);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [isOpen, stepIndex, currentStep, onStepChange]); // Re-evaluate on isOpen/stepIndex/currentStep changes
+  }, [isOpen, stepIndex, onStepChange, onClose]); // Dependencies for this effect
+
 
   const handleNext = () => {
-    if (stepIndex < STEPS.length - 1) {
+    // Only allow progression if currentStep.disableNext is false
+    if (currentStep && !currentStep.disableNext && stepIndex < STEPS.length - 1) {
       setStepIndex(stepIndex + 1);
-    } else {
+    } else if (currentStep && !currentStep.disableNext && stepIndex === STEPS.length - 1) {
       onClose(); // Call onClose when tutorial finishes
     }
+    // If disableNext is true, this button is not rendered, so this logic won't be hit anyway.
+    // However, it's good practice to ensure handleNext does nothing if disabled.
   };
   
   const handleClose = () => {
@@ -77,60 +88,101 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     onClose(); // Call onClose when tutorial is skipped
   };
 
+  const currentStep = STEPS[stepIndex]; // Re-get currentStep for rendering purposes
+
   const { tooltipStyle, arrowStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { tooltipStyle: { opacity: 0, visibility: 'hidden' }, arrowStyle: {} };
     }
 
     const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256);
-    const tooltipHeight = 160; 
+    const tooltipHeight = 160; // Assuming a consistent height for all tooltips for layout calculations
     const margin = 16; 
 
-    let ttStyle: React.CSSProperties = {};
+    let top = 0;
+    let left = 0;
+
+    // Calculate initial top and left based on placement
+    switch (currentStep.placement) {
+      case 'bottom':
+        top = targetRect.bottom + margin;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'left':
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+        left = targetRect.left - tooltipWidth - margin;
+        break;
+      case 'top': // Not used in current STEPS but good to have
+        top = targetRect.top - tooltipHeight - margin;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'right': // Not used in current STEPS but good to have
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+        left = targetRect.right + margin;
+        break;
+    }
+
+    // Apply custom offsets before clamping
+    top += (currentStep.offsetY || 0);
+    left += (currentStep.offsetX || 0);
+
+
+    // Clamp positions to stay within viewport
+    const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
+    const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
+
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2003 }; // Ensure tooltip is above backdrop
     let arStyle: React.CSSProperties = {};
 
-    const desiredTop = targetRect.bottom + margin;
-    const clampedTop = Math.max(margin, Math.min(desiredTop, window.innerHeight - tooltipHeight - margin));
-
-    let commonLeft = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
-    commonLeft = Math.max(margin, commonLeft);
-    commonLeft = Math.min(commonLeft, window.innerWidth - tooltipWidth - margin);
-
+    // Calculate arrow position relative to the clamped tooltip position
     switch (currentStep.placement) {
-      case 'bottom': {
-        ttStyle = { top: `${clampedTop}px`, left: `${commonLeft}px`, transform: 'none' };
-        arStyle = { 
-            bottom: '100%', 
-            left: `${targetRect.left + targetRect.width / 2 - commonLeft}px`, 
-            transform: 'translateX(-50%)', 
-            borderBottom: '8px solid #404040', 
-            borderLeft: '8px solid transparent', 
-            borderRight: '8px solid transparent' 
-        };
-        break;
-      }
-      case 'left': {
-        const left = targetRect.left - tooltipWidth - margin;
-        
-        ttStyle = { top: `${clampedTop}px`, left: `${left}px`, transform: 'none' };
-        
-        arStyle = { 
-            bottom: '100%', 
-            left: `${targetRect.left + targetRect.width / 2 - left}px`, 
-            transform: 'translateX(-50%)', 
-            borderBottom: '8px solid #404040', 
-            borderLeft: '8px solid transparent', 
-            borderRight: '8px solid transparent' 
-        };
-        break;
-      }
+        case 'bottom':
+            arStyle = { 
+                bottom: '100%', 
+                left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, // Arrow points to target center relative to clamped tooltip left
+                transform: 'translateX(-50%)', 
+                borderBottom: '8px solid #404040', 
+                borderLeft: '8px solid transparent', 
+                borderRight: '8px solid transparent' 
+            };
+            break;
+        case 'left':
+            arStyle = { 
+                right: '100%', 
+                top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, // Arrow points to target center relative to clamped tooltip top
+                transform: 'translateY(-50%)', 
+                borderRight: '8px solid #404040', 
+                borderTop: '8px solid transparent', 
+                borderBottom: '8px solid transparent' 
+            };
+            break;
+        case 'top':
+            arStyle = { 
+                top: '100%', 
+                left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`,
+                transform: 'translateX(-50%)', 
+                borderTop: '8px solid #404040', 
+                borderLeft: '8px solid transparent', 
+                borderRight: '8px solid transparent' 
+            };
+            break;
+        case 'right':
+            arStyle = { 
+                left: '100%', 
+                top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`,
+                transform: 'translateY(-50%)', 
+                borderLeft: '8px solid #404040', 
+                borderTop: '8px solid transparent', 
+                borderBottom: '8px solid transparent' 
+            };
+            break;
     }
     
     ttStyle.opacity = 1;
     ttStyle.visibility = 'visible';
 
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
-  }, [targetRect, currentStep]);
+  }, [targetRect, stepIndex, STEPS]); // Added STEPS to dependencies of useMemo
 
   if (!isOpen || !currentStep) return null;
 
