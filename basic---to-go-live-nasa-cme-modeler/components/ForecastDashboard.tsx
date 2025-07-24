@@ -72,6 +72,7 @@ const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif
 // NEW: NASA DONKI API for Interplanetary Shocks (IPS). The API key is handled by the backend worker.
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips'; // Proxied through worker
 const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
+const GREYMOUTH_LATITUDE = -42.45; // Latitude for Greymouth, NZ, as the baseline
 
 // UPDATED: GAUGE_THRESHOLDS to match the provided HTML
 const GAUGE_THRESHOLDS = {
@@ -101,6 +102,26 @@ const GAUGE_EMOJIS = {
     purple: '\u{1F60D}', // Smiling Face with Heart-Eyes
     pink:   '\u{1F60D}', // Smiling Face with Heart-Eyes (same as purple in HTML)
     error:  '\u{2753}'   // Question Mark
+};
+
+// --- Helper Functions ---
+
+// NEW: Calculates the percentage adjustment for the aurora score based on user's latitude.
+const calculateLocationAdjustment = (userLat: number): number => {
+    const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
+    
+    const R = 6371; // Radius of Earth in km
+    const dLat = (userLat - GREYMOUTH_LATITUDE) * (Math.PI / 180);
+    const distanceKm = Math.abs(dLat) * R;
+
+    // Calculate adjustment in 10km segments. 3% per 150km = 0.2% per 10km.
+    const numberOfSegments = Math.floor(distanceKm / 10);
+    const adjustmentFactor = numberOfSegments * 0.2;
+
+    // Apply adjustment: negative if north, positive if south
+    const finalAdjustment = isNorthOfGreymouth ? -adjustmentFactor : adjustmentFactor;
+    
+    return finalAdjustment;
 };
 
 const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
@@ -294,16 +315,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
     const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
     
-    // NEW: State for Interplanetary Shock data
     const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
     const [isIpsOpen, setIsIpsOpen] = useState(false);
 
-    // NEW: Refs for previous values to trigger notifications
     const previousAuroraScoreRef = useRef<number | null>(null);
-    const previousSubstormStatusRef = useRef<string | null>(null); // To store the 'text' part of substormBlurb
+    const previousSubstormStatusRef = useRef<string | null>(null);
 
-    // NEW: State for toggling visibility of celestial annotations
     const [showCelestialAnnotations, setShowCelestialAnnotations] = useState<boolean>(true);
+
+    // NEW: State for location-based forecast adjustment
+    const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
+    const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
 
 
     const tooltipContent = {
@@ -315,7 +337,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'bz': `<strong>What it is:</strong> The North-South direction of the乎Interplanetary Magnetic Field (IMF), measured in nanoteslas (nT). This is the most critical component.<br><br><strong>Effect on Aurora:</strong> When Bz is strongly <strong>negative (south)</strong>, it opens a gateway for solar wind energy to pour in. A positive Bz closes this gate. <strong>The more negative, the better!</strong>`,
         'epam': `<strong>What it is:</strong> The Electron, Proton, and Alpha Monitor (EPAM) on the ACE spacecraft measures energetic particles from the sun.<br><br><strong>Effect on Aurora:</strong> This is not a direct aurora indicator. However, a sharp, sudden, and simultaneous rise across all energy levels can be a key indicator of an approaching CME shock front, which often precedes major auroral storms.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is illuminated by the Sun.<br><br><strong>Effect on Aurora:</strong> A bright moon (high illumination) acts like natural light pollution, washing out fainter auroral displays. A low illumination (New Moon) provides the darkest skies, making it much easier to see the aurora.`,
-        // NEW: Tooltip for Interplanetary Shocks
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
@@ -380,7 +401,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
 
-    const analyzeMagnetometerData = (data: any[]) => {
+    const analyzeMagnetometerData = useCallback((data: any[], currentAdjustedScore: number | null) => {
         const prevSubstormStatusText = previousSubstormStatusRef.current;
         
         if (data.length < 30) {
@@ -415,7 +436,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`;
             newStatusColor = 'text-green-400 font-bold animate-pulse';
             
-            if (auroraScore !== null && auroraScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 5 * 60 * 1000)) {
+            if (currentAdjustedScore !== null && currentAdjustedScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 5 * 60 * 1000)) {
                 shouldNotifySubstormEruption = true;
             }
         } else if (drop < -15) {
@@ -436,10 +457,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (shouldNotifySubstormEruption) {
             sendNotification(
                 'Substorm Eruption Alert!',
-                `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${auroraScore?.toFixed(1)}%.`
+                `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${currentAdjustedScore?.toFixed(1)}%.`
             );
         }
-    };
+    }, [setSubstormBlurb, setSubstormActivityStatus]);
 
     const getMagnetometerAnnotations = useCallback((data: any[]) => {
         const annotations: any = {};
@@ -586,35 +607,38 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const prevAuroraScore = previousAuroraScoreRef.current;
 
-
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
             const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
-            const currentScore = currentForecast?.spotTheAuroraForecast ?? null;
-            setAuroraScore(currentScore);
-            setCurrentAuroraScore(currentScore);
+            
+            // --- LOCATION-BASED SCORE ADJUSTMENT ---
+            const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
+            let adjustedScore = baseScore;
+            if (baseScore !== null) {
+                adjustedScore = baseScore + locationAdjustment;
+                adjustedScore = Math.max(0, Math.min(100, adjustedScore)); // Clamp score between 0 and 100
+            }
+            
+            setAuroraScore(adjustedScore);
+            setCurrentAuroraScore(adjustedScore);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
-            setAuroraBlurb(getAuroraBlurb(currentScore ?? 0));
+            setAuroraBlurb(getAuroraBlurb(adjustedScore ?? 0));
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
 
-            // --- Notification Logic for Aurora Score ---
-            if (currentScore !== null && prevAuroraScore !== null) {
-                // Notify when hitting 50% or more, if it was previously below 50%
-                if (currentScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) { // 30 min cooldown
-                    sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Look for a visible glow!`);
-                } else if (currentScore < 50) { // Clear cooldown if drops below 50
+            // --- Notification Logic for Aurora Score (using adjusted score) ---
+            if (adjustedScore !== null && prevAuroraScore !== null) {
+                if (adjustedScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 30 * 60 * 1000)) {
+                    sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${adjustedScore.toFixed(1)}%! Look for a visible glow!`);
+                } else if (adjustedScore < 50) {
                     clearNotificationCooldown('aurora-50percent');
                 }
-
-                // Notify when hitting 80% or more, if it was previously below 80%
-                if (currentScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) { // 30 min cooldown
-                    sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${currentScore.toFixed(1)}%! Get ready for a strong display!`);
-                } else if (currentScore < 80) { // Clear cooldown if drops below 80
+                if (adjustedScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 30 * 60 * 1000)) {
+                    sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${adjustedScore.toFixed(1)}%! Get ready for a strong display!`);
+                } else if (adjustedScore < 80) {
                     clearNotificationCooldown('aurora-80percent');
                 }
             }
-            previousAuroraScoreRef.current = currentScore; // Update ref after comparison
-
+            previousAuroraScoreRef.current = adjustedScore; // Update ref with the new adjusted score
 
             if (Array.isArray(dailyHistory)) { setDailyCelestialHistory(dailyHistory); } else { setDailyCelestialHistory([]); }
             if (Array.isArray(owmDailyForecast)) { setOwmDailyForecast(owmDailyForecast); } else { setOwmDailyForecast([]); }
@@ -670,7 +694,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             const processedData18 = goes18Result.value.filter((d: any) => d.Hp != null && typeof d.Hp === 'number' && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
             setGoes18Data(processedData18);
-            analyzeMagnetometerData(processedData18); // Call analyze here, will handle notification
+            // Pass the newly adjusted score to the analysis function
+            const currentAdjustedScore = (forecastResult.status === 'fulfilled' && forecastResult.value.currentForecast?.spotTheAuroraForecast !== null)
+                ? Math.max(0, Math.min(100, forecastResult.value.currentForecast.spotTheAuroraForecast + locationAdjustment))
+                : null;
+            analyzeMagnetometerData(processedData18, currentAdjustedScore);
             if (processedData18.length > 0) anyGoesDataFound = true;
         } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason || 'Unknown error'); }
 
@@ -691,8 +719,32 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, setSubstormActivityStatus, getMoonData, auroraScore]);
+    }, [getGaugeStyle, setCurrentAuroraScore, getMoonData, locationAdjustment, analyzeMagnetometerData]);
 
+
+    // NEW: Effect to get user's location once on mount
+    useEffect(() => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const adjustment = calculateLocationAdjustment(position.coords.latitude);
+                    setLocationAdjustment(adjustment);
+                    const direction = adjustment >= 0 ? 'south' : 'north';
+                    const distance = Math.abs(adjustment / 3 * 150);
+                    setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
+                },
+                (error) => {
+                    console.error("Geolocation error:", error.message);
+                    setLocationAdjustment(0);
+                    setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
+                },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 1000 * 60 * 30 }
+            );
+        } else {
+            setLocationAdjustment(0);
+            setLocationBlurb('Geolocation is not supported. Showing default forecast for Greymouth.');
+        }
+    }, []); // Empty array ensures this runs only once
 
     useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const sunrise = celestialTimes.sun?.rise; const sunset = celestialTimes.sun?.set; if (sunrise && sunset) { if (sunrise < sunset) setIsDaylight(now > sunrise && now < sunset); else setIsDaylight(now > sunrise || now < sunset); } else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
@@ -930,6 +982,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
                                 <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${auroraScore !== null ? getGaugeStyle(auroraScore, 'power').percentage : 0}%`, backgroundColor: auroraScore !== null ? GAUGE_COLORS[getForecastScoreColorKey(auroraScore)].solid : GAUGE_COLORS.gray.solid }}></div></div>
                                 <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
+                                <div className="text-xs text-neutral-500 mt-1 italic h-4">{locationBlurb}</div>
                             </div>
                             <p className="text-neutral-300 mt-4 md:mt-0">{isDaylight ? "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!" : auroraBlurb}</p>
                         </div>
