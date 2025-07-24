@@ -148,10 +148,19 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
 
   if (!isOpen) return null;
 
+  // Determine if the current step is the 'Aurora Forecast' step
+  const isForecastStep = currentStep?.targetId === 'nav-forecast';
+
+  // Conditionally apply classes to the backdrop div
+  const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 ${
+    isForecastStep ? 'bg-black/20 backdrop-filter-none' : 'bg-black/75 backdrop-blur-sm'
+  }`;
+
   return (
     <div 
-      // Z-INDEX MODIFICATION: Increased z-index to ensure it sits on top of the header
-      className="fixed inset-0 z-[2002] bg-black/75 backdrop-blur-sm" 
+      className={backdropClasses} // Apply the determined backdrop classes here
+      // No onClick on backdrop, as it would close the tutorial unexpectedly.
+      // The 'Skip Tutorial' button handles closing.
     >
       <div
         className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`}
@@ -164,7 +173,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         </div>
         <p className="text-sm text-neutral-300 leading-relaxed mb-4">{currentStep.content}</p>
         <div className="flex justify-end items-center gap-4">
-            <button onClick={handleClose} className="text-xs text-neutral-400 hover:text-white transition-colors">Skip Tutorial</button>
+            <button onClick={handleClose} className="px-3 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">Skip Tutorial</button>
             <button
                 onClick={handleNext}
                 className="px-4 py-1.5 bg-sky-600 text-white rounded-md text-sm font-semibold hover:bg-sky-500 transition-colors"
