@@ -246,7 +246,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                         <GuideIcon className="w-6 h-6" />
                      </button>
                 </div>
-                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!). Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
+                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-neutral-900 p-4 rounded-lg relative">
