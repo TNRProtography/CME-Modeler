@@ -44,13 +44,15 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        // If the target element is not found, skip to the next step
+        // If the target element is not found, skip to the next step.
+        // This handles cases where an element might not be in the DOM yet or has been removed.
+        console.warn(`Tutorial target element not found: ${currentStep.targetId}. Skipping step.`);
         handleNext(); 
       }
     };
 
-    // Add a small delay to allow the DOM to fully render,
-    // especially useful when navigating or on initial load.
+    // Add a small delay to allow the DOM to fully render and the browser to compute the layout,
+    // especially important when dynamic content (like banners) affects element positions.
     const timer = setTimeout(updatePosition, 50);
     window.addEventListener('resize', updatePosition);
     
@@ -69,33 +71,43 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   };
   
   const handleClose = () => {
-    onStepChange(null); // Ensure target highlight is removed
+    onStepChange(null); // Ensure target highlight is removed if any
     onClose();
   };
 
   const { tooltipStyle, arrowStyle } = useMemo(() => {
-    if (!targetRect || !currentStep) return { tooltipStyle: { opacity: 0 }, arrowStyle: {} };
+    if (!targetRect || !currentStep) {
+      // Return a hidden style until targetRect is available
+      return { tooltipStyle: { opacity: 0, visibility: 'hidden' }, arrowStyle: {} };
+    }
 
     const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : 288;
-    const tooltipHeight = 160; // Assuming a consistent height for all tooltips
+    const tooltipHeight = 160; // Assuming a consistent height for all tooltips for layout calculations
     const margin = 16; // Margin between target and tooltip, and screen edges
 
     let ttStyle: React.CSSProperties = {};
     let arStyle: React.CSSProperties = {};
 
+    // Calculate a consistent desired top position for all tooltips.
+    // This aligns the top edge of the tooltip with `margin` pixels below the target's bottom edge.
+    const desiredTop = targetRect.bottom + margin;
+    // Clamp the 'top' position to ensure the tooltip stays within the viewport.
+    const clampedTop = Math.max(margin, Math.min(desiredTop, window.innerHeight - tooltipHeight - margin));
+
+    // Calculate a common 'left' position that would center the tooltip horizontally if it were
+    // placed directly below the target. This helps with horizontal positioning consistency.
+    let commonLeft = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+    // Clamp the 'left' position to ensure the tooltip stays within the viewport.
+    commonLeft = Math.max(margin, commonLeft);
+    commonLeft = Math.min(commonLeft, window.innerWidth - tooltipWidth - margin);
+
     switch (currentStep.placement) {
       case 'bottom': {
-        const top = targetRect.bottom + margin;
-        // Center horizontally relative to target, then clamp to screen edges
-        let left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
-        left = Math.max(margin, left);
-        left = Math.min(left, window.innerWidth - tooltipWidth - margin);
-        
-        ttStyle = { top: `${top}px`, left: `${left}px`, transform: 'none' };
-        // Arrow points up from the top of the tooltip, centered horizontally
+        ttStyle = { top: `${clampedTop}px`, left: `${commonLeft}px`, transform: 'none' };
+        // Arrow points up from the top of the tooltip, horizontally centered relative to target.
         arStyle = { 
             bottom: '100%', 
-            left: `${targetRect.left + targetRect.width / 2 - left}px`, 
+            left: `${targetRect.left + targetRect.width / 2 - commonLeft}px`, // position relative to tooltip's left edge
             transform: 'translateX(-50%)', 
             borderBottom: '8px solid #404040', 
             borderLeft: '8px solid transparent', 
@@ -104,33 +116,34 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         break;
       }
       case 'left': {
-        // *** MODIFICATION START ***
-        // To align with 'bottom' placed tooltips, set the desired top position
-        // to be the same as 'bottom' placements: targetRect.bottom + margin.
-        const desiredTop = targetRect.bottom + margin;
-
-        // Ensure the tooltip stays within vertical screen bounds
-        const clampedTop = Math.max(margin, Math.min(desiredTop, window.innerHeight - tooltipHeight - margin));
-        // *** MODIFICATION END ***
-        
-        // Position to the left of the target element
+        // Place tooltip to the left of the target element
         const left = targetRect.left - tooltipWidth - margin;
         
         ttStyle = { top: `${clampedTop}px`, left: `${left}px`, transform: 'none' };
-        // Arrow points right from the right of the tooltip,
-        // its vertical position is calculated relative to the clamped tooltip top.
+        
+        // *** IMPORTANT MODIFICATION ***
+        // Since the 'left' tooltip is now vertically aligned (its top is 'clampedTop')
+        // similar to 'bottom' placed tooltips, its arrow should also come from its top.
+        // The 'left' position of the arrow is calculated relative to the tooltip's 'left' property,
+        // so it points towards the target's horizontal center.
         arStyle = { 
-            left: '100%', 
-            top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, 
-            transform: 'translateY(-50%)', 
-            borderLeft: '8px solid #404040', 
-            borderTop: '8px solid transparent', 
-            borderBottom: '8px solid transparent' 
+            bottom: '100%', // Arrow points upwards from the tooltip's top edge
+            left: `${targetRect.left + targetRect.width / 2 - left}px`, // Horizontally center on target relative to tooltip's left edge
+            transform: 'translateX(-50%)', // Ensure the arrow is visually centered
+            borderBottom: '8px solid #404040', 
+            borderLeft: '8px solid transparent', 
+            borderRight: '8px solid transparent' 
         };
         break;
       }
-      // 'top' and 'right' placement cases are not defined but would follow similar logic
+      // 'top' and 'right' placement cases would need similar adjustments if introduced,
+      // ensuring their vertical alignment is consistent if desired to be "in line".
     }
+    
+    // Ensure the tooltip is visible once targetRect is calculated
+    ttStyle.opacity = 1;
+    ttStyle.visibility = 'visible';
+
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
   }, [targetRect, currentStep]);
 
@@ -140,7 +153,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     <div className="fixed inset-0 z-[2000] bg-black/75 backdrop-blur-sm">
       <div
         className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`}
-        style={{ ...tooltipStyle, visibility: targetRect ? 'visible' : 'hidden' }} // Hide until targetRect is calculated
+        style={tooltipStyle} // Apply the calculated style directly
       >
         <div className="absolute w-0 h-0" style={arrowStyle} />
         <div className="flex justify-between items-start mb-2">
