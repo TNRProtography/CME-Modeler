@@ -231,13 +231,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { iso: "6400-12800", shutter: "20-30s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
         };
     }
-    if (score < 20) {
-         return {
-            overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
-            phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
-            dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
-        };
-    }
     if (score >= 80) {
         return {
             overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.",
@@ -245,11 +238,33 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { iso: "800-1600", shutter: "1-5s", aperture: "f/2.8 (or widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
         };
     }
+    if (score >= 60) {
+        return {
+            overall: "Good chance for visible aurora. Shorter exposures may be needed to capture details.",
+            phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 1000-2000 (app)", shutter: "3-7s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "1600-3200", shutter: "2-8s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
+    if (score >= 50) {
+        return {
+            overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
+            phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 1000-2000 (app)", shutter: "3-7s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "1600-3200", shutter: "3-10s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
+    if (score >= 40) {
+        return {
+            overall: "Clear auroral activity visible in cameras. Balance light capture with motion.",
+            phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 1000-2000 (app)", shutter: "3-7s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
+    // This now covers scores from 10-39
     return {
-        overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
-        phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 1000-2000 (app)", shutter: "3-7s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
-        dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
-    };
+         overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
+         phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+         dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+     };
 };
 
 // --- CHILD COMPONENTS (MOVED OUTSIDE) ---
