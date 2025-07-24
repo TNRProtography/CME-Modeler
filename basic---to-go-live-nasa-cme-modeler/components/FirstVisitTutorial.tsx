@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/FirstVisitTutorial.tsx ---
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom'; // NEW: Import createPortal
 
 interface TutorialStep {
   targetId: string;
@@ -26,8 +27,19 @@ interface FirstVisitTutorialProps {
 const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose, onStepChange }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  
+  // NEW: State to hold the portal container element
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   const currentStep = STEPS[stepIndex];
+
+  // Find the portal root once on mount
+  useEffect(() => {
+    const container = document.getElementById('tutorial-root');
+    if (container) {
+      setPortalContainer(container);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOpen || !currentStep) {
@@ -42,21 +54,15 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        // If element isn't found (e.g., on a different page), skip to the next step.
         handleNext();
       }
     };
 
-    // Initial position update
     const timer = setTimeout(updatePosition, 50);
-    
-    // **FIX: Add an interval to poll for position changes (e.g., from a banner appearing)**
-    // This is more robust for catching layout shifts that don't trigger a resize event.
     const positionCheckInterval = setInterval(() => {
         const element = document.getElementById(currentStep.targetId);
         if (element) {
             const newRect = element.getBoundingClientRect();
-            // Only update state if the position has actually changed to prevent unnecessary re-renders
             setTargetRect(prevRect => {
                 if (!prevRect || newRect.top !== prevRect.top || newRect.left !== prevRect.left || newRect.width !== prevRect.width || newRect.height !== prevRect.height) {
                     return newRect;
@@ -64,15 +70,13 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
                 return prevRect;
             });
         }
-    }, 100); // Check every 100ms
+    }, 100);
 
-    // Also listen for window resize as a fallback
     window.addEventListener('resize', updatePosition);
     
-    // Cleanup function to remove listeners and intervals
     return () => {
       clearTimeout(timer);
-      clearInterval(positionCheckInterval); // **FIX: Clear the interval**
+      clearInterval(positionCheckInterval);
       window.removeEventListener('resize', updatePosition);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,7 +99,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     if (!targetRect || !currentStep) return { tooltipStyle: { opacity: 0 }, arrowStyle: {} };
 
     const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : 288;
-    const tooltipHeight = 160; // Approximate height for calculation
+    const tooltipHeight = 160;
     const margin = 16;
     let ttStyle: React.CSSProperties = {};
     let arStyle: React.CSSProperties = {};
@@ -104,7 +108,6 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       case 'bottom': {
         const top = targetRect.bottom + margin;
         let left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
-        // Clamp left position to stay within the viewport
         left = Math.max(margin, left);
         left = Math.min(left, window.innerWidth - tooltipWidth - margin);
         
@@ -115,7 +118,6 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       case 'left': {
         const left = targetRect.left - tooltipWidth - margin;
         let top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
-        // Clamp top position to stay within the viewport
         top = Math.max(margin, top);
         top = Math.min(top, window.innerHeight - tooltipHeight - margin);
         
@@ -127,10 +129,11 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
   }, [targetRect, currentStep]);
 
-  if (!isOpen || !currentStep) return null;
+  if (!isOpen || !currentStep || !portalContainer) return null;
 
-  return (
-    <div className="fixed inset-0 z-[2000] bg-black/75 backdrop-blur-sm">
+  // NEW: Wrap the entire output in a React Portal
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-sm">
       <div
         className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`}
         style={{ ...tooltipStyle, visibility: targetRect ? 'visible' : 'hidden' }}
@@ -151,7 +154,8 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
             </button>
         </div>
       </div>
-    </div>
+    </div>,
+    portalContainer // Render into the #tutorial-root div
   );
 };
 
