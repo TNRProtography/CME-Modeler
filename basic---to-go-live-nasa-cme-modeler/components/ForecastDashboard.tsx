@@ -214,6 +214,43 @@ const getAuroraBlurb = (score: number) => {
     return 'High probability of a significant substorm.';
 };
 
+// **FIXED**: Moved this function outside the main component
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) {
+        return {
+            overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
+            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" } },
+            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" }
+        };
+    }
+    if (score === null || score < 10) {
+        return {
+            overall: "Very low activity expected. It's highly unlikely to capture the aurora with any camera. These settings are for extreme attempts.",
+            phone: { android: { iso: "3200-6400 (Max)", shutter: "20-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "6400-12800", shutter: "20-30s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
+    if (score < 20) {
+         return {
+            overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
+            phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
+    if (score >= 80) {
+        return {
+            overall: "High probability of a bright, active aurora! Aim for shorter exposures to capture detail and movement.",
+            phone: { android: { iso: "400-800", shutter: "1-5s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 500-1500 (app)", shutter: "1-3s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "800-1600", shutter: "1-5s", aperture: "f/2.8 (or widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
+    return {
+        overall: "Moderate activity expected. Good chance for visible aurora. Balance light capture with motion.",
+        phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 1000-2000 (app)", shutter: "3-7s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+        dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+    };
+};
+
 // --- CHILD COMPONENTS (MOVED OUTSIDE) ---
 
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
