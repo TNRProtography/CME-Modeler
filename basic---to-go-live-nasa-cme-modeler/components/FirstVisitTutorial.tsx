@@ -26,54 +26,57 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
+  // Effect to reset the tutorial to the first step whenever it's opened.
   useEffect(() => {
     if (isOpen) {
       setStepIndex(0);
     }
   }, [isOpen]);
 
+  // Effect to handle positioning and highlighting for the current step.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      onStepChange(null); // Clear highlight when modal is not open
+      return;
+    }
 
     const currentStep = STEPS[stepIndex];
     if (!currentStep) {
-        onClose();
+        onClose(); // Close if we've run out of steps
         return;
     }
 
-    onStepChange(currentStep.targetId);
+    onStepChange(currentStep.targetId); // Update the highlighted element in App.tsx
 
-    const timer = setTimeout(() => {
+    // Function to calculate and set the position of the tooltip
+    const updatePosition = () => {
       const element = document.getElementById(currentStep.targetId);
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
+        // If element not found, hide tooltip but don't auto-progress to avoid loops
         console.warn(`FirstVisitTutorial: Target element "${currentStep.targetId}" not found.`);
         setTargetRect(null);
       }
-    }, 50);
-
-    const handleResize = () => {
-      const element = document.getElementById(currentStep.targetId);
-      if (element) setTargetRect(element.getBoundingClientRect());
     };
 
-    window.addEventListener('resize', handleResize);
+    // Use a small delay to ensure the DOM is ready, especially after panel transitions
+    const timer = setTimeout(updatePosition, 50);
+    window.addEventListener('resize', updatePosition);
     
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', updatePosition);
     };
-  }, [isOpen, stepIndex, onStepChange, onClose]);
+  }, [isOpen, stepIndex, onStepChange, onClose]); // This hook now correctly depends on stepIndex
 
 
   const handleNext = () => {
-    if (STEPS[stepIndex] && !STEPS[stepIndex].disableNext && stepIndex < STEPS.length - 1) {
-      onStepChange(null);
-      setTargetRect(null);
+    const currentStep = STEPS[stepIndex];
+    if (currentStep && !currentStep.disableNext && stepIndex < STEPS.length - 1) {
       setStepIndex(stepIndex + 1);
-    } else if (STEPS[stepIndex] && !STEPS[stepIndex].disableNext) {
-      onClose();
+    } else if (currentStep && !currentStep.disableNext) {
+      onClose(); // Finish tutorial on the last step
     }
   };
   
@@ -81,7 +84,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     onClose();
   };
 
-  const currentStep = STEPS[stepIndex];
+  const currentStep = STEPS[stepIndex]; // Get the current step for rendering
 
   const { tooltipStyle, arrowStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
@@ -103,7 +106,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
         left = targetRect.left - tooltipWidth - margin;
         break;
-      default:
+      default: // Fallback for 'top' and 'right' if added later
         top = targetRect.bottom + margin;
         left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
     }
@@ -111,7 +114,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
     const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
     
-    // Z-INDEX FIX: Set a high z-index to ensure it's above panels (z-[2005])
+    // Z-INDEX is high to appear above panels. z-[2002] for backdrop, z-[2003] for highlight, z-[2006] for tooltip.
     let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006 };
     let arStyle: React.CSSProperties = {};
     
@@ -133,6 +136,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
 
   if (!isOpen || !currentStep) return null;
 
+  // This logic now correctly re-evaluates every time the currentStep changes
   const isForecastStep = currentStep.targetId === 'nav-forecast';
   const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 ${
     isForecastStep ? 'bg-black/20 backdrop-filter-none' : 'bg-black/60 backdrop-blur-sm'
