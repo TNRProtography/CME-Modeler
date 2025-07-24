@@ -12,8 +12,10 @@ interface TutorialStep {
 const STEPS: TutorialStep[] = [
   { targetId: 'nav-forecast', title: 'Aurora Forecast', content: 'This is your go-to page for live aurora forecasts, substorm detection, and sighting maps. Check here to see if an aurora might be visible tonight!', placement: 'bottom', widthClass: 'w-80' },
   { targetId: 'nav-solar-activity', title: 'Solar Activity', content: 'Dive deep into the latest solar data and active regions. See real-time solar flares and imagery directly from the Sun.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! Click the highlighted "CME Visualization" button above to proceed and learn more about this feature.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
-  { targetId: 'nav-settings', title: 'App Settings', content: 'Finally, here you can configure app settings, manage notifications, and install the app to your device for a better experience.', placement: 'left', widthClass: 'w-72' },
+  // MODIFIED: Removed disableNext to allow the tutorial to proceed to the final step.
+  { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! This tool helps visualize how solar events travel toward Earth.', placement: 'bottom', widthClass: 'w-80' }, 
+  // MODIFIED: Updated content to include installation advice.
+  { targetId: 'nav-settings', title: 'App Settings', content: 'Finally, here you can configure app settings, manage notifications, and install the app to your device. Note: If you are in an in-app browser (like Facebook), the install button may not work. Please open this site in your phone\'s main browser (e.g., Chrome or Safari) to install.', placement: 'left', widthClass: 'w-72' },
 ];
 
 interface FirstVisitTutorialProps {
@@ -97,7 +99,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
 
     // --- Tooltip Position Calculation ---
     const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256);
-    const tooltipHeight = 160; 
+    const tooltipHeight = 180; // Increased height to accommodate new text
     const margin = 16;
     let top = 0, left = 0;
 
