@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/FirstVisitTutorial.tsx ---
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom'; // NEW: Import createPortal for robust overlay
 
 interface TutorialStep {
   targetId: string;
@@ -26,17 +27,32 @@ interface FirstVisitTutorialProps {
 const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose, onStepChange }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  
+  // NEW: State to hold the portal container element
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   const currentStep = STEPS[stepIndex];
 
+  // NEW: Find the portal root once on mount
   useEffect(() => {
-    if (!isOpen) {
+    const container = document.getElementById('tutorial-root');
+    if (container) {
+      setPortalContainer(container);
+    } else {
+      console.error("Tutorial root element 'tutorial-root' not found in DOM. Portal will not render.");
+      // If the portal root isn't found, the tutorial cannot function. Close it.
+      onClose(); 
+    }
+  }, [onClose]); // Depend on onClose if it's called here
+
+  useEffect(() => {
+    // If tutorial is closed or current step is invalid, clean up and return
+    if (!isOpen || !currentStep) {
       onStepChange(null);
-      return () => { /* cleanup */ }; // Ensure cleanup on close
+      return () => { /* cleanup */ };
     }
 
-    if (!currentStep) return () => { /* cleanup */ }; // No current step, nothing to do
-
+    // Inform parent about the currently targeted element
     onStepChange(currentStep.targetId);
 
     const updatePosition = () => {
@@ -44,13 +60,12 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        // If element isn't found, skip to the next step.
-        // This handles cases where the target might not be on the current page/view.
+        // If element is not found (e.g., on a different page, or ID changed), skip to the next step.
         handleNext(); 
       }
     };
 
-    // Initial position update after a slight delay to ensure elements are rendered
+    // Initial position update on a slight delay to ensure elements are rendered
     const initialPositionTimer = setTimeout(updatePosition, 50);
     
     // FIX: Add an interval to poll for position changes (e.g., from a banner appearing)
@@ -121,29 +136,25 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         break;
       }
       case 'left': {
+        // FIX: Adjust 'top' calculation for 'left' placement for vertical consistency
+        // Align the top of the tooltip with the bottom of the target element, like 'bottom' placement
+        const top = targetRect.bottom + margin; 
+        
         const left = targetRect.left - tooltipWidth - margin;
-        let top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
         
         // Clamp top position to keep tooltip within viewport
-        top = Math.max(margin, top); // Ensure it doesn't go off the top edge
-        top = Math.min(top, window.innerHeight - tooltipHeight - margin); // Ensure it doesn't go off the bottom edge
+        let clampedTop = Math.max(margin, top); // Ensure it doesn't go off the top edge
+        clampedTop = Math.min(clampedTop, window.innerHeight - tooltipHeight - margin); // Ensure it doesn't go off the bottom edge
         
-        ttStyle = { top: `${top}px`, left: `${left}px`, transform: 'none' };
-        // Arrow position relative to the tooltip (centered vertically on the target)
-        arStyle = { left: '100%', top: `${targetRect.top + targetRect.height / 2 - top}px`, transform: 'translateY(-50%)', borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
+        ttStyle = { top: `${clampedTop}px`, left: `${left}px`, transform: 'none' };
+        
+        // Arrow position relative to the tooltip, pointing at the middle of the target
+        // Calculate the relative vertical position of the target's center to the tooltip's top
+        const arrowTopRelativeToTooltip = targetRect.top + (targetRect.height / 2) - clampedTop;
+        arStyle = { left: '100%', top: `${arrowTopRelativeToTooltip}px`, transform: 'translateY(-50%)', borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
         break;
       }
       // Add 'top' and 'right' cases if needed by your STEPS configuration
-      // Example 'top':
-      // case 'top': {
-      //   const top = targetRect.top - tooltipHeight - margin;
-      //   let left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
-      //   left = Math.max(margin, left);
-      //   left = Math.min(left, window.innerWidth - tooltipWidth - margin);
-      //   ttStyle = { top: `${top}px`, left: `${left}px`, transform: 'none' };
-      //   arStyle = { top: '100%', left: `${targetRect.left + targetRect.width / 2 - left}px`, transform: 'translateX(-50%)', borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
-      //   break;
-      // }
       default: {
         // Fallback for unhandled or invalid placements
         ttStyle = { 
@@ -161,17 +172,20 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   }, [targetRect, currentStep]);
 
 
-  // Only render the tutorial overlay if it's open
-  if (!isOpen) {
+  // Only render the portal if it's open AND we have a container to render into
+  if (!isOpen || !portalContainer) {
     return null;
   }
 
-  return (
+  // Use createPortal to render the tutorial outside the normal DOM hierarchy
+  return createPortal(
     // The main overlay element, set to fixed and a very high z-index
     // to ensure it sits on top of all other content in the app.
-    <div className="fixed inset-0 z-[999999] bg-black/75 backdrop-blur-sm flex justify-center items-center">
+    <div className="fixed inset-0 z-[999999] bg-black/75 backdrop-blur-sm flex justify-center items-center"> {/* Very high z-index */}
       {/* The actual tooltip content. Its visibility is controlled by 'targetRect' */}
       <div
+        // Conditionally apply visibility based on whether targetRect is available
+        // This makes the tooltip itself visible only when its position is calculated
         className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep?.widthClass || ''}`}
         style={tooltipStyle} // Apply calculated style including opacity
       >
@@ -191,7 +205,8 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
             </button>
         </div>
       </div>
-    </div>
+    </div>,
+    portalContainer // This is where the magic happens: render into the dedicated #tutorial-root div
   );
 };
 
