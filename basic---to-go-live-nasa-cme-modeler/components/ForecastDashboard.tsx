@@ -61,6 +61,7 @@ interface Camera {
   name: string;
   url: string;
   type: 'image' | 'iframe';
+  sourceUrl: string; // MODIFIED: Added sourceUrl for attribution
 }
 
 // --- Constants ---
@@ -74,15 +75,16 @@ const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
 
+// MODIFIED: Added sourceUrl to each camera object
 const CAMERAS: Camera[] = [
-  { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image' },
-  { name: 'Queenstown', url: 'https://queenstown.roundshot.com/#/', type: 'iframe' },
-  { name: 'Twizel', url: 'https://www.trafficnz.info/camera/737.jpg', type: 'image' },
-  { name: 'Taylors Mistake', url: 'https://metdata.net.nz/lpc/camera/taylorsmistake1/image.php', type: 'image' },
-  { name: 'Opiki', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Opiki_latest_photo.jpg', type: 'image' },
-  { name: 'Rangitikei', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Rangitikeicarpark_latest_photo.jpg', type: 'image' },
-  { name: 'New Plymouth', url: 'https://www.primo.nz/webcameras/snapshot_twlbuilding_sth.jpg', type: 'image' },
-  { name: 'Motueka', url: 'http://windy:xj890dcxX!@114.23.134.31:84/cgi-bin/snapshot.cgi', type: 'image' },
+  { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
+  { name: 'Queenstown', url: 'https://queenstown.roundshot.com/#/', type: 'iframe', sourceUrl: 'queenstown.roundshot.com' },
+  { name: 'Twizel', url: 'https://www.trafficnz.info/camera/737.jpg', type: 'image', sourceUrl: 'trafficnz.info' },
+  { name: 'Taylors Mistake', url: 'https://metdata.net.nz/lpc/camera/taylorsmistake1/image.php', type: 'image', sourceUrl: 'metdata.net.nz' },
+  { name: 'Opiki', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Opiki_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
+  { name: 'Rangitikei', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Rangitikeicarpark_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
+  { name: 'New Plymouth', url: 'https://www.primo.nz/webcameras/snapshot_twlbuilding_sth.jpg', type: 'image', sourceUrl: 'primo.nz' },
+  { name: 'Motueka', url: 'http://windy:xj890dcxX!@114.23.134.31:84/cgi-bin/snapshot.cgi', type: 'image', sourceUrl: 'windy.com' },
 ];
 
 const GAUGE_THRESHOLDS = {
@@ -340,7 +342,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
 
-    // --- NEW --- Memoized hook to calculate the pre-sunset activity alert message
+    // MODIFIED: This logic was already added in the previous step, confirming its correctness
     const activityAlertMessage = useMemo(() => {
         if (!isDaylight || !celestialTimes.sun?.set || auroraScoreHistory.length === 0) {
             return null; // No message if it's night, no sunset data, or no history
@@ -350,7 +352,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const sunsetTime = celestialTimes.sun.set;
         const oneHourBeforeSunset = sunsetTime - (60 * 60 * 1000);
         
-        // Check if we are in the 1-hour window before sunset
         if (now >= oneHourBeforeSunset && now < sunsetTime) {
             const latestHistoryPoint = auroraScoreHistory[auroraScoreHistory.length - 1];
             const latestBaseScore = latestHistoryPoint?.baseScore ?? 0;
@@ -358,7 +359,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (latestBaseScore >= 50) {
                 let message = "Aurora activity is currently high! Good potential for a display as soon as it's dark.";
 
-                // Check moon conditions after sunset
                 const moonRise = celestialTimes.moon?.rise;
                 const moonSet = celestialTimes.moon?.set;
                 const moonIllumination = celestialTimes.moon?.illumination;
@@ -375,7 +375,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         }
 
-        return null; // No alert conditions met
+        return null;
     }, [isDaylight, celestialTimes, auroraScoreHistory]);
 
     const tooltipContent = useMemo(() => ({
@@ -753,12 +753,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </button>
                                 ))}
                             </div>
-                            <div className="relative w-full mt-4 bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
-                                {selectedCamera.type === 'iframe' ? (
-                                    <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
-                                ) : (
-                                    <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
-                                )}
+                            {/* MODIFIED: Added container for image and source link */}
+                            <div className="mt-4">
+                                <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
+                                    {selectedCamera.type === 'iframe' ? (
+                                        <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
+                                    ) : (
+                                        <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
+                                    )}
+                                </div>
+                                <div className="text-center text-xs text-neutral-500 mt-2">
+                                    Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
+                                </div>
                             </div>
                         </div>
 
