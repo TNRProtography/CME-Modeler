@@ -12,11 +12,9 @@ const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 60 * 60 * 1000;
 
-// UPDATED: Changed to cover all of New Zealand
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
-// UPDATED: Zoomed out slightly to fit the whole country
 const MAP_ZOOM = 5;
-const HIGHLIGHT_MAP_ZOOM = 10; // Zoom level when highlighting a marker
+const HIGHLIGHT_MAP_ZOOM = 10;
 
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; }[] = [
     { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.' },
@@ -28,14 +26,10 @@ const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; de
 
 const getEmojiForStatus = (status: SightingStatus) => STATUS_OPTIONS.find(opt => opt.status === status)?.emoji || '❓';
 
-// --- PROPS INTERFACE ---
 interface AuroraSightingsProps {
   isDaylight: boolean;
 }
 
-// --- HELPER & CHILD COMPONENTS ---
-
-// Component to handle map interactions like invalidating size and responding to selected markers
 interface SightingMapControllerProps {
     selectedSightingId: string | null;
     sightings: SightingReport[];
@@ -47,44 +41,36 @@ const SightingMapController: React.FC<SightingMapControllerProps> = ({
     sightings,
     markerRefs
 }) => {
-    const map = useMap(); // Get the current map instance
+    const map = useMap();
 
-    // Effect for initial map invalidation
     useEffect(() => {
         const timer = setTimeout(() => map.invalidateSize(), 100);
         return () => clearTimeout(timer);
     }, [map]);
 
-    // Effect to handle zooming and highlighting when a sighting is selected from the table
     useEffect(() => {
         if (selectedSightingId) {
             const selectedSighting = sightings.find(s => (s.timestamp + s.name) === selectedSightingId);
 
             if (selectedSighting) {
                 const targetLatLng: L.LatLngExpression = [selectedSighting.lat, selectedSighting.lng];
-
-                // Fly to the marker's location
-                // Determine a suitable zoom level: zoom in more if already zoomed out, otherwise maintain current zoom
                 const currentZoom = map.getZoom();
-                const targetZoom = Math.max(currentZoom, HIGHLIGHT_MAP_ZOOM); // Zoom to at least HIGHLIGHT_MAP_ZOOM
+                const targetZoom = Math.max(currentZoom, HIGHLIGHT_MAP_ZOOM);
 
                 map.flyTo(targetLatLng, targetZoom, {
-                    duration: 1.5 // Smooth animation
+                    duration: 1.5
                 });
 
-                // Open the popup for the marker
-                // Give Leaflet a moment to finish flying and render the marker if it wasn't visible
                 setTimeout(() => {
                     const marker = markerRefs.current.get(selectedSightingId);
                     if (marker) {
                         marker.openPopup();
                     }
-                }, 1600); // Slightly longer than flyTo duration
+                }, 1600);
             }
         }
     }, [selectedSightingId, sightings, map, markerRefs]);
 
-    // This component renders nothing itself, it just controls the map.
     return null;
 };
 
@@ -138,11 +124,8 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
     const [lastReportInfo, setLastReportInfo] = useState<{timestamp: number, key: string} | null>(null);
 
-    // NEW STATE: to track the selected sighting from the table, for map interaction
     const [selectedSightingIdForMap, setSelectedSightingIdForMap] = useState<string | null>(null);
 
-    // NEW REFS: to store refs to individual marker instances by their unique ID
-    // The key for each marker will be `sighting.timestamp + sighting.name`
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
     const fetchSightings = useCallback(async () => {
@@ -172,7 +155,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
         const intervalId = setInterval(fetchSightings, 2 * 60 * 1000);
         return () => {
             clearInterval(intervalId);
-            // Cleanup marker refs on unmount to prevent memory leaks
             markerRefs.current.clear();
         }
     }, [fetchSightings]);
@@ -213,7 +195,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reportData) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Submission failed.');
-            const newReportInfo = { timestamp: Date.now(), key: result.key };
+            const newReportInfo = { timestamp: Date.now(), key: result.key }; // Note: result.key may be undefined now, which is fine.
             setLastReportInfo(newReportInfo);
             localStorage.setItem(LOCAL_STORAGE_LAST_REPORT_KEY, JSON.stringify(newReportInfo));
             await fetchSightings();
@@ -225,9 +207,8 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
         }
     };
 
-    // Function to handle clicking a table row to highlight on map
     const handleTableRowClick = useCallback((sightingId: string) => {
-        setSelectedSightingIdForMap(sightingId); // Update state to trigger map action
+        setSelectedSightingIdForMap(sightingId);
     }, []);
 
     const userMarkerIcon = L.divIcon({ html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`, className: '', iconSize: [20, 20], iconAnchor: [10, 10], });
@@ -284,7 +265,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                         maxBounds={NZ_BOUNDS}
                         className="h-full w-full bg-neutral-800"
                     >
-                        {/* NEW: Map controller component */}
                         <SightingMapController
                             selectedSightingId={selectedSightingIdForMap}
                             sightings={sightings}
@@ -296,19 +276,17 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
                         <>
                              {sightings.map(sighting => {
-                                const sightingId = sighting.timestamp + sighting.name; // Use this as a stable key/ID for refs
+                                const sightingId = sighting.timestamp + sighting.name;
                                 return (
                                     <Marker
                                         key={sightingId}
                                         position={[sighting.lat, sighting.lng]}
                                         icon={createSightingIcon(sighting)}
                                         zIndexOffset={sighting.timestamp}
-                                        // Set ref for this marker
                                         ref={(marker: L.Marker) => {
                                             if (marker) {
                                                 markerRefs.current.set(sightingId, marker);
                                             } else {
-                                                // Cleanup function for when marker is unmounted (e.g., filtered out)
                                                 markerRefs.current.delete(sightingId);
                                             }
                                         }}
@@ -332,7 +310,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                             <tbody>
                                 {isLoading ? ( <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr> ) : sightings.length === 0 ? ( <tr><td colSpan={3} className="text-center p-4 italic">No reports in the last 24 hours.</td></tr> ) : sightings.slice(0, 5).map(s => (
                                     <tr
-                                        key={s.timestamp + s.name} // Use this as the ID for handleTableRowClick
+                                        key={s.timestamp + s.name}
                                         className="bg-neutral-900 border-b border-neutral-800 cursor-pointer hover:bg-neutral-800"
                                         onClick={() => handleTableRowClick(s.timestamp + s.name)}
                                     >
