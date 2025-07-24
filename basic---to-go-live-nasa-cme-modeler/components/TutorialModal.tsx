@@ -123,7 +123,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     widthClass: 'w-80',
   },
   {
-    targetId: 'timeline-speed-select', // This ID doesn't exist yet, it's usually on a `<select>` for speed. Using 1x button for this for now.
+    targetId: 'timeline-speed-1x-button', // Corrected target ID for speed select
     title: 'Playback Speed',
     content: 'Adjust the speed of the timeline animation to fast-forward or slow down the simulation playback.',
     placement: 'top',
@@ -294,12 +294,15 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, tutorial
     return null;
   }
 
-  // Determine if the current step is the 'Aurora Forecast' step for the first visit tutorial
-  const isForecastStepForFirstVisit = tutorialType === 'firstVisit' && currentStep?.targetId === 'nav-forecast';
+  // Determine if the background should be less blurred/opaque.
+  // This applies to the first visit's forecast step, AND all steps of the CME Viz tutorial.
+  const shouldUnblurBackground = 
+    (tutorialType === 'firstVisit' && currentStep?.targetId === 'nav-forecast') ||
+    (tutorialType === 'cmeViz'); // <--- Key change: Unblur for all CME Viz tutorial steps
 
   // Conditionally apply classes to the backdrop div
   const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 ${
-    isForecastStepForFirstVisit ? 'bg-black/20 backdrop-filter-none' : 'bg-black/75 backdrop-blur-sm'
+    shouldUnblurBackground ? 'bg-black/20 backdrop-filter-none' : 'bg-black/75 backdrop-blur-sm'
   }`;
 
 
