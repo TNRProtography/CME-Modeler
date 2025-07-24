@@ -1,4 +1,4 @@
-// --- START OF FILE SettingsModal.tsx ---
+// --- START OF FILE src/components/SettingsModal.tsx ---
 
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
@@ -14,6 +14,8 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  // NEW PROP: App Version
+  appVersion: string; 
 }
 
 // These categories are no longer displayed, but we can keep the definition for when the feature is ready.
@@ -34,7 +36,7 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion }) => { // Destructure appVersion
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   // We keep the state logic, even if the UI is hidden, so it doesn't break anything.
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
@@ -120,7 +122,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
+      // Z-INDEX MODIFICATION: Increased z-index to ensure it sits on top of everything
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4" 
       onClick={onClose}
     >
       <div 
@@ -197,10 +200,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
         </div>
+        {/* NEW: App Version Display */}
+        <div className="p-4 border-t border-neutral-700/80 text-right text-xs text-neutral-500">
+          Version: {appVersion}
+        </div>
       </div>
     </div>
   );
 };
 
 export default SettingsModal;
-// --- END OF FILE SettingsModal.tsx ---
+// --- END OF FILE src/components/SettingsModal.tsx ---
