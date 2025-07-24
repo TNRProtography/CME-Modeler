@@ -3,7 +3,37 @@ import { TimeRange, ViewMode, FocusTarget, CMEFilter } from '../types';
 import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
-import ToggleSwitch from './ToggleSwitch';
+// import ToggleSwitch from './ToggleSwitch'; // Assuming ToggleSwitch is imported from './ToggleSwitch'
+
+// Re-defining ToggleSwitch to accept an ID. You should update your actual ToggleSwitch.tsx
+interface ToggleSwitchProps {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  id?: string; // Added id prop
+}
+
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, checked, onChange, id }) => (
+  <label htmlFor={id} className="flex items-center cursor-pointer">
+    <div className="relative">
+      <input
+        type="checkbox"
+        id={id} // Apply id here
+        className="sr-only"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <div className="block bg-neutral-600 w-10 h-6 rounded-full"></div>
+      <div
+        className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${
+          checked ? 'translate-x-full bg-indigo-500' : ''
+        }`}
+      ></div>
+    </div>
+    <div className="ml-3 text-neutral-300 text-sm font-medium">{label}</div>
+  </label>
+);
+
 
 interface ControlsPanelProps {
   activeTimeRange: TimeRange;
@@ -25,8 +55,10 @@ interface ControlsPanelProps {
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
 
-const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode, className?: string }> = ({ onClick, isActive, children, className }) => (
+// Updated to accept an 'id' prop
+const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode, className?: string, id?: string }> = ({ onClick, isActive, children, className, id }) => (
   <button
+    id={id} // Added id prop
     onClick={onClick}
     className={`flex-grow border text-sm transition-all duration-200 ease-in-out px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-neutral-950 focus:ring-neutral-400 ${className} ${
       isActive
@@ -71,6 +103,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
       
       <div className="absolute top-4 right-4 flex items-center space-x-1 z-10">
         <button
+          id="controls-panel-guide-button" // Added ID for guide button
           onClick={onOpenGuide}
           className="p-1 text-neutral-400 hover:text-neutral-100 hover:bg-white/10 rounded-full transition-colors"
           title="Show App Guide"
@@ -101,43 +134,45 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Date Range:</label>
           <div className="flex space-x-2">
-            <Button onClick={() => onTimeRangeChange(TimeRange.H24)} isActive={activeTimeRange === TimeRange.H24}>24 Hours</Button>
-            <Button onClick={() => onTimeRangeChange(TimeRange.D3)} isActive={activeTimeRange === TimeRange.D3}>3 Days</Button>
-            <Button onClick={() => onTimeRangeChange(TimeRange.D7)} isActive={activeTimeRange === TimeRange.D7}>7 Days</Button>
+            <Button id="time-range-24h-button" onClick={() => onTimeRangeChange(TimeRange.H24)} isActive={activeTimeRange === TimeRange.H24}>24 Hours</Button>
+            <Button id="time-range-3d-button" onClick={() => onTimeRangeChange(TimeRange.D3)} isActive={activeTimeRange === TimeRange.D3}>3 Days</Button>
+            <Button id="time-range-7d-button" onClick={() => onTimeRangeChange(TimeRange.D7)} isActive={activeTimeRange === TimeRange.D7}>7 Days</Button>
           </div>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">View:</label>
           <div className="flex space-x-2">
-            <Button onClick={() => onViewChange(ViewMode.TOP)} isActive={activeView === ViewMode.TOP}>Top-Down</Button>
-            <Button onClick={() => onViewChange(ViewMode.SIDE)} isActive={activeView === ViewMode.SIDE}>Side View</Button>
+            <Button id="view-top-button" onClick={() => onViewChange(ViewMode.TOP)} isActive={activeView === ViewMode.TOP}>Top-Down</Button>
+            {/* The provided HTML had 'Front' and 'Side', but current code has 'Top-Down' and 'Side View'. Sticking to provided component code here. */}
+            <Button id="view-side-button" onClick={() => onViewChange(ViewMode.SIDE)} isActive={activeView === ViewMode.SIDE}>Side View</Button>
           </div>
         </div>
         
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Focus:</label>
           <div className="flex space-x-2">
-            <Button onClick={() => onFocusChange(FocusTarget.SUN)} isActive={activeFocus === FocusTarget.SUN}>Sun</Button>
-            <Button onClick={() => onFocusChange(FocusTarget.EARTH)} isActive={activeFocus === FocusTarget.EARTH}>Earth</Button>
+            <Button id="focus-sun-button" onClick={() => onFocusChange(FocusTarget.SUN)} isActive={activeFocus === FocusTarget.SUN}>Sun</Button>
+            <Button id="focus-earth-button" onClick={() => onFocusChange(FocusTarget.EARTH)} isActive={activeFocus === FocusTarget.EARTH}>Earth</Button>
+            {/* The provided HTML had 'L1', but current code only has 'Sun' and 'Earth'. Sticking to provided component code here. */}
           </div>
         </div>
 
         <div className="pt-2">
           <label className="block text-sm font-medium text-neutral-400 mb-2 border-t border-neutral-700/50 pt-3">Display Options:</label>
           <div className="space-y-3">
-            <ToggleSwitch label="Show Labels" checked={showLabels} onChange={onShowLabelsChange} />
-            <ToggleSwitch label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
-            <ToggleSwitch label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
+            <ToggleSwitch id="show-labels-toggle" label="Show Labels" checked={showLabels} onChange={onShowLabelsChange} />
+            <ToggleSwitch id="show-extra-planets-toggle" label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
+            <ToggleSwitch id="show-moon-l1-toggle" label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
           </div>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Filter CMEs:</label>
           <div className="flex space-x-2 text-xs">
-            <Button onClick={() => onCmeFilterChange(CMEFilter.ALL)} isActive={cmeFilter === CMEFilter.ALL}>All</Button>
-            <Button onClick={() => onCmeFilterChange(CMEFilter.EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.EARTH_DIRECTED}>Earth-Directed</Button>
-            <Button onClick={() => onCmeFilterChange(CMEFilter.NOT_EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.NOT_EARTH_DIRECTED}>Not Earth-Directed</Button>
+            <Button id="cme-filter-all-button" onClick={() => onCmeFilterChange(CMEFilter.ALL)} isActive={cmeFilter === CMEFilter.ALL}>All</Button>
+            <Button id="cme-filter-earth-directed-button" onClick={() => onCmeFilterChange(CMEFilter.EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.EARTH_DIRECTED}>Earth-Directed</Button>
+            <Button id="cme-filter-non-earth-directed-button" onClick={() => onCmeFilterChange(CMEFilter.NOT_EARTH_DIRECTED)} isActive={cmeFilter === CMEFilter.NOT_EARTH_DIRECTED}>Not Earth-Directed</Button>
           </div>
         </div>
         

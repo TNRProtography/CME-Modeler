@@ -1,138 +1,338 @@
-import React from 'react';
-import CloseIcon from './icons/CloseIcon';
-import MoveIcon from './icons/MoveIcon';
-import SelectIcon from './icons/SelectIcon';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
+interface TutorialStep {
+  targetId: string;
+  title: string;
+  content: string;
+  placement: 'bottom' | 'top' | 'left' | 'right';
+  widthClass?: string;
+  offsetY?: number; // Optional vertical offset for fine-tuning
+  offsetX?: number; // Optional horizontal offset for fine-tuning
+}
+
+// --- DEFINE CME VISUALIZATION TUTORIAL STEPS ---
+const CME_VISUALIZATION_STEPS: TutorialStep[] = [
+  {
+    targetId: 'mobile-controls-button',
+    title: 'CME Controls Panel (Mobile)',
+    content: 'On smaller screens, tap here to open the main controls for time range, view, focus, and display options. On desktop, the panel is always visible on the left.',
+    placement: 'right',
+    widthClass: 'w-72',
+    offsetY: 0, 
+    offsetX: 10,
+  },
+  {
+    targetId: 'controls-panel-container', 
+    title: 'CME Controls Panel',
+    content: 'This panel lets you configure the simulation: adjust the time range of CMEs, change your view, focus on specific celestial bodies, and toggle display options.',
+    placement: 'right',
+    widthClass: 'w-80',
+    offsetY: 0, 
+    offsetX: 10,
+  },
+  {
+    targetId: 'time-range-3d-button', // Using 3-day button as example for range selection
+    title: 'Time Range Selection',
+    content: 'Choose between 24 hours, 3 days, or 7 days of historical CME data to load into the simulation.',
+    placement: 'bottom',
+    widthClass: 'w-72',
+  },
+  {
+    targetId: 'view-top-button', // Using Top-Down button as example for view selection
+    title: 'View Modes',
+    content: 'Switch between Top-Down and Side views of the solar system to observe CMEs from different perspectives.',
+    placement: 'bottom',
+    widthClass: 'w-72',
+  },
+  {
+    targetId: 'focus-earth-button', // Using Earth button as example for focus selection
+    title: 'Focus Target',
+    content: 'Direct the camera to focus on the Sun or Earth, bringing the selected body to the center of your view.',
+    placement: 'bottom',
+    widthClass: 'w-72',
+  },
+  {
+    targetId: 'show-labels-toggle',
+    title: 'Display Options',
+    content: 'Toggle visibility of planet labels, show/hide Mercury, Venus, Mars, and the Earth\'s Moon/L1 point for a cleaner or more detailed view.',
+    placement: 'bottom',
+    widthClass: 'w-80',
+  },
+  {
+    targetId: 'cme-filter-all-button', // Using All button as example for filter
+    title: 'CME Filter',
+    content: 'Filter the displayed CMEs by all, Earth-directed, or non-Earth-directed events to quickly find what you\'re looking for.',
+    placement: 'bottom',
+    widthClass: 'w-72',
+  },
+  {
+    targetId: 'controls-panel-guide-button',
+    title: 'Re-open Guide',
+    content: 'You can always click this button in the controls panel to revisit this guide for help.',
+    placement: 'bottom',
+    widthClass: 'w-72',
+  },
+  {
+    targetId: 'reset-view-button',
+    title: 'Reset View',
+    content: 'Instantly snap the camera back to a default top-down view, focused on Earth.',
+    placement: 'right', 
+    widthClass: 'w-64',
+    offsetY: 0, 
+    offsetX: 10,
+  },
+  {
+    targetId: 'forecast-models-button',
+    title: 'Other Forecast Models',
+    content: 'Access external resources and different CME forecast models for comparative analysis and further insights.',
+    placement: 'right', 
+    widthClass: 'w-72',
+    offsetY: 0, 
+    offsetX: 10,
+  },
+  {
+    targetId: 'interaction-mode-button',
+    title: 'Interaction Mode',
+    content: 'Toggle between "Move" (default camera control) and "Select" mode to click on CMEs in the simulation for more information.',
+    placement: 'left', 
+    widthClass: 'w-72',
+    offsetY: 0, 
+    offsetX: 10,
+  },
+  {
+    targetId: 'mobile-cme-list-button', 
+    title: 'CME List (Mobile)',
+    content: 'On smaller screens, tap here to open the list of all loaded CMEs and their detailed information. On desktop, the list is on the right.',
+    placement: 'left',
+    widthClass: 'w-72',
+    offsetY: 0, 
+    offsetX: 10,
+  },
+  {
+    targetId: 'timeline-play-pause-button',
+    title: 'Timeline Playback Controls',
+    content: 'These buttons allow you to play/pause the simulation, and step forward or backward by one hour.',
+    placement: 'top',
+    widthClass: 'w-72',
+  },
+  {
+    targetId: 'timeline-scrubber',
+    title: 'Timeline Scrubber',
+    content: 'Drag this slider to manually scrub through the simulation time and observe CME propagation at any specific point.',
+    placement: 'top',
+    widthClass: 'w-80',
+  },
+  {
+    targetId: 'timeline-speed-select', // This ID doesn't exist yet, it's usually on a `<select>` for speed. Using 1x button for this for now.
+    title: 'Playback Speed',
+    content: 'Adjust the speed of the timeline animation to fast-forward or slow down the simulation playback.',
+    placement: 'top',
+    widthClass: 'w-72',
+  },
+];
+
+// Placeholder for other tutorial types if they were defined elsewhere (e.g., in a constants file)
+const FIRST_VISIT_STEPS: TutorialStep[] = [
+  // Define your first visit steps here, for now just a dummy entry
+  { targetId: 'nav-forecast', title: 'Aurora Forecast (First Visit)', content: 'This is the first visit tutorial content for the Forecast page.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-solar-activity', title: 'Solar Activity (First Visit)', content: 'This is the first visit tutorial content for Solar Activity.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-modeler', title: 'CME Visualization (First Visit)', content: 'This is the first visit tutorial content for CME Viz.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-settings', title: 'App Settings (First Visit)', content: 'This is the first visit tutorial content for App Settings.', placement: 'left', widthClass: 'w-72' },
+];
+
 
 interface TutorialModalProps {
   isOpen: boolean;
   onClose: () => void;
+  tutorialType: 'cmeViz' | 'firstVisit'; // New prop to differentiate tutorial content
+  onStepChange: (id: string | null) => void; // Prop from App.tsx to update highlighted element
 }
 
-const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
-  if (!isOpen) return null;
+const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, tutorialType, onStepChange }) => {
+  const [stepIndex, setStepIndex] = useState(0);
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+
+  // Select steps based on tutorialType
+  const stepsToUse = useMemo(() => {
+    if (tutorialType === 'firstVisit') {
+      return FIRST_VISIT_STEPS;
+    }
+    return CME_VISUALIZATION_STEPS;
+  }, [tutorialType]);
+
+  const currentStep = stepsToUse[stepIndex];
+
+  // Callback to inform the parent about which element to highlight
+  const informParentAboutHighlight = useCallback((id: string | null) => {
+    onStepChange(id);
+  }, [onStepChange]);
+
+
+  useEffect(() => {
+    if (!isOpen) {
+      informParentAboutHighlight(null); // Clear highlight when modal closes
+      return;
+    }
+
+    // Reset step index when opened or if it's a new tutorial type
+    if (stepIndex !== 0 && tutorialType === 'cmeViz') { // Only reset for CME Viz if not already at step 0
+        setStepIndex(0);
+    } else if (tutorialType === 'firstVisit' && stepIndex !== 0) {
+        setStepIndex(0); // Always start FirstVisit from 0
+    }
+
+    if (!currentStep) return;
+
+    // Trigger highlighting in the parent (App.tsx)
+    informParentAboutHighlight(currentStep.targetId);
+
+    const updatePosition = () => {
+      const element = document.getElementById(currentStep.targetId);
+      if (element) {
+        setTargetRect(element.getBoundingClientRect());
+      } else {
+        console.warn(`Tutorial target element not found: ${currentStep.targetId}. Skipping step.`);
+        handleNext(); // Skip to next step if element not found
+      }
+    };
+
+    const timer = setTimeout(updatePosition, 50); // Small delay for DOM layout
+    window.addEventListener('resize', updatePosition);
+    
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isOpen, stepIndex, currentStep, informParentAboutHighlight, stepsToUse, tutorialType]);
+
+  const handleNext = () => {
+    if (stepIndex < stepsToUse.length - 1) {
+      setStepIndex(stepIndex + 1);
+    } else {
+      onClose(); // End of tutorial
+    }
+  };
+  
+  const handleClose = () => {
+    informParentAboutHighlight(null); // Ensure target highlight is removed
+    onClose(); // Close the modal
+  };
+
+  const { tooltipStyle, arrowStyle } = useMemo(() => {
+    if (!targetRect || !currentStep) {
+      return { tooltipStyle: { opacity: 0, visibility: 'hidden' }, arrowStyle: {} };
+    }
+
+    const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256); // Default 256 if no class
+    const tooltipHeight = 160; // Approximate height for tooltip content
+    const margin = 16; // Space from target and screen edges
+
+    let ttStyle: React.CSSProperties = { zIndex: 2003 }; // Ensure tooltip is above backdrop
+    let arStyle: React.CSSProperties = {};
+
+    let top = 0, left = 0;
+
+    switch (currentStep.placement) {
+      case 'bottom':
+        top = targetRect.bottom + margin + (currentStep.offsetY || 0);
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + (currentStep.offsetX || 0);
+        arStyle = { 
+            bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+            borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' 
+        };
+        break;
+      case 'top':
+        top = targetRect.top - tooltipHeight - margin + (currentStep.offsetY || 0);
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + (currentStep.offsetX || 0);
+        arStyle = { 
+            top: '100%', left: '50%', transform: 'translateX(-50%)',
+            borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' 
+        };
+        break;
+      case 'left':
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + (currentStep.offsetY || 0);
+        left = targetRect.left - tooltipWidth - margin + (currentStep.offsetX || 0);
+        arStyle = { 
+            right: '100%', top: '50%', transform: 'translateY(-50%)',
+            borderRight: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' 
+        };
+        break;
+      case 'right':
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + (currentStep.offsetY || 0);
+        left = targetRect.right + margin + (currentStep.offsetX || 0);
+        arStyle = { 
+            left: '100%', top: '50%', transform: 'translateY(-50%)',
+            borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' 
+        };
+        break;
+    }
+
+    // Clamp positions to stay within viewport
+    ttStyle.top = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
+    ttStyle.left = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
+
+    // For horizontal arrows, adjust left of arrow based on clamped top/left
+    if (currentStep.placement === 'top' || currentStep.placement === 'bottom') {
+        // Arrow's left should be relative to tooltip's top-left origin
+        arStyle.left = `${targetRect.left + targetRect.width / 2 - (ttStyle.left as number)}px`;
+    }
+    // For vertical arrows, adjust top of arrow based on clamped top/left
+    if (currentStep.placement === 'left' || currentStep.placement === 'right') {
+        // Arrow's top should be relative to tooltip's top-left origin
+        arStyle.top = `${targetRect.top + targetRect.height / 2 - (ttStyle.top as number)}px`;
+    }
+
+
+    ttStyle.opacity = 1;
+    ttStyle.visibility = 'visible';
+
+    return { tooltipStyle: ttStyle, arrowStyle: arStyle };
+  }, [targetRect, currentStep]);
+
+
+  if (!isOpen || !currentStep) {
+    return null;
+  }
+
+  // Determine if the current step is the 'Aurora Forecast' step for the first visit tutorial
+  const isForecastStepForFirstVisit = tutorialType === 'firstVisit' && currentStep?.targetId === 'nav-forecast';
+
+  // Conditionally apply classes to the backdrop div
+  const backdropClasses = `fixed inset-0 z-[2002] transition-all duration-300 ${
+    isForecastStepForFirstVisit ? 'bg-black/20 backdrop-filter-none' : 'bg-black/75 backdrop-blur-sm'
+  }`;
+
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
-      onClick={onClose}
+      className={backdropClasses}
+      // No onClick on backdrop, as the tutorial logic will manage steps and closing.
+      // Clicks should go through to the highlighted element.
     >
-      <div 
-        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-neutral-300 flex flex-col"
-        onClick={e => e.stopPropagation()} // Prevent click from closing modal
+      <div
+        className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass || 'w-64'}`}
+        style={tooltipStyle}
+        // Prevent event propagation from tooltip content to background
+        onClick={(e) => e.stopPropagation()} 
       >
-        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h2 className={`text-2xl font-bold text-neutral-200`}>App Guide & Glossary</h2>
-          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
-            <CloseIcon className="w-6 h-6" />
-          </button>
+        <div className="absolute w-0 h-0" style={arrowStyle} />
+        <div className="flex justify-between items-start mb-2">
+            <h3 className="text-lg font-bold text-sky-400">{currentStep.title}</h3>
+            <span className="text-xs text-neutral-400 font-mono">{stepIndex + 1}/{stepsToUse.length}</span>
         </div>
-        
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6">
-          <Section title="What is this?">
-            <p>This application visualizes Coronal Mass Ejections (CMEs), massive bursts of solar wind and magnetic fields that stream out from the Sun. You can explore recent CME events, model their trajectory, and see their potential interaction with Earth in a 3D model of the inner solar system.</p>
-          </Section>
-
-          <Section title="How to Use the App">
-            <SubSection title="1. Control Panel (Left)">
-              <p>This panel lets you configure the main simulation view.</p>
-              <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
-                <li><strong>Date Range:</strong> Load CME data from the last 24 hours, 3 days, or 7 days.</li>
-                <li><strong>View:</strong> Switch between a Top-Down (ecliptic North) and a Side View.</li>
-                <li><strong>Focus:</strong> Lock the camera's focus on either the Sun or the Earth.</li>
-              </ul>
-              
-              <h5 className="font-semibold text-neutral-300 mt-4">Display Options</h5>
-              <p>Use these toggles to reduce clutter in the 3D view.</p>
-               <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
-                <li><strong>Show Labels:</strong> Turn the text labels for planets on or off.</li>
-                <li><strong>Show Other Planets:</strong> Show or hide Mercury, Venus, and Mars to focus on the Sun-Earth system.</li>
-                <li><strong>Show Moon & L1:</strong> Show or hide Earth's moon and the L1 satellite point.</li>
-              </ul>
-
-              <h5 className="font-semibold text-neutral-300 mt-4">Filter CMEs</h5>
-              <p>Refine the list of CMEs shown in the simulation and in the list panel.</p>
-               <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
-                <li><strong>All:</strong> Shows all available CMEs.</li>
-                <li><strong>Earth-Directed:</strong> Shows only CMEs that are likely on a path toward Earth.</li>
-                <li><strong>Not Earth-Directed:</strong> Shows only CMEs that are not on a path toward Earth.</li>
-              </ul>
-            </SubSection>
-            
-            <SubSection title="2. CME List (Right)">
-               <p>This panel lists all CMEs available for the selected date range and filter.</p>
-               <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
-                 <li><strong>Show All (Live Simulation):</strong> Simulates all listed CMEs based on their actual start times. This mode is best used with the Timeline Controls.</li>
-                 <li><strong>Select a specific CME:</strong> Click on any CME in the list to isolate it and model its journey from the Sun. This is useful for studying a single event.</li>
-               </ul>
-            </SubSection>
-
-            <SubSection title="3. Timeline Controls (Bottom)">
-              <p>When viewing "Show All", these controls appear, allowing you to manipulate time.</p>
-              <p className="mt-2 p-2 bg-neutral-800/50 border-l-4 border-neutral-600 rounded text-neutral-300">
-                <strong>Forecast Period:</strong> The timeline extends 3 days into the future. A <span className="text-red-400 font-semibold">red marker</span> on the slider indicates the current time, separating past events from the future forecast.
-              </p>
-              <ul className="list-disc list-inside space-y-1 mt-2 pl-2">
-                <li><strong>Play/Pause/Step:</strong> Control the flow of time for the simulation.</li>
-                <li><strong>Scrubber:</strong> Drag the slider to quickly jump to any point in time within the loaded range.</li>
-                <li><strong>Speed:</strong> Adjust the playback speed of the simulation.</li>
-              </ul>
-            </SubSection>
-            
-            <SubSection title="4. Interacting with the 3D View">
-              <p>The top-right corner of the screen features a mode toggle button to switch how you interact with the 3D space.</p>
-              <ul className="list-disc list-inside space-y-3 mt-2 pl-2">
-                <li>
-                  <div className="flex items-center gap-2">
-                    <strong>Move Mode</strong> <MoveIcon className="w-5 h-5 inline-block"/>
-                  </div>
-                   This is the default mode. Left-click and drag to rotate the camera. Right-click and drag (or use two fingers on a trackpad) to pan. Use the scroll wheel to zoom in and out. The cursor will appear as a hand.
-                </li>
-                <li>
-                  <div className="flex items-center gap-2">
-                    <strong>Select Mode</strong> <SelectIcon className="w-5 h-5 inline-block"/>
-                  </div>
-                  In this mode, camera movement via left-click is paused. This allows you to precisely click on a specific CME particle cloud in the simulation to select it and view its details in the right-hand panel. The cursor will appear as a pointer.
-                </li>
-              </ul>
-            </SubSection>
-          </Section>
-
-          <Section title="Glossary of Terms">
-             <Definition term="CME (Coronal Mass Ejection)" definition="A significant release of plasma and accompanying magnetic field from the Sun's corona. They can eject billions of tons of coronal material." />
-             <Definition term="Speed (km/s)" definition="The propagation speed of the CME front. The color of the CME in the simulation corresponds to its speed, with hotter colors indicating faster, more energetic events." />
-             <Definition term="Longitude / Latitude" definition="The coordinates on the Sun's surface where the CME originated. A longitude near 0° means the CME source was facing Earth at the time of eruption." />
-             <Definition term="Earth-Directed" definition="Indicates that the CME's trajectory is likely to bring it into contact with Earth's magnetosphere." />
-             <Definition term="Predicted Arrival Time" definition="For Earth-directed CMEs, this is NASA's forecast for when the shockwave front is expected to reach our planet." />
-             <Definition term="L1 (Lagrange Point 1)" definition="A point in space about 1.5 million km from Earth towards the Sun. At this point, the gravitational pull of the Sun and Earth are equal, making it an excellent location for solar-monitoring spacecraft like DSCOVR and SOHO." />
-          </Section>
-
+        <p className="text-sm text-neutral-300 leading-relaxed mb-4">{currentStep.content}</p>
+        <div className="flex justify-end items-center gap-4">
+            <button onClick={handleClose} className="px-3 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">Skip Guide</button>
+            <button
+                onClick={handleNext}
+                className="px-4 py-1.5 bg-sky-600 text-white rounded-md text-sm font-semibold hover:bg-sky-500 transition-colors"
+            >
+                {stepIndex === stepsToUse.length - 1 ? 'Finish' : 'Next'}
+            </button>
         </div>
       </div>
     </div>
   );
 };
-
-const Section: React.FC<{title: string, children: React.ReactNode}> = ({title, children}) => (
-  <section>
-    <h3 className="text-xl font-semibold text-neutral-300 mb-2">{title}</h3>
-    <div className="space-y-3 text-sm text-neutral-300 leading-relaxed">
-      {children}
-    </div>
-  </section>
-);
-
-const SubSection: React.FC<{title: string, children: React.ReactNode}> = ({title, children}) => (
-   <div className="mt-4">
-      <h4 className="font-semibold text-neutral-400">{title}</h4>
-      {children}
-   </div>
-);
-
-const Definition: React.FC<{term: string, definition: string}> = ({term, definition}) => (
-  <div className="mt-2">
-    <p><strong>{term}:</strong> {definition}</p>
-  </div>
-);
-
 
 export default TutorialModal;

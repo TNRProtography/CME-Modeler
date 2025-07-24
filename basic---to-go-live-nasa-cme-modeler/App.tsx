@@ -67,7 +67,8 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // This is the internal TutorialModal, opened by ControlsPanel
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // This is the general TutorialModal, opened by ControlsPanel
+  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null); // New state for tutorial type
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // This is for the global App SettingsModal
@@ -96,11 +97,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
-    // Only open the tutorial if it's the first visit AND we're on the modeler page initially.
-    // If not on modeler, tutorial will be skipped until user navigates there or a different logic is applied.
-    // For now, let's assume tutorial should pop up regardless of initial page.
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
+      setCurrentTutorialType('firstVisit'); // Set type for FirstVisitTutorial
     }
     if (!clockRef.current && window.THREE) {
       clockRef.current = new window.THREE.Clock();
@@ -111,8 +110,15 @@ const App: React.FC = () => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
     setIsFirstVisitTutorialOpen(false);
     setHighlightedElementId(null);
+    setCurrentTutorialType(null); // Clear tutorial type
   }, []);
 
+  const handleOpenCmeVizTutorial = useCallback(() => {
+    setIsTutorialOpen(true);
+    setCurrentTutorialType('cmeViz'); // Set type for CME Visualization Tutorial
+  }, []);
+
+  // Universal handler for setting highlighted element ID based on tutorial step
   const handleTutorialStepChange = useCallback((id: string | null) => {
     setHighlightedElementId(id);
   }, []);
@@ -182,13 +188,10 @@ const App: React.FC = () => {
   const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching') && !substormActivityStatus.text.includes('substorm signature detected'), [substormActivityStatus]);
 
   // Handler for viewing a CME in the Visualization page
-  const handleViewCMEInVisualization = useCallback((cmeId: string) => { // Changed function name
-    setActivePage('modeler'); // 'modeler' is the internal identifier for the CME visualization page
-    setCurrentlyModeledCMEId(cmeId); // Set the specific CME to be modeled
-    setIsCmeListOpen(true); // Open the CME list panel to show the selected CME
-    // Optionally, you might want to reset other modeler states here,
-    // like activeTimeRange, activeView, etc., to default for a fresh view.
-    // However, for now, we'll let the user's previous view settings persist.
+  const handleViewCMEInVisualization = useCallback((cmeId: string) => {
+    setActivePage('modeler');
+    setCurrentlyModeledCMEId(cmeId);
+    setIsCmeListOpen(true);
   }, []);
 
   return (
@@ -196,7 +199,7 @@ const App: React.FC = () => {
         <style>{`
           .tutorial-highlight {
             position: relative;
-            z-index: 2003 !important; /* Adjusted from 2002 to be above the tutorial overlay (2002) if needed */
+            z-index: 2003 !important;
             box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7);
             border-color: #3b82f6 !important;
           }
@@ -209,7 +212,7 @@ const App: React.FC = () => {
             auroraScore={currentAuroraScore ?? undefined} 
             isSubstormAlert={isSubstormAlert} 
             substormText={substormActivityStatus?.text ?? undefined}
-            hideForTutorial={isFirstVisitTutorialOpen} 
+            // hideForTutorial prop removed as per previous fix
         />
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
@@ -237,9 +240,9 @@ const App: React.FC = () => {
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
-                title="View CME Visualization"> {/* Changed button title */}
+                title="View CME Visualization">
                     <CmeIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">CME Visualization</span> {/* Changed button text */}
+                    <span className="text-sm font-semibold hidden md:inline">CME Visualization</span>
                 </button>
             </div>
             <div className="flex-grow flex justify-end">
@@ -255,36 +258,40 @@ const App: React.FC = () => {
 
         <div className="flex flex-grow min-h-0">
             {activePage === 'modeler' && ( <>
-                {/* Z-INDEX MODIFICATION: ControlsPanel needs to be above the header */}
-                {/* MODIFICATION: Adjusted top and height to clear the header area */}
-                <div className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
+                <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    {/* Updated onOpenGuide to trigger the CME Viz tutorial specifically */}
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenCmeVizTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
                     <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={interactionMode} />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                         <div className="flex items-center space-x-2 pointer-events-auto">
-                            <button onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
-                            <button onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View"><CmeIcon className="w-6 h-6" /></button>
-                            <button onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models"><GlobeIcon className="w-6 h-6" /></button>
+                            <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
+                            <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View"><CmeIcon className="w-6 h-6" /></button>
+                            <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models"><GlobeIcon className="w-6 h-6" /></button>
                         </div>
                         <div className="flex items-center space-x-2 pointer-events-auto">
-                            <button onClick={() => setInteractionMode((prev: InteractionMode) => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}> {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />} </button>
-                            <button onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"><ListIcon className="w-6 h-6" /></button>
+                            <button id="interaction-mode-button" onClick={() => setInteractionMode((prev: InteractionMode) => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}> {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />} </button>
+                            <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"><ListIcon className="w-6 h-6" /></button>
                         </div>
                     </div>
                     <TimelineControls isVisible={!isLoading && filteredCmes.length > 0} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
                 </main>
-                {/* Z-INDEX MODIFICATION: CMEListPanel needs to be above the header */}
-                {/* MODIFICATION: Adjusted top and height to clear the header area */}
-                <div className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
                 </div>
-                {/* Z-INDEX MODIFICATION: Backdrop for ControlsPanel/CMEListPanel */}
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
-                <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+                {/* TutorialModal now receives tutorialType and onStepChange */}
+                {isTutorialOpen && currentTutorialType === 'cmeViz' && (
+                    <TutorialModal
+                        isOpen={isTutorialOpen}
+                        onClose={() => setIsTutorialOpen(false)}
+                        tutorialType="cmeViz"
+                        onStepChange={handleTutorialStepChange}
+                    />
+                )}
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
             </> )}
             {activePage === 'forecast' && (<ForecastDashboard setViewerMedia={setViewerMedia} setCurrentAuroraScore={setCurrentAuroraScore} setSubstormActivityStatus={setSubstormActivityStatus} />)}
@@ -293,7 +300,7 @@ const App: React.FC = () => {
                     setViewerMedia={setViewerMedia} 
                     apiKey={apiKey} 
                     setLatestXrayFlux={setLatestXrayFlux} 
-                    onViewCMEInVisualization={handleViewCMEInVisualization} /* Pass the handler here */
+                    onViewCMEInVisualization={handleViewCMEInVisualization}
                 />
             )}
         </div>
@@ -301,11 +308,16 @@ const App: React.FC = () => {
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
-        <FirstVisitTutorial
-          isOpen={isFirstVisitTutorialOpen}
-          onClose={handleCloseFirstVisitTutorial}
-          onStepChange={handleTutorialStepChange}
-        />
+        {/* FirstVisitTutorial now explicitly shown based on its own state and type */}
+        {isFirstVisitTutorialOpen && currentTutorialType === 'firstVisit' && (
+            <FirstVisitTutorial
+                isOpen={isFirstVisitTutorialOpen}
+                onClose={handleCloseFirstVisitTutorial}
+                onStepChange={handleTutorialStepChange}
+                // No need for highlightedElementId here, as FirstVisitTutorial manages it internally.
+                // It calls onStepChange to update App.tsx's highlightedElementId state.
+            />
+        )}
     </div>
   );
 };
