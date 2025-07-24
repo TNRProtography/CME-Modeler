@@ -1,3 +1,5 @@
+// --- START OF FILE src/components/GlobalBanner.tsx ---
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
 
@@ -25,6 +27,8 @@ interface GlobalBannerProps {
   auroraScore?: number;
   isSubstormAlert: boolean;
   substormText?: string;
+  // NEW PROP: Control visibility based on tutorial state
+  hideForTutorial?: boolean; 
 }
 
 const GlobalBanner: React.FC<GlobalBannerProps> = ({
@@ -34,7 +38,13 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   auroraScore,
   isSubstormAlert,
   substormText,
+  hideForTutorial = false, // Default to false if not provided
 }) => {
+  // If hideForTutorial is true, render nothing
+  if (hideForTutorial) {
+    return null;
+  }
+
   // State for the admin-set global banner
   const [globalBanner, setGlobalBanner] = useState<BannerData | null>(null);
   const [isGlobalBannerDismissed, setIsGlobalBannerDismissed] = useState(false);
@@ -220,3 +230,4 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 };
 
 export default GlobalBanner;
+// --- END OF FILE src/components/GlobalBanner.tsx ---

@@ -66,13 +66,13 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     if (stepIndex < STEPS.length - 1) {
       setStepIndex(stepIndex + 1);
     } else {
-      onClose();
+      onClose(); // Call onClose when tutorial finishes
     }
   };
   
   const handleClose = () => {
     onStepChange(null); // Ensure target highlight is removed if any
-    onClose();
+    onClose(); // Call onClose when tutorial is skipped
   };
 
   const { tooltipStyle, arrowStyle } = useMemo(() => {
@@ -121,7 +121,6 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
         
         ttStyle = { top: `${clampedTop}px`, left: `${left}px`, transform: 'none' };
         
-        // *** IMPORTANT MODIFICATION ***
         // Since the 'left' tooltip is now vertically aligned (its top is 'clampedTop')
         // similar to 'bottom' placed tooltips, its arrow should also come from its top.
         // The 'left' position of the arrow is calculated relative to the tooltip's 'left' property,
