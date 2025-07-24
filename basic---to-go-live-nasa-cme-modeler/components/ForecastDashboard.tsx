@@ -214,7 +214,6 @@ const getAuroraBlurb = (score: number) => {
     return 'High probability of a significant substorm.';
 };
 
-// **FIXED**: Moved this function outside the main component
 const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
     if (isDaylight) {
         return {
@@ -341,6 +340,44 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
 
+    // --- NEW --- Memoized hook to calculate the pre-sunset activity alert message
+    const activityAlertMessage = useMemo(() => {
+        if (!isDaylight || !celestialTimes.sun?.set || auroraScoreHistory.length === 0) {
+            return null; // No message if it's night, no sunset data, or no history
+        }
+
+        const now = Date.now();
+        const sunsetTime = celestialTimes.sun.set;
+        const oneHourBeforeSunset = sunsetTime - (60 * 60 * 1000);
+        
+        // Check if we are in the 1-hour window before sunset
+        if (now >= oneHourBeforeSunset && now < sunsetTime) {
+            const latestHistoryPoint = auroraScoreHistory[auroraScoreHistory.length - 1];
+            const latestBaseScore = latestHistoryPoint?.baseScore ?? 0;
+
+            if (latestBaseScore >= 50) {
+                let message = "Aurora activity is currently high! Good potential for a display as soon as it's dark.";
+
+                // Check moon conditions after sunset
+                const moonRise = celestialTimes.moon?.rise;
+                const moonSet = celestialTimes.moon?.set;
+                const moonIllumination = celestialTimes.moon?.illumination;
+
+                if (moonRise && moonSet && moonIllumination !== undefined) {
+                    const moonIsUpAtSunset = (sunsetTime > moonRise && sunsetTime < moonSet) || 
+                                             (moonSet < moonRise && (sunsetTime > moonRise || sunsetTime < moonSet));
+
+                    if (moonIsUpAtSunset) {
+                        message += ` Note: The ${moonIllumination.toFixed(0)}% illuminated moon will be up, which may wash out fainter details.`;
+                    }
+                }
+                return message;
+            }
+        }
+
+        return null; // No alert conditions met
+    }, [isDaylight, celestialTimes, auroraScoreHistory]);
+
     const tooltipContent = useMemo(() => ({
         'forecast': `This is a proprietary TNR Protography forecast that combines live solar wind data with local conditions like lunar phase and astronomical darkness specifically for the West Coast. This is why you may see "xxkm south/north of Greymouth" below the score. The sun and moon times are for Greymouth but as this is a 2 hourly forecast, this isn't a problem. Remember, patience is key and always look south! <br><br><strong>What the Percentage Means:</strong><ul><li><strong>< 10% 😞:</strong> Little to no auroral activity.</li><li><strong>10-25% 😐:</strong> Minimal activity; cameras may detect a faint glow.</li></li><li><strong>25-40% 😊:</strong> Clear activity on camera; a faint naked-eye glow is possible.</li><li><strong>40-50% 🙂:</strong> Faint naked-eye aurora likely, maybe with color.</li><li><strong>50-80% 😀:</strong> Good chance of naked-eye color and structure.</li><li><strong>80%+ 🤩:</strong> High probability of a significant substorm.</li></ul>`,
         'power': `<strong>What it is:</strong> The total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.`,
@@ -353,7 +390,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'ips': `<strong>What it is:</strong> An Interplanetary Shock (IPS) is the boundary of a disturbance, like a Coronal Mass Ejection (CME), moving through the solar system. The arrival of a shock front at Earth is detected by satellites like DSCOVR or ACE.<br><br><strong>Effect on Aurora:</strong> The arrival of an IPS can cause a sudden and dramatic shift in solar wind parameters (speed, density, and magnetic field). This can trigger intense auroral displays shortly after impact. This table shows the most recent shock events detected by NASA.`,
         'solar-wind-graph': `This chart shows two key components of the solar wind. The colors change based on the intensity of the readings.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Elevated conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Moderate conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Severe conditions.</li></ul>`,
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
-        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Very high power.</li></ul>`,
+        'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Very high power.</li></ul>`,
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
         'live-cameras': `<strong>What are these?</strong><br>These are publicly available webcams from around New Zealand. They are ordered from south to north.<br><br><strong>How do they help?</strong><br>These cameras provide crucial "ground truth" to supplement the forecast data. You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one obstacle to aurora spotting. See if the sky is clear in a location before you go.</li><li><strong>Spot Faint Aurora:</strong> Some of these cameras are sensitive enough to pick up auroral glows that might not be obvious on other data sources.</li><li><strong>Verify Conditions:</strong> Confirm what the data is suggesting. If the forecast is high and a southern-facing camera shows a clear sky, your chances are good!</li></ul><p class="mt-2 text-xs text-neutral-500">Note: Camera availability and quality can vary. Some may not update at night.</p>`,
     }), []);
@@ -603,6 +640,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
                     <main className="grid grid-cols-12 gap-6">
+                        {/* --- NEW --- Activity Alert Message Rendering */}
+                        {activityAlertMessage && (
+                            <div className="col-span-12 card bg-yellow-900/50 border border-yellow-400/30 text-yellow-200 p-4 text-center text-sm rounded-lg">
+                                {activityAlertMessage}
+                            </div>
+                        )}
                         <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
                             <div>
                                 <div className="flex justify-center items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
