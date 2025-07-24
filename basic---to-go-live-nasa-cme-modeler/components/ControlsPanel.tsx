@@ -144,7 +144,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">View:</label>
           <div className="flex space-x-2">
             <Button id="view-top-button" onClick={() => onViewChange(ViewMode.TOP)} isActive={activeView === ViewMode.TOP}>Top-Down</Button>
-            {/* The provided HTML had 'Front' and 'Side', but current code has 'Top-Down' and 'Side View'. Sticking to provided component code here. */}
             <Button id="view-side-button" onClick={() => onViewChange(ViewMode.SIDE)} isActive={activeView === ViewMode.SIDE}>Side View</Button>
           </div>
         </div>
@@ -154,7 +153,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           <div className="flex space-x-2">
             <Button id="focus-sun-button" onClick={() => onFocusChange(FocusTarget.SUN)} isActive={activeFocus === FocusTarget.SUN}>Sun</Button>
             <Button id="focus-earth-button" onClick={() => onFocusChange(FocusTarget.EARTH)} isActive={activeFocus === FocusTarget.EARTH}>Earth</Button>
-            {/* The provided HTML had 'L1', but current code only has 'Sun' and 'Earth'. Sticking to provided component code here. */}
           </div>
         </div>
 

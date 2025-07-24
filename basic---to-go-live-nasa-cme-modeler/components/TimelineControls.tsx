@@ -17,10 +17,9 @@ interface TimelineControlsProps {
   maxDate: number; // timestamp
 }
 
-// Updated to accept an 'id' prop
 const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode; title: string; id?: string }> = ({ onClick, children, title, id }) => (
   <button
-    id={id} // Added id prop
+    id={id}
     onClick={onClick}
     title={title}
     className={`p-2 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors focus:outline-none focus:ring-1 focus:ring-neutral-400`}
@@ -29,10 +28,9 @@ const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode;
   </button>
 );
 
-// Updated to accept an 'id' prop
 const SpeedButton: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode; id?: string }> = ({ onClick, isActive, children, id }) => (
  <button
-    id={id} // Added id prop
+    id={id}
     onClick={onClick}
     className={`px-3 py-1 text-xs rounded border transition-colors ${
       isActive
@@ -60,7 +58,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
   const nowTimestamp = Date.now();
   const totalDuration = maxDate - minDate;
-  let nowPositionPercent = -1; // Default to off-screen
+  let nowPositionPercent = -1;
 
   if (totalDuration > 0 && nowTimestamp >= minDate && nowTimestamp <= maxDate) {
     nowPositionPercent = ((nowTimestamp - minDate) / totalDuration) * 100;
@@ -80,7 +78,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
         <div className="relative flex-grow flex items-center h-5">
             <input
             type="range"
-            id="timeline-scrubber" // Existing ID, ensuring it's present
+            id="timeline-scrubber"
             min="0"
             max="1000"
             value={scrubberValue}

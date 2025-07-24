@@ -74,9 +74,9 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
 
   const handleNext = () => {
     // Only allow progression if currentStep.disableNext is false
-    if (currentStep && !currentStep.disableNext && stepIndex < STEPS.length - 1) {
+    if (STEPS[stepIndex] && !STEPS[stepIndex].disableNext && stepIndex < STEPS.length - 1) {
       setStepIndex(stepIndex + 1);
-    } else if (currentStep && !currentStep.disableNext && stepIndex === STEPS.length - 1) {
+    } else if (STEPS[stepIndex] && !STEPS[stepIndex].disableNext && stepIndex === STEPS.length - 1) {
       onClose(); // Call onClose when tutorial finishes
     }
     // If disableNext is true, this button is not rendered, so this logic won't be hit anyway.
@@ -182,7 +182,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     ttStyle.visibility = 'visible';
 
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
-  }, [targetRect, stepIndex, STEPS]); // Added STEPS to dependencies of useMemo
+  }, [targetRect, stepIndex]); // Removed STEPS from dependencies of useMemo, as it causes re-renders with new step and currentStep is directly from state.
 
   if (!isOpen || !currentStep) return null;
 

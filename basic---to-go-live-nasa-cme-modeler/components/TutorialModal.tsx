@@ -8,6 +8,7 @@ interface TutorialStep {
   widthClass?: string;
   offsetY?: number; // Optional vertical offset for fine-tuning
   offsetX?: number; // Optional horizontal offset for fine-tuning
+  panel?: 'controls' | 'cmeList'; // New prop: indicates if element is inside a panel
   disableNext?: boolean; // Added for consistency, though currently not used in CME_VISUALIZATION_STEPS
 }
 
@@ -21,15 +22,17 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     widthClass: 'w-72',
     offsetY: 0, 
     offsetX: 10,
+    panel: 'controls', // This step specifically points to the mobile button that opens controls
   },
   {
     targetId: 'controls-panel-container', 
     title: 'CME Controls Panel',
     content: 'This panel lets you configure the simulation: adjust the time range of CMEs, change your view, focus on specific celestial bodies, and toggle display options.',
-    placement: 'right',
+    placement: 'right', // Assuming panel is open on desktop, tooltip can be on its right
     widthClass: 'w-80',
     offsetY: 0, 
     offsetX: 10,
+    panel: 'controls', // This step refers to the whole panel
   },
   {
     targetId: 'time-range-3d-button', // Using 3-day button as example for range selection
@@ -37,6 +40,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'Choose between 24 hours, 3 days, or 7 days of historical CME data to load into the simulation.',
     placement: 'bottom',
     widthClass: 'w-72',
+    panel: 'controls', // This button is inside the controls panel
   },
   {
     targetId: 'view-top-button', // Using Top-Down button as example for view selection
@@ -44,6 +48,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'Switch between Top-Down and Side views of the solar system to observe CMEs from different perspectives.',
     placement: 'bottom',
     widthClass: 'w-72',
+    panel: 'controls', // This button is inside the controls panel
   },
   {
     targetId: 'focus-earth-button', // Using Earth button as example for focus selection
@@ -51,6 +56,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'Direct the camera to focus on the Sun or Earth, bringing the selected body to the center of your view.',
     placement: 'bottom',
     widthClass: 'w-72',
+    panel: 'controls', // This button is inside the controls panel
   },
   {
     targetId: 'show-labels-toggle',
@@ -58,6 +64,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'Toggle visibility of planet labels, show/hide Mercury, Venus, Mars, and the Earth\'s Moon/L1 point for a cleaner or more detailed view.',
     placement: 'bottom',
     widthClass: 'w-80',
+    panel: 'controls', // This toggle is inside the controls panel
   },
   {
     targetId: 'cme-filter-all-button', // Using All button as example for filter
@@ -65,6 +72,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'Filter the displayed CMEs by all, Earth-directed, or non-Earth-directed events to quickly find what you\'re looking for.',
     placement: 'bottom',
     widthClass: 'w-72',
+    panel: 'controls', // This button is inside the controls panel
   },
   {
     targetId: 'controls-panel-guide-button',
@@ -72,6 +80,7 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     content: 'You can always click this button in the controls panel to revisit this guide for help.',
     placement: 'bottom',
     widthClass: 'w-72',
+    panel: 'controls', // This button is inside the controls panel
   },
   {
     targetId: 'reset-view-button',
@@ -108,6 +117,17 @@ const CME_VISUALIZATION_STEPS: TutorialStep[] = [
     widthClass: 'w-72',
     offsetY: 0, 
     offsetX: 10,
+    panel: 'cmeList', // This step specifically points to the mobile button that opens CME list
+  },
+  {
+    targetId: 'cme-list-panel-container', // This targets the entire panel when it's open (desktop/mobile)
+    title: 'CME List Panel',
+    content: 'This panel displays a list of Coronal Mass Ejections loaded for the selected time range. Click on a CME here, or directly in the simulation, to see its details.',
+    placement: 'left', // Assuming panel is open on desktop, tooltip can be on its left
+    widthClass: 'w-80',
+    offsetY: 0, 
+    offsetX: 10,
+    panel: 'cmeList', // This step refers to the whole panel
   },
   {
     targetId: 'timeline-play-pause-button',
@@ -138,7 +158,7 @@ const FIRST_VISIT_STEPS: TutorialStep[] = [
   // For now, it's consistent with App.tsx's FirstVisitTutorial state management.
   { targetId: 'nav-forecast', title: 'Aurora Forecast (First Visit)', content: 'This is the first visit tutorial content for the Forecast page.', placement: 'bottom', widthClass: 'w-80' },
   { targetId: 'nav-solar-activity', title: 'Solar Activity (First Visit)', content: 'This is the first visit tutorial content for Solar Activity.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-modeler', title: 'CME Visualization (First Visit)', content: 'This is the first visit tutorial content for CME Viz.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
+  { targetId: 'nav-modeler', title: 'CME Visualization (First Visit)', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! Click the highlighted "CME Visualization" button above to proceed and learn more about this feature.', placement: 'bottom', widthClass: 'w-80', disableNext: true }, 
   { targetId: 'nav-settings', title: 'App Settings (First Visit)', content: 'This is the first visit tutorial content for App Settings.', placement: 'left', widthClass: 'w-72' },
 ];
 
@@ -148,79 +168,143 @@ interface TutorialModalProps {
   onClose: () => void;
   tutorialType: 'cmeViz' | 'firstVisit'; // New prop to differentiate tutorial content
   onStepChange: (id: string | null) => void; // Prop from App.tsx to update highlighted element
+  // New props for panel control
+  openControlsPanel: () => void;
+  closeControlsPanel: () => void;
+  isControlsPanelOpen: boolean;
+  openCmeListPanel: () => void;
+  closeCmeListPanel: () => void;
+  isCmeListPanelOpen: boolean;
 }
 
-const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, tutorialType, onStepChange }) => {
+const PANEL_TRANSITION_DURATION = 350; // Milliseconds, should match CSS transition duration
+
+const TutorialModal: React.FC<TutorialModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  tutorialType, 
+  onStepChange,
+  openControlsPanel,
+  closeControlsPanel,
+  isControlsPanelOpen,
+  openCmeListPanel,
+  closeCmeListPanel,
+  isCmeListPanelOpen,
+}) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
   // Select steps based on tutorialType
   const stepsToUse = useMemo(() => {
-    // In a production app, you might import FIRST_VISIT_STEPS from a shared constants file
     if (tutorialType === 'firstVisit') {
       return FIRST_VISIT_STEPS;
     }
     return CME_VISUALIZATION_STEPS;
-  }, [tutorialType]); // Re-calculate if tutorialType changes
+  }, [tutorialType]);
 
   // Effect for initializing stepIndex when tutorial opens
   useEffect(() => {
     if (isOpen) {
       setStepIndex(0); // Always start from the first step when the modal opens
+    } else {
+      // When closing, ensure all panels are closed and highlight is cleared
+      closeControlsPanel();
+      closeCmeListPanel();
+      onStepChange(null);
     }
-  }, [isOpen]);
-
+  }, [isOpen, closeControlsPanel, closeCmeListPanel, onStepChange]);
 
   // Effect for handling step changes and highlighting
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    let panelDelayTimeout: NodeJS.Timeout | null = null;
+
     if (!isOpen) {
-      onStepChange(null); // Clear highlight when modal closes
+      // Handled in the previous useEffect
       return;
     }
 
+    const currentStep = stepsToUse[stepIndex];
+
     // Ensure stepIndex is within bounds and currentStep is valid
-    if (stepIndex >= stepsToUse.length || !stepsToUse[stepIndex]) {
+    if (!currentStep) {
         onClose(); // Close tutorial if steps are exhausted or invalid
         return;
     }
+    
+    const handleStepLogic = async () => {
+        // First, close any active panels that are NOT related to the current step's target,
+        // unless it's a mobile specific button *that opens* a panel for the *next* step.
+        // For simplicity: close both panels, then open if needed by the current step.
+        // This is safer against previous steps leaving panels open.
+        if (currentStep.panel !== 'controls' && isControlsPanelOpen) {
+            closeControlsPanel();
+        }
+        if (currentStep.panel !== 'cmeList' && isCmeListPanelOpen) {
+            closeCmeListPanel();
+        }
 
-    const currentStep = stepsToUse[stepIndex]; // Get the current step based on the state
+        let delayBeforeHighlight = 50; // Default small delay for rendering
 
-    onStepChange(currentStep.targetId); // Inform App.tsx to highlight the element
-
-    const updatePosition = () => {
-      const element = document.getElementById(currentStep.targetId);
-      if (element) {
-        setTargetRect(element.getBoundingClientRect());
-      } else {
-        // Log a warning if element is not found. Do NOT auto-skip to prevent infinite loops.
-        console.warn(`TutorialModal: Target element "${currentStep.targetId}" not found. Cannot highlight.`);
-        setTargetRect(null); // Clear targetRect to hide the tooltip if element is missing
-      }
+        // Handle panel opening
+        if (currentStep.panel === 'controls') {
+            if (!isControlsPanelOpen) { // Only open if not already open
+                openControlsPanel();
+                delayBeforeHighlight = PANEL_TRANSITION_DURATION + 50; // Add transition time + small buffer
+            }
+        } else if (currentStep.panel === 'cmeList') {
+            if (!isCmeListPanelOpen) { // Only open if not already open
+                openCmeListPanel();
+                delayBeforeHighlight = PANEL_TRANSITION_DURATION + 50; // Add transition time + small buffer
+            }
+        }
+        
+        // Ensure the element is ready and get its position after potential panel opening
+        panelDelayTimeout = setTimeout(() => {
+            onStepChange(currentStep.targetId); // Inform App.tsx to highlight the element
+            const element = document.getElementById(currentStep.targetId);
+            if (element) {
+                setTargetRect(element.getBoundingClientRect());
+            } else {
+                console.warn(`TutorialModal: Target element "${currentStep.targetId}" not found. Cannot highlight.`);
+                setTargetRect(null); // Clear targetRect to hide the tooltip if element is missing
+            }
+        }, delayBeforeHighlight);
     };
 
-    const timer = setTimeout(updatePosition, 50); // Small delay for DOM layout to settle
-    window.addEventListener('resize', updatePosition);
+    handleStepLogic();
+
+    window.addEventListener('resize', () => {
+        const element = document.getElementById(currentStep.targetId);
+        if (element) {
+            setTargetRect(element.getBoundingClientRect());
+        } else {
+            setTargetRect(null); // Clear targetRect if element disappears on resize
+        }
+    });
     
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', updatePosition);
+      if (timeoutId) clearTimeout(timeoutId);
+      if (panelDelayTimeout) clearTimeout(panelDelayTimeout);
+      window.removeEventListener('resize', () => { /* re-attach logic via new render */ });
     };
-  }, [isOpen, stepIndex, onStepChange, onClose, stepsToUse]); // Dependencies for this effect
+  }, [isOpen, stepIndex, stepsToUse, onStepChange, onClose,
+      openControlsPanel, closeControlsPanel, isControlsPanelOpen,
+      openCmeListPanel, closeCmeListPanel, isCmeListPanelOpen
+  ]);
 
 
   const handleNext = () => {
-    // Only allow progression if currentStep.disableNext is false (or undefined)
-    if (currentStep && !currentStep.disableNext && stepIndex < stepsToUse.length - 1) {
+    // Only allow progression if currentStep exists and its disableNext is false (or undefined)
+    if (stepsToUse[stepIndex] && !stepsToUse[stepIndex].disableNext && stepIndex < stepsToUse.length - 1) {
       setStepIndex(stepIndex + 1);
-    } else if (currentStep && !currentStep.disableNext && stepIndex === stepsToUse.length - 1) {
+    } else if (stepsToUse[stepIndex] && !stepsToUse[stepIndex].disableNext && stepIndex === stepsToUse.length - 1) {
       onClose(); // End of tutorial
     }
   };
   
   const handleClose = () => {
-    onStepChange(null); // Ensure target highlight is removed
-    onClose(); // Close the modal
+    onClose(); // Close the modal (useEffect will handle clearing highlight and closing panels)
   };
 
   const currentStep = stepsToUse[stepIndex]; // Re-get currentStep for rendering purposes
@@ -317,7 +401,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, tutorial
     ttStyle.visibility = 'visible';
 
     return { tooltipStyle: ttStyle, arrowStyle: arStyle };
-  }, [targetRect, stepIndex, stepsToUse]); // Added stepsToUse to dependencies of useMemo
+  }, [targetRect, stepIndex, stepsToUse]);
 
 
   if (!isOpen || !currentStep) {

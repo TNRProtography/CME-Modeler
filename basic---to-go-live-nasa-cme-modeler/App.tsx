@@ -69,9 +69,9 @@ const App: React.FC = () => {
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   
   // Tutorial States
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // Controls visibility of the generic TutorialModal
-  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null); // Differentiates tutorial content
-  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // Controls visibility of FirstVisitTutorial specifically
+  // Using one boolean to rule all tutorial modals
+  const [isTutorialActive, setIsTutorialActive] = useState(false); // True if ANY tutorial is showing
+  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null); // Type of the active tutorial
   
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
 
@@ -103,26 +103,31 @@ const App: React.FC = () => {
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
-      setIsFirstVisitTutorialOpen(true);
-      setCurrentTutorialType('firstVisit'); // Indicate that the first visit tutorial is active
+      setIsTutorialActive(true); // Activate tutorial system
+      setCurrentTutorialType('firstVisit'); // Start with the first visit tutorial
     }
     if (!clockRef.current && window.THREE) {
       clockRef.current = new window.THREE.Clock();
     }
   }, []);
   
-  const handleCloseFirstVisitTutorial = useCallback(() => {
-    localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
-    setIsFirstVisitTutorialOpen(false);
+  // Universal handler to close any active tutorial
+  const handleCloseTutorial = useCallback(() => {
+    setIsTutorialActive(false);
+    setCurrentTutorialType(null);
     setHighlightedElementId(null);
-    setCurrentTutorialType(null); // Clear tutorial type after FirstVisit tutorial
-  }, []);
+    // Persist first visit tutorial completion
+    if (currentTutorialType === 'firstVisit') {
+      localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
+    }
+  }, [currentTutorialType]);
 
+  // Handler to open CME Visualization tutorial
   const handleOpenCmeVizTutorial = useCallback(() => {
-    setIsTutorialOpen(true); // Open the general TutorialModal
-    setCurrentTutorialType('cmeViz'); // Set its type to CME Viz
-    // Automatically open controls panel if on mobile for the guide to work well
-    if (window.innerWidth < 1024) { // Tailwind's lg breakpoint is 1024px
+    setIsTutorialActive(true);
+    setCurrentTutorialType('cmeViz');
+    // For mobile, ensure controls panel opens for the tutorial to work
+    if (window.innerWidth < 1024) { 
       setIsControlsOpen(true);
     }
   }, []);
@@ -176,7 +181,7 @@ const App: React.FC = () => {
 
   useEffect(() => { if (activePage === 'modeler') { loadCMEData(activeTimeRange); } }, [activeTimeRange, loadCMEData, activePage]);
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
-  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
+  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCmeId]);
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
@@ -196,7 +201,7 @@ const App: React.FC = () => {
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
   const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching') && !substormActivityStatus.text.includes('substorm signature detected'), [substormActivityStatus]);
 
-  // Handler for viewing a CME in the Visualization page
+  // Handler for viewing a CME in the Visualization page from Solar Activity Dashboard
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
     setCurrentlyModeledCMEId(cmeId);
@@ -205,21 +210,22 @@ const App: React.FC = () => {
 
   // Handler for clicking the CME Visualization button in the main header
   const handleCmeVizNavClick = useCallback(() => {
-    // If FirstVisitTutorial is active and highlighting this button
-    if (isFirstVisitTutorialOpen && highlightedElementId === 'nav-modeler') {
-      setIsFirstVisitTutorialOpen(false); // Close FirstVisitTutorial
+    // If FirstVisitTutorial is active and highlighting this button, complete its step
+    if (isTutorialActive && currentTutorialType === 'firstVisit' && highlightedElementId === 'nav-modeler') {
+      setIsTutorialActive(false); // Close FirstVisitTutorial
       setCurrentTutorialType(null); // Clear its type
-      
+      localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true'); // Mark FirstVisit as seen
+
       setActivePage('modeler'); // Navigate to modeler page
-      setIsTutorialOpen(true); // Open the CME Visualization tutorial
-      setCurrentTutorialType('cmeViz'); // Set its type
-      // The TutorialModal's useEffect will automatically pick up the first step
-      // and call handleTutorialStepChange to highlight it.
+      // Immediately open the CME Visualization tutorial
+      setIsTutorialActive(true);
+      setCurrentTutorialType('cmeViz');
+      // No need to call handleTutorialStepChange here, TutorialModal's useEffect will do it.
     } else {
       // Normal navigation
       setActivePage('modeler');
     }
-  }, [isFirstVisitTutorialOpen, highlightedElementId]);
+  }, [isTutorialActive, currentTutorialType, highlightedElementId]);
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
@@ -309,13 +315,21 @@ const App: React.FC = () => {
                 </div>
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
-                {/* TutorialModal for CME Visualization */}
-                {isTutorialOpen && currentTutorialType === 'cmeViz' && (
+
+                {/* Conditional Rendering for Tutorials */}
+                {isTutorialActive && currentTutorialType === 'cmeViz' && (
                     <TutorialModal
-                        isOpen={isTutorialOpen}
-                        onClose={() => setIsTutorialOpen(false)}
+                        isOpen={true} // TutorialModal should be open if isTutorialActive and current type matches
+                        onClose={handleCloseTutorial}
                         tutorialType="cmeViz"
                         onStepChange={handleTutorialStepChange}
+                        // Panel Control Props for TutorialModal
+                        openControlsPanel={() => setIsControlsOpen(true)}
+                        closeControlsPanel={() => setIsControlsOpen(false)}
+                        isControlsPanelOpen={isControlsOpen}
+                        openCmeListPanel={() => setIsCmeListOpen(true)}
+                        closeCmeListPanel={() => setIsCmeListOpen(false)}
+                        isCmeListPanelOpen={isCmeListOpen}
                     />
                 )}
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
@@ -335,10 +349,10 @@ const App: React.FC = () => {
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
         {/* FirstVisitTutorial */}
-        {isFirstVisitTutorialOpen && currentTutorialType === 'firstVisit' && (
+        {isTutorialActive && currentTutorialType === 'firstVisit' && (
             <FirstVisitTutorial
-                isOpen={isFirstVisitTutorialOpen}
-                onClose={handleCloseFirstVisitTutorial}
+                isOpen={true} // FirstVisitTutorial should be open if isTutorialActive and current type matches
+                onClose={handleCloseTutorial} // Universal close handler
                 onStepChange={handleTutorialStepChange}
             />
         )}
