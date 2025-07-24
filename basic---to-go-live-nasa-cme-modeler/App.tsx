@@ -51,7 +51,7 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.2beta - July 2025'; // Define your app version here
+const APP_VERSION = 'v0.2beta'; // Define your app version here
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -181,6 +181,16 @@ const App: React.FC = () => {
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
   const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching') && !substormActivityStatus.text.includes('substorm signature detected'), [substormActivityStatus]);
 
+  // Handler for viewing a CME in the Visualization page
+  const handleViewCMEInVisualization = useCallback((cmeId: string) => { // Changed function name
+    setActivePage('modeler'); // 'modeler' is the internal identifier for the CME visualization page
+    setCurrentlyModeledCMEId(cmeId); // Set the specific CME to be modeled
+    setIsCmeListOpen(true); // Open the CME list panel to show the selected CME
+    // Optionally, you might want to reset other modeler states here,
+    // like activeTimeRange, activeView, etc., to default for a fresh view.
+    // However, for now, we'll let the user's previous view settings persist.
+  }, []);
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`
@@ -227,9 +237,9 @@ const App: React.FC = () => {
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
-                title="View CME Modeler">
+                title="View CME Visualization"> {/* Changed button title */}
                     <CmeIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">CME Modeler</span>
+                    <span className="text-sm font-semibold hidden md:inline">CME Visualization</span> {/* Changed button text */}
                 </button>
             </div>
             <div className="flex-grow flex justify-end">
@@ -273,11 +283,17 @@ const App: React.FC = () => {
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
             </> )}
             {activePage === 'forecast' && (<ForecastDashboard setViewerMedia={setViewerMedia} setCurrentAuroraScore={setCurrentAuroraScore} setSubstormActivityStatus={setSubstormActivityStatus} />)}
-            {activePage === 'solar-activity' && (<SolarActivityDashboard setViewerMedia={setViewerMedia} apiKey={apiKey} setLatestXrayFlux={setLatestXrayFlux} />)}
+            {activePage === 'solar-activity' && (
+                <SolarActivityDashboard 
+                    setViewerMedia={setViewerMedia} 
+                    apiKey={apiKey} 
+                    setLatestXrayFlux={setLatestXrayFlux} 
+                    onViewCMEInVisualization={handleViewCMEInVisualization} /* Pass the handler here */
+                />
+            )}
         </div>
         
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
-        {/* MODIFICATION: Pass appVersion prop */}
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
         <FirstVisitTutorial
