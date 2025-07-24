@@ -6,7 +6,7 @@ import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal';
+import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
@@ -27,8 +27,8 @@ import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal';
-import FirstVisitTutorial from './components/FirstVisitTutorial';
+import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
+import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -67,11 +67,11 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // This is the internal TutorialModal, opened by ControlsPanel
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // This is for the global App SettingsModal
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // This is for the FirstVisitTutorial
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
@@ -196,7 +196,7 @@ const App: React.FC = () => {
         <style>{`
           .tutorial-highlight {
             position: relative;
-            z-index: 2002 !important;
+            z-index: 2003 !important; /* Adjusted from 2002 to be above the tutorial overlay (2002) if needed */
             box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7);
             border-color: #3b82f6 !important;
           }
@@ -255,7 +255,8 @@ const App: React.FC = () => {
 
         <div className="flex flex-grow min-h-0">
             {activePage === 'modeler' && ( <>
-                <div className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-0 left-0 h-full w-4/5 max-w-[320px] z-50 transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                {/* Z-INDEX MODIFICATION: ControlsPanel needs to be above the header */}
+                <div className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-0 left-0 h-full w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
@@ -274,10 +275,12 @@ const App: React.FC = () => {
                     </div>
                     <TimelineControls isVisible={!isLoading && filteredCmes.length > 0} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
                 </main>
-                <div className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-0 right-0 h-full w-4/5 max-w-[320px] z-50 transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                {/* Z-INDEX MODIFICATION: CMEListPanel needs to be above the header */}
+                <div className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-0 right-0 h-full w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
                 </div>
-                {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
+                {/* Z-INDEX MODIFICATION: Backdrop for ControlsPanel/CMEListPanel */}
+                {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />

@@ -12,7 +12,7 @@ interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   // Callback to navigate to CME Visualization with a specific CME
-  onViewCMEInVisualization: (cmeId: string) => void; 
+  onViewCMEInVisualization: (cmeId: string) => void; // RENAMED PROP
 }
 
 // --- CONSTANTS ---
@@ -174,7 +174,7 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
 );
 
 
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization }) => { // RENAMED PROP
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });

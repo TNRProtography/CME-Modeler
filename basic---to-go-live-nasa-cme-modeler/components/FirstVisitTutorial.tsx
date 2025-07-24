@@ -149,7 +149,10 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[2000] bg-black/75 backdrop-blur-sm">
+    <div 
+      // Z-INDEX MODIFICATION: Increased z-index to ensure it sits on top of the header
+      className="fixed inset-0 z-[2002] bg-black/75 backdrop-blur-sm" 
+    >
       <div
         className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`}
         style={tooltipStyle} // Apply the calculated style directly
