@@ -67,13 +67,18 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // This is the general TutorialModal, opened by ControlsPanel
-  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null); // New state for tutorial type
+  
+  // Tutorial States
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // Controls visibility of the generic TutorialModal
+  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null); // Differentiates tutorial content
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // Controls visibility of FirstVisitTutorial specifically
+  
+  const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
+
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // This is for the global App SettingsModal
-  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // This is for the FirstVisitTutorial
-  const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
+
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -99,7 +104,7 @@ const App: React.FC = () => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
-      setCurrentTutorialType('firstVisit'); // Set type for FirstVisitTutorial
+      setCurrentTutorialType('firstVisit'); // Indicate that the first visit tutorial is active
     }
     if (!clockRef.current && window.THREE) {
       clockRef.current = new window.THREE.Clock();
@@ -110,12 +115,16 @@ const App: React.FC = () => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
     setIsFirstVisitTutorialOpen(false);
     setHighlightedElementId(null);
-    setCurrentTutorialType(null); // Clear tutorial type
+    setCurrentTutorialType(null); // Clear tutorial type after FirstVisit tutorial
   }, []);
 
   const handleOpenCmeVizTutorial = useCallback(() => {
-    setIsTutorialOpen(true);
-    setCurrentTutorialType('cmeViz'); // Set type for CME Visualization Tutorial
+    setIsTutorialOpen(true); // Open the general TutorialModal
+    setCurrentTutorialType('cmeViz'); // Set its type to CME Viz
+    // Automatically open controls panel if on mobile for the guide to work well
+    if (window.innerWidth < 1024) { // Tailwind's lg breakpoint is 1024px
+      setIsControlsOpen(true);
+    }
   }, []);
 
   // Universal handler for setting highlighted element ID based on tutorial step
@@ -194,6 +203,24 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, []);
 
+  // Handler for clicking the CME Visualization button in the main header
+  const handleCmeVizNavClick = useCallback(() => {
+    // If FirstVisitTutorial is active and highlighting this button
+    if (isFirstVisitTutorialOpen && highlightedElementId === 'nav-modeler') {
+      setIsFirstVisitTutorialOpen(false); // Close FirstVisitTutorial
+      setCurrentTutorialType(null); // Clear its type
+      
+      setActivePage('modeler'); // Navigate to modeler page
+      setIsTutorialOpen(true); // Open the CME Visualization tutorial
+      setCurrentTutorialType('cmeViz'); // Set its type
+      // The TutorialModal's useEffect will automatically pick up the first step
+      // and call handleTutorialStepChange to highlight it.
+    } else {
+      // Normal navigation
+      setActivePage('modeler');
+    }
+  }, [isFirstVisitTutorialOpen, highlightedElementId]);
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`
@@ -212,7 +239,6 @@ const App: React.FC = () => {
             auroraScore={currentAuroraScore ?? undefined} 
             isSubstormAlert={isSubstormAlert} 
             substormText={substormActivityStatus?.text ?? undefined}
-            // hideForTutorial prop removed as per previous fix
         />
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
@@ -236,7 +262,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
                  <button 
-                id="nav-modeler" onClick={() => setActivePage('modeler')}
+                id="nav-modeler" onClick={handleCmeVizNavClick} // Use the new handler here
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
@@ -259,7 +285,7 @@ const App: React.FC = () => {
         <div className="flex flex-grow min-h-0">
             {activePage === 'modeler' && ( <>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* Updated onOpenGuide to trigger the CME Viz tutorial specifically */}
+                    {/* ControlsPanel now calls handleOpenCmeVizTutorial */}
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenCmeVizTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
@@ -283,7 +309,7 @@ const App: React.FC = () => {
                 </div>
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
-                {/* TutorialModal now receives tutorialType and onStepChange */}
+                {/* TutorialModal for CME Visualization */}
                 {isTutorialOpen && currentTutorialType === 'cmeViz' && (
                     <TutorialModal
                         isOpen={isTutorialOpen}
@@ -308,14 +334,12 @@ const App: React.FC = () => {
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
-        {/* FirstVisitTutorial now explicitly shown based on its own state and type */}
+        {/* FirstVisitTutorial */}
         {isFirstVisitTutorialOpen && currentTutorialType === 'firstVisit' && (
             <FirstVisitTutorial
                 isOpen={isFirstVisitTutorialOpen}
                 onClose={handleCloseFirstVisitTutorial}
                 onStepChange={handleTutorialStepChange}
-                // No need for highlightedElementId here, as FirstVisitTutorial manages it internally.
-                // It calls onStepChange to update App.tsx's highlightedElementId state.
             />
         )}
     </div>
@@ -323,4 +347,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-// --- END OF FILE App.tsx ---
