@@ -51,7 +51,7 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.2beta'; // Define your app version here
+const APP_VERSION = 'v0.2beta - July 2025'; // Define your app version here
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
