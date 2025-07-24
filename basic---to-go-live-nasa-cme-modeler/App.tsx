@@ -1,10 +1,12 @@
+// --- START OF FILE App.tsx ---
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal';
+import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
@@ -25,8 +27,8 @@ import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal';
-import FirstVisitTutorial from './components/FirstVisitTutorial';
+import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
+import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
 
 // Custom Icon Components
 const SunIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -49,9 +51,7 @@ type ViewerMedia =
     | { type: 'animation', urls: string[] };
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.2beta';
-
-type PanelType = 'controls' | 'cmeList' | 'none';
+const APP_VERSION = 'v0.2beta'; // Define your app version here
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -67,16 +67,12 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  
-  const [isTutorialActive, setIsTutorialActive] = useState(false);
-  const [currentTutorialType, setCurrentTutorialType] = useState<'cmeViz' | 'firstVisit' | null>(null);
-  
-  const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
-
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // For the CME Page Guide
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // For the First Visit Tour
+  const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -101,37 +97,21 @@ const App: React.FC = () => {
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
-      setIsTutorialActive(true);
-      setCurrentTutorialType('firstVisit');
+      setIsFirstVisitTutorialOpen(true);
     }
     if (!clockRef.current && window.THREE) {
       clockRef.current = new window.THREE.Clock();
     }
   }, []);
   
-  const handleCloseTutorial = useCallback(() => {
-    if (currentTutorialType === 'firstVisit') {
-      localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
-    }
-    setIsTutorialActive(false);
-    setCurrentTutorialType(null);
+  const handleCloseFirstVisitTutorial = useCallback(() => {
+    localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
+    setIsFirstVisitTutorialOpen(false);
     setHighlightedElementId(null);
-    setIsControlsOpen(false); // Close panels when tutorial ends
-    setIsCmeListOpen(false);
-  }, [currentTutorialType]);
-
-  const handleOpenCmeVizTutorial = useCallback(() => {
-    setIsTutorialActive(true);
-    setCurrentTutorialType('cmeViz');
   }, []);
 
   const handleTutorialStepChange = useCallback((id: string | null) => {
     setHighlightedElementId(id);
-  }, []);
-
-  const handlePanelStateRequest = useCallback((panel: PanelType) => {
-    setIsControlsOpen(panel === 'controls');
-    setIsCmeListOpen(panel === 'cmeList');
   }, []);
 
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
@@ -204,16 +184,6 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, []);
 
-  const handleCmeVizNavClick = useCallback(() => {
-    if (isTutorialActive && currentTutorialType === 'firstVisit' && highlightedElementId === 'nav-modeler') {
-      localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
-      setActivePage('modeler');
-      setCurrentTutorialType('cmeViz');
-    } else {
-      setActivePage('modeler');
-    }
-  }, [isTutorialActive, currentTutorialType, highlightedElementId]);
-
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`
@@ -255,7 +225,7 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
                  <button 
-                id="nav-modeler" onClick={handleCmeVizNavClick}
+                id="nav-modeler" onClick={() => setActivePage('modeler')} // Reverted to simple navigation
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
@@ -278,7 +248,8 @@ const App: React.FC = () => {
         <div className="flex flex-grow min-h-0">
             {activePage === 'modeler' && ( <>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenCmeVizTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
+                    {/* onOpenGuide now simply opens the static TutorialModal */}
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
                     <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={interactionMode} />
@@ -301,15 +272,8 @@ const App: React.FC = () => {
                 </div>
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
-
-                {isTutorialActive && currentTutorialType === 'cmeViz' && (
-                    <TutorialModal
-                        isOpen={true}
-                        onClose={handleCloseTutorial}
-                        onStepChange={handleTutorialStepChange}
-                        onRequestPanelStateChange={handlePanelStateRequest}
-                    />
-                )}
+                {/* Simplified TutorialModal render */}
+                <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
             </> )}
             {activePage === 'forecast' && (<ForecastDashboard setViewerMedia={setViewerMedia} setCurrentAuroraScore={setCurrentAuroraScore} setSubstormActivityStatus={setSubstormActivityStatus} />)}
@@ -326,13 +290,12 @@ const App: React.FC = () => {
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
-        {isTutorialActive && currentTutorialType === 'firstVisit' && (
-            <FirstVisitTutorial
-                isOpen={true}
-                onClose={handleCloseTutorial}
-                onStepChange={handleTutorialStepChange}
-            />
-        )}
+        {/* FirstVisitTutorial logic remains separate */}
+        <FirstVisitTutorial
+            isOpen={isFirstVisitTutorialOpen}
+            onClose={handleCloseFirstVisitTutorial}
+            onStepChange={handleTutorialStepChange}
+        />
     </div>
   );
 };
