@@ -493,7 +493,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
             fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
             fetchImage(SDO_AIA_193_2048_URL, setSdoAia193_2048);
-
+            fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
             fetchXrayFlux();
             fetchProtonFlux();
             fetchFlares();
