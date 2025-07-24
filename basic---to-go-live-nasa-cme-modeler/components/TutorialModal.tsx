@@ -10,127 +10,24 @@ interface TutorialStep {
   widthClass?: string;
   offsetY?: number; 
   offsetX?: number; 
-  panel?: PanelType; // Indicates if element is inside a panel
+  panel?: PanelType;
   disableNext?: boolean;
 }
 
 const CME_VISUALIZATION_STEPS: TutorialStep[] = [
-  {
-    targetId: 'mobile-controls-button',
-    title: 'CME Controls Panel (Mobile)',
-    content: 'On smaller screens, tap here to open the main controls. On desktop, the panel is on the left.',
-    placement: 'right',
-    widthClass: 'w-72',
-    offsetY: 0, 
-    offsetX: 10,
-    panel: 'controls', 
-  },
-  {
-    targetId: 'controls-panel-container', 
-    title: 'CME Controls Panel',
-    content: 'This panel lets you configure the simulation: adjust the time range of CMEs, change your view, focus on celestial bodies, and toggle display options.',
-    placement: 'right', 
-    widthClass: 'w-80',
-    offsetY: 0, 
-    offsetX: 10,
-    panel: 'controls',
-  },
-  {
-    targetId: 'time-range-3d-button',
-    title: 'Time Range Selection',
-    content: 'Choose between 24 hours, 3 days, or 7 days of historical CME data to load into the simulation.',
-    placement: 'bottom',
-    widthClass: 'w-72',
-    panel: 'controls',
-  },
-  {
-    targetId: 'view-top-button',
-    title: 'View Modes',
-    content: 'Switch between Top-Down and Side views of the solar system to observe CMEs from different perspectives.',
-    placement: 'bottom',
-    widthClass: 'w-72',
-    panel: 'controls',
-  },
-  {
-    targetId: 'focus-earth-button',
-    title: 'Focus Target',
-    content: 'Direct the camera to focus on the Sun or Earth, bringing the selected body to the center of your view.',
-    placement: 'bottom',
-    widthClass: 'w-72',
-    panel: 'controls',
-  },
-  {
-    targetId: 'show-labels-toggle',
-    title: 'Display Options',
-    content: 'Toggle visibility of planet labels, other planets, and the Earth\'s Moon/L1 point for a cleaner or more detailed view.',
-    placement: 'bottom',
-    widthClass: 'w-80',
-    panel: 'controls',
-  },
-  {
-    targetId: 'cme-filter-all-button',
-    title: 'CME Filter',
-    content: 'Filter the displayed CMEs by all, Earth-directed, or non-Earth-directed events to quickly find what you\'re looking for.',
-    placement: 'bottom',
-    widthClass: 'w-72',
-    panel: 'controls',
-  },
-  {
-    targetId: 'controls-panel-guide-button',
-    title: 'Re-open Guide',
-    content: 'You can always click this button in the controls panel to revisit this guide for help.',
-    placement: 'bottom',
-    widthClass: 'w-72',
-    panel: 'controls',
-  },
-  {
-    targetId: 'reset-view-button',
-    title: 'Reset View',
-    content: 'Instantly snap the camera back to a default top-down view, focused on Earth.',
-    placement: 'right', 
-    widthClass: 'w-64',
-    offsetY: 0, 
-    offsetX: 10,
-    panel: 'none',
-  },
-  {
-    targetId: 'interaction-mode-button',
-    title: 'Interaction Mode',
-    content: 'Toggle between "Move" (default camera control) and "Select" mode to click on CMEs in the simulation for more information.',
-    placement: 'left', 
-    widthClass: 'w-72',
-    offsetY: 0, 
-    offsetX: 10,
-    panel: 'none',
-  },
-  {
-    targetId: 'mobile-cme-list-button', 
-    title: 'CME List (Mobile)',
-    content: 'On smaller screens, tap here to open the list of all loaded CMEs. On desktop, this list is on the right.',
-    placement: 'left',
-    widthClass: 'w-72',
-    offsetY: 0, 
-    offsetX: 10,
-    panel: 'cmeList',
-  },
-  {
-    targetId: 'cme-list-panel-container', 
-    title: 'CME List Panel',
-    content: 'This panel displays a list of Coronal Mass Ejections. Click on a CME here, or directly in the simulation, to see its details.',
-    placement: 'left', 
-    widthClass: 'w-80',
-    offsetY: 0, 
-    offsetX: 10,
-    panel: 'cmeList',
-  },
-  {
-    targetId: 'timeline-play-pause-button',
-    title: 'Timeline Playback Controls',
-    content: 'These buttons allow you to play/pause the simulation, and step forward or backward by one hour.',
-    placement: 'top',
-    widthClass: 'w-72',
-    panel: 'none',
-  },
+  { targetId: 'mobile-controls-button', title: 'CME Controls Panel (Mobile)', content: 'On smaller screens, tap here to open the main controls. On desktop, the panel is on the left.', placement: 'right', widthClass: 'w-72', offsetY: 0, offsetX: 10, panel: 'controls' },
+  { targetId: 'controls-panel-container', title: 'CME Controls Panel', content: 'This panel lets you configure the simulation: adjust the time range of CMEs, change your view, focus on celestial bodies, and toggle display options.', placement: 'right', widthClass: 'w-80', offsetY: 0, offsetX: 10, panel: 'controls' },
+  { targetId: 'time-range-3d-button', title: 'Time Range Selection', content: 'Choose between 24 hours, 3 days, or 7 days of historical CME data to load into the simulation.', placement: 'bottom', widthClass: 'w-72', panel: 'controls' },
+  { targetId: 'view-top-button', title: 'View Modes', content: 'Switch between Top-Down and Side views of the solar system to observe CMEs from different perspectives.', placement: 'bottom', widthClass: 'w-72', panel: 'controls' },
+  { targetId: 'focus-earth-button', title: 'Focus Target', content: 'Direct the camera to focus on the Sun or Earth, bringing the selected body to the center of your view.', placement: 'bottom', widthClass: 'w-72', panel: 'controls' },
+  { targetId: 'show-labels-toggle', title: 'Display Options', content: 'Toggle visibility of planet labels, other planets, and the Earth\'s Moon/L1 point for a cleaner or more detailed view.', placement: 'bottom', widthClass: 'w-80', panel: 'controls' },
+  { targetId: 'cme-filter-all-button', title: 'CME Filter', content: 'Filter the displayed CMEs by all, Earth-directed, or non-Earth-directed events to quickly find what you\'re looking for.', placement: 'bottom', widthClass: 'w-72', panel: 'controls' },
+  { targetId: 'controls-panel-guide-button', title: 'Re-open Guide', content: 'You can always click this button in the controls panel to revisit this guide for help.', placement: 'bottom', widthClass: 'w-72', panel: 'controls' },
+  { targetId: 'reset-view-button', title: 'Reset View', content: 'Instantly snap the camera back to a default top-down view, focused on Earth.', placement: 'right', widthClass: 'w-64', offsetY: 0, offsetX: 10, panel: 'none' },
+  { targetId: 'interaction-mode-button', title: 'Interaction Mode', content: 'Toggle between "Move" (default camera control) and "Select" mode to click on CMEs in the simulation for more information.', placement: 'left', widthClass: 'w-72', offsetY: 0, offsetX: 10, panel: 'none' },
+  { targetId: 'mobile-cme-list-button', title: 'CME List (Mobile)', content: 'On smaller screens, tap here to open the list of all loaded CMEs. On desktop, this list is on the right.', placement: 'left', widthClass: 'w-72', offsetY: 0, offsetX: 10, panel: 'cmeList' },
+  { targetId: 'cme-list-panel-container', title: 'CME List Panel', content: 'This panel displays a list of Coronal Mass Ejections. Click on a CME here, or directly in the simulation, to see its details.', placement: 'left', widthClass: 'w-80', offsetY: 0, offsetX: 10, panel: 'cmeList' },
+  { targetId: 'timeline-play-pause-button', title: 'Timeline Playback Controls', content: 'These buttons allow you to play/pause the simulation, and step forward or backward by one hour.', placement: 'top', widthClass: 'w-72', panel: 'none' },
 ];
 
 interface TutorialModalProps {
@@ -167,10 +64,8 @@ const TutorialModal: React.FC<TutorialModalProps> = ({
       return;
     }
 
-    // Request App.tsx to manage the panel state
     onRequestPanelStateChange(currentStep.panel || 'none');
 
-    // Delay finding the element to allow for panel transitions
     const timer = setTimeout(() => {
       onStepChange(currentStep.targetId);
       const element = document.getElementById(currentStep.targetId);
@@ -196,8 +91,8 @@ const TutorialModal: React.FC<TutorialModalProps> = ({
 
   const handleNext = () => {
     if (stepIndex < stepsToUse.length - 1) {
-      onStepChange(null); // Clear previous highlight immediately
-      setTargetRect(null); // Hide tooltip during transition
+      onStepChange(null);
+      setTargetRect(null);
       setStepIndex(stepIndex + 1);
     } else {
       onClose();
@@ -245,8 +140,9 @@ const TutorialModal: React.FC<TutorialModalProps> = ({
 
     const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
     const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
-
-    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2003 };
+    
+    // Z-INDEX FIX: Set a high z-index to ensure it's above panels (z-[2005])
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006 };
     let arStyle: React.CSSProperties = {};
 
     switch (currentStep.placement) {
