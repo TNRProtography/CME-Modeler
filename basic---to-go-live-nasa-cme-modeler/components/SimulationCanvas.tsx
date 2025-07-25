@@ -139,7 +139,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     activeView,
     focusTarget,
     currentlyModeledCMEId,
-    onCMEClick,
+    // onCMEClick, // No longer used
     timelineActive,
     timelinePlaying,
     timelineSpeed,
@@ -173,15 +173,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const lastTimeRef = useRef(0);
 
   const animPropsRef = useRef({ onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate });
-  const interactionRef = useRef({ onCMEClick, interactionMode });
 
   useEffect(() => {
     animPropsRef.current = { onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate };
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
-
-  useEffect(() => {
-    interactionRef.current = { onCMEClick, interactionMode };
-  }, [onCMEClick, interactionMode]);
 
 
   const THREE = window.THREE;
@@ -429,33 +424,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
     window.addEventListener('resize', handleResize);
 
-    const onCanvasClick = (event: MouseEvent) => {
-        const { onCMEClick: clickHandler, interactionMode: currentInteractionMode } = interactionRef.current;
-        if (currentInteractionMode !== InteractionMode.SELECT) return;
-
-        if (!mountRef.current || !cameraRef.current || !cmeGroupRef.current) return;
-        
-        const rect = mountRef.current.getBoundingClientRect();
-        const mouse = new THREE.Vector2();
-        mouse.x = ((event.clientX - rect.left) / mountRef.current.clientWidth) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / mountRef.current.clientHeight) * 2 + 1;
-
-        const raycaster = new THREE.Raycaster();
-        raycaster.params.Points.threshold = 0.1 * SCENE_SCALE;
-        raycaster.setFromCamera(mouse, cameraRef.current);
-        
-        const intersects = raycaster.intersectObjects(cmeGroupRef.current.children, true);
-        
-        if (intersects.length > 0) {
-            const firstIntersectedObject = intersects[0].object;
-            if (firstIntersectedObject.userData && firstIntersectedObject.userData.id) {
-                clickHandler(firstIntersectedObject.userData as ProcessedCME);
-            }
-        }
-    };
-    mountRef.current.addEventListener('click', onCanvasClick);
-
-
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -587,7 +555,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return () => {
       window.removeEventListener('resize', handleResize);
       if (mountRef.current && rendererRef.current) {
-         mountRef.current.removeEventListener('click', onCanvasClick);
+         // MODIFIED: Removed the click event listener as it's no longer needed
          mountRef.current.removeChild(rendererRef.current.domElement);
       }
       if (particleTextureCache) {
@@ -768,11 +736,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }), [moveCamera]);
 
+  // MODIFIED: This hook now forces the canvas to always be in "move" mode.
   useEffect(() => {
     if (controlsRef.current && rendererRef.current?.domElement) {
-      const isMoveMode = interactionMode === InteractionMode.MOVE;
-      controlsRef.current.enabled = isMoveMode;
-      rendererRef.current.domElement.style.cursor = isMoveMode ? 'move' : 'pointer';
+      // Force move mode, effectively disabling the select mode.
+      controlsRef.current.enabled = true;
+      rendererRef.current.domElement.style.cursor = 'move';
     }
   }, [interactionMode]);
 
