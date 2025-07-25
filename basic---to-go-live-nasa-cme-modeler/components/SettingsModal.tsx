@@ -14,11 +14,11 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // NEW PROP: App Version
-  appVersion: string; 
+  appVersion: string;
+  // NEW PROP: This function will be provided by the parent to trigger the tutorial
+  onShowTutorial: () => void; 
 }
 
-// These categories are no longer displayed, but we can keep the definition for when the feature is ready.
 const NOTIFICATION_CATEGORIES = [
   { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
   { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
@@ -30,15 +30,22 @@ const NOTIFICATION_CATEGORIES = [
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
 
+// NEW: A simple icon for the tutorial button
+const GuideIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
+);
+
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion }) => { // Destructure appVersion
+// Destructure the new onShowTutorial prop
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  // We keep the state logic, even if the UI is hidden, so it doesn't break anything.
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -93,7 +100,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     setNotificationStatus(permission);
   }, []);
 
-  // Other handlers are kept for when we re-enable the features.
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
     setNotificationPreference(id, checked);
@@ -122,7 +128,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
 
   return (
     <div 
-      // Z-INDEX MODIFICATION: Increased z-index to ensure it sits on top of everything
       className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4" 
       onClick={onClose}
     >
@@ -137,8 +142,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
           </button>
         </div>
         
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6 flex-1">
-          {/* App Installation Section - Unchanged */}
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
+          {/* App Installation Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
             {isAppInstalled ? (
@@ -163,10 +168,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* --- MODIFIED NOTIFICATION SECTION --- */}
+          {/* Notification Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
-            {/* These permission states are still relevant */}
             {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser does not support web notifications.</p>}
             {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings to receive future alerts.</p></div>}
             {notificationStatus === 'default' && (
@@ -176,11 +180,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
               </div>
             )}
             
-            {/* If permission is granted, show the new "Coming Soon" message */}
             {notificationStatus === 'granted' && (
               <div className="space-y-4">
                 <p className="text-green-400 text-sm">Notifications are enabled.</p>
-                
                 <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-4 text-center">
                     <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
                     <p className="text-sm text-neutral-400 mt-2">
@@ -192,15 +194,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* Location Settings Section - Unchanged */}
+          {/* Location Settings Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
             <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
+
+          {/* NEW: Help & Support Section */}
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
+            <p className="text-sm text-neutral-400 mb-4">Need a refresher on how to use the app? You can restart the welcome tutorial here.</p>
+            <button 
+              onClick={onShowTutorial} 
+              className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+            >
+              <GuideIcon className="w-5 h-5" />
+              <span>Show App Tutorial</span>
+            </button>
+          </section>
         </div>
-        {/* NEW: App Version Display */}
+        
         <div className="p-4 border-t border-neutral-700/80 text-right text-xs text-neutral-500">
           Version: {appVersion}
         </div>
