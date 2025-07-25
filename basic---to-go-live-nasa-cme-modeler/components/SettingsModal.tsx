@@ -219,7 +219,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 <span>Show App Tutorial</span>
               </button>
               <a 
-                href="mailto:thenamesrock+spottheaurora@gmail.com?subject=Spot%20The%20Aurora%20Support" // MODIFIED: Added subject parameter
+                href="mailto:help@spottheaurora.co.nz?subject=Spot%20The%20Aurora%20Support" // MODIFIED: Added subject parameter
                 className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
               >
                 <MailIcon className="w-5 h-5" />
