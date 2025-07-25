@@ -1,251 +1,3 @@
-// --- START OF FILE src/components/SettingsModal.tsx ---
-
-import React, { useState, useEffect, useCallback } from 'react';
-import CloseIcon from './icons/CloseIcon';
-import ToggleSwitch from './ToggleSwitch';
-import { 
-  getNotificationPreference, 
-  setNotificationPreference,
-  requestNotificationPermission,
-  sendTestNotification 
-} from '../utils/notifications.ts';
-
-interface SettingsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  appVersion: string; 
-  onShowTutorial: () => void;
-}
-
-const NOTIFICATION_CATEGORIES = [
-  { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
-  { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
-  { id: 'flare-M1', label: 'Solar Flare M-Class (≥ M1.0)' },
-  { id: 'flare-M5', label: 'Solar Flare M5-Class (≥ M5.0)' },
-  { id: 'flare-X1', label: 'Solar Flare X-Class (≥ X1.0)' },
-  { id: 'substorm-eruption', label: 'Substorm Eruption Detected' },
-];
-
-const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
-
-const GuideIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-  </svg>
-);
-
-const MailIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-  </svg>
-);
-
-const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-  </svg>
-);
-
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
-  const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
-  const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
-  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      if (!('Notification' in window)) {
-        setNotificationStatus('unsupported');
-      } else {
-        setNotificationStatus(Notification.permission);
-      }
-      const loadedNotificationSettings: Record<string, boolean> = {};
-      NOTIFICATION_CATEGORIES.forEach(category => {
-        loadedNotificationSettings[category.id] = getNotificationPreference(category.id);
-      });
-      setNotificationSettings(loadedNotificationSettings);
-      const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
-      setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
-      checkAppInstallationStatus();
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setIsAppInstallable(true);
-    };
-    const handleAppInstalled = () => {
-      setIsAppInstalled(true);
-      setIsAppInstallable(false);
-      setDeferredPrompt(null);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const checkAppInstallationStatus = useCallback(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    const isPWA = (window.navigator as any).standalone === true;
-    setIsAppInstalled(isStandalone || isPWA);
-  }, []);
-  
-  const handleRequestPermission = useCallback(async () => {
-    const permission = await requestNotificationPermission();
-    setNotificationStatus(permission);
-  }, []);
-
-  const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
-    setNotificationSettings(prev => ({ ...prev, [id]: checked }));
-    setNotificationPreference(id, checked);
-  }, []);
-
-  const handleGpsToggle = useCallback((checked: boolean) => {
-    setUseGpsAutoDetect(checked);
-    localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(checked));
-  }, []);
-
-  const handleInstallApp = useCallback(async () => {
-    if (!deferredPrompt) return;
-    try {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') console.log('User accepted the install prompt');
-      else console.log('User dismissed the install prompt');
-      setDeferredPrompt(null);
-      setIsAppInstallable(false);
-    } catch (error) {
-      console.error('Error during app installation:', error);
-    }
-  }, [deferredPrompt]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4" 
-      onClick={onClose}
-    >
-      <div 
-        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] text-neutral-300 flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h2 className={`text-2xl font-bold text-neutral-200`}>App Settings</h2>
-          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
-            <CloseIcon className="w-6 h-6" />
-          </button>
-        </div>
-        
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
-            {isAppInstalled ? (
-              <div className="bg-green-900/30 border border-green-700/50 rounded-md p-3 text-sm">
-                <p className="text-green-300 flex items-center">
-                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                  App has been installed to your device!
-                </p>
-              </div>
-            ) : isAppInstallable ? (
-              <div className="space-y-3">
-                <p className="text-sm text-neutral-400">Install this app for quick home-screen access and notifications.</p>
-                <button onClick={handleInstallApp} className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 border border-blue-500/50 rounded-md text-blue-300 hover:bg-blue-500/30 hover:border-blue-400 transition-colors">
-                  <DownloadIcon className="w-4 h-4" />
-                  <span>Install App</span>
-                </button>
-              </div>
-            ) : (
-              <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-3 text-sm">
-                <p className="text-neutral-400">App installation is not currently available.</p>
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
-            {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser does not support web notifications.</p>}
-            {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings to receive future alerts.</p></div>}
-            {notificationStatus === 'default' && (
-              <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
-                <p className="text-orange-300 mb-2">Enable notifications to be alerted of major space weather events.</p>
-                <button onClick={handleRequestPermission} className="px-3 py-1 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 text-xs">Enable Notifications</button>
-              </div>
-            )}
-            
-            {notificationStatus === 'granted' && (
-              <div className="space-y-4">
-                <p className="text-green-400 text-sm">Notifications are enabled.</p>
-                
-                <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-4 text-center">
-                    <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
-                    <p className="text-sm text-neutral-400 mt-2">
-                        The ability to customize which alerts you receive is under development.
-                        For now, your device is ready to receive critical notifications once the feature is fully launched.
-                    </p>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
-            <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
-            <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
-            <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
-          </section>
-
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
-            <p className="text-sm text-neutral-400 mb-4">
-              Have feedback, a feature request, or need support? Restart the welcome tutorial or send an email.
-            </p>
-            <div className="flex flex-wrap items-center gap-4">
-              <button 
-                onClick={onShowTutorial} 
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
-              >
-                <GuideIcon className="w-5 h-5" />
-                <span>Show App Tutorial</span>
-              </button>
-              {/* MODIFIED: Updated mailto link with a pre-filled subject line */}
-              <a 
-                href="mailto:thenamesrock@gmail.com?subject=Spot%20The%20Aurora%20Support"
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
-              >
-                <MailIcon className="w-5 h-5" />
-                <span>Email for Support</span>
-              </a>
-            </div>
-          </section>
-        </div>
-        
-        <div className="p-4 border-t border-neutral-700/80 text-right text-xs text-neutral-500">
-          Version: {appVersion}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default SettingsModal;
-// --- END OF FILE src/components/SettingsModal.tsx ---
-```
-
----
-
-### 2. `ForecastDashboard.tsx` (With Performance Fix)
-
-This version contains the complete code with the refactored, high-performance data fetching logic.
-
-```tsx
 // --- START OF FILE ForecastDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -323,6 +75,7 @@ const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
 
+// MODIFIED: Added sourceUrl to each camera object
 const CAMERAS: Camera[] = [
   { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
   { name: 'Queenstown', url: 'https://queenstown.roundshot.com/#/', type: 'iframe', sourceUrl: 'queenstown.roundshot.com' },
@@ -357,6 +110,7 @@ const GAUGE_EMOJIS = {
 };
 
 // --- HELPER FUNCTIONS (MOVED OUTSIDE COMPONENT) ---
+
 const calculateLocationAdjustment = (userLat: number): number => {
     const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
     const R = 6371;
@@ -514,6 +268,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 // --- CHILD COMPONENTS (MOVED OUTSIDE) ---
+
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
@@ -556,6 +311,7 @@ const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.memo(({ 
 });
 
 // --- MAIN COMPONENT ---
+
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
@@ -600,22 +356,32 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    
+
+    // MODIFIED: This logic was already added in the previous step, confirming its correctness
     const activityAlertMessage = useMemo(() => {
         if (!isDaylight || !celestialTimes.sun?.set || auroraScoreHistory.length === 0) {
-            return null;
+            return null; // No message if it's night, no sunset data, or no history
         }
+
         const now = Date.now();
         const sunsetTime = celestialTimes.sun.set;
         const oneHourBeforeSunset = sunsetTime - (60 * 60 * 1000);
+        
         if (now >= oneHourBeforeSunset && now < sunsetTime) {
             const latestHistoryPoint = auroraScoreHistory[auroraScoreHistory.length - 1];
             const latestBaseScore = latestHistoryPoint?.baseScore ?? 0;
+
             if (latestBaseScore >= 50) {
                 let message = "Aurora activity is currently high! Good potential for a display as soon as it's dark.";
-                const { rise: moonRise, set: moonSet, illumination: moonIllumination } = celestialTimes.moon || {};
+
+                const moonRise = celestialTimes.moon?.rise;
+                const moonSet = celestialTimes.moon?.set;
+                const moonIllumination = celestialTimes.moon?.illumination;
+
                 if (moonRise && moonSet && moonIllumination !== undefined) {
-                    const moonIsUpAtSunset = (sunsetTime > moonRise && sunsetTime < moonSet) || (moonSet < moonRise && (sunsetTime > moonRise || sunsetTime < moonSet));
+                    const moonIsUpAtSunset = (sunsetTime > moonRise && sunsetTime < moonSet) || 
+                                             (moonSet < moonRise && (sunsetTime > moonRise || sunsetTime < moonSet));
+
                     if (moonIsUpAtSunset) {
                         message += ` Note: The ${moonIllumination.toFixed(0)}% illuminated moon will be up, which may wash out fainter details.`;
                     }
@@ -623,6 +389,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 return message;
             }
         }
+
         return null;
     }, [isDaylight, celestialTimes, auroraScoreHistory]);
 
@@ -742,101 +509,76 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const value = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${upSVG} ${riseStr}   ${downSVG} ${setStr}</span>`;
         return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
     }, [formatNZTimestamp]);
-    
-    // --- MODIFIED: Refactored fetchAllData for performance ---
     const fetchAllData = useCallback(async (isInitialLoad = false) => {
         if (isInitialLoad) setIsLoading(true);
+        const results = await Promise.allSettled([
+            fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+            fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
+        ]);
+        const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
+        const prevAuroraScore = previousAuroraScoreRef.current;
 
-        const fetchWithTimeout = (url: string, timeout = 8000): Promise<Response> => {
-            return Promise.race([
-                fetch(url),
-                new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
-            ]);
-        };
-
-        // --- Stage 1: Fetch Primary Forecast Data ---
-        try {
-            const forecastResponse = await fetchWithTimeout(`${FORECAST_API_URL}?_=${Date.now()}`);
-            if (!forecastResponse.ok) throw new Error(`Forecast API responded with ${forecastResponse.status}`);
-            const forecastResult = await forecastResponse.json();
-
-            const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult;
+        if (forecastResult.status === 'fulfilled' && forecastResult.value) {
+            const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
             let adjustedScore = baseScore;
             if (baseScore !== null) adjustedScore = Math.max(0, Math.min(100, baseScore + locationAdjustment));
-
-            if (adjustedScore !== null && previousAuroraScoreRef.current !== null) {
-                if (adjustedScore >= 50 && previousAuroraScoreRef.current < 50 && canSendNotification('aurora-50percent', 1800000)) sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${adjustedScore.toFixed(1)}%! Look for a visible glow!`);
+            setAuroraScore(adjustedScore); setCurrentAuroraScore(adjustedScore);
+            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
+            setAuroraBlurb(getAuroraBlurb(adjustedScore ?? 0));
+            const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
+            if (adjustedScore !== null && prevAuroraScore !== null) {
+                if (adjustedScore >= 50 && prevAuroraScore < 50 && canSendNotification('aurora-50percent', 1800000)) sendNotification('Aurora Alert: Moderate Activity!', `Spot The Aurora Forecast is now at ${adjustedScore.toFixed(1)}%! Look for a visible glow!`);
                 else if (adjustedScore < 50) clearNotificationCooldown('aurora-50percent');
-                if (adjustedScore >= 80 && previousAuroraScoreRef.current < 80 && canSendNotification('aurora-80percent', 1800000)) sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${adjustedScore.toFixed(1)}%! Get ready for a strong display!`);
+                if (adjustedScore >= 80 && prevAuroraScore < 80 && canSendNotification('aurora-80percent', 1800000)) sendNotification('Aurora Alert: HIGH Activity!', `Spot The Aurora Forecast is now at ${adjustedScore.toFixed(1)}%! Get ready for a strong display!`);
                 else if (adjustedScore < 80) clearNotificationCooldown('aurora-80percent');
             }
             previousAuroraScoreRef.current = adjustedScore;
+            if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
+            if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
+            setGaugeData(prev => ({ ...prev, power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`}, moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || []) }));
+            if (Array.isArray(historicalData)) setAuroraScoreHistory(historicalData.filter((d: any) => d.timestamp && d.baseScore && d.finalScore).sort((a, b) => a.timestamp - b.timestamp)); else setAuroraScoreHistory([]);
+            if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a:any, b:any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
+        } else { console.error("Forecast data failed to load:", forecastResult.reason); setAuroraBlurb("Could not load forecast data."); }
 
-            setAuroraScore(adjustedScore);
-            setCurrentAuroraScore(adjustedScore);
-            setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
-            setAuroraBlurb(getAuroraBlurb(adjustedScore ?? 0));
-            if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory);
-            if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast);
-            setGaugeData(prev => ({ ...prev, power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` }, bt: { ...prev.bt, value: currentForecast?.inputs?.magneticField?.bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.magneticField?.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` }, bz: { ...prev.bz, value: currentForecast?.inputs?.magneticField?.bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.magneticField?.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` }, moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || []) }));
-            if (Array.isArray(historicalData)) setAuroraScoreHistory(historicalData.filter((d: any) => d.timestamp && d.baseScore != null && d.finalScore != null).sort((a, b) => a.timestamp - b.timestamp));
-            if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower != null && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp));
-        } catch (error) {
-            console.error("Primary forecast data failed to load:", error);
-            setAuroraBlurb("Could not load primary forecast data.");
-        } finally {
-            if (isInitialLoad) setIsLoading(false);
-        }
-        
-        // --- Stage 2: Fetch Secondary Data in the Background ---
-        const secondaryDataPromises = [
-            fetchWithTimeout(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetchWithTimeout(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetchWithTimeout(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetchWithTimeout(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-            fetchWithTimeout(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
-        ];
-
-        const [plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = await Promise.allSettled(secondaryDataPromises);
-        
         if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
             const plasmaData = plasmaResult.value; const headers = plasmaData[0]; const speedIdx = headers.indexOf('speed'); const densityIdx = headers.indexOf('density'); const timeIdx = headers.indexOf('time_tag');
             const processed = plasmaData.slice(1).map((r:any[]) => ({ time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }));
-            setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed })));
-            setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
-            const latest = plasmaData.slice(1).reverse().find((r: any[]) => r[speedIdx] != null && parseFloat(r[speedIdx]) > -9999);
-            if (latest) {
-                const speedVal = parseFloat(latest[speedIdx]); const densityVal = parseFloat(latest[densityIdx]); const time = new Date(latest[timeIdx].replace(' ', 'T') + 'Z').getTime();
-                setGaugeData(prev => ({ ...prev, speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`}, density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`} }));
-            }
-        } else { console.error("Plasma data failed to load:", (plasmaResult as PromiseRejectedResult).reason); }
+            setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed }))); setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
+            const latest = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
+            const speedVal = latest ? parseFloat(latest[speedIdx]) : null; const densityVal = latest ? parseFloat(latest[densityIdx]) : null; const time = latest?.[timeIdx] ? new Date(latest[timeIdx].replace(' ', 'T') + 'Z').getTime() : Date.now();
+            setGaugeData(prev => ({ ...prev, speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`}, density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`} }));
+        } else { console.error("Plasma data failed to load:", plasmaResult.reason); }
 
         if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
             const magData = magResult.value; const headers = magData[0]; const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm'); const timeIdx = headers.indexOf('time_tag');
             setAllMagneticData(magData.slice(1).map((r: any[]) => ({ time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })));
-        } else { console.error("Magnetic data failed to load:", (magResult as PromiseRejectedResult).reason); }
+        } else { console.error("Magnetic data failed to load:", magResult.reason); }
 
         let anyGoesDataFound = false;
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             const processed = goes18Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
             setGoes18Data(processed);
-            analyzeMagnetometerData(processed, auroraScore);
+            const currentAdjustedScore = (forecastResult.status === 'fulfilled' && forecastResult.value.currentForecast?.spotTheAuroraForecast !== null) ? Math.max(0, Math.min(100, forecastResult.value.currentForecast.spotTheAuroraForecast + locationAdjustment)) : null;
+            analyzeMagnetometerData(processed, currentAdjustedScore);
             if (processed.length > 0) anyGoesDataFound = true;
-        } else { console.error('GOES-18 Fetch Failed:', (goes18Result as PromiseRejectedResult).reason); }
+        } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason); }
 
         if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
             const processed = goes19Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
             setGoes19Data(processed); if (processed.length > 0) anyGoesDataFound = true;
-        } else { console.error('GOES-19 Fetch Failed:', (goes19Result as PromiseRejectedResult).reason); }
-        
-        if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
-        if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else { console.error('NASA IPS Fetch Failed:', (ipsResult as PromiseRejectedResult).reason); setInterplanetaryShockData([]); }
-        
-        setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
+        } else { console.error('GOES-19 Fetch Failed:', goes19Result.reason); }
 
-    }, [getGaugeStyle, setCurrentAuroraScore, getMoonData, locationAdjustment, analyzeMagnetometerData, formatNZTimestamp, auroraScore]);
+        if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
+        if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else { console.error('NASA IPS Fetch Failed:', ipsResult.reason); setInterplanetaryShockData([]); }
+        setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
+        if (isInitialLoad) setIsLoading(false);
+    }, [getGaugeStyle, setCurrentAuroraScore, getMoonData, locationAdjustment, analyzeMagnetometerData, formatNZTimestamp]);
 
     useEffect(() => {
         if (navigator.geolocation) {
@@ -913,6 +655,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
                     <main className="grid grid-cols-12 gap-6">
+                        {/* --- NEW --- Activity Alert Message Rendering */}
                         {activityAlertMessage && (
                             <div className="col-span-12 card bg-yellow-900/50 border border-yellow-400/30 text-yellow-200 p-4 text-center text-sm rounded-lg">
                                 {activityAlertMessage}
@@ -1025,6 +768,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </button>
                                 ))}
                             </div>
+                            {/* MODIFIED: Added container for image and source link */}
                             <div className="mt-4">
                                 <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
                                     {selectedCamera.type === 'iframe' ? (
