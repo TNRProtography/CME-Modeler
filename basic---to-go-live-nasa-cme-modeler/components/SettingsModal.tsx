@@ -34,7 +34,6 @@ const GuideIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// NEW: MailIcon for the support button
 const MailIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
@@ -205,7 +204,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* MODIFIED: Help & Support Section */}
+          {/* MODIFIED: Help & Support Section with Email button */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
             <p className="text-sm text-neutral-400 mb-4">
@@ -220,7 +219,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 <span>Show App Tutorial</span>
               </button>
               <a 
-                href="mailto:thenamesrock@gmail.com"
+                href="mailto:thenamesrock+spottheaurora@gmail.com?subject=Spot%20The%20Aurora%20Support" // MODIFIED: Added subject parameter
                 className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
               >
                 <MailIcon className="w-5 h-5" />
