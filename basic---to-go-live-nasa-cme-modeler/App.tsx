@@ -102,6 +102,12 @@ const App: React.FC = () => {
     setHighlightedElementId(id);
   }, []);
 
+  // NEW: Handler for the "Show Tutorial" button in settings
+  const handleShowTutorial = useCallback(() => {
+    setIsSettingsOpen(false); // Close the settings modal
+    setIsFirstVisitTutorialOpen(true); // Open the tutorial modal
+  }, []);
+
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
@@ -196,7 +202,8 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-2">
                 <button 
                 id="nav-forecast" onClick={() => setActivePage('forecast')}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
+                // MODIFIED: Added justify-center for perfect horizontal alignment
+                className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
                 title="View Live Aurora Forecasts">
@@ -205,7 +212,8 @@ const App: React.FC = () => {
                 </button>
                 <button 
                 id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} 
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
+                // MODIFIED: Added justify-center for perfect horizontal alignment
+                className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
                 title="View Solar Activity">
@@ -213,8 +221,9 @@ const App: React.FC = () => {
                     <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
                 </button>
                  <button 
-                id="nav-modeler" onClick={() => setActivePage('modeler')} // Reverted to simple navigation
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
+                id="nav-modeler" onClick={() => setActivePage('modeler')}
+                // MODIFIED: Added justify-center for perfect horizontal alignment
+                className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
                 title="View CME Visualization">
@@ -273,7 +282,13 @@ const App: React.FC = () => {
         </div>
         
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
-        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
+        {/* MODIFIED: Pass the new onShowTutorial handler to the settings modal */}
+        <SettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)} 
+          appVersion={APP_VERSION} 
+          onShowTutorial={handleShowTutorial}
+        /> 
         
         <FirstVisitTutorial
             isOpen={isFirstVisitTutorialOpen}
