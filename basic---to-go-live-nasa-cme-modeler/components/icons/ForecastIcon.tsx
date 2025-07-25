@@ -1,35 +1,39 @@
 // components/icons/ForecastIcon.tsx
 import React from 'react';
 
-// This component now contains an animated SVG for the aurora icon.
+// This component now contains a completely redesigned and reanimated SVG for the aurora icon.
 const ForecastIcon: React.FC<{ className?: string }> = ({ className }) => (
   <>
-    {/* 
+    {/*
       The CSS animations are embedded here to make the component self-contained.
-      They create a gentle, asynchronous shimmering and fading effect.
+      This animation works by moving a dash pattern along the SVG path,
+      creating a flowing, shimmering effect that looks like a real aurora.
     */}
     <style>{`
-      @keyframes shimmer-and-fade {
-        0%, 100% {
-          transform: translateX(0px);
-          opacity: 0.7;
+      @keyframes aurora-wave {
+        0% {
+          stroke-dashoffset: 0;
+          opacity: 0.6;
         }
         50% {
-          /* The paths will drift slightly to the right and become brighter */
-          transform: translateX(8px);
           opacity: 1;
+        }
+        100% {
+          stroke-dashoffset: -200; /* A large number to ensure the pattern moves significantly */
+          opacity: 0.6;
         }
       }
 
-      /* Each path has a slightly different duration and delay to look more natural */
-      .aurora-path-1 {
-        animation: shimmer-and-fade 5s infinite ease-in-out;
+      /* Each path is a "curtain" of the aurora. */
+      /* They have different shapes, animation speeds, and delays to look natural. */
+      .aurora-curtain-1 {
+        animation: aurora-wave 7s infinite linear;
       }
-      .aurora-path-2 {
-        animation: shimmer-and-fade 4s infinite ease-in-out -1s; /* Starts 1s into the animation */
+      .aurora-curtain-2 {
+        animation: aurora-wave 5s infinite linear -2s; /* Starts 2s into its cycle */
       }
-      .aurora-path-3 {
-        animation: shimmer-and-fade 5.5s infinite ease-in-out -2s; /* Starts 2s into the animation */
+      .aurora-curtain-3 {
+        animation: aurora-wave 6s infinite linear -4s; /* Starts 4s into its cycle */
       }
     `}</style>
     <svg
@@ -43,10 +47,25 @@ const ForecastIcon: React.FC<{ className?: string }> = ({ className }) => (
       strokeLinejoin="round"
     >
       <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-      {/* Each path is given a unique class to apply its own animation timing */}
-      <path className="aurora-path-1" d="M3 17c3.333 -2 6.667 -2 10 0s6.667 2 10 0" />
-      <path className="aurora-path-2" d="M3 14c3.333 -2 6.667 -2 10 0s6.667 2 10 0" />
-      <path className="aurora-path-3" d="M3 11c3.333 -2 6.667 -2 10 0s6.667 2 10 0" />
+      {/* 
+        The 'stroke-dasharray' creates a pattern of dashes and gaps.
+        The @keyframes animation then moves this pattern along the line.
+      */}
+      <path
+        className="aurora-curtain-1"
+        strokeDasharray="10 5 3 5" /* Defines the pattern: [dash, gap, dash, gap] */
+        d="M3 19c1.667-1.333 3.333-1.333 5 0c1.667 1.333 3.333 1.333 5 0c1.667-1.333 3.333-1.333 5 0L18 7"
+      />
+      <path
+        className="aurora-curtain-2"
+        strokeDasharray="12 4 4 4"
+        d="M5 19c1.667-1.333 3.333-1.333 5 0c1.667 1.333 3.333 1.333 5 0c1.667-1.333 3.333-1.333 5 0V9"
+      />
+      <path
+        className="aurora-curtain-3"
+        strokeDasharray="8 6 4 6"
+        d="M7 19c1.667-1.333 3.333-1.333 5 0c1.667 1.333 3.333 1.333 5 0c1.667-1.333 3.333-1.333 5 0L21 11"
+      />
     </svg>
   </>
 );
