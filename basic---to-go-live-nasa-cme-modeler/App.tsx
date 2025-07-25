@@ -10,7 +10,6 @@ import TutorialModal from './components/TutorialModal'; // This is the general t
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
-// MODIFIED: Removed InteractionMode as it's no longer used here.
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode } from './types';
 
 // Icon Imports
@@ -18,8 +17,10 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import ForecastIcon from './components/icons/ForecastIcon';
+import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
 import GlobeIcon from './components/icons/GlobeIcon';
+import SunIcon from './components/icons/SunIcon';         // ADDED
+import CmeIcon from './components/icons/CmeIcon';         // ADDED
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -31,20 +32,7 @@ import GlobalBanner from './components/GlobalBanner';
 import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
 import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
 
-// Custom Icon Components
-const SunIcon: React.FC<{className?: string}> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-  </svg>
-);
-
-const CmeIcon: React.FC<{className?: string}> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 12m-5 0a5 5 0 1010 0 5 5 0 10-10 0" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 7.5c3 0 5.25 2.25 5.25 5s-2.25 5-5.25 5" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 9.5c1.5 0 2.75 1.125 2.75 2.5s-1.25 2.5-2.75 2.5" />
-    </svg>
-);
+// DELETED: Inline icon components are now moved to their own files.
 
 type ViewerMedia = 
     | { type: 'image', url: string }
@@ -63,8 +51,6 @@ const App: React.FC = () => {
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>(TimeRange.D3);
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.TOP);
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
-  // REMOVED: interactionMode state is no longer needed.
-  // const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
@@ -165,7 +151,6 @@ const App: React.FC = () => {
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
   const handleResetView = useCallback(() => { setActiveView(ViewMode.TOP); setActiveFocus(FocusTarget.EARTH); canvasRef.current?.resetView(); }, []);
-  // MODIFIED: Simplified the handler as interactionMode no longer needs to be managed.
   const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => { setCurrentlyModeledCMEId(cme ? cme.id : null); setSelectedCMEForInfo(cme); if (cme) { setTimelineActive(false); setTimelinePlaying(false); } setIsCmeListOpen(false); }, []);
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => { setCurrentlyModeledCMEId(cme.id); setSelectedCMEForInfo(cme); setTimelineActive(false); setTimelinePlaying(false); setIsCmeListOpen(true); }, []);
   const handleTimelinePlayPause = useCallback(() => { if (filteredCmes.length === 0) return; setTimelineActive(true); setTimelinePlaying((prev: boolean) => !prev); setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); }, [filteredCmes]);
@@ -251,11 +236,9 @@ const App: React.FC = () => {
         <div className="flex flex-grow min-h-0">
             {activePage === 'modeler' && ( <>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* onOpenGuide now simply opens the static TutorialModal */}
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
-                    {/* REMOVED: interactionMode prop is no longer passed to SimulationCanvas */}
                     <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
@@ -265,7 +248,6 @@ const App: React.FC = () => {
                             <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models"><GlobeIcon className="w-6 h-6" /></button>
                         </div>
                         <div className="flex items-center space-x-2 pointer-events-auto">
-                            {/* REMOVED: The interaction mode toggle button is gone. */}
                             <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"><ListIcon className="w-6 h-6" /></button>
                         </div>
                     </div>
@@ -303,3 +285,5 @@ const App: React.FC = () => {
 };
 
 export default App;
+
+// --- END OF FILE App.tsx ---
