@@ -10,7 +10,8 @@ import TutorialModal from './components/TutorialModal'; // This is the general t
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, InteractionMode, SimulationCanvasHandle } from './types';
+// MODIFIED: Removed InteractionMode as it's no longer used here.
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode } from './types';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -62,7 +63,8 @@ const App: React.FC = () => {
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>(TimeRange.D3);
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.TOP);
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
+  // REMOVED: interactionMode state is no longer needed.
+  // const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOVE);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
@@ -163,7 +165,8 @@ const App: React.FC = () => {
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
   const handleResetView = useCallback(() => { setActiveView(ViewMode.TOP); setActiveFocus(FocusTarget.EARTH); canvasRef.current?.resetView(); }, []);
-  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => { setCurrentlyModeledCMEId(cme ? cme.id : null); setSelectedCMEForInfo(cme); if (cme) { setTimelineActive(false); setTimelinePlaying(false); } else { setInteractionMode(InteractionMode.MOVE); } setIsCmeListOpen(false); }, []);
+  // MODIFIED: Simplified the handler as interactionMode no longer needs to be managed.
+  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => { setCurrentlyModeledCMEId(cme ? cme.id : null); setSelectedCMEForInfo(cme); if (cme) { setTimelineActive(false); setTimelinePlaying(false); } setIsCmeListOpen(false); }, []);
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => { setCurrentlyModeledCMEId(cme.id); setSelectedCMEForInfo(cme); setTimelineActive(false); setTimelinePlaying(false); setIsCmeListOpen(true); }, []);
   const handleTimelinePlayPause = useCallback(() => { if (filteredCmes.length === 0) return; setTimelineActive(true); setTimelinePlaying((prev: boolean) => !prev); setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); }, [filteredCmes]);
   const handleTimelineScrub = useCallback((value: number) => { if (filteredCmes.length === 0) return; setTimelineActive(true); setTimelinePlaying(false); setTimelineScrubberValue(value); setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); }, [filteredCmes]);
@@ -252,7 +255,8 @@ const App: React.FC = () => {
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
-                    <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={interactionMode} />
+                    {/* REMOVED: interactionMode prop is no longer passed to SimulationCanvas */}
+                    <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                         <div className="flex items-center space-x-2 pointer-events-auto">
@@ -261,7 +265,7 @@ const App: React.FC = () => {
                             <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models"><GlobeIcon className="w-6 h-6" /></button>
                         </div>
                         <div className="flex items-center space-x-2 pointer-events-auto">
-                            <button id="interaction-mode-button" onClick={() => setInteractionMode((prev: InteractionMode) => prev === InteractionMode.MOVE ? InteractionMode.SELECT : InteractionMode.MOVE)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title={interactionMode === InteractionMode.MOVE ? 'Switch to Select Mode' : 'Switch to Move Mode'}> {interactionMode === InteractionMode.MOVE ? <SelectIcon className="w-6 h-6" /> : <MoveIcon className="w-6 h-6" />} </button>
+                            {/* REMOVED: The interaction mode toggle button is gone. */}
                             <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"><ListIcon className="w-6 h-6" /></button>
                         </div>
                     </div>
@@ -272,7 +276,6 @@ const App: React.FC = () => {
                 </div>
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
-                {/* Simplified TutorialModal render */}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
             </> )}
@@ -290,7 +293,6 @@ const App: React.FC = () => {
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} appVersion={APP_VERSION} /> 
         
-        {/* FirstVisitTutorial logic remains separate */}
         <FirstVisitTutorial
             isOpen={isFirstVisitTutorialOpen}
             onClose={handleCloseFirstVisitTutorial}
