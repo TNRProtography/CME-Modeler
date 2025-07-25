@@ -1,34 +1,33 @@
 // components/icons/ForecastIcon.tsx
 import React from 'react';
 
-// This component is a recreation of the provided image, with an animated aurora.
+// A high-fidelity, animated recreation of the provided icon.
 const ForecastIcon: React.FC<{ className?: string }> = ({ className }) => (
   <>
     {/*
-      The CSS animation is embedded here to make the component self-contained.
-      It works by sliding a dash pattern along the aurora path, making the rays "flow".
+      This embedded CSS creates a more sophisticated, layered aurora animation.
     */}
     <style>{`
-      @keyframes aurora-flow {
-        /*
-          The 'to' value is a multiple of the stroke-dasharray's total length (1+6=7),
-          which ensures the animation loops perfectly and smoothly.
-        */
-        to {
-          stroke-dashoffset: -14;
+      @keyframes aurora-shimmer {
+        0% {
+          stroke-dashoffset: 0;
+          opacity: 0.5;
+        }
+        50% {
+          opacity: 1;
+        }
+        100% {
+          stroke-dashoffset: -200; /* A large value to ensure smooth looping */
+          opacity: 0.5;
         }
       }
 
-      .aurora-rays {
-        /*
-          This is the core trick:
-          - stroke-dasharray: "1 6" means draw 1px, then have a 6px gap.
-          - stroke-width: 4 makes that 1px line a 4px tall rectangle.
-          - stroke-linecap: square gives it the sharp edges from the image.
-          The result is a series of small vertical lines along the main path.
-        */
-        stroke-dasharray: 1 6;
-        animation: aurora-flow 1.5s infinite linear;
+      /* Each layer has a different speed and delay for a natural, non-repeating feel. */
+      .aurora-layer-1 {
+        animation: aurora-shimmer 6s infinite ease-in-out;
+      }
+      .aurora-layer-2 {
+        animation: aurora-shimmer 4.5s infinite ease-in-out -1.5s; /* Faster and delayed */
       }
     `}</style>
     <svg
@@ -39,26 +38,44 @@ const ForecastIcon: React.FC<{ className?: string }> = ({ className }) => (
       stroke="currentColor"
     >
       <g>
-        {/*
-          The static mountain range, traced from your image.
-          It's filled with the current text color.
-        */}
+        {/* Layer 1: The solid mountain base, filled with the current text color. */}
         <path
           fill="currentColor"
           stroke="none"
-          d="M17.42,14.76c-0.3-0.02-0.58,0.08-0.81,0.28l-2.88,2.44l-2.7-4.23c-0.19-0.3-0.51-0.49-0.86-0.49s-0.67,0.19-0.86,0.49l-2.43,3.81L4.6,15.04c-0.24-0.17-0.54-0.24-0.83-0.18c-0.47,0.1-0.81,0.5-0.81,0.98v3.4c0,0.41,0.25,0.78,0.62,0.93L3,22h18l-0.56-1.84c0.37-0.15,0.62-0.52,0.62-0.93v-3.4C21.06,15.35,20.61,14.81,20,14.76z M11.99,10.33l1.88,2.94l2.1-1.78l3.03,2.56V18h-3v-1.58L14.1,15.1c-0.19-0.16-0.46-0.18-0.67-0.05l-2.31,1.45l2.08,3.28h-2.5L9.6,17.92l2.39-3.75L11.99,10.33z"
+          d="M17.42 14.76c-.3-.02-.58.08-.81.28l-2.88 2.44-2.7-4.23a1.14 1.14 0 00-1.72 0l-2.43 3.81-2.28-1.82c-.24-.17-.54-.24-.83-.18-.47.1-.81.5-.81.98v3.4c0 .41.25.78.62.93L3 22h18l-.56-1.84c.37-.15.62-.52.62-.93v-3.4c0-.55-.45-1.09-1-1.03z"
+        />
+
+        {/* Layer 2: The snow-cap on the main peak. */ }
+        <path
+          fill="currentColor"
+          stroke="none"
+          d="M12.01 10.33l1.88 2.94.7-.58-2.58-4.06-2.58 4.06.7.58 1.88-2.94z"
         />
 
         {/*
-          The animated aurora path. The 'aurora-rays' class applies the
-          flowing animation to the stroke of this path.
+          This group contains the two animated aurora layers.
+          The linecap and linejoin are set for the whole group.
         */}
-        <path
-          className="aurora-rays"
-          strokeWidth="4"
-          strokeLinecap="square"
-          d="M3.5,9.5 C6,4.5 10,4.5 12,9.5 S18,14.5 20.5,9.5"
-        />
+        <g strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          {/*
+            The back layer of the aurora. The dash-array creates the "rays".
+            The pattern is [visible ray, gap, slightly longer ray, gap]
+          */}
+          <path
+            className="aurora-layer-1"
+            strokeDasharray="2 8 3 8"
+            d="M4.5 9C6 5 9 5 11 9s5 4 7-1"
+          />
+          {/*
+            The front layer of the aurora. It has a slightly different path and
+            animation timing to create a parallax effect.
+          */}
+          <path
+            className="aurora-layer-2"
+            strokeDasharray="2 6 2 6"
+            d="M3 10c2-4 5-4 7 0s5 5 7.5 0"
+          />
+        </g>
       </g>
     </svg>
   </>
