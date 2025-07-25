@@ -56,10 +56,11 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 
     fetchEnlilImages();
 
+    // Cleanup: revoke object URLs when component unmounts or isOpen becomes false
     return () => {
       enlilImageUrls.forEach(url => URL.revokeObjectURL(url));
     };
-  }, [isOpen]);
+  }, [isOpen]); // Depend on isOpen to refetch when modal opens
 
   if (!isOpen) return null;
 
@@ -84,7 +85,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">HUXT (Met Office)</h3>
             <div className="text-sm text-neutral-400 leading-relaxed">
-               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed by the UK's Met Office Space Weather Operations Centre (MOSWOC). It simulates the propagation of solar wind structures, like Coronal Mass Ejections (CMEs), through the inner heliosphere.</p>
+               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed by the <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">UK's Met Office Space Weather Operations Centre (MOSWOC)</a>. It simulates the propagation of solar wind structures, like Coronal Mass Ejections (CMEs), through the inner heliosphere.</p>
                <p className="mt-2">Unlike more complex models, HUXT simplifies the physics to run very quickly, making it ideal for real-time forecasting. It takes data from models like WSA (which provides the initial solar wind structure at the Sun) and "pushes" it outwards to predict the arrival time and speed of CMEs at Earth and other planets.</p>
             </div>
             <div className="space-y-4">
@@ -96,6 +97,8 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                     <h4 className="font-semibold text-center mb-2">HUXT Animation</h4>
                     <video src="https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4" autoPlay loop muted playsInline className="rounded w-full">Your browser does not support the video tag.</video>
                 </div>
+                {/* Attribution for HUXT data */}
+                <p className="text-neutral-500 text-xs text-right">Data Source: <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Met Office</a></p>
             </div>
           </section>
 
@@ -103,7 +106,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">WSA-ENLIL (NOAA)</h3>
              <div className="text-sm text-neutral-400 leading-relaxed">
-                <p>The Wang-Sheeley-Arge (WSA)-ENLIL model is the primary operational space weather forecasting model used by the U.S. National Oceanic and Atmospheric Administration (NOAA). It provides a comprehensive, large-scale prediction of solar wind conditions throughout the heliosphere.</p>
+                <p>The Wang-Sheeley-Arge (WSA)-ENLIL model is the primary operational space weather forecasting model used by the <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">U.S. National Oceanic and Atmospheric Administration (NOAA)</a>. It provides a comprehensive, large-scale prediction of solar wind conditions throughout the heliosphere.</p>
                 <p className="mt-2">This animation shows the model's prediction of solar wind density. Watch for dense clouds (red/yellow) erupting from the Sun (center) and traveling outwards past the planets (colored dots).</p>
             </div>
             <div 
@@ -122,6 +125,8 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                   </>
                 )}
             </div>
+            {/* Attribution for WSA-ENLIL data */}
+            <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a></p>
           </section>
         </div>
       </div>
