@@ -7,16 +7,14 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  // We don't need sendTestNotification for now, but no harm in keeping the import
   sendTestNotification 
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  appVersion: string;
-  // NEW PROP: This function will be provided by the parent to trigger the tutorial
-  onShowTutorial: () => void; 
+  appVersion: string; 
+  onShowTutorial: () => void;
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -30,10 +28,16 @@ const NOTIFICATION_CATEGORIES = [
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
 
-// NEW: A simple icon for the tutorial button
 const GuideIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
+);
+
+// NEW: MailIcon for the support button
+const MailIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
   </svg>
 );
 
@@ -43,7 +47,6 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// Destructure the new onShowTutorial prop
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
@@ -187,7 +190,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                     <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
                     <p className="text-sm text-neutral-400 mt-2">
                         The ability to customize which alerts you receive is under development.
-                        For now, your device is ready to receive critical notifications once the feature is fully launched.
+                        For now, you are set to receive critical notifications.
                     </p>
                 </div>
               </div>
@@ -202,17 +205,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* NEW: Help & Support Section */}
+          {/* MODIFIED: Help & Support Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
-            <p className="text-sm text-neutral-400 mb-4">Need a refresher on how to use the app? You can restart the welcome tutorial here.</p>
-            <button 
-              onClick={onShowTutorial} 
-              className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
-            >
-              <GuideIcon className="w-5 h-5" />
-              <span>Show App Tutorial</span>
-            </button>
+            <p className="text-sm text-neutral-400 mb-4">
+              Have feedback, a feature request, or need support? Restart the welcome tutorial or send an email.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <button 
+                onClick={onShowTutorial} 
+                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+              >
+                <GuideIcon className="w-5 h-5" />
+                <span>Show App Tutorial</span>
+              </button>
+              <a 
+                href="mailto:thenamesrock@gmail.com"
+                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+              >
+                <MailIcon className="w-5 h-5" />
+                <span>Email for Support</span>
+              </a>
+            </div>
           </section>
         </div>
         
