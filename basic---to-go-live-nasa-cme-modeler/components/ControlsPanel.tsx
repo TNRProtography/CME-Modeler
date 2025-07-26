@@ -1,11 +1,13 @@
+// --- START OF FILE src/components/ControlsPanel.tsx (MODIFIED) ---
+
 import React from 'react';
 import { TimeRange, ViewMode, FocusTarget, CMEFilter } from '../types';
 import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
-// import ToggleSwitch from './ToggleSwitch'; // Assuming ToggleSwitch is imported from './ToggleSwitch'
+import DonationButton from './DonationButton'; // NEW: Import DonationButton
 
-// Re-defining ToggleSwitch to accept an ID. You should update your actual ToggleSwitch.tsx
+// Re-defining ToggleSwitch to accept an 'id' prop, which it already does in the modified ToggleSwitch.tsx
 interface ToggleSwitchProps {
   label: string;
   checked: boolean;
@@ -55,10 +57,9 @@ interface ControlsPanelProps {
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
 
-// Updated to accept an 'id' prop
 const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode, className?: string, id?: string }> = ({ onClick, isActive, children, className, id }) => (
   <button
-    id={id} // Added id prop
+    id={id}
     onClick={onClick}
     className={`flex-grow border text-sm transition-all duration-200 ease-in-out px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-neutral-950 focus:ring-neutral-400 ${className} ${
       isActive
@@ -179,9 +180,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
 
       <div className="mt-auto pt-4">
         <ColorScaleGuide isMobileView={true} />
+        {/* Donation Button at the very bottom of the Controls Panel */}
+        <div className="mt-6 flex justify-center">
+            <DonationButton paypalEmail="deanfrench1997@gmail.com" />
+        </div>
       </div>
     </div>
   );
 };
 
 export default ControlsPanel;
+// --- END OF FILE src/components/ControlsPanel.tsx (MODIFIED) ---

@@ -1,4 +1,4 @@
-// --- START OF FILE src/components/SolarActivityDashboard.tsx ---
+// --- START OF FILE src/components/SolarActivityDashboard.tsx (MODIFIED) ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
@@ -6,13 +6,19 @@ import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
 import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
+import DonationButton from './DonationButton'; // NEW: Import DonationButton
+import {
+  SAD_SOLAR_IMAGERY_VISIBLE_KEY, SAD_XRAY_FLUX_VISIBLE_KEY, SAD_SOLAR_FLARES_VISIBLE_KEY,
+  SAD_CCOR1_VIDEO_VISIBLE_KEY, SAD_PROTON_FLUX_VISIBLE_KEY,
+  loadDashboardVisibilitySettings
+} from '../utils/settingsUtils'; // NEW: Import settings utility file
 
 interface SolarActivityDashboardProps {
   apiKey: string;
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   // Callback to navigate to CME Visualization with a specific CME
-  onViewCMEInVisualization: (cmeId: string) => void; // RENAMED PROP
+  onViewCMEInVisualization: (cmeId: string) => void;
 }
 
 // --- CONSTANTS ---
@@ -29,7 +35,7 @@ const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`; // HMI Conti
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`; // HMI Intensitygram
 const SDO_AIA_193_2048_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-2048`; // AIA 193 (Coronal Holes)
 
-// REMOVED: NASA_IPS_URL
+// REMOVED: NASA_IPS_URL - Now handled by ForecastDashboard
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -162,7 +168,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
-// NEW: Simple Loading Spinner Component
+// NEW: Simple Loading Spinner Component (from ForecastDashboard)
 const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
     <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-neutral-400 italic">
         <svg className="animate-spin h-8 w-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -174,7 +180,7 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
 );
 
 
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization }) => { // RENAMED PROP
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -216,6 +222,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [lastFlaresUpdate, setLastFlaresUpdate] = useState<string | null>(null);
     const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
 
+    // NEW: Dashboard visibility state loaded from settingsUtils
+    const [dashboardVisibility, setDashboardVisibility] = useState<Record<string, boolean>>({});
+
+    useEffect(() => {
+        // Load visibility settings on component mount
+        const { sad } = loadDashboardVisibilitySettings();
+        setDashboardVisibility(sad);
+    }, []);
 
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
@@ -441,7 +455,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         }
     }, [apiKey, latestRelevantEvent]);
 
-    // REMOVED: fetchInterplanetaryShockData function
+    // REMOVED: fetchInterplanetaryShockData function - now in ForecastDashboard
 
     // Effect to update overall status when summaries change
     useEffect(() => {
@@ -460,12 +474,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             fetchXrayFlux();
             fetchProtonFlux();
             fetchFlares();
-            // REMOVED: fetchInterplanetaryShockData from effect
         };
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
-        // REMOVED: fetchInterplanetaryShockData from cleanup deps
-        return () => clearInterval(interval);
+
+        // Re-load dashboard visibility on mount (or if relevant settings change)
+        const handleStorageChange = () => {
+            const { sad } = loadDashboardVisibilitySettings();
+            setDashboardVisibility(sad);
+        };
+        window.addEventListener('storage', handleStorageChange); // Listen for changes from SettingsModal
+        
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('storage', handleStorageChange);
+        };
     }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares]);
 
     const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
@@ -640,187 +663,188 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                         </div>
 
-                        {/* Consolidated Solar Imagers Panel */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
-                                {/* Info button for the Solar Imagery section */}
-                                <button onClick={() => openModal('solar-imagery')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Imagery types.">?</button>
-                            </div>
-                            <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
-                                <button
-                                    onClick={() => setActiveSunImage('SUVI_131')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    SUVI 131Å
-                                </button>
-                                <button
-                                    onClick={() => setActiveSunImage('SUVI_304')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    SUVI 304Å
-                                </button>
-                                {/* SDO AIA 193Å (2048px) as the 3rd option, with no resolution in text */}
-                                <button
-                                    onClick={() => setActiveSunImage('SDO_AIA193_2048')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    SDO AIA 193Å
-                                </button>
-                                {/* Remaining 1024px options for SDO, with no resolution in text */}
-                                <button
-                                    onClick={() => setActiveSunImage('SDO_HMIBC_1024')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    SDO HMI Cont.
-                                </button>
-                                <button
-                                    onClick={() => setActiveSunImage('SDO_HMIIF_1024')}
-                                    className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    SDO HMI Int.
-                                </button>
-                            </div>
-
-                            {/* Conditional Rendering of the selected image */}
-                            <div className="flex-grow flex justify-center items-center relative min-h-0">
-                                {activeSunImage === 'SUVI_131' && (
-                                    <div
-                                        onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['suvi-131']}
+                        {/* Conditional Rendering based on settings */}
+                        {dashboardVisibility[SAD_SOLAR_IMAGERY_VISIBLE_KEY] && (
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
+                                <div className="flex justify-center items-center gap-2">
+                                    <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
+                                    <button onClick={() => openModal('solar-imagery')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Imagery types.">?</button>
+                                </div>
+                                <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
+                                    <button
+                                        onClick={() => setActiveSunImage('SUVI_131')}
+                                        className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     >
-                                        <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {suvi131.loading && <LoadingSpinner message={suvi131.loading} />}
-                                    </div>
-                                )}
-                                {activeSunImage === 'SUVI_304' && (
-                                    <div
-                                        onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['suvi-304']}
+                                        SUVI 131Å
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveSunImage('SUVI_304')}
+                                        className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     >
-                                        <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {suvi304.loading && <LoadingSpinner message={suvi304.loading} />}
-                                    </div>
-                                )}
-                                {/* SDO 1024px & 2048px renders, with simplified alt text */}
-                                {activeSunImage === 'SDO_AIA193_2048' && ( // This is now the 3rd option
-                                    <div
-                                        onClick={() => sdoAia193_2048.url !== '/placeholder.png' && sdoAia193_2048.url !== '/error.png' && setViewerMedia({ url: sdoAia193_2048.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['sdo-aia193-2048']}
+                                        SUVI 304Å
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveSunImage('SDO_AIA193_2048')}
+                                        className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     >
-                                        <img src={sdoAia193_2048.url} alt="SDO AIA 193Å (Coronal Holes)" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {sdoAia193_2048.loading && <LoadingSpinner message={sdoAia193_2048.loading} />}
-                                    </div>
-                                )}
-                                {activeSunImage === 'SDO_HMIBC_1024' && (
-                                    <div
-                                        onClick={() => sdoHmiBc1024.url !== '/placeholder.png' && sdoHmiBc1024.url !== '/error.png' && setViewerMedia({ url: sdoHmiBc1024.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['sdo-hmibc-1024']}
+                                        SDO AIA 193Å
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveSunImage('SDO_HMIBC_1024')}
+                                        className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     >
-                                        <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {sdoHmiBc1024.loading && <LoadingSpinner message={sdoHmiBc1024.loading} />}
-                                    </div>
-                                )}
-                                {activeSunImage === 'SDO_HMIIF_1024' && (
-                                    <div
-                                        onClick={() => sdoHmiIf1024.url !== '/placeholder.png' && sdoHmiIf1024.url !== '/error.png' && setViewerMedia({ url: sdoHmiIf1024.url, type: 'image' })}
-                                        className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                        title={tooltipContent['sdo-hmiif-1024']}
+                                        SDO HMI Cont.
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveSunImage('SDO_HMIIF_1024')}
+                                        className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                     >
-                                        <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
-                                        {sdoHmiIf1024.loading && <LoadingSpinner message={sdoHmiIf1024.loading} />}
-                                    </div>
-                                )}
-                            </div>
-                            <div className="text-right text-xs text-neutral-500 mt-2">
-                                Last updated: {lastImagesUpdate || 'N/A'}
-                            </div>
-                        </div>
+                                        SDO HMI Int.
+                                    </button>
+                                </div>
 
-                        {/* GOES X-ray Flux Graph */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                                <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
+                                <div className="flex-grow flex justify-center items-center relative min-h-0">
+                                    {activeSunImage === 'SUVI_131' && (
+                                        <div
+                                            onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
+                                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                            title={tooltipContent['suvi-131']}
+                                        >
+                                            <img src={suvi131.url} alt="SUVI 131Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                            {suvi131.loading && <LoadingSpinner message={suvi131.loading} />}
+                                        </div>
+                                    )}
+                                    {activeSunImage === 'SUVI_304' && (
+                                        <div
+                                            onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
+                                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                            title={tooltipContent['suvi-304']}
+                                        >
+                                            <img src={suvi304.url} alt="SUVI 304Å" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                            {suvi304.loading && <LoadingSpinner message={suvi304.loading} />}
+                                        </div>
+                                    )}
+                                    {activeSunImage === 'SDO_AIA193_2048' && (
+                                        <div
+                                            onClick={() => sdoAia193_2048.url !== '/placeholder.png' && sdoAia193_2048.url !== '/error.png' && setViewerMedia({ url: sdoAia193_2048.url, type: 'image' })}
+                                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                            title={tooltipContent['sdo-aia193-2048']}
+                                        >
+                                            <img src={sdoAia193_2048.url} alt="SDO AIA 193Å (Coronal Holes)" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                            {sdoAia193_2048.loading && <LoadingSpinner message={sdoAia193_2048.loading} />}
+                                        </div>
+                                    )}
+                                    {activeSunImage === 'SDO_HMIBC_1024' && (
+                                        <div
+                                            onClick={() => sdoHmiBc1024.url !== '/placeholder.png' && sdoHmiBc1024.url !== '/error.png' && setViewerMedia({ url: sdoHmiBc1024.url, type: 'image' })}
+                                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                            title={tooltipContent['sdo-hmibc-1024']}
+                                        >
+                                            <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                            {sdoHmiBc1024.loading && <LoadingSpinner message={sdoHmiBc1024.loading} />}
+                                        </div>
+                                    )}
+                                    {activeSunImage === 'SDO_HMIIF_1024' && (
+                                        <div
+                                            onClick={() => sdoHmiIf1024.url !== '/placeholder.png' && sdoHmiIf1024.url !== '/error.png' && setViewerMedia({ url: sdoHmiIf1024.url, type: 'image' })}
+                                            className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                            title={tooltipContent['sdo-hmiif-1024']}
+                                        >
+                                            <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="max-w-full max-h-full object-contain rounded-lg"/>
+                                            {sdoHmiIf1024.loading && <LoadingSpinner message={sdoHmiIf1024.loading} />}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="text-right text-xs text-neutral-500 mt-2">
+                                    Last updated: {lastImagesUpdate || 'N/A'}
+                                </div>
                             </div>
-                            <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
-                            <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
-                                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <LoadingSpinner message={loadingXray} />}
-                            </div>
-                            <div className="text-right text-xs text-neutral-500 mt-2">
-                                Last updated: {lastXrayUpdate || 'N/A'}
-                            </div>
-                        </div>
+                        )}
 
-                        {/* Solar Flares (now full width) */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
-                                <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
+                        {dashboardVisibility[SAD_XRAY_FLUX_VISIBLE_KEY] && (
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                                <div className="flex justify-center items-center gap-2">
+                                    <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                                    <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
+                                </div>
+                                <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
+                                <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
+                                    {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <LoadingSpinner message={loadingXray} />}
+                                </div>
+                                <div className="text-right text-xs text-neutral-500 mt-2">
+                                    Last updated: {lastXrayUpdate || 'N/A'}
+                                </div>
                             </div>
-                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
-                                {loadingFlares ? <LoadingSpinner message={loadingFlares} />
-                                : solarFlares.length > 0 ? solarFlares.map((flare) => {
-                                    const { background, text } = getColorForFlareClass(flare.classType);
-                                    const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
-                                    return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) 
-                                : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
-                            </ul>
-                            <div className="text-right text-xs text-neutral-500 mt-2">
-                                Last updated: {lastFlaresUpdate || 'N/A'}
-                            </div>
-                        </div>
+                        )}
 
-                        {/* CCOR1 Video Panel (Now with its own info button) */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white text-center mb-4">CCOR1 Coronagraph Video</h2>
-                                {/* Info button for CCOR1 video */}
-                                <button onClick={() => openModal('ccor1-video')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about CCOR1 Coronagraph Video.">?</button>
+                        {dashboardVisibility[SAD_SOLAR_FLARES_VISIBLE_KEY] && (
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
+                                <div className="flex justify-center items-center gap-2">
+                                    <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2>
+                                    <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
+                                </div>
+                                <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                                    {loadingFlares ? <LoadingSpinner message={loadingFlares} />
+                                    : solarFlares.length > 0 ? solarFlares.map((flare) => {
+                                        const { background, text } = getColorForFlareClass(flare.classType);
+                                        const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
+                                        return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) 
+                                    : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}
+                                </ul>
+                                <div className="text-right text-xs text-neutral-500 mt-2">
+                                    Last updated: {lastFlaresUpdate || 'N/A'}
+                                </div>
                             </div>
-                            <div
-                                onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
-                                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                                title={tooltipContent['ccor1-video']}
-                            >
-                                {ccor1Video.loading && <LoadingSpinner message={ccor1Video.loading} />}
-                                {ccor1Video.url && !ccor1Video.loading ? (
-                                    <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
-                                        <source src={ccor1Video.url} type="video/mp4" />
-                                        Your browser does not support the video tag.
-                                    </video>
-                                ) : (
-                                    !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
-                                )}
-                            </div>
-                        </div>
+                        )}
 
-                        {/* GOES Proton Flux Graph */}
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
-                                <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
+                        {dashboardVisibility[SAD_CCOR1_VIDEO_VISIBLE_KEY] && (
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
+                                <div className="flex justify-center items-center gap-2">
+                                    <h2 className="text-xl font-semibold text-white text-center mb-4">CCOR1 Coronagraph Video</h2>
+                                    <button onClick={() => openModal('ccor1-video')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about CCOR1 Coronagraph Video.">?</button>
+                                </div>
+                                <div
+                                    onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
+                                    className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
+                                    title={tooltipContent['ccor1-video']}
+                                >
+                                    {ccor1Video.loading && <LoadingSpinner message={ccor1Video.loading} />}
+                                    {ccor1Video.url && !ccor1Video.loading ? (
+                                        <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
+                                            <source src={ccor1Video.url} type="video/mp4" />
+                                            Your browser does not support the video tag.
+                                        </video>
+                                    ) : (
+                                        !ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>
+                                    )}
+                                </div>
                             </div>
-                            <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
-                            <div className="flex-grow relative mt-2" title={tooltipContent['proton-flux']}>
-                                {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <LoadingSpinner message={loadingProton} />}
-                            </div>
-                            <div className="text-right text-xs text-neutral-500 mt-2">
-                                Last updated: {lastProtonUpdate || 'N/A'}
-                            </div>
-                        </div>
+                        )}
 
-                        {/* REMOVED: Interplanetary Shock Events Card */}
+                        {dashboardVisibility[SAD_PROTON_FLUX_VISIBLE_KEY] && (
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                                <div className="flex justify-center items-center gap-2">
+                                    <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
+                                    <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
+                                </div>
+                                <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />
+                                <div className="flex-grow relative mt-2" title={tooltipContent['proton-flux']}>
+                                    {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <LoadingSpinner message={loadingProton} />}
+                                </div>
+                                <div className="text-right text-xs text-neutral-500 mt-2">
+                                    Last updated: {lastProtonUpdate || 'N/A'}
+                                </div>
+                            </div>
+                        )}
 
                     </main>
                     <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
                         <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, proton flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
                         <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> Solar activity can be highly unpredictable. While this dashboard provides the latest available data, interpretations are for informational purposes only.</p>
+                        <div className="mt-8">
+                            <DonationButton paypalEmail="deanfrench1997@gmail.com" />
+                        </div>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a></p><p className="mt-2">Visualization and Development by TNR Protography</p></div>
                     </footer>
                  </div>
@@ -847,7 +871,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                     // Find the linked CME activity ID
                                     const cmeId = selectedFlare.linkedEvents?.find((e: any) => e.activityType === 'CME')?.activityID;
                                     if (cmeId) {
-                                        onViewCMEInVisualization(cmeId); // Changed prop name
+                                        onViewCMEInVisualization(cmeId);
                                         setSelectedFlare(null); // Close the flare details modal
                                     } else {
                                         alert("CME ID not found for this flare.");
@@ -855,7 +879,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 }}
                                 className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors"
                             >
-                                View in CME Visualization {/* Changed button text */}
+                                View in CME Visualization
                             </button>
                         )}
                     </div> 
@@ -874,4 +898,4 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
 };
 
 export default SolarActivityDashboard;
-// --- END OF FILE src/components/SolarActivityDashboard.tsx ---
+// --- END OF FILE src/components/SolarActivityDashboard.tsx (MODIFIED) ---
