@@ -1,25 +1,26 @@
-// --- START OF FILE src/components/SettingsModal.tsx (MODIFIED) ---
+// --- START OF FILE src/components/SettingsModal.tsx (FULL CODE) ---
 
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch';
 import { 
   getNotificationPreference, 
-  setNotificationPreference,
+  setNotificationPreference, // Keep this import for consistency, even if not used for custom toggles yet
   requestNotificationPermission,
 } from '../utils/notifications.ts';
 
-// New Icons for Settings Modal sections
-import ThemeIcon from './icons/ThemeIcon';
-import LocationIcon from './icons/LocationIcon';
-import DashboardIcon from './icons/DashboardIcon'; // Reusing GuideIcon for simplicity, could be a new one
-import HelpIcon from './icons/HelpIcon'; // Replaces old GuideIcon for the tutorial button
-import MailIcon from './icons/MailIcon';
-import DownloadIcon from './icons/DownloadIcon';
+// NEW: Named imports for all custom icons
+import { ThemeIcon } from './icons/ThemeIcon';
+import { LocationIcon } from './icons/LocationIcon';
+import { DashboardIcon } from './icons/DashboardIcon'; 
+import { HelpIcon } from './icons/HelpIcon'; 
+import { MailIcon } from './icons/MailIcon';
+import { DownloadIcon } from './icons/DownloadIcon';
 
-// Import SavedLocation from types.ts
+// Import SavedLocation type
 import { SavedLocation } from '../types'; 
-// Import constants for dashboard visibility
+
+// Import constants and utility functions from settingsUtils
 import {
   LOCATION_PREF_KEY, SAVED_LOCATIONS_KEY, ACTIVE_LOCATION_KEY, THEME_KEY,
   FD_TIPS_VISIBLE_KEY, FD_CAMERA_SETTINGS_VISIBLE_KEY, FD_AURORA_SIGHTINGS_VISIBLE_KEY,
@@ -27,8 +28,8 @@ import {
   FD_IPS_VISIBLE_KEY, FD_CLOUD_MAP_VISIBLE_KEY, FD_QUEENSTOWN_CAM_VISIBLE_KEY, FD_EPAM_VISIBLE_KEY,
   SAD_SOLAR_IMAGERY_VISIBLE_KEY, SAD_XRAY_FLUX_VISIBLE_KEY, SAD_SOLAR_FLARES_VISIBLE_KEY,
   SAD_CCOR1_VIDEO_VISIBLE_KEY, SAD_PROTON_FLUX_VISIBLE_KEY,
-  loadDashboardVisibilitySettings as loadDashboardVisibilitySettingsUtil // Rename to avoid conflict
-} from '../utils/settingsUtils';
+  loadDashboardVisibilitySettings as loadDashboardVisibilitySettingsUtil // Renamed to avoid conflict
+} from '../utils/settingsUtils'; 
 
 
 interface SettingsModalProps {
@@ -36,22 +37,22 @@ interface SettingsModalProps {
   onClose: () => void;
   appVersion: string; 
   onShowTutorial: () => void;
-  currentTheme: string; // Add currentTheme prop
-  onThemeChange: (theme: string) => void; // Add onThemeChange prop
+  currentTheme: string; // Passed from App.tsx
+  onThemeChange: (theme: string) => void; // Passed from App.tsx
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial, currentTheme, onThemeChange }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({}); // Retained for future use
+  const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({}); // Retained for future custom notification settings
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
 
-  // Theme state for local selection
+  // Theme state for local selection within the modal
   const [selectedTheme, setSelectedTheme] = useState(currentTheme);
 
-  // Dashboard Visibility States
+  // Dashboard Visibility States, initialized to empty and loaded in useEffect
   const [fdSectionVisibility, setFdSectionVisibility] = useState<Record<string, boolean>>({});
   const [sadSectionVisibility, setSadSectionVisibility] = useState<Record<string, boolean>>({});
 
@@ -59,47 +60,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
   const [activeLocationId, setActiveLocationId] = useState<string | null>(null);
   const [newLocationName, setNewLocationName] = useState('');
-  const [newLocationLat, setNewLocationLat] = useState<number | ''>(() => {
-    try { return JSON.parse(localStorage.getItem(LOCATION_PREF_KEY) || 'true') ? '' : 0; } catch { return 0; }
-  });
-  const [newLocationLng, setNewLocationLng] = useState<number | ''>(() => {
-    try { return JSON.parse(localStorage.getItem(LOCATION_PREF_KEY) || 'true') ? '' : 0; } catch { return 0; }
-  });
+  const [newLocationLat, setNewLocationLat] = useState<number | ''>('');
+  const [newLocationLng, setNewLocationLng] = useState<number | ''>('');
   const [isAddingCustomLocation, setIsAddingCustomLocation] = useState(false);
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
 
 
-  // --- Initial Load Effects ---
+  // --- Initial Load Effect: Runs when modal opens ---
   useEffect(() => {
     if (isOpen) {
-      // Notifications
+      // 1. Notifications permission status
       if (!('Notification' in window)) {
         setNotificationStatus('unsupported');
       } else {
         setNotificationStatus(Notification.permission);
       }
+      // Load general notification preferences (even if not exposed via toggles yet)
+      const loadedNotificationSettings: Record<string, boolean> = {};
+      // This `NOTIFICATION_CATEGORIES` list is not imported/defined in this version,
+      // so this loop will not populate anything unless you re-introduce it.
+      // For now, it will safely result in an empty object.
+      // NOTIFICATION_CATEGORIES.forEach(category => {
+      //   loadedNotificationSettings[category.id] = getNotificationPreference(category.id);
+      // });
+      setNotificationSettings(loadedNotificationSettings);
 
-      // GPS Preference
+      // 2. GPS Preference (for location auto-detection)
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
       
-      // App Install Status
+      // 3. App Install Status
       checkAppInstallationStatus();
 
-      // Theme
+      // 4. Current Theme
       setSelectedTheme(currentTheme);
 
-      // Dashboard Visibility
-      // Use the utility function to load settings
+      // 5. Dashboard Section Visibility
       const { fd, sad } = loadDashboardVisibilitySettingsUtil();
       setFdSectionVisibility(fd);
       setSadSectionVisibility(sad);
 
-      // Location Management
+      // 6. Location Management
       loadLocationSettings();
     }
   }, [isOpen, currentTheme]);
 
+  // --- PWA Install Prompt Effect: Runs once on component mount ---
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -121,8 +127,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
 
   // --- Utility Functions ---
   const checkAppInstallationStatus = useCallback(() => {
+    // Checks if the app is already running as a standalone PWA
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    const isPWA = (window.navigator as any).standalone === true;
+    const isPWA = (window.navigator as any).standalone === true; // For iOS
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
   
@@ -136,7 +143,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const handleThemeChange = useCallback((themeName: string) => {
       setSelectedTheme(themeName);
       localStorage.setItem(THEME_KEY, themeName);
-      onThemeChange(themeName); // Notify parent (App.tsx) to apply class
+      onThemeChange(themeName); // Notify parent (App.tsx) to apply the CSS class
   }, [onThemeChange]);
 
   // --- Dashboard Visibility Handlers ---
@@ -176,6 +183,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
           setSavedLocations(updatedLocations);
           localStorage.setItem(SAVED_LOCATIONS_KEY, JSON.stringify(updatedLocations));
           handleSetActiveLocation(newId);
+          // When adding a new location and making it active, disable GPS auto-detect
+          setUseGpsAutoDetect(false);
+          localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(false));
         },
         (error) => {
           alert(`Could not get current location: ${error.message}. Please try adding manually.`);
@@ -204,6 +214,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       setNewLocationLat('');
       setNewLocationLng('');
       setIsAddingCustomLocation(false);
+      // When adding a new location and making it active, disable GPS auto-detect
+      setUseGpsAutoDetect(false);
+      localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(false));
     } else {
       alert("Please provide a name, valid latitude, and valid longitude for the custom location.");
     }
@@ -247,9 +260,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       if (activeLocationId === id) {
         setActiveLocationId(null);
         localStorage.removeItem(ACTIVE_LOCATION_KEY);
+        // If the active location is deleted, and GPS auto-detect is off, consider turning it back on
+        if (!useGpsAutoDetect) {
+             setUseGpsAutoDetect(true);
+             localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(true));
+        }
       }
     }
-  }, [savedLocations, activeLocationId]);
+  }, [savedLocations, activeLocationId, useGpsAutoDetect]);
 
   const handleCancelEditOrAdd = useCallback(() => {
     setIsAddingCustomLocation(false);
@@ -269,9 +287,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   }, []);
 
   const handleClearAllSettings = useCallback(() => {
-    if (window.confirm("Are you sure you want to reset ALL app settings to default? This includes themes, location, and dashboard layouts.")) {
-      localStorage.clear();
-      window.location.reload(); // Force a full reload to apply defaults
+    if (window.confirm("Are you sure you want to reset ALL app preferences to their default state? This includes themes, location settings, and dashboard section visibility.")) {
+      localStorage.clear(); // Clears all localStorage for the origin
+      window.location.reload(); // Force a full reload to apply defaults from initial load logic
     }
   }, []);
 
@@ -365,6 +383,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <div className="bg-neutral-900/50 p-4 rounded-lg border border-neutral-700/60 mb-6">
               <h4 className="text-lg font-semibold text-neutral-200 mb-3 border-b border-neutral-600 pb-2">Aurora Forecast Page</h4>
               <div className="space-y-3">
+                {/* Use ?? true to default to visible if setting is not found */}
                 <ToggleSwitch id={FD_TIPS_VISIBLE_KEY} label="Tips for Spotting" checked={fdSectionVisibility[FD_TIPS_VISIBLE_KEY] ?? true} onChange={(c) => handleDashboardSectionToggle(FD_TIPS_VISIBLE_KEY, c, 'forecast')} />
                 <ToggleSwitch id={FD_CAMERA_SETTINGS_VISIBLE_KEY} label="Suggested Camera Settings" checked={fdSectionVisibility[FD_CAMERA_SETTINGS_VISIBLE_KEY] ?? true} onChange={(c) => handleDashboardSectionToggle(FD_CAMERA_SETTINGS_VISIBLE_KEY, c, 'forecast')} />
                 <ToggleSwitch id={FD_AURORA_SIGHTINGS_VISIBLE_KEY} label="Community Sighting Map" checked={fdSectionVisibility[FD_AURORA_SIGHTINGS_VISIBLE_KEY] ?? true} onChange={(c) => handleDashboardSectionToggle(FD_AURORA_SIGHTINGS_VISIBLE_KEY, c, 'forecast')} />
@@ -410,14 +429,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                   {savedLocations.map(loc => (
                     <li key={loc.id} className="flex justify-between items-center bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
                       <div>
+                        {/* Radio button for active location */}
                         <input
                           type="radio"
                           id={`loc-${loc.id}`}
                           name="activeLocation"
+                          // A location is "checked" if it's the active one AND GPS auto-detect is OFF
                           checked={activeLocationId === loc.id && !useGpsAutoDetect}
                           onChange={() => {
                               handleSetActiveLocation(loc.id);
-                              setUseGpsAutoDetect(false); // Turn off GPS auto-detect if custom is chosen
+                              setUseGpsAutoDetect(false); // If custom is chosen, turn off GPS auto-detect
                               localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(false));
                           }}
                           className="mr-2 accent-sky-500"
@@ -568,4 +589,4 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
 
 export default SettingsModal;
 
-// --- END OF FILE src/components/SettingsModal.tsx (MODIFIED) ---
+// --- END OF FILE src/components/SettingsModal.tsx (FULL CODE) ---
