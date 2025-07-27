@@ -1,4 +1,4 @@
-// --- START OF FILE src/components/ForecastDashboard.tsx (MODIFIED) ---
+// --- START OF FILE ForecastDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
@@ -10,18 +10,8 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
-import ToggleSwitch from './ToggleSwitch';
-import DonationButton from './DonationButton'; // NEW: Import DonationButton
-import {
-  LOCATION_PREF_KEY, SAVED_LOCATIONS_KEY, ACTIVE_LOCATION_KEY,
-  FD_TIPS_VISIBLE_KEY, FD_CAMERA_SETTINGS_VISIBLE_KEY, FD_AURORA_SIGHTINGS_VISIBLE_KEY,
-  FD_FORECAST_TREND_VISIBLE_KEY, FD_GAUGES_VISIBLE_KEY, FD_GOES_MAG_VISIBLE_KEY,
-  FD_IPS_VISIBLE_KEY, FD_CLOUD_MAP_VISIBLE_KEY, FD_QUEENSTOWN_CAM_VISIBLE_KEY, FD_EPAM_VISIBLE_KEY,
-  loadDashboardVisibilitySettings, getActiveSavedLocation // NEW: Import utility functions
-} from '../utils/settingsUtils'; // NEW: Import settings utility file
-import { SavedLocation } from '../types'; // NEW: Import SavedLocation type
-
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Import notification utilities
+import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch component
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -83,8 +73,9 @@ const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
-const GREYMOUTH_LATITUDE = -42.45; // NEW: Central latitude for NZ West Coast Forecast
+const GREYMOUTH_LATITUDE = -42.45;
 
+// MODIFIED: Added sourceUrl to each camera object
 const CAMERAS: Camera[] = [
   { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
   { name: 'Queenstown', url: 'https://queenstown.roundshot.com/#/', type: 'iframe', sourceUrl: 'queenstown.roundshot.com' },
@@ -120,15 +111,13 @@ const GAUGE_EMOJIS = {
 
 // --- HELPER FUNCTIONS (MOVED OUTSIDE COMPONENT) ---
 
-// MODIFIED: Calculate adjustment based on a given latitude (either GPS or saved)
-const calculateLocationAdjustment = (currentLat: number): number => {
-    const isNorthOfGreymouth = currentLat > GREYMOUTH_LATITUDE;
-    const R = 6371; // Earth's radius in km
-    const dLat = (currentLat - GREYMOUTH_LATITUDE) * (Math.PI / 180); // Difference in radians
-    const distanceKm = Math.abs(dLat) * R; // Simplified distance along meridian
-    
-    // Each 10km north/south of Greymouth adjusts score by 0.2
-    const adjustmentFactor = (distanceKm / 10) * 0.2;
+const calculateLocationAdjustment = (userLat: number): number => {
+    const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
+    const R = 6371;
+    const dLat = (userLat - GREYMOUTH_LATITUDE) * (Math.PI / 180);
+    const distanceKm = Math.abs(dLat) * R;
+    const numberOfSegments = Math.floor(distanceKm / 10);
+    const adjustmentFactor = numberOfSegments * 0.2;
     return isNorthOfGreymouth ? -adjustmentFactor : adjustmentFactor;
 };
 
@@ -263,6 +252,13 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { iso: "1600-3200", shutter: "3-10s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
         };
     }
+    if (score >= 40) {
+        return {
+            overall: "Clear auroral activity visible in cameras. Balance light capture with motion.",
+            phone: { android: { iso: "800-1600", shutter: "5-10s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto or 1000-2000 (app)", shutter: "3-7s", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
+            dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
+        };
+    }
     // This now covers scores from 10-39
     return {
          overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
@@ -356,22 +352,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const previousAuroraScoreRef = useRef<number | null>(null);
     const previousSubstormStatusRef = useRef<string | null>(null);
     const [showCelestialAnnotations, setShowCelestialAnnotations] = useState<boolean>(true);
-    
-    // NEW: State for current forecast location info
+    const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
     const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
-    const [currentForecastLat, setCurrentForecastLat] = useState<number>(GREYMOUTH_LATITUDE); // Default to Greymouth
-
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-
-    // NEW: Dashboard visibility state loaded from settingsUtils
-    const [dashboardVisibility, setDashboardVisibility] = useState<Record<string, boolean>>({});
-
-    useEffect(() => {
-        // Load visibility settings on component mount
-        const { fd } = loadDashboardVisibilitySettings();
-        setDashboardVisibility(fd);
-    }, []);
 
     // MODIFIED: This logic was already added in the previous step, confirming its correctness
     const activityAlertMessage = useMemo(() => {
@@ -468,23 +452,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
             newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`; newStatusColor = 'text-green-400 font-bold animate-pulse';
             if (currentAdjustedScore !== null && currentAdjustedScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 300000)) shouldNotify = true;
+        } else if (drop < -15) {
+            newStatusText = 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.'; newStatusColor = 'text-yellow-400'; clearNotificationCooldown('substorm-eruption');
         } else {
-            // Check for growth phase and then steady state
-            let growthPhaseDetected = false;
-            if (drop < -15) {
-                newStatusText = 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.'; newStatusColor = 'text-yellow-400';
-                growthPhaseDetected = true;
-            } else {
-                newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.'; newStatusColor = 'text-neutral-400';
-            }
-            if (prevSubstormStatusText !== newStatusText) {
-                // Only clear cooldown if status changes *out* of growth phase
-                if (!growthPhaseDetected) clearNotificationCooldown('substorm-eruption');
-            }
+            newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.'; newStatusColor = 'text-neutral-400'; clearNotificationCooldown('substorm-eruption');
         }
         const status = { text: newStatusText, color: newStatusColor }; setSubstormBlurb(status); setSubstormActivityStatus(status); previousSubstormStatusRef.current = newStatusText;
         if (shouldNotify) sendNotification('Substorm Eruption Alert!', `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${currentAdjustedScore?.toFixed(1)}%.`);
-    }, [setSubstormActivityStatus, auroraScore]); // Added auroraScore to deps for analyzeMagnetometerData
+    }, [setSubstormActivityStatus]);
     const getMagnetometerAnnotations = useCallback((data: any[]) => {
         const annotations: any = {}; if (data.length < 60) return annotations;
         const getSegmentAnalysis = (startIdx: number, endIdx: number) => {
@@ -547,56 +522,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
         const prevAuroraScore = previousAuroraScoreRef.current;
 
-        // NEW: Determine current forecast location
-        const useGps = localStorage.getItem(LOCATION_PREF_KEY) === 'true';
-        let forecastLatitude = GREYMOUTH_LATITUDE;
-        let locationDescription = 'Showing default forecast for Greymouth.';
-
-        if (!useGps) {
-            const activeLocation = getActiveSavedLocation();
-            if (activeLocation) {
-                forecastLatitude = activeLocation.lat;
-                const distance = Math.abs(calculateLocationAdjustment(forecastLatitude) / 0.2) * 10; // Reverse calc to get distance
-                const direction = forecastLatitude > GREYMOUTH_LATITUDE ? 'north' : 'south';
-                locationDescription = `Forecast adjusted for ${activeLocation.name} (${distance.toFixed(0)}km ${direction} of Greymouth).`;
-            } else {
-                 locationDescription = 'Custom location not selected. Showing default forecast for Greymouth.';
-            }
-        } else {
-            // If GPS is enabled, attempt to get current position
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        forecastLatitude = position.coords.latitude;
-                        const adjustment = calculateLocationAdjustment(forecastLatitude);
-                        const distance = Math.abs(adjustment / 0.2) * 10;
-                        const direction = forecastLatitude > GREYMOUTH_LATITUDE ? 'north' : 'south';
-                        setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your GPS location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
-                        setCurrentForecastLat(forecastLatitude); // Update state for latitude
-                    },
-                    (error) => {
-                        console.error("Geolocation error:", error.message);
-                        locationDescription = 'Geolocation unavailable. Showing default forecast for Greymouth.';
-                        setCurrentForecastLat(GREYMOUTH_LATITUDE); // Revert to default
-                    },
-                    { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
-                );
-            } else {
-                locationDescription = 'Geolocation is not supported. Showing default forecast for Greymouth.';
-                setCurrentForecastLat(GREYMOUTH_LATITUDE); // Revert to default
-            }
-        }
-        setLocationBlurb(locationDescription);
-
         if (forecastResult.status === 'fulfilled' && forecastResult.value) {
             const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
             setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
             const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
             let adjustedScore = baseScore;
-            if (baseScore !== null) {
-                 const adjustment = calculateLocationAdjustment(currentForecastLat); // Use currentForecastLat
-                 adjustedScore = Math.max(0, Math.min(100, baseScore + adjustment));
-            }
+            if (baseScore !== null) adjustedScore = Math.max(0, Math.min(100, baseScore + locationAdjustment));
             setAuroraScore(adjustedScore); setCurrentAuroraScore(adjustedScore);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             setAuroraBlurb(getAuroraBlurb(adjustedScore ?? 0));
@@ -633,7 +564,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
             const processed = goes18Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
             setGoes18Data(processed);
-            analyzeMagnetometerData(processed, adjustedScore); // Pass adjustedScore
+            const currentAdjustedScore = (forecastResult.status === 'fulfilled' && forecastResult.value.currentForecast?.spotTheAuroraForecast !== null) ? Math.max(0, Math.min(100, forecastResult.value.currentForecast.spotTheAuroraForecast + locationAdjustment)) : null;
+            analyzeMagnetometerData(processed, currentAdjustedScore);
             if (processed.length > 0) anyGoesDataFound = true;
         } else { console.error('GOES-18 Fetch Failed:', goes18Result.reason); }
 
@@ -646,27 +578,32 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else { console.error('NASA IPS Fetch Failed:', ipsResult.reason); setInterplanetaryShockData([]); }
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
         if (isInitialLoad) setIsLoading(false);
-    }, [getGaugeStyle, setCurrentAuroraScore, getMoonData, analyzeMagnetometerData, currentForecastLat]); // Added currentForecastLat to deps
+    }, [getGaugeStyle, setCurrentAuroraScore, getMoonData, locationAdjustment, analyzeMagnetometerData, formatNZTimestamp]);
 
     useEffect(() => {
-        // This useEffect now just triggers data fetch and updates visibility settings on load/re-render
-        // The location logic moved into fetchAllData
-        fetchAllData(true);
-        const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS);
-        
-        // Re-load dashboard visibility on mount (or if relevant settings change)
-        const handleStorageChange = () => {
-             const { fd } = loadDashboardVisibilitySettings();
-             setDashboardVisibility(fd);
-        };
-        window.addEventListener('storage', handleStorageChange); // Listen for changes from SettingsModal
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const adjustment = calculateLocationAdjustment(position.coords.latitude);
+                    setLocationAdjustment(adjustment);
+                    const direction = adjustment >= 0 ? 'south' : 'north';
+                    const distance = Math.abs(adjustment / 3 * 150);
+                    setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
+                },
+                (error) => {
+                    console.error("Geolocation error:", error.message);
+                    setLocationAdjustment(0);
+                    setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
+                },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
+            );
+        } else {
+            setLocationAdjustment(0);
+            setLocationBlurb('Geolocation is not supported. Showing default forecast for Greymouth.');
+        }
+    }, []);
 
-        return () => {
-            clearInterval(interval);
-            window.removeEventListener('storage', handleStorageChange);
-        };
-    }, [fetchAllData]);
-
+    useEffect(() => { fetchAllData(true); const interval = setInterval(() => fetchAllData(false), REFRESH_INTERVAL_MS); return () => clearInterval(interval); }, [fetchAllData]);
     useEffect(() => { const now = Date.now(); const { sun } = celestialTimes; if (sun?.rise && sun?.set) setIsDaylight(now > sun.rise && now < sun.set); else setIsDaylight(false); }, [celestialTimes, lastUpdated]);
     useEffect(() => { if (selectedCamera.type === 'image') setCameraImageSrc(`${selectedCamera.url}?_=${Date.now()}`); }, [selectedCamera]);
 
@@ -735,139 +672,121 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <p className="text-neutral-300 mt-4 md:mt-0">{isDaylight ? "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!" : auroraBlurb}</p>
                         </div>
 
-                        {/* Conditional Rendering based on settings */}
-                        {dashboardVisibility[FD_TIPS_VISIBLE_KEY] && (
-                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="card bg-neutral-950/80 p-4">
-                                    <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for Spotting the Aurora</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                    <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. Weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by an intense outburst. Don't give up after just a few minutes.</li></ul></div>
-                                </div>
-                                {dashboardVisibility[FD_CAMERA_SETTINGS_VISIBLE_KEY] && (
-                                    <div className="card bg-neutral-950/80 p-4">
-                                        <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
-                                        <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                                            <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                                    <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50"><h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4><ul className="text-xs space-y-1.5 text-neutral-400"><li>**ISO:** {cameraSettings.phone.android.iso}</li><li>**Shutter:** {cameraSettings.phone.android.shutter}</li><li>**Aperture:** {cameraSettings.phone.android.aperture}</li><li>**Focus:** {cameraSettings.phone.android.focus}</li><li>**WB:** {cameraSettings.phone.android.wb}</li></ul></div>
-                                                        <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50"><h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode)</h4><ul className="text-xs space-y-1.5 text-neutral-400"><li>**ISO:** {cameraSettings.phone.apple.iso}</li><li>**Shutter:** {cameraSettings.phone.apple.shutter}</li><li>**Aperture:** {cameraSettings.phone.apple.aperture}</li><li>**Focus:** {cameraSettings.phone.apple.focus}</li><li>**WB:** {cameraSettings.phone.apple.wb}</li></ul></div>
-                                                    </div>
-                                                </div>
-                                                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
-                                                    <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
-                                                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50"><h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4><ul className="text-xs space-y-1.5 text-neutral-400"><li>**ISO:** {cameraSettings.dslr.iso}</li><li>**Shutter:** {cameraSettings.dslr.shutter}</li><li>**Aperture:** {cameraSettings.dslr.aperture}</li><li>**Focus:** {cameraSettings.dslr.focus}</li><li>**WB:** {cameraSettings.dslr.wb}</li></ul></div>
-                                                </div>
+                        <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="card bg-neutral-950/80 p-4">
+                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsTipsOpen(!isTipsOpen)}><h2 className="text-xl font-bold text-neutral-100">Tips for Spotting the Aurora</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isTipsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isTipsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ul className="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2"><li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li><li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become.</li><li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. Weather changes fast, so check the map before and during your session.</li><li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li><li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li><li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li><li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li></ul></div>
+                            </div>
+                            <div className="card bg-neutral-950/80 p-4">
+                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCameraSettingsOpen(!isCameraSettingsOpen)}><h2 className="text-xl font-bold text-neutral-100">Suggested Camera Settings</h2><button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isCameraSettingsOpen ? 'rotate-180' : 'rotate-0'}`} /></button></div>
+                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCameraSettingsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                    <p className="text-neutral-400 text-center mb-6">{cameraSettings.overall}</p>
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                            <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50"><h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4><ul className="text-xs space-y-1.5 text-neutral-400"><li>**ISO:** {cameraSettings.phone.android.iso}</li><li>**Shutter:** {cameraSettings.phone.android.shutter}</li><li>**Aperture:** {cameraSettings.phone.android.aperture}</li><li>**Focus:** {cameraSettings.phone.android.focus}</li><li>**WB:** {cameraSettings.phone.android.wb}</li></ul></div>
+                                                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50"><h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode)</h4><ul className="text-xs space-y-1.5 text-neutral-400"><li>**ISO:** {cameraSettings.phone.apple.iso}</li><li>**Shutter:** {cameraSettings.phone.apple.shutter}</li><li>**Aperture:** {cameraSettings.phone.apple.aperture}</li><li>**Focus:** {cameraSettings.phone.apple.focus}</li><li>**WB:** {cameraSettings.phone.apple.wb}</li></ul></div>
                                             </div>
-                                            <p className="text-neutral-500 text-xs italic mt-6 text-center">**Disclaimer:** These are starting points. Experimentation is key!</p>
+                                        </div>
+                                        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                                            <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
+                                            <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50"><h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4><ul className="text-xs space-y-1.5 text-neutral-400"><li>**ISO:** {cameraSettings.dslr.iso}</li><li>**Shutter:** {cameraSettings.dslr.shutter}</li><li>**Aperture:** {cameraSettings.dslr.aperture}</li><li>**Focus:** {cameraSettings.dslr.focus}</li><li>**WB:** {cameraSettings.dslr.wb}</li></ul></div>
                                         </div>
                                     </div>
-                                )}
-                            </div>
-                        )}
-
-                        {dashboardVisibility[FD_AURORA_SIGHTINGS_VISIBLE_KEY] && <AuroraSightings isDaylight={isDaylight} />}
-
-                        {dashboardVisibility[FD_FORECAST_TREND_VISIBLE_KEY] && (
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
-                                <div className="flex justify-center items-center gap-2 mb-2"><h2 className="text-xl font-semibold text-white text-center">Forecast Trend (Last {auroraScoreChartTimeLabel})</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                <div className="flex justify-between items-center mb-2"><TimeRangeButtons onSelect={(d, l) => { setAuroraScoreChartTimeRange(d); setAuroraScoreChartTimeLabel(l); }} selected={auroraScoreChartTimeRange} /><ToggleSwitch label="Moon/Sun Data" checked={showCelestialAnnotations} onChange={setShowCelestialAnnotations} /></div>
-                                <div className="flex-grow relative mt-2">{auroraScoreHistory.length > 0 ? <Line data={auroraScoreChartData} options={auroraScoreChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">No historical data.</p>}</div>
-                            </div>
-                        )}
-
-                        {dashboardVisibility[FD_GAUGES_VISIBLE_KEY] && (
-                            <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-                                {Object.entries(gaugeData).map(([key, data]) => {
-                                    const isGraphable = !['moon'].includes(key);
-                                    let graphId: string | null = null;
-                                    if (key === 'speed') graphId = 'speed-graph-container'; else if (key === 'density') graphId = 'density-graph-container'; else if (key === 'power') graphId = 'hemispheric-power-graph-container'; else if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
-                                    const isCurrentlyExpanded = expandedGraph === graphId;
-                                    const shouldRenderGraphContent = isCurrentlyExpanded && graphId && ((graphId === 'imf-graph-container' && key === 'bt') || (graphId !== 'imf-graph-container'));
-                                    return (
-                                        <React.Fragment key={key}>
-                                            <div className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
-                                                <button onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)} className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`} disabled={!isGraphable}>
-                                                    <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                                    <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                                                    <div className="text-3xl my-2">{data.emoji}</div>
-                                                    <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
-                                                    <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
-                                                    {isGraphable && ( <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} /> )}
-                                                </button>
-                                            </div>
-                                            {shouldRenderGraphContent && <div className="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100"><ExpandedGraphContent graphId={graphId!} {...{ solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel, magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel, hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel, magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel, openModal, allSpeedData, speedChartData, speedChartOptions, allDensityData, densityChartData, densityChartOptions, allMagneticData, magneticFieldChartData, magneticFieldOptions, hemisphericPowerHistory, hemisphericPowerChartData, hemisphericPowerChartOptions, goes18Data, goes19Data, magnetometerChartData, magnetometerOptions, loadingMagnetometer, substormBlurb }} /></div>}
-                                        </React.Fragment>
-                                    );
-                                })}
-                            </div>
-                        )}
-
-                        {dashboardVisibility[FD_GOES_MAG_VISIBLE_KEY] && (
-                            <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
-                                    <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
-                                    <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                    <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"> <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} /> </button>
+                                    <p className="text-neutral-500 text-xs italic mt-6 text-center">**Disclaimer:** These are starting points. Experimentation is key!</p>
                                 </div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ExpandedGraphContent graphId={'goes-mag-graph-container'} {...{ solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel, magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel, hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel, magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel, openModal, allSpeedData, speedChartData, speedChartOptions, allDensityData, densityChartData, densityChartOptions, allMagneticData, magneticFieldChartData, magneticFieldOptions, hemisphericPowerHistory, hemisphericPowerChartData, hemisphericPowerChartOptions, goes18Data, goes19Data, magnetometerChartData, magnetometerOptions, loadingMagnetometer, substormBlurb }} /></div>
                             </div>
-                        )}
+                        </div>
+
+                        <AuroraSightings isDaylight={isDaylight} />
+
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
+                            <div className="flex justify-center items-center gap-2 mb-2"><h2 className="text-xl font-semibold text-white text-center">Forecast Trend (Last {auroraScoreChartTimeLabel})</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                            <div className="flex justify-between items-center mb-2"><TimeRangeButtons onSelect={(d, l) => { setAuroraScoreChartTimeRange(d); setAuroraScoreChartTimeLabel(l); }} selected={auroraScoreChartTimeRange} /><ToggleSwitch label="Moon/Sun Data" checked={showCelestialAnnotations} onChange={setShowCelestialAnnotations} /></div>
+                            <div className="flex-grow relative mt-2">{auroraScoreHistory.length > 0 ? <Line data={auroraScoreChartData} options={auroraScoreChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">No historical data.</p>}</div>
+                        </div>
+
+                        <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+                            {Object.entries(gaugeData).map(([key, data]) => {
+                                const isGraphable = !['moon'].includes(key);
+                                let graphId: string | null = null;
+                                if (key === 'speed') graphId = 'speed-graph-container'; else if (key === 'density') graphId = 'density-graph-container'; else if (key === 'power') graphId = 'hemispheric-power-graph-container'; else if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
+                                const isCurrentlyExpanded = expandedGraph === graphId;
+                                const shouldRenderGraphContent = isCurrentlyExpanded && graphId && ((graphId === 'imf-graph-container' && key === 'bt') || (graphId !== 'imf-graph-container'));
+                                return (
+                                    <React.Fragment key={key}>
+                                        <div className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
+                                            <button onClick={() => isGraphable && setExpandedGraph(isCurrentlyExpanded ? null : graphId)} className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`} disabled={!isGraphable}>
+                                                <div className="flex justify-center items-center"><h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3><button onClick={(e) => { e.stopPropagation(); openModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                                <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                                                <div className="text-3xl my-2">{data.emoji}</div>
+                                                <div className="w-full bg-neutral-700 rounded-full h-3 mt-4"><div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div></div>
+                                                <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                                                {isGraphable && ( <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} /> )}
+                                            </button>
+                                        </div>
+                                        {shouldRenderGraphContent && <div className="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100"><ExpandedGraphContent graphId={graphId!} {...{ solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel, magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel, hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel, magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel, openModal, allSpeedData, speedChartData, speedChartOptions, allDensityData, densityChartData, densityChartOptions, allMagneticData, magneticFieldChartData, magneticFieldOptions, hemisphericPowerHistory, hemisphericPowerChartData, hemisphericPowerChartOptions, goes18Data, goes19Data, magnetometerChartData, magnetometerOptions, loadingMagnetometer, substormBlurb }} /></div>}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </div>
+
+                        <div className="col-span-12 card bg-neutral-950/80 p-4">
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
+                                <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
+                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"> <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} /> </button>
+                            </div>
+                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}><ExpandedGraphContent graphId={'goes-mag-graph-container'} {...{ solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel, magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel, hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel, magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel, openModal, allSpeedData, speedChartData, speedChartOptions, allDensityData, densityChartData, densityChartOptions, allMagneticData, magneticFieldChartData, magneticFieldOptions, hemisphericPowerHistory, hemisphericPowerChartData, hemisphericPowerChartOptions, goes18Data, goes19Data, magnetometerChartData, magnetometerOptions, loadingMagnetometer, substormBlurb }} /></div>
+                        </div>
                         
-                        {dashboardVisibility[FD_IPS_VISIBLE_KEY] && (
-                            <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
-                                    <div className="flex items-center"><h2 className="text-xl font-semibold text-neutral-100">Interplanetary Shock Events</h2><button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                    <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} /></button>
-                                </div>
-                                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isIpsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                                    {interplanetaryShockData.length > 0 ? <div className="space-y-4 text-sm">{interplanetaryShockData.slice(0, 5).map((shock) => (<div key={shock.activityID} className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60"><p><strong className="text-neutral-300">Shock Time:</strong> <span className="text-yellow-400 font-mono">{formatNZTimestamp(shock.eventTime)}</span></p><p><strong className="text-neutral-300">Location:</strong> {shock.location}</p><p><strong className="text-neutral-300">Source:</strong> {shock.instruments.map(inst => inst.displayName).join(', ')}</p><p><strong className="text-neutral-300">Activity ID:</strong> <a href={shock.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{shock.activityID}</a></p></div>))}</div> : <p className="text-center pt-5 text-neutral-400 italic">No recent interplanetary shock data available from NASA.</p>}
-                                </div>
+                        <div className="col-span-12 card bg-neutral-950/80 p-4">
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsIpsOpen(!isIpsOpen)}>
+                                <div className="flex items-center"><h2 className="text-xl font-semibold text-neutral-100">Interplanetary Shock Events</h2><button onClick={(e) => { e.stopPropagation(); openModal('ips'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors"><CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isIpsOpen ? 'rotate-180' : 'rotate-0'}`} /></button>
                             </div>
-                        )}
+                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isIpsOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                                {interplanetaryShockData.length > 0 ? <div className="space-y-4 text-sm">{interplanetaryShockData.slice(0, 5).map((shock) => (<div key={shock.activityID} className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60"><p><strong className="text-neutral-300">Shock Time:</strong> <span className="text-yellow-400 font-mono">{formatNZTimestamp(shock.eventTime)}</span></p><p><strong className="text-neutral-300">Location:</strong> {shock.location}</p><p><strong className="text-neutral-300">Source:</strong> {shock.instruments.map(inst => inst.displayName).join(', ')}</p><p><strong className="text-neutral-300">Activity ID:</strong> <a href={shock.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{shock.activityID}</a></p></div>))}</div> : <p className="text-center pt-5 text-neutral-400 italic">No recent interplanetary shock data available from NASA.</p>}
+                            </div>
+                        </div>
 
-                        {dashboardVisibility[FD_CLOUD_MAP_VISIBLE_KEY] && (
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                                <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
-                                <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
-                            </div>
-                        )}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                            <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
+                            <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
+                        </div>
                         
-                        {dashboardVisibility[FD_QUEENSTOWN_CAM_VISIBLE_KEY] && (
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                                <div className="flex justify-center items-center mb-4">
-                                    <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
-                                    <button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                            <div className="flex justify-center items-center mb-4">
+                                <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
+                                <button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <div className="flex justify-center gap-2 my-2 flex-wrap">
+                                {CAMERAS.map((camera) => (
+                                    <button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                                        {camera.name}
+                                    </button>
+                                ))}
+                            </div>
+                            {/* MODIFIED: Added container for image and source link */}
+                            <div className="mt-4">
+                                <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
+                                    {selectedCamera.type === 'iframe' ? (
+                                        <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
+                                    ) : (
+                                        <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
+                                    )}
                                 </div>
-                                <div className="flex justify-center gap-2 my-2 flex-wrap">
-                                    {CAMERAS.map((camera) => (
-                                        <button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
-                                            {camera.name}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="mt-4">
-                                    <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
-                                        {selectedCamera.type === 'iframe' ? (
-                                            <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
-                                        ) : (
-                                            <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
-                                        )}
-                                    </div>
-                                    <div className="text-center text-xs text-neutral-500 mt-2">
-                                        Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
-                                    </div>
+                                <div className="text-center text-xs text-neutral-500 mt-2">
+                                    Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {dashboardVisibility[FD_EPAM_VISIBLE_KEY] && (
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                                <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                                <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
-                            </div>
-                        )}
+                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                            <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                             <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
+                        </div>
                     </main>
                     <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
@@ -878,10 +797,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <GuideIcon className="w-5 h-5" />
                                 <span>Frequently Asked Questions</span>
                             </button>
-                        </div>
-                        {/* Donation Button at the bottom of the footer */}
-                        <div className="mt-8">
-                            <DonationButton paypalEmail="deanfrench1997@gmail.com" />
                         </div>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a></p><p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p></div>
                     </footer>
@@ -894,4 +809,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE src/components/ForecastDashboard.tsx (MODIFIED) ---
+// --- END OF FILE ForecastDashboard.tsx ---

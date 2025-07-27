@@ -1,5 +1,3 @@
-// --- START OF FILE src/types.ts (MODIFIED) ---
-
 // Assuming global THREE is available from CDN
 // import * as THREE from 'three'; 
 
@@ -130,13 +128,3 @@ export interface SightingReport {
   key?: string; // a unique key from the KV store
   isPending?: boolean; // For client-side state
 }
-
-// --- NEW TYPE FOR SAVED LOCATIONS (Moved from SettingsModal) ---
-export interface SavedLocation {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-// --- END OF FILE src/types.ts (MODIFIED) ---

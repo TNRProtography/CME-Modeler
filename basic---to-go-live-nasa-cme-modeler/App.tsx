@@ -1,4 +1,4 @@
-// --- START OF FILE src/App.tsx (MODIFIED) ---
+// --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
@@ -17,10 +17,10 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import ForecastIcon from './components/icons/ForecastIcon';
+import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
 import GlobeIcon from './components/icons/GlobeIcon';
-import SunIcon from './components/icons/SunIcon';
-import CmeIcon from './components/icons/CmeIcon';
+import SunIcon from './components/icons/SunIcon';         // ADDED
+import CmeIcon from './components/icons/CmeIcon';         // ADDED
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -32,6 +32,8 @@ import GlobalBanner from './components/GlobalBanner';
 import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
 import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
 
+// DELETED: Inline icon components are now moved to their own files.
+
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
@@ -39,7 +41,6 @@ type ViewerMedia =
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const APP_VERSION = 'v0.2beta'; // Define your app version here
-const THEME_KEY = 'app_theme';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -80,7 +81,6 @@ const App: React.FC = () => {
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
-  const [theme, setTheme] = useState<string>(localStorage.getItem(THEME_KEY) || 'default');
 
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
@@ -92,11 +92,6 @@ const App: React.FC = () => {
     }
   }, []);
   
-  // Apply theme to the body class
-  useEffect(() => {
-      document.body.className = `theme-${theme}`;
-  }, [theme]);
-
   const handleCloseFirstVisitTutorial = useCallback(() => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
     setIsFirstVisitTutorialOpen(false);
@@ -179,70 +174,19 @@ const App: React.FC = () => {
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
-    setCurrentlyModeledCmeId(cmeId);
+    setCurrentlyModeledCMEId(cmeId);
     setIsCmeListOpen(true);
   }, []);
 
   return (
-    // Apply the theme class to the root div or body
-    <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden theme-${theme}`}>
+    <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`
           .tutorial-highlight {
             position: relative;
-            z-index: 2003 !important; /* Increased z-index to be above banners */
+            z-index: 2003 !important;
             box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7);
             border-color: #3b82f6 !important;
           }
-          /* Theme-specific styles, defined globally */
-          body.theme-default {
-              /* Defaults already largely covered by Tailwind. */
-          }
-          body.theme-light .bg-black { background-color: #f0f0f0; }
-          body.theme-light .text-neutral-300 { color: #333333; }
-          body.theme-light .bg-neutral-900\\/80 { background-color: rgba(240, 240, 240, 0.8); }
-          body.theme-light .border-neutral-700\\/60 { border-color: rgba(200, 200, 200, 0.6); }
-          body.theme-light .bg-neutral-800\\/80 { background-color: rgba(220, 220, 220, 0.8); }
-          body.theme-light .hover\\:bg-neutral-700\\/90:hover { background-color: rgba(200, 200, 200, 0.9); }
-          body.theme-light .bg-neutral-950\\/80 { background-color: rgba(250, 250, 250, 0.8); }
-          body.theme-light .bg-neutral-900\\/70 { background-color: rgba(245, 245, 245, 0.7); }
-          body.theme-light .border-neutral-700\\/80 { border-color: rgba(200, 200, 200, 0.8); }
-          body.theme-light .text-neutral-400 { color: #666666; }
-          body.theme-light .text-neutral-500 { color: #888888; }
-          body.theme-light .text-neutral-100 { color: #111111; }
-          body.theme-light .card { background-color: rgba(255, 255, 255, 0.9); border-color: rgba(200, 200, 200, 0.9); }
-          body.theme-light .styled-scrollbar::-webkit-scrollbar-track { background: #e0e0e0; }
-          body.theme-light .styled-scrollbar::-webkit-scrollbar-thumb { background: #a0a0a0; }
-          body.theme-light .leaflet-container { background-color: #f0f0f0 !important; }
-          body.theme-light .leaflet-popup-content-wrapper, body.theme-light .leaflet-popup-tip { background: #ffffff; color: #333333; box-shadow: 0 3px 14px rgba(0,0,0,0.2); }
-          body.theme-light input, body.theme-light button.bg-neutral-800, body.theme-light .bg-neutral-800\\/50 { background-color: rgba(230, 230, 230, 0.8); }
-          body.theme-light .border-neutral-600 { border-color: #cccccc; }
-          body.theme-light .hover\\:bg-neutral-700\\/60:hover { background-color: rgba(210, 210, 210, 0.6); }
-
-          body.theme-high-contrast {
-              /* Darker backgrounds, brighter text */
-              background-color: #000000;
-              color: #ffffff;
-          }
-          body.theme-high-contrast .bg-neutral-900\/80 { background-color: rgba(10, 10, 10, 0.9); }
-          body.theme-high-contrast .border-neutral-700\/60 { border-color: rgba(50, 50, 50, 0.8); }
-          body.theme-high-contrast .bg-neutral-800\/80 { background-color: rgba(20, 20, 20, 0.9); }
-          body.theme-high-contrast .hover\:bg-neutral-700\/90:hover { background-color: rgba(40, 40, 40, 0.9); }
-          body.theme-high-contrast .bg-neutral-950\/80 { background-color: rgba(0, 0, 0, 0.95); }
-          body.theme-high-contrast .bg-neutral-900\/70 { background-color: rgba(15, 15, 15, 0.8); }
-          body.theme-high-contrast .border-neutral-700\/80 { border-color: rgba(60, 60, 60, 0.8); }
-          body.theme-high-contrast .text-neutral-300 { color: #f0f0f0; }
-          body.theme-high-contrast .text-neutral-400 { color: #aaaaaa; }
-          body.theme-high-contrast .text-neutral-500 { color: #888888; }
-          body.theme-high-contrast .text-neutral-100 { color: #ffffff; }
-          body.theme-high-contrast .card { background-color: rgba(0, 0, 0, 0.98); border-color: rgba(50, 50, 50, 0.9); }
-          body.theme-high-contrast .styled-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
-          body.theme-high-contrast .styled-scrollbar::-webkit-scrollbar-thumb { background: #666666; }
-          body.theme-high-contrast .leaflet-container { background-color: #111111 !important; }
-          body.theme-high-contrast .leaflet-popup-content-wrapper, body.theme-high-contrast .leaflet-popup-tip { background: #222222; color: #ffffff; box-shadow: 0 3px 14px rgba(0,0,0,0.6); }
-          body.theme-high-contrast input, body.theme-high-contrast button.bg-neutral-800, body.theme-high-contrast .bg-neutral-800\/50 { background-color: rgba(30, 30, 30, 0.8); }
-          body.theme-high-contrast .border-neutral-600 { border-color: #888888; }
-          body.theme-high-contrast .hover\:bg-neutral-700\/60:hover { background-color: rgba(50, 50, 50, 0.6); }
-
         `}</style>
         
         <GlobalBanner 
@@ -252,13 +196,13 @@ const App: React.FC = () => {
             auroraScore={currentAuroraScore ?? undefined} 
             isSubstormAlert={isSubstormAlert} 
             substormText={substormActivityStatus?.text ?? undefined}
-            hideForTutorial={isFirstVisitTutorialOpen} // Hide banners during first-time tutorial
         />
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
             <div className="flex items-center space-x-2">
                 <button 
                 id="nav-forecast" onClick={() => setActivePage('forecast')}
+                // MODIFIED: Added justify-center for perfect horizontal alignment
                 className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
@@ -268,6 +212,7 @@ const App: React.FC = () => {
                 </button>
                 <button 
                 id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} 
+                // MODIFIED: Added justify-center for perfect horizontal alignment
                 className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
@@ -277,6 +222,7 @@ const App: React.FC = () => {
                 </button>
                  <button 
                 id="nav-modeler" onClick={() => setActivePage('modeler')}
+                // MODIFIED: Added justify-center for perfect horizontal alignment
                 className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
@@ -302,7 +248,7 @@ const App: React.FC = () => {
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
-                    <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCmeId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
+                    <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                         <div className="flex items-center space-x-2 pointer-events-auto">
@@ -336,13 +282,12 @@ const App: React.FC = () => {
         </div>
         
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
+        {/* MODIFIED: Pass the new onShowTutorial handler to the settings modal */}
         <SettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)} 
           appVersion={APP_VERSION} 
           onShowTutorial={handleShowTutorial}
-          currentTheme={theme}
-          onThemeChange={setTheme}
         /> 
         
         <FirstVisitTutorial
@@ -356,4 +301,4 @@ const App: React.FC = () => {
 
 export default App;
 
-// --- END OF FILE src/App.tsx (MODIFIED) ---
+// --- END OF FILE App.tsx ---
