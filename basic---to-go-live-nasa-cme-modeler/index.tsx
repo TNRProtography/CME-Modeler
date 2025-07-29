@@ -6,19 +6,15 @@ import App from './App';
 import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import annotationPlugin from 'chartjs-plugin-annotation';
-import { requestNotificationPermission } from './utils/notifications.ts'; // Corrected import path: added .ts extension
+import { requestNotificationPermission } from './utils/notifications.ts';
 
 ChartJS.register(
   CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale,
   annotationPlugin
 );
 
-declare global {
-  interface Window {
-    THREE: any;
-    gsap: any;
-  }
-}
+// REMOVED: Global type declarations for window.THREE and window.gsap
+// These are now directly imported in components that use them.
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
