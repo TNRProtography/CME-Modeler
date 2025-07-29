@@ -153,7 +153,7 @@ const App: React.FC = () => {
   }, [activeTimeRange, loadCMEData, activePage]);
 
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
-  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
+  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCmeId]);
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
@@ -197,7 +197,7 @@ const App: React.FC = () => {
             auroraScore={currentAuroraScore ?? undefined} 
             isSubstormAlert={isSubstormAlert} 
             substormText={substormActivityStatus?.text ?? undefined}
-            hideForTutorial={isFirstVisitTutorialOpen}
+            hideForTutorial={isFirstVisitTutorialOpen} 
         />
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
@@ -243,7 +243,7 @@ const App: React.FC = () => {
 
         <div className="flex flex-grow min-h-0">
             {/* Wrap conditionally rendered pages in Suspense for code splitting */}
-            <Suspense fallback={<LoadingOverlay />}> {/* ADDED Suspense fallback */}
+            <Suspense fallback={<LoadingOverlay />}> 
                 {activePage === 'modeler' && ( <>
                     <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
@@ -302,7 +302,7 @@ const App: React.FC = () => {
                         onViewCMEInVisualization={handleViewCMEInVisualization}
                     />
                 )}
-            </Suspense> {/* END Suspense */}
+            </Suspense> 
         </div>
         
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
