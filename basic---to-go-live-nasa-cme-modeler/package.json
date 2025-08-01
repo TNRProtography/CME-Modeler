@@ -21,8 +21,7 @@
     "react-dom": "^18.2.0",
     "react-leaflet": "^4.2.1",
     "react-leaflet-cluster": "^2.1.0",
-    "three": "^0.160.0",
-    "gsap": "^3.12.5"
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240403.0",
@@ -32,7 +31,6 @@
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@types/three": "^0.160.0",
-    "@types/gsap": "3.12.5",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.33",

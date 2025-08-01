@@ -1,13 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import * as THREE from 'three'; // Import THREE directly
 import { SCENE_SCALE } from '../constants';
 
 interface PlanetLabelProps {
-  planetMesh: THREE.Object3D; // Specify THREE.Object3D
-  camera: THREE.Camera; // Specify THREE.Camera
+  planetMesh: any; // THREE.Object3D
+  camera: any; // THREE.Camera
   rendererDomElement: HTMLCanvasElement | null;
   label: string;
-  sunMesh: THREE.Object3D | null; // Specify THREE.Object3D | null
+  sunMesh: any; // THREE.Object3D | null
 }
 
 const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererDomElement, label, sunMesh }) => {
@@ -15,6 +14,9 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
 
   useEffect(() => {
     if (!planetMesh || !camera || !rendererDomElement || !labelRef.current) return;
+    
+    const THREE = window.THREE;
+    if (!THREE) return;
     
     const labelEl = labelRef.current;
     
@@ -44,8 +46,7 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
           const vecToSun = sunWorldPos.clone().sub(cameraPosition);
           
           const angle = vecToPlanet.angleTo(vecToSun);
-          // Type assertion for geometry to access parameters.radius
-          const sunRadius = (sunMesh.geometry as THREE.SphereGeometry).parameters.radius || (0.1 * SCENE_SCALE);
+          const sunRadius = sunMesh.geometry.parameters.radius || (0.1 * SCENE_SCALE);
           const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
           
           if (angle < sunAngularRadius) {
@@ -82,7 +83,7 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
       }
     };
 
-    const intervalId = setInterval(updatePosition, 32);
+    const intervalId = setInterval(updatePosition, 32); // Update at ~30fps
 
     return () => clearInterval(intervalId);
 

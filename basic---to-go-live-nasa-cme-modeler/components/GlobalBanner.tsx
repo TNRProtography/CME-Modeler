@@ -27,7 +27,8 @@ interface GlobalBannerProps {
   auroraScore?: number;
   isSubstormAlert: boolean;
   substormText?: string;
-  hideForTutorial?: boolean; // NEW PROP: Control visibility based on tutorial state
+  // NEW PROP: Control visibility based on tutorial state
+  hideForTutorial?: boolean; 
 }
 
 const GlobalBanner: React.FC<GlobalBannerProps> = ({
@@ -225,7 +226,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   }
 
   console.log('GlobalBanner: No banner or internal alert to display.');
-  return null;
+  return null; // Nothing to show
 };
 
 export default GlobalBanner;
