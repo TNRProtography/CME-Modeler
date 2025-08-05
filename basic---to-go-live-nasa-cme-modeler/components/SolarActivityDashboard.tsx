@@ -12,7 +12,8 @@ interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   // Callback to navigate to CME Visualization with a specific CME
-  onViewCMEInVisualization: (cmeId: string) => void; // RENAMED PROP
+  // MODIFIED: No longer expects cmeId, as it's just a navigation signal
+  onViewCMEInVisualization: () => void; 
 }
 
 // --- CONSTANTS ---
@@ -844,18 +845,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         {selectedFlare.hasCME && (
                             <button
                                 onClick={() => {
-                                    // Find the linked CME activity ID
-                                    const cmeId = selectedFlare.linkedEvents?.find((e: any) => e.activityType === 'CME')?.activityID;
-                                    if (cmeId) {
-                                        onViewCMEInVisualization(cmeId); // Changed prop name
-                                        setSelectedFlare(null); // Close the flare details modal
-                                    } else {
-                                        alert("CME ID not found for this flare.");
-                                    }
+                                    // MODIFIED: Directly call the navigation function without arguments
+                                    onViewCMEInVisualization(); 
+                                    setSelectedFlare(null); // Close the flare details modal
                                 }}
                                 className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors"
                             >
-                                View in CME Visualization {/* Changed button text */}
+                                View in CME Visualization
                             </button>
                         )}
                     </div> 
