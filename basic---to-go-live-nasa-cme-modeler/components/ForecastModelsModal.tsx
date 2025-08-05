@@ -83,10 +83,10 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* HUXT Model Section */}
           <section className="space-y-4">
-            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">HUXT (Met Office)</h3>
+            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">HUXT (University of Reading)</h3>
             <div className="text-sm text-neutral-400 leading-relaxed">
-               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed by the <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">UK's Met Office Space Weather Operations Centre (MOSWOC)</a>. It simulates the propagation of solar wind structures, like Coronal Mass Ejections (CMEs), through the inner heliosphere.</p>
-               <p className="mt-2">Unlike more complex models, HUXT simplifies the physics to run very quickly, making it ideal for real-time forecasting. It takes data from models like WSA (which provides the initial solar wind structure at the Sun) and "pushes" it outwards to predict the arrival time and speed of CMEs at Earth and other planets.</p>
+               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed at the <a href="https://research.reading.ac.uk/met-spate/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading</a>. It simulates the propagation of solar wind and Coronal Mass Ejections (CMEs) through the inner heliosphere (up to Earth and Mars).</p>
+               <p className="mt-2">HUXT utilizes solar observations processed by the UK <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Met Office's Wang-Sheeley-Arge (WSA) model</a> to provide initial inputs for the solar wind speed and magnetic field at the Sun. Its speed and ability to capture forecast uncertainty make it valuable for real-time space weather forecasting.</p>
             </div>
             <div className="space-y-4">
                 <div onClick={() => setViewerMedia({ url: 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png', type: 'image' })} className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
@@ -98,7 +98,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                     <video src="https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4" autoPlay loop muted playsInline className="rounded w-full">Your browser does not support the video tag.</video>
                 </div>
                 {/* Attribution for HUXT data */}
-                <p className="text-neutral-500 text-xs text-right">Data Source: <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Met Office</a></p>
+                <p className="text-neutral-500 text-xs text-right">Data Source: <a href="https://research.reading.ac.uk/met-spate/huxt-forecast/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading & Met Office</a></p>
             </div>
           </section>
 
