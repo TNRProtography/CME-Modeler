@@ -157,11 +157,86 @@ const App: React.FC = () => {
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
   const handleResetView = useCallback(() => { setActiveView(ViewMode.TOP); setActiveFocus(FocusTarget.EARTH); canvasRef.current?.resetView(); }, []);
-  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => { setCurrentlyModeledCMEId(cme ? cme.id : null); setSelectedCMEForInfo(cme); if (cme) { setTimelineActive(false); setTimelinePlaying(false); } setIsCmeListOpen(false); }, []);
-  const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => { setCurrentlyModeledCMEId(cme.id); setSelectedCMEForInfo(cme); setTimelineActive(false); setTimelinePlaying(false); setIsCmeListOpen(true); }, []);
-  const handleTimelinePlayPause = useCallback(() => { if (filteredCmes.length === 0) return; setTimelineActive(true); setTimelinePlaying((prev: boolean) => !prev); setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); }, [filteredCmes]);
-  const handleTimelineScrub = useCallback((value: number) => { if (filteredCmes.length === 0) return; setTimelineActive(true); setTimelinePlaying(false); setTimelineScrubberValue(value); setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); }, [filteredCmes]);
-  const handleTimelineStep = useCallback((direction: -1 | 1) => { if (filteredCmes.length === 0) return; setTimelineActive(true); setTimelinePlaying(false); const timeRange = timelineMaxDate - timelineMinDate; if (timeRange > 0) { const oneHourInMillis = 3600_000; const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000; setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep))); } else { setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10))); } setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); }, [filteredCmes, timelineMinDate, timelineMaxDate]);
+  
+  // --- MODIFIED: handleSelectCMEForModeling ---
+  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
+    setCurrentlyModeledCMEId(cme ? cme.id : null);
+    setSelectedCMEForInfo(cme);
+    setIsCmeListOpen(false);
+
+    if (cme) {
+      // A single CME is selected. Configure the timeline for it.
+      setTimelineActive(true);
+      setTimelinePlaying(true); // Auto-play the animation
+      setTimelineScrubberValue(0); // Start from the beginning
+      setTimelineMinDate(cme.startTime.getTime());
+
+      // Set a sensible max date for the single CME timeline
+      if (cme.predictedArrivalTime) {
+        // Add a 12-hour buffer after predicted arrival
+        setTimelineMaxDate(cme.predictedArrivalTime.getTime() + (12 * 3600 * 1000));
+      } else {
+        // If no prediction, just show a 4-day journey
+        const futureDate = new Date(cme.startTime);
+        futureDate.setDate(futureDate.getDate() + 4);
+        setTimelineMaxDate(futureDate.getTime());
+      }
+    } else {
+      // "Show All" is selected. Revert timeline to global state.
+      setTimelineActive(false); // Go back to "live" mode
+      setTimelinePlaying(false);
+      setTimelineScrubberValue(0);
+      // Recalculate min/max for all CMEs based on the current filter and time range
+      if (cmeData.length > 0) {
+        const endDate = new Date();
+        const futureDate = new Date();
+        futureDate.setDate(endDate.getDate() + 3);
+        const earliestCMEStartTime = cmeData.reduce((min: number, cme_item: ProcessedCME) => Math.min(min, cme_item.startTime.getTime()), Date.now());
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - activeTimeRange);
+        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
+        setTimelineMaxDate(futureDate.getTime());
+      } else {
+        setTimelineMinDate(0);
+        setTimelineMaxDate(0);
+      }
+    }
+  }, [cmeData, activeTimeRange]);
+
+  // --- MODIFIED: handleCMEClickFromCanvas ---
+  const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
+    handleSelectCMEForModeling(cme);
+    setIsCmeListOpen(true);
+  }, [handleSelectCMEForModeling]);
+
+  // --- MODIFIED: Timeline handlers no longer deselect the CME ---
+  const handleTimelinePlayPause = useCallback(() => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying((prev: boolean) => !prev);
+  }, [filteredCmes]);
+
+  const handleTimelineScrub = useCallback((value: number) => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying(false);
+    setTimelineScrubberValue(value);
+  }, [filteredCmes]);
+
+  const handleTimelineStep = useCallback((direction: -1 | 1) => {
+    if (filteredCmes.length === 0) return;
+    setTimelineActive(true);
+    setTimelinePlaying(false);
+    const timeRange = timelineMaxDate - timelineMinDate;
+    if (timeRange > 0) {
+      const oneHourInMillis = 3600_000;
+      const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000;
+      setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep)));
+    } else {
+      setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
+    }
+  }, [filteredCmes, timelineMinDate, timelineMaxDate]);
+
   const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
   const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
   const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
@@ -174,9 +249,13 @@ const App: React.FC = () => {
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
-    setCurrentlyModeledCMEId(cmeId);
+    // Find the full CME object from the data to pass to the modeling function
+    const cmeToModel = cmeData.find(cme => cme.id === cmeId);
+    if (cmeToModel) {
+      handleSelectCMEForModeling(cmeToModel);
+    }
     setIsCmeListOpen(true);
-  }, []);
+  }, [cmeData, handleSelectCMEForModeling]);
 
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
@@ -260,7 +339,7 @@ const App: React.FC = () => {
                             <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"><ListIcon className="w-6 h-6" /></button>
                         </div>
                     </div>
-                    <TimelineControls isVisible={!isLoading && filteredCmes.length > 0} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
+                    <TimelineControls isVisible={!isLoading && (filteredCmes.length > 0 || !!currentlyModeledCMEId)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
                 </main>
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
@@ -276,7 +355,14 @@ const App: React.FC = () => {
                     setViewerMedia={setViewerMedia} 
                     apiKey={apiKey} 
                     setLatestXrayFlux={setLatestXrayFlux} 
-                    onViewCMEInVisualization={handleViewCMEInVisualization}
+                    onViewCMEInVisualization={(cmeId) => {
+                        setActivePage('modeler');
+                        const cmeToModel = cmeData.find(cme => cme.id === cmeId);
+                        if (cmeToModel) {
+                            handleSelectCMEForModeling(cmeToModel);
+                        }
+                        setIsCmeListOpen(true);
+                    }}
                 />
             )}
         </div>
