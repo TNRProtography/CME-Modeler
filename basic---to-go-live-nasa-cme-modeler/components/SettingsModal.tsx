@@ -212,14 +212,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* --- NEW: Support the Cause Section --- */}
+          {/* Support the Cause Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
             <p className="text-sm text-neutral-400 mb-4">
               This application is a passion project, built and maintained by one person with over <strong>270 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
             </p>
             <a 
-              href="https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=deanfrench1997@gmail.com&item_name=Support+for+the+Spot+The+Aurora+App&currency_code=NZD"
+              href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick-recipient&business=deanfrench1997@gmail.com" // MODIFIED: Direct send money link
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center space-x-2 px-4 py-2 bg-pink-600/20 border border-pink-500/50 rounded-md text-pink-300 hover:bg-pink-500/30 hover:border-pink-400 transition-colors w-full sm:w-auto"
