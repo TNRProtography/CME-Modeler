@@ -18,6 +18,8 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
+  // --- NEW: Prop to receive navigation commands ---
+  navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
 
@@ -75,8 +77,6 @@ const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
 
-// --- MODIFIED SECTION ---
-// Removed the Motueka camera from the array.
 const CAMERAS: Camera[] = [
   { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
   { name: 'Queenstown', url: 'https://queenstown.roundshot.com/#/', type: 'iframe', sourceUrl: 'queenstown.roundshot.com' },
@@ -86,7 +86,6 @@ const CAMERAS: Camera[] = [
   { name: 'Rangitikei', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Rangitikeicarpark_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
   { name: 'New Plymouth', url: 'https://www.primo.nz/webcameras/snapshot_twlbuilding_sth.jpg', type: 'image', sourceUrl: 'primo.nz' },
 ];
-// --- END OF MODIFIED SECTION ---
 
 const GAUGE_THRESHOLDS = {
   speed:   { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
@@ -273,7 +272,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
   return (
-    // --- MODIFIED: Increased z-index to ensure it appears over the header ---
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
       <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
@@ -314,7 +312,7 @@ const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.memo(({ 
 
 // --- MAIN COMPONENT ---
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, navigationTarget }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [auroraScore, setAuroraScore] = useState<number | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
@@ -359,10 +357,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
 
-    // MODIFIED: This logic was already added in the previous step, confirming its correctness
+    // --- NEW: Effect to handle navigation and expansion from banner clicks ---
+    useEffect(() => {
+        if (navigationTarget && navigationTarget.page === 'forecast' && navigationTarget.expandId) {
+            setExpandedGraph(navigationTarget.expandId);
+        }
+    }, [navigationTarget]);
+
     const activityAlertMessage = useMemo(() => {
         if (!isDaylight || !celestialTimes.sun?.set || auroraScoreHistory.length === 0) {
-            return null; // No message if it's night, no sunset data, or no history
+            return null;
         }
 
         const now = Date.now();
@@ -657,13 +661,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
                     <main className="grid grid-cols-12 gap-6">
-                        {/* --- NEW --- Activity Alert Message Rendering */}
                         {activityAlertMessage && (
                             <div className="col-span-12 card bg-yellow-900/50 border border-yellow-400/30 text-yellow-200 p-4 text-center text-sm rounded-lg">
                                 {activityAlertMessage}
                             </div>
                         )}
-                        <div className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
+                        {/* --- MODIFIED: Added id for scrolling --- */}
+                        <div id="forecast-score-section" className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
                             <div>
                                 <div className="flex justify-center items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                 <div className="text-6xl font-extrabold text-white">{auroraScore !== null ? `${auroraScore.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(auroraScore)}</span></div>
@@ -734,7 +738,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             })}
                         </div>
 
-                        <div className="col-span-12 card bg-neutral-950/80 p-4">
+                        {/* --- MODIFIED: Added id for scrolling --- */}
+                        <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
                                 <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
                                 <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
@@ -770,7 +775,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </button>
                                 ))}
                             </div>
-                            {/* MODIFIED: Added container for image and source link */}
                             <div className="mt-4">
                                 <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
                                     {selectedCamera.type === 'iframe' ? (
