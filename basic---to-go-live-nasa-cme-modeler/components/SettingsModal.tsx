@@ -28,6 +28,7 @@ const NOTIFICATION_CATEGORIES = [
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
 
+// --- Local Icon Components for this file ---
 const GuideIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -45,6 +46,13 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
+
+const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    </svg>
+);
+
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
@@ -204,7 +212,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* MODIFIED: Help & Support Section with Email button */}
+          {/* --- NEW: Support the Cause Section --- */}
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
+            <p className="text-sm text-neutral-400 mb-4">
+              This application is a passion project, built and maintained by one person with over <strong>270 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
+            </p>
+            <a 
+              href="https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=deanfrench1997@gmail.com&item_name=Support+for+the+Spot+The+Aurora+App&currency_code=NZD"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center space-x-2 px-4 py-2 bg-pink-600/20 border border-pink-500/50 rounded-md text-pink-300 hover:bg-pink-500/30 hover:border-pink-400 transition-colors w-full sm:w-auto"
+            >
+              <HeartIcon className="w-5 h-5 text-pink-400" />
+              <span>Support via PayPal</span>
+            </a>
+          </section>
+
+          {/* Help & Support Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
             <p className="text-sm text-neutral-400 mb-4">
@@ -219,7 +244,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 <span>Show App Tutorial</span>
               </button>
               <a 
-                href="mailto:help@spottheaurora.co.nz?subject=Spot%20The%20Aurora%20Support" // MODIFIED: Added subject parameter
+                href="mailto:help@spottheaurora.co.nz?subject=Spot%20The%20Aurora%20Support"
                 className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
               >
                 <MailIcon className="w-5 h-5" />
@@ -229,8 +254,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
           </section>
         </div>
         
-        <div className="p-4 border-t border-neutral-700/80 text-right text-xs text-neutral-500">
-          Version: {appVersion}
+        <div className="flex justify-between items-center p-4 border-t border-neutral-700/80 text-xs text-neutral-500">
+          <span>Version: {appVersion}</span>
+          <a 
+            href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-sky-400 hover:underline hover:text-sky-300 transition-colors"
+          >
+            View Changelog
+          </a>
         </div>
       </div>
     </div>
