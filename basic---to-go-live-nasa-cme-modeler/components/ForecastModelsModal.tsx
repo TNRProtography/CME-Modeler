@@ -65,8 +65,9 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
   if (!isOpen) return null;
 
   return (
+    // --- MODIFIED: Increased z-index from z-[100] to z-[3000] ---
     <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4"
       onClick={onClose}
     >
       <div 
