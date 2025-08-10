@@ -27,8 +27,11 @@ interface GlobalBannerProps {
   auroraScore?: number;
   isSubstormAlert: boolean;
   substormText?: string;
-  // NEW PROP: Control visibility based on tutorial state
   hideForTutorial?: boolean; 
+  // --- NEW: Click handlers for automated alerts ---
+  onFlareAlertClick: () => void;
+  onAuroraAlertClick: () => void;
+  onSubstormAlertClick: () => void;
 }
 
 const GlobalBanner: React.FC<GlobalBannerProps> = ({
@@ -38,7 +41,11 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   auroraScore,
   isSubstormAlert,
   substormText,
-  hideForTutorial = false, // Default to false if not provided
+  hideForTutorial = false,
+  // --- NEW: Destructure new props ---
+  onFlareAlertClick,
+  onAuroraAlertClick,
+  onSubstormAlertClick,
 }) => {
   // If hideForTutorial is true, render nothing
   if (hideForTutorial) {
@@ -192,26 +199,27 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     console.log('GlobalBanner: Displaying internal alert.');
     return (
       <div className="bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-600 text-white text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center">
-        <div className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-2">
+        <div className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-x-4 gap-y-2">
+          {/* --- MODIFIED: Each alert is now a clickable button --- */}
           {isFlareAlert && (
-            <span className="flex items-center gap-1">
+            <button onClick={onFlareAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors">
               <span role="img" aria-label="Solar Flare">💥</span>
-              <strong>Solar Flare Alert:</strong> An active {flareClass} flare is in progress. Higher-class flares (M, X) can cause radio blackouts and enhanced aurora!
-            </span>
+              <strong>Solar Flare Alert:</strong> An active {flareClass} flare is in progress.
+            </button>
           )}
           {isAuroraAlert && (
-            <span className="flex items-center gap-1">
+            <button onClick={onAuroraAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors">
               {isFlareAlert && <span className="hidden sm:inline">|</span>}
               <span role="img" aria-label="Aurora">✨</span>
-              <strong>Aurora Forecast:</strong> Spot The Aurora Forecast is at {auroraScore?.toFixed(1)}%! Keep an eye on the southern sky!
-            </span>
+              <strong>Aurora Forecast:</strong> Spot The Aurora Forecast is at {auroraScore?.toFixed(1)}%!
+            </button>
           )}
           {isSubstormAlert && (
-            <span className="flex items-center gap-1">
+            <button onClick={onSubstormAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors">
               {(isFlareAlert || isAuroraAlert) && <span className="hidden sm:inline">|</span>}
               <span role="img" aria-label="Magnetic Field">⚡</span>
-              <strong>Substorm Watch:</strong> Magnetic field is stretching! {substormText}
-            </span>
+              <strong>Substorm Watch:</strong> Magnetic field is stretching!
+            </button>
           )}
         </div>
         <button
