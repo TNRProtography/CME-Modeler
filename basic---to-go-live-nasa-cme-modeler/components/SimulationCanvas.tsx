@@ -211,17 +211,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     
     const sunRadius = PLANET_DATA_MAP.SUN.size;
 
-    if (distTraveledInSceneUnits <= sunRadius) {
+    // MODIFIED: Only hide the CME if its travel distance is negative (i.e., before its start time in a timeline).
+    // Previously, this was hiding CMEs that were inside the sun's radius, which caused the selected CME to be invisible at the start of its animation.
+    if (distTraveledInSceneUnits < 0) {
         cmeObject.visible = false;
         return;
     }
     
     cmeObject.visible = true;
     
-    const cmeLength = distTraveledInSceneUnits - sunRadius;
+    // Calculate the length of the CME from the sun's surface, ensuring it's not negative.
+    const cmeLength = Math.max(0, distTraveledInSceneUnits - sunRadius);
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
+    
+    // Scale the CME. If cmeLength is 0, it will be scaled to 0 and thus be invisible, which is the correct behavior for the animation start.
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
 
   }, [THREE]);
