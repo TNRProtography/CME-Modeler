@@ -152,41 +152,46 @@ const App: React.FC = () => {
 
   useEffect(() => { if (activePage === 'modeler') { loadCMEData(activeTimeRange); } }, [activeTimeRange, loadCMEData, activePage]);
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
+  
+  // --- MODIFIED: This is the key change ---
+  // This new memoized variable determines exactly which CMEs to pass to the canvas for rendering.
+  const cmesToRender = useMemo(() => {
+    if (currentlyModeledCMEId) {
+      // If a single CME is selected, find it and return it in an array.
+      const singleCME = cmeData.find(c => c.id === currentlyModeledCMEId);
+      return singleCME ? [singleCME] : [];
+    }
+    // Otherwise, return the list of CMEs based on the current filter.
+    return filteredCmes;
+  }, [currentlyModeledCMEId, cmeData, filteredCmes]);
+
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
   const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
   const handleResetView = useCallback(() => { setActiveView(ViewMode.TOP); setActiveFocus(FocusTarget.EARTH); canvasRef.current?.resetView(); }, []);
   
-  // --- MODIFIED: handleSelectCMEForModeling ---
   const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
     setCurrentlyModeledCMEId(cme ? cme.id : null);
     setSelectedCMEForInfo(cme);
     setIsCmeListOpen(false);
 
     if (cme) {
-      // A single CME is selected. Configure the timeline for it.
       setTimelineActive(true);
-      setTimelinePlaying(true); // Auto-play the animation
-      setTimelineScrubberValue(0); // Start from the beginning
+      setTimelinePlaying(true);
+      setTimelineScrubberValue(0);
       setTimelineMinDate(cme.startTime.getTime());
-
-      // Set a sensible max date for the single CME timeline
       if (cme.predictedArrivalTime) {
-        // Add a 12-hour buffer after predicted arrival
         setTimelineMaxDate(cme.predictedArrivalTime.getTime() + (12 * 3600 * 1000));
       } else {
-        // If no prediction, just show a 4-day journey
         const futureDate = new Date(cme.startTime);
         futureDate.setDate(futureDate.getDate() + 4);
         setTimelineMaxDate(futureDate.getTime());
       }
     } else {
-      // "Show All" is selected. Revert timeline to global state.
-      setTimelineActive(false); // Go back to "live" mode
+      setTimelineActive(false);
       setTimelinePlaying(false);
       setTimelineScrubberValue(0);
-      // Recalculate min/max for all CMEs based on the current filter and time range
       if (cmeData.length > 0) {
         const endDate = new Date();
         const futureDate = new Date();
@@ -203,28 +208,26 @@ const App: React.FC = () => {
     }
   }, [cmeData, activeTimeRange]);
 
-  // --- MODIFIED: handleCMEClickFromCanvas ---
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
     handleSelectCMEForModeling(cme);
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
-  // --- MODIFIED: Timeline handlers no longer deselect the CME ---
   const handleTimelinePlayPause = useCallback(() => {
-    if (filteredCmes.length === 0) return;
+    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying((prev: boolean) => !prev);
-  }, [filteredCmes]);
+  }, [filteredCmes, currentlyModeledCMEId]);
 
   const handleTimelineScrub = useCallback((value: number) => {
-    if (filteredCmes.length === 0) return;
+    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-  }, [filteredCmes]);
+  }, [filteredCmes, currentlyModeledCMEId]);
 
   const handleTimelineStep = useCallback((direction: -1 | 1) => {
-    if (filteredCmes.length === 0) return;
+    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     const timeRange = timelineMaxDate - timelineMinDate;
@@ -235,7 +238,7 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-  }, [filteredCmes, timelineMinDate, timelineMaxDate]);
+  }, [filteredCmes, currentlyModeledCMEId, timelineMinDate, timelineMaxDate]);
 
   const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
   const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
@@ -249,7 +252,6 @@ const App: React.FC = () => {
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
-    // Find the full CME object from the data to pass to the modeling function
     const cmeToModel = cmeData.find(cme => cme.id === cmeId);
     if (cmeToModel) {
       handleSelectCMEForModeling(cmeToModel);
@@ -281,7 +283,6 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-2">
                 <button 
                 id="nav-forecast" onClick={() => setActivePage('forecast')}
-                // MODIFIED: Added justify-center for perfect horizontal alignment
                 className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
@@ -291,7 +292,6 @@ const App: React.FC = () => {
                 </button>
                 <button 
                 id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} 
-                // MODIFIED: Added justify-center for perfect horizontal alignment
                 className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
@@ -301,7 +301,6 @@ const App: React.FC = () => {
                 </button>
                  <button 
                 id="nav-modeler" onClick={() => setActivePage('modeler')}
-                // MODIFIED: Added justify-center for perfect horizontal alignment
                 className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
                             ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
                             ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
@@ -327,7 +326,9 @@ const App: React.FC = () => {
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
-                    <SimulationCanvas ref={canvasRef} cmeData={filteredCmes} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
+                    {/* --- MODIFIED: Pass cmesToRender to the canvas --- */}
+                    <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
+                    
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                         <div className="flex items-center space-x-2 pointer-events-auto">
@@ -339,7 +340,7 @@ const App: React.FC = () => {
                             <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform"><ListIcon className="w-6 h-6" /></button>
                         </div>
                     </div>
-                    <TimelineControls isVisible={!isLoading && (filteredCmes.length > 0 || !!currentlyModeledCMEId)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
+                    <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
                 </main>
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
@@ -355,20 +356,12 @@ const App: React.FC = () => {
                     setViewerMedia={setViewerMedia} 
                     apiKey={apiKey} 
                     setLatestXrayFlux={setLatestXrayFlux} 
-                    onViewCMEInVisualization={(cmeId) => {
-                        setActivePage('modeler');
-                        const cmeToModel = cmeData.find(cme => cme.id === cmeId);
-                        if (cmeToModel) {
-                            handleSelectCMEForModeling(cmeToModel);
-                        }
-                        setIsCmeListOpen(true);
-                    }}
+                    onViewCMEInVisualization={handleViewCMEInVisualization}
                 />
             )}
         </div>
         
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
-        {/* MODIFIED: Pass the new onShowTutorial handler to the settings modal */}
         <SettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)} 
