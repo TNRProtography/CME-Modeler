@@ -39,8 +39,15 @@ type ViewerMedia =
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
+// --- NEW: Type for navigation/scroll targets ---
+interface NavigationTarget {
+  page: 'forecast' | 'solar-activity';
+  elementId: string;
+  expandId?: string; // Optional ID for components that need to be expanded
+}
+
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.5beta'; // Define your app version here
+const APP_VERSION = 'v0.3beta'; // Define your app version here
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -61,6 +68,9 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // For the First Visit Tour
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
+
+  // --- NEW: State to handle navigation from banner clicks ---
+  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -91,6 +101,26 @@ const App: React.FC = () => {
       clockRef.current = new window.THREE.Clock();
     }
   }, []);
+
+  // --- NEW: Effect to handle scrolling after navigation ---
+  useEffect(() => {
+    if (navigationTarget) {
+      // Switch to the target page
+      setActivePage(navigationTarget.page);
+
+      // Use a timeout to allow the new page component to render before we try to scroll
+      const scrollTimer = setTimeout(() => {
+        const element = document.getElementById(navigationTarget.elementId);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        // Reset the target after attempting to scroll
+        setNavigationTarget(null);
+      }, 100); // 100ms delay should be enough for rendering
+
+      return () => clearTimeout(scrollTimer);
+    }
+  }, [navigationTarget]);
   
   const handleCloseFirstVisitTutorial = useCallback(() => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
@@ -102,10 +132,9 @@ const App: React.FC = () => {
     setHighlightedElementId(id);
   }, []);
 
-  // NEW: Handler for the "Show Tutorial" button in settings
   const handleShowTutorial = useCallback(() => {
-    setIsSettingsOpen(false); // Close the settings modal
-    setIsFirstVisitTutorialOpen(true); // Open the tutorial modal
+    setIsSettingsOpen(false);
+    setIsFirstVisitTutorialOpen(true);
   }, []);
 
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
@@ -153,15 +182,11 @@ const App: React.FC = () => {
   useEffect(() => { if (activePage === 'modeler') { loadCMEData(activeTimeRange); } }, [activeTimeRange, loadCMEData, activePage]);
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
-  // --- MODIFIED: This is the key change ---
-  // This new memoized variable determines exactly which CMEs to pass to the canvas for rendering.
   const cmesToRender = useMemo(() => {
     if (currentlyModeledCMEId) {
-      // If a single CME is selected, find it and return it in an array.
       const singleCME = cmeData.find(c => c.id === currentlyModeledCMEId);
       return singleCME ? [singleCME] : [];
     }
-    // Otherwise, return the list of CMEs based on the current filter.
     return filteredCmes;
   }, [currentlyModeledCMEId, cmeData, filteredCmes]);
 
@@ -259,6 +284,23 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [cmeData, handleSelectCMEForModeling]);
 
+  // --- NEW: Banner click handlers ---
+  const handleFlareAlertClick = useCallback(() => {
+    setNavigationTarget({ page: 'solar-activity', elementId: 'solar-flares-section' });
+  }, []);
+
+  const handleAuroraAlertClick = useCallback(() => {
+    setNavigationTarget({ page: 'forecast', elementId: 'forecast-score-section' });
+  }, []);
+
+  const handleSubstormAlertClick = useCallback(() => {
+    setNavigationTarget({ 
+      page: 'forecast', 
+      elementId: 'goes-magnetometer-section', 
+      expandId: 'goes-mag-graph-container' 
+    });
+  }, []);
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`
@@ -270,6 +312,7 @@ const App: React.FC = () => {
           }
         `}</style>
         
+        {/* --- MODIFIED: Pass new handlers to GlobalBanner --- */}
         <GlobalBanner 
             isFlareAlert={isFlareAlert} 
             flareClass={flareClass} 
@@ -277,6 +320,9 @@ const App: React.FC = () => {
             auroraScore={currentAuroraScore ?? undefined} 
             isSubstormAlert={isSubstormAlert} 
             substormText={substormActivityStatus?.text ?? undefined}
+            onFlareAlertClick={handleFlareAlertClick}
+            onAuroraAlertClick={handleAuroraAlertClick}
+            onSubstormAlertClick={handleSubstormAlertClick}
         />
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
@@ -326,9 +372,7 @@ const App: React.FC = () => {
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
-                    {/* --- MODIFIED: Pass cmesToRender to the canvas --- */}
                     <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
-                    
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                         <div className="flex items-center space-x-2 pointer-events-auto">
@@ -350,13 +394,22 @@ const App: React.FC = () => {
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
             </> )}
-            {activePage === 'forecast' && (<ForecastDashboard setViewerMedia={setViewerMedia} setCurrentAuroraScore={setCurrentAuroraScore} setSubstormActivityStatus={setSubstormActivityStatus} />)}
+            {/* --- MODIFIED: Pass navigation target to dashboards --- */}
+            {activePage === 'forecast' && (
+                <ForecastDashboard 
+                    setViewerMedia={setViewerMedia} 
+                    setCurrentAuroraScore={setCurrentAuroraScore} 
+                    setSubstormActivityStatus={setSubstormActivityStatus} 
+                    navigationTarget={navigationTarget}
+                />
+            )}
             {activePage === 'solar-activity' && (
                 <SolarActivityDashboard 
                     setViewerMedia={setViewerMedia} 
                     apiKey={apiKey} 
                     setLatestXrayFlux={setLatestXrayFlux} 
                     onViewCMEInVisualization={handleViewCMEInVisualization}
+                    navigationTarget={navigationTarget}
                 />
             )}
         </div>
