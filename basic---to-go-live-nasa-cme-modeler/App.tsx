@@ -284,9 +284,9 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [cmeData, handleSelectCMEForModeling]);
 
-  // --- NEW: Banner click handlers ---
+  // --- MODIFIED: Banner click handlers ---
   const handleFlareAlertClick = useCallback(() => {
-    setNavigationTarget({ page: 'solar-activity', elementId: 'solar-flares-section' });
+    setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
   }, []);
 
   const handleAuroraAlertClick = useCallback(() => {
@@ -312,7 +312,6 @@ const App: React.FC = () => {
           }
         `}</style>
         
-        {/* --- MODIFIED: Pass new handlers to GlobalBanner --- */}
         <GlobalBanner 
             isFlareAlert={isFlareAlert} 
             flareClass={flareClass} 
@@ -394,7 +393,6 @@ const App: React.FC = () => {
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
                 <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
             </> )}
-            {/* --- MODIFIED: Pass navigation target to dashboards --- */}
             {activePage === 'forecast' && (
                 <ForecastDashboard 
                     setViewerMedia={setViewerMedia} 
