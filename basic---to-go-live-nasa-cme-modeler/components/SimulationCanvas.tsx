@@ -1,5 +1,3 @@
-// --- START OF FILE SimulationCanvas.tsx ---
-
 import React, { useRef, useEffect, useCallback } from 'react';
 import { ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData, InteractionMode, SimulationCanvasHandle } from '../types';
 import {
@@ -37,7 +35,7 @@ const createParticleTexture = (THREE: any) => {
 
 // Calculates CME opacity based on speed (km/s)
 const getCmeOpacity = (speed: number): number => {
-    const THREE = (window as any).THREE;
+    const THREE = window.THREE;
     if (!THREE) return 0.1; // Default opacity if THREE is not loaded
 
     const minSpeed = 300;
@@ -54,7 +52,7 @@ const getCmeOpacity = (speed: number): number => {
 
 // Calculates CME particle count based on speed (km/s)
 const getCmeParticleCount = (speed: number): number => {
-    const THREE = (window as any).THREE;
+    const THREE = window.THREE;
     if (!THREE) return 4000; // Default if THREE isn't loaded
 
     const minSpeed = 300;
@@ -70,7 +68,7 @@ const getCmeParticleCount = (speed: number): number => {
 
 // Calculates CME particle size based on speed (km/s)
 const getCmeParticleSize = (speed: number, scale: number): number => {
-    const THREE = (window as any).THREE;
+    const THREE = window.THREE;
     if (!THREE) return 0.05 * scale; // Default size
 
     const minSpeed = 300;
@@ -85,7 +83,7 @@ const getCmeParticleSize = (speed: number, scale: number): number => {
 
 // Determines the core color of the CME based on its speed
 const getCmeCoreColor = (speed: number): any /* THREE.Color */ => {
-    const THREE = (window as any).THREE;
+    const THREE = window.THREE;
     if (!THREE) return new (class { constructor(hex: any) {} setHex() { return this; } })(0xffffff); // Default color
 
     if (speed >= 2500) {
@@ -181,8 +179,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
 
 
-  const THREE = (window as any).THREE;
-  const gsap = (window as any).gsap;
+  const THREE = window.THREE;
+  const gsap = window.gsap;
   
   useEffect(() => {
     timelineValueRef.current = timelineValue;
@@ -531,17 +529,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
             let currentDistSceneUnits = 0;
             if (currentlyModeledCMEId && cme.id === currentlyModeledCMEId) {
-                // Selected CME: run its own fresh animation based on the sim clock
                 const simStartTime = cme.simulationStartTime !== undefined ? cme.simulationStartTime : elapsedTime; 
                 const timeSinceEventVisual = elapsedTime - simStartTime;
-                currentDistSceneUnits = calculateDistance(cme, Math.max(0, timeSinceEventVisual), true); 
+                currentDistSceneUnits = calculateDistance(cme, timeSinceEventVisual < 0 ? 0 : timeSinceEventVisual, true); 
             } 
             else if (!currentlyModeledCMEId) {
-                // Passive background mode (no selection): position by real elapsed time
                 const timeSinceEventAPI = (Date.now() - cme.startTime.getTime()) / 1000;
-                currentDistSceneUnits = calculateDistance(cme, Math.max(0, timeSinceEventAPI), false); 
+                currentDistSceneUnits = calculateDistance(cme, timeSinceEventAPI < 0 ? 0 : timeSinceEventAPI, false); 
             } else {
-                // Not the selected CME: keep it hidden
                 updateCMEShape(cmeObject, -1);
                 return;
             }
@@ -684,14 +679,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current.children.forEach((cmeMesh: any) => {
       const cme: ProcessedCME = cmeMesh.userData;
       if (currentlyModeledCMEId) {
-        // Only the selected CME is visible; others are hidden.
         cmeMesh.visible = cme.id === currentlyModeledCMEId;
-        if (cme.id === currentlyModeledCMEId && cmeMesh.userData) {
-            // When selected, mark the animation starting point using the sim clock
+        if(cme.id === currentlyModeledCMEId && cmeMesh.userData){
             cmeMesh.userData.simulationStartTime = getClockElapsedTime(); 
         }
       } else {
-        // No selection: all CMEs are visible in passive mode.
         cmeMesh.visible = true; 
       }
     });
@@ -811,7 +803,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [showMoonL1]);
 
   const checkImpacts = useCallback(() => {
-    const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
 
     let maxImpactSpeed = 0;
@@ -842,7 +833,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
 
     return maxImpactSpeed;
-  }, []);
+  }, [THREE]);
 
   const updateImpactEffects = useCallback((maxImpactSpeed: number, elapsedTime: number) => {
     if (!orbitsRef.current.EARTH || !celestialBodiesRef.current.EARTH) return;
@@ -873,5 +864,3 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
-
-// --- END OF FILE SimulationCanvas.tsx ---
