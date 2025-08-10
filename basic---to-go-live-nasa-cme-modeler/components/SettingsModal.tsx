@@ -47,13 +47,6 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-    </svg>
-);
-
-
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
@@ -61,6 +54,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
+  const [isCopied, setIsCopied] = useState(false); // State for copy button feedback
 
   useEffect(() => {
     if (isOpen) {
@@ -133,6 +127,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       console.error('Error during app installation:', error);
     }
   }, [deferredPrompt]);
+
+  // --- NEW: Handler for copying bank account number ---
+  const handleCopy = useCallback(() => {
+    const accountNumber = '12-3168-0005239-53';
+    navigator.clipboard.writeText(accountNumber).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+    });
+  }, []);
 
   if (!isOpen) return null;
 
@@ -212,21 +217,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* Support the Cause Section */}
+          {/* --- MODIFIED: Support the Cause Section --- */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
             <p className="text-sm text-neutral-400 mb-4">
               This application is a passion project, built and maintained by one person with over <strong>270 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
             </p>
-            <a 
-              href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick-recipient&business=deanfrench1997@gmail.com" // MODIFIED: Direct send money link
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center space-x-2 px-4 py-2 bg-pink-600/20 border border-pink-500/50 rounded-md text-pink-300 hover:bg-pink-500/30 hover:border-pink-400 transition-colors w-full sm:w-auto"
-            >
-              <HeartIcon className="w-5 h-5 text-pink-400" />
-              <span>Support via PayPal</span>
-            </a>
+            <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-lg p-4 space-y-2">
+              <div>
+                <span className="text-xs text-neutral-500">Account Name</span>
+                <p className="font-mono text-neutral-200">D P FRENCH</p>
+              </div>
+              <div>
+                <span className="text-xs text-neutral-500">Account Number</span>
+                <div className="flex items-center justify-between gap-4">
+                  <p className="font-mono text-neutral-200">12-3168-0005239-53</p>
+                  <button 
+                    onClick={handleCopy}
+                    className={`px-3 py-1 text-xs rounded-md transition-colors ${isCopied ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
+                  >
+                    {isCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
 
           {/* Help & Support Section */}
