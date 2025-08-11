@@ -52,7 +52,7 @@ const getColorForProtonFlux = (value: number, opacity: number = 1): string => {
     if (value >= 100) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0'; // OrangeRed (S2)
     if (value >= 1000) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219'; // Purple (S3)
     if (value >= 10000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Hot Pink (S4)
-    if (value >= 100000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'; // Re-using hot pink for S5 (highest severity)
+    if (value >= 100000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 20, 147'; // Re-using hot pink for S5 (highest severity)
     return `rgba(${rgb}, ${opacity})`;
 };
 
@@ -296,20 +296,28 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) });
 
                 const prevFlux = previousLatestXrayFluxRef.current;
-                
-                if (latestFluxValue !== null && prevFlux !== null) {
-                    if (latestFluxValue >= 5e-6 && prevFlux < 5e-6 && canSendNotification('flare-M5', 15 * 60 * 1000)) {
-                        sendNotification('Solar Flare Alert: M-Class!', `X-ray flux has reached M-class (>=M0.5)! Current flux: ${latestFluxValue.toExponential(2)}`);
-                    } else if (latestFluxValue < 5e-6) {
-                        clearNotificationCooldown('flare-M5');
-                    }
 
-                    if (latestFluxValue >= 1e-4 && prevFlux < 1e-4 && canSendNotification('flare-X1', 30 * 60 * 1000)) {
-                        sendNotification('Solar Flare Alert: X-Class!', `X-ray flux has reached X-class (>=X1)! Current flux: ${latestFluxValue.toExponential(2)}`);
-                    } else if (latestFluxValue < 1e-4) {
-                        clearNotificationCooldown('flare-X1');
-                    }
+                if (latestFluxValue !== null && prevFlux !== null) {
+                    const currentClass = getXrayClass(latestFluxValue);
+                    const XRAY_THRESHOLDS = [
+                        { value: 1e-5, tag: 'flare-M1', title: 'Solar Flare: ≥M1-Class', body: (cls: string) => `An ${cls} flare is in progress. Minor radio blackouts possible.` },
+                        { value: 5e-5, tag: 'flare-M5', title: 'Major Flare: ≥M5-Class', body: (cls: string) => `A strong ${cls} flare is in progress. Moderate radio blackouts likely.` },
+                        { value: 1e-4, tag: 'flare-X1', title: 'Significant Flare: ≥X1-Class', body: (cls: string) => `A powerful ${cls} flare is in progress. Strong, widespread radio blackouts expected.` },
+                        { value: 5e-4, tag: 'flare-X5', title: 'Extreme Flare: ≥X5-Class', body: (cls: string) => `An extreme ${cls} flare is in progress. Severe radio blackouts and radiation storms possible.` },
+                    ];
+
+                    XRAY_THRESHOLDS.forEach(t => {
+                        // Notify if current flux is above threshold and previous was below
+                        if (latestFluxValue >= t.value && prevFlux < t.value && canSendNotification(t.tag, 30 * 60 * 1000)) {
+                            sendNotification(t.title, t.body(currentClass), { tag: t.tag });
+                        } 
+                        // Reset cooldown if flux drops below threshold
+                        else if (latestFluxValue < t.value) {
+                            clearNotificationCooldown(t.tag);
+                        }
+                    });
                 }
+                
                 previousLatestXrayFluxRef.current = latestFluxValue;
                 setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
 
@@ -706,7 +714,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                             </div>
                         </div>
 
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+                        <div id="goes-xray-flux-section" className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
                                 <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>

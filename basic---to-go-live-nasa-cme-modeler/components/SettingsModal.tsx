@@ -19,12 +19,15 @@ interface SettingsModalProps {
 }
 
 const NOTIFICATION_CATEGORIES = [
-  { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
-  { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
-  { id: 'flare-M1', label: 'Solar Flare M-Class (≥ M1.0)' },
-  { id: 'flare-M5', label: 'Solar Flare M5-Class (≥ M5.0)' },
-  { id: 'flare-X1', label: 'Solar Flare X-Class (≥ X1.0)' },
-  { id: 'substorm-eruption', label: 'Substorm Eruption Detected' },
+  { id: 'aurora-40percent', label: 'Aurora Forecast ≥ 40% (Phone Visible)' },
+  { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50% (Faint Eye Visible)' },
+  { id: 'aurora-60percent', label: 'Aurora Forecast ≥ 60% (Eye Visible)' },
+  { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80% (Strong Display)' },
+  { id: 'flare-M1', label: 'Solar Flare ≥ M1-Class' },
+  { id: 'flare-M5', label: 'Solar Flare ≥ M5-Class' },
+  { id: 'flare-X1', label: 'Solar Flare ≥ X1-Class' },
+  { id: 'flare-X5', label: 'Solar Flare ≥ X5-Class' },
+  { id: 'substorm-forecast', label: 'Substorm Forecast Issued' },
 ];
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';

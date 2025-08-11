@@ -5,6 +5,7 @@ import {
   SubstormActivity,
   SightingReport,
 } from '../types';
+import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 
 // --- Type Definitions (copied from the top of ForecastDashboard) ---
 interface CelestialTimeData {
@@ -73,6 +74,23 @@ const formatNZTimestamp = (timestamp: number | string) => {
     } 
 };
 
+// Helper to format timestamp to HH:mm
+const formatTime = (timestamp?: number): string => {
+  if (!timestamp) return '...';
+  return new Date(timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+// Helper to get visibility level from aurora score
+const getVisibilityLevel = (score?: number): string => {
+  if (score === undefined || score === null) return 'Insignificant';
+  if (score >= 80) return 'Clear Eye Visible';
+  if (score >= 50) return 'Faint Eye Visible';
+  if (score >= 40) return 'Phone Camera Visible';
+  if (score >= 25) return 'Camera Visible';
+  return 'Insignificant';
+};
+
+
 export const useForecastData = (
     setCurrentAuroraScore: (score: number | null) => void,
     setSubstormActivityStatus: (status: SubstormActivity | null) => void
@@ -107,7 +125,6 @@ export const useForecastData = (
     const [stretchingPhaseStartTime, setStretchingPhaseStartTime] = useState<number | null>(null);
     const previousSubstormStatusRef = useRef<string | null>(null);
 
-    // This remains to pass notifications up to App.tsx
     const previousAuroraScoreRef = useRef<number | null>(null);
 
     const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
@@ -156,7 +173,7 @@ export const useForecastData = (
         const isErupting = jump > 20;
         const isStretching = drop < -15;
 
-        let newStatusText: string, newStatusColor: string, shouldNotify = false;
+        let newStatusText: string, newStatusColor: string;
         let newStretchingStartTime = stretchingPhaseStartTime;
         let finalSubstormActivity: SubstormActivity;
 
@@ -188,11 +205,23 @@ export const useForecastData = (
                 text: newStatusText, color: newStatusColor, isErupting: false, isStretching: true, 
                 probability, predictedStartTime: predictedStart?.getTime(), predictedEndTime: predictedEnd?.getTime() 
             };
+
+            if (
+                finalSubstormActivity.isStretching &&
+                !finalSubstormActivity.isErupting &&
+                canSendNotification('substorm-forecast', 60 * 60 * 1000)
+            ) {
+                const title = 'Substorm Forecast Issued';
+                const body = `Forecast: ~${finalSubstormActivity.probability?.toFixed(0)}% chance of activity between ${formatTime(finalSubstormActivity.predictedStartTime)} and ${formatTime(finalSubstormActivity.predictedEndTime)}. Expected visibility: ${getVisibilityLevel(currentAdjustedScore)}.`;
+                sendNotification(title, body, { tag: 'substorm-forecast' });
+            }
+
         } else {
             newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.';
             newStatusColor = 'text-neutral-400';
             newStretchingStartTime = null;
             finalSubstormActivity = { text: newStatusText, color: newStatusColor, isErupting: false, isStretching: false };
+            clearNotificationCooldown('substorm-forecast');
         }
         
         if (newStretchingStartTime !== stretchingPhaseStartTime) {
@@ -226,7 +255,25 @@ export const useForecastData = (
             setCurrentAuroraScore(adjustedScore);
             setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
             const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
+
+            const prevScore = previousAuroraScoreRef.current;
+            if(adjustedScore !== null && prevScore !== null) {
+                const thresholds = [
+                    { value: 40, tag: 'aurora-40percent', title: 'Aurora Alert: Phone Visible!', body: `Forecast has reached ${adjustedScore.toFixed(0)}%. Good chance to capture with a phone camera.` },
+                    { value: 50, tag: 'aurora-50percent', title: 'Aurora Alert: Faint Eye Visibility!', body: `Forecast has reached ${adjustedScore.toFixed(0)}%. A faint glow may be visible to the naked eye.` },
+                    { value: 60, tag: 'aurora-60percent', title: 'Aurora Alert: Eye Visible!', body: `Forecast has reached ${adjustedScore.toFixed(0)}%. Good chance of naked-eye visibility.` },
+                    { value: 80, tag: 'aurora-80percent', title: 'Major Aurora Alert!', body: `Forecast has reached ${adjustedScore.toFixed(0)}%! A significant display is likely!` },
+                ];
+                thresholds.forEach(t => {
+                    if (adjustedScore >= t.value && prevScore < t.value && canSendNotification(t.tag, 30 * 60 * 1000)) {
+                        sendNotification(t.title, t.body, { tag: t.tag });
+                    } else if (adjustedScore < t.value) {
+                        clearNotificationCooldown(t.tag);
+                    }
+                });
+            }
             previousAuroraScoreRef.current = adjustedScore;
+
             if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
             if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
             setGaugeData(prev => ({ 

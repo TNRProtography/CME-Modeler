@@ -192,8 +192,9 @@ export const sendTestNotification = () => {
   }
   if (Notification.permission === 'granted') {
     new Notification('Test Notification', {
-      body: 'If you can see this, in-app notifications are working!',
+      body: 'This is a test notification. If you received this, your device is set up correctly!',
       icon: '/icons/android-chrome-192x192.png',
+      tag: 'test-notification'
     });
   } else {
     alert(`Cannot send test notification. Permission status is: ${Notification.permission}. Please enable notifications first.`);
