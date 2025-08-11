@@ -10,7 +10,7 @@ import TutorialModal from './components/TutorialModal'; // This is the general t
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity } from './types';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -90,7 +90,7 @@ const App: React.FC = () => {
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
-  const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
+  const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
 
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
@@ -273,7 +273,7 @@ const App: React.FC = () => {
   const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
   const flareClass = useMemo(() => { if (latestXrayFlux === null) return undefined; if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`; if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`; return undefined; }, [latestXrayFlux]);
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
-  const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching') && !substormActivityStatus.text.includes('substorm signature detected'), [substormActivityStatus]);
+  const isSubstormAlert = useMemo(() => substormActivityStatus?.isStretching && !substormActivityStatus?.isErupting, [substormActivityStatus]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
@@ -318,7 +318,7 @@ const App: React.FC = () => {
             isAuroraAlert={isAuroraAlert} 
             auroraScore={currentAuroraScore ?? undefined} 
             isSubstormAlert={isSubstormAlert} 
-            substormText={substormActivityStatus?.text ?? undefined}
+            substormActivity={substormActivityStatus ?? undefined}
             onFlareAlertClick={handleFlareAlertClick}
             onAuroraAlertClick={handleAuroraAlertClick}
             onSubstormAlertClick={handleSubstormAlertClick}

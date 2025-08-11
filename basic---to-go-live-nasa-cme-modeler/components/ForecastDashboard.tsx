@@ -12,12 +12,13 @@ import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts'; // Import notification utilities
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch component
+import { SubstormActivity } from '../types';
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
-  setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
+  setSubstormActivityStatus: (status: SubstormActivity | null) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
@@ -412,7 +413,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'imf-graph': `This chart shows the magnetic field of the solar wind. A strong (high Bt) and southward-pointing (negative Bz) field is the perfect recipe for an aurora.<br><br>The colors change based on how favorable the conditions are:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Not favorable.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Slightly favorable.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Favorable.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Very Favorable.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Extremely Favorable.</li></ul>`,
         'hemispheric-power-graph': `This chart shows the total energy being dumped into the atmosphere, which relates to the aurora's brightness.<br><br>The colors change based on the intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low Power</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Moderate Power</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Elevated Power</li><li><strong style="color:${GAUGE_COLORS.red.solid}">High Power</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Very High Power</li></ul>`,
         'goes-mag': `<div><p>This measures the stretching of Earth's magnetic field, like a rubber band. It's one of the best tools for predicting when an aurora might suddenly flare up.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">The Drop (Growth Phase):</strong> The line goes down slowly for 1-2 hours. This is the 'rubber band' stretching and storing energy.</li><li><strong class="text-green-400">The Jump (Eruption):</strong> The line suddenly jumps back up. This is the 'rubber band' snapping back, releasing all its energy at once. This is the moment the aurora flares up brightly and starts to dance!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
-        'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one obstacle to aurora spotting. See if the sky is clear before you go.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
+        'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one obstacle to aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
     }), []);
 
     const openModal = useCallback((id: string) => {
@@ -450,7 +451,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const analyzeMagnetometerData = useCallback((data: any[], currentAdjustedScore: number | null) => {
         const prevSubstormStatusText = previousSubstormStatusRef.current;
         if (data.length < 30) {
-            const status = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' };
+            const status: SubstormActivity = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500', isStretching: false, isErupting: false };
             setSubstormBlurb(status);
             setSubstormActivityStatus(status);
             setStretchingPhaseStartTime(null);
@@ -462,7 +463,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const oneHourAgoPoint = data.find((p: any) => p.time >= latestPoint.time - 3600000);
 
         if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) {
-            const status = { text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' };
+            const status: SubstormActivity = { text: 'Analyzing magnetic field stability...', color: 'text-neutral-400', isStretching: false, isErupting: false };
             setSubstormBlurb(status);
             setSubstormActivityStatus(status);
             return;
@@ -475,6 +476,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         let newStatusText: string, newStatusColor: string, shouldNotify = false;
         let newStretchingStartTime = stretchingPhaseStartTime;
+        let finalSubstormActivity: SubstormActivity;
 
         if (isErupting) {
             const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
@@ -484,8 +486,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (currentAdjustedScore !== null && currentAdjustedScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 300000)) {
                 shouldNotify = true;
             }
+            finalSubstormActivity = { text: newStatusText, color: newStatusColor, isErupting: true, isStretching: false };
+
         } else if (isStretching) {
             let probability = 0;
+            let predictedStart, predictedEnd;
             if (stretchingPhaseStartTime === null) {
                 newStretchingStartTime = latestPoint.time;
                 newStatusText = 'The magnetic field has begun stretching, storing energy for a potential substorm.';
@@ -496,28 +501,33 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 const auroraScoreMultiplier = currentAdjustedScore ? Math.min(1.25, Math.max(1.0, 1 + (currentAdjustedScore - 40) * (0.25 / 40))) : 1.0;
                 probability = Math.min(95, (baseProbability + dropBonus) * auroraScoreMultiplier);
                 
-                const predictedStart = new Date(stretchingPhaseStartTime + 60 * 60 * 1000);
-                const predictedEnd = new Date(stretchingPhaseStartTime + 90 * 60 * 1000);
+                predictedStart = new Date(stretchingPhaseStartTime + 60 * 60 * 1000);
+                predictedEnd = new Date(stretchingPhaseStartTime + 90 * 60 * 1000);
                 const formatTime = (d: Date) => d.toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
                 
                 newStatusText = `The magnetic field is stretching. There is a ~${probability.toFixed(0)}% chance of a substorm predicted between ${formatTime(predictedStart)} and ${formatTime(predictedEnd)}.`;
             }
             newStatusColor = 'text-yellow-400';
             clearNotificationCooldown('substorm-eruption');
+            finalSubstormActivity = { 
+                text: newStatusText, color: newStatusColor, isErupting: false, isStretching: true, 
+                probability, predictedStartTime: predictedStart?.getTime(), predictedEndTime: predictedEnd?.getTime() 
+            };
+
         } else {
             newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.';
             newStatusColor = 'text-neutral-400';
             newStretchingStartTime = null;
             clearNotificationCooldown('substorm-eruption');
+            finalSubstormActivity = { text: newStatusText, color: newStatusColor, isErupting: false, isStretching: false };
         }
 
         if (newStretchingStartTime !== stretchingPhaseStartTime) {
             setStretchingPhaseStartTime(newStretchingStartTime);
         }
-
-        const status = { text: newStatusText, color: newStatusColor };
-        setSubstormBlurb(status);
-        setSubstormActivityStatus(status);
+        
+        setSubstormBlurb({ text: newStatusText, color: newStatusColor });
+        setSubstormActivityStatus(finalSubstormActivity);
         previousSubstormStatusRef.current = newStatusText;
 
         if (shouldNotify) {
@@ -707,7 +717,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     if (isLoading) { return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>; }
 
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ, but is still applicable for the entire New Zealand with some modification.</p></div></div>`;
+    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst. Don't give up after just a few minutes.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ, but is still applicable for the entire New Zealand with some modification.</p></div></div>`;
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>

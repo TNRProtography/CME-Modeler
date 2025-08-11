@@ -111,6 +111,17 @@ export interface PlanetLabelInfo {
   mesh: any; // THREE.Object3D
 }
 
+// --- NEW/MODIFIED TYPE FOR SUBSTORM ACTIVITY ---
+export interface SubstormActivity {
+  text: string;           // The original text blurb for display inside the dashboard
+  color: string;          // The color for the text inside the dashboard
+  isStretching: boolean;  // True if the field is stretching (the condition for the banner alert)
+  isErupting: boolean;    // True if a substorm signature (jump) is detected
+  probability?: number;      // The calculated probability percentage
+  predictedStartTime?: number; // The predicted start timestamp of the eruption window
+  predictedEndTime?: number;  // The predicted end timestamp of the eruption window
+}
+
 export interface SimulationCanvasHandle {
   resetView: () => void;
 }

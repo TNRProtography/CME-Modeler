@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
+import { SubstormActivity } from '../types';
 
 // Define the shape of the banner object returned by your worker
 interface BannerData {
@@ -26,7 +27,7 @@ interface GlobalBannerProps {
   isAuroraAlert: boolean;
   auroraScore?: number;
   isSubstormAlert: boolean;
-  substormText?: string;
+  substormActivity?: SubstormActivity;
   hideForTutorial?: boolean; 
   // --- NEW: Click handlers for automated alerts ---
   onFlareAlertClick: () => void;
@@ -34,13 +35,30 @@ interface GlobalBannerProps {
   onSubstormAlertClick: () => void;
 }
 
+// Helper to format timestamp to HH:mm
+const formatTime = (timestamp?: number): string => {
+  if (!timestamp) return '...';
+  return new Date(timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+// Helper to get visibility level from aurora score
+const getVisibilityLevel = (score?: number): string => {
+  if (score === undefined || score === null) return 'Insignificant';
+  if (score >= 80) return 'Clear Eye Visible';
+  if (score >= 50) return 'Faint Eye Visible';
+  if (score >= 40) return 'Phone Camera Visible';
+  if (score >= 25) return 'Camera Visible';
+  return 'Insignificant';
+};
+
+
 const GlobalBanner: React.FC<GlobalBannerProps> = ({
   isFlareAlert,
   flareClass,
   isAuroraAlert,
   auroraScore,
   isSubstormAlert,
-  substormText,
+  substormActivity,
   hideForTutorial = false,
   // --- NEW: Destructure new props ---
   onFlareAlertClick,
@@ -214,11 +232,20 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
               <strong>Aurora Forecast:</strong> Spot The Aurora Forecast is at {auroraScore?.toFixed(1)}%!
             </button>
           )}
-          {isSubstormAlert && (
-            <button onClick={onSubstormAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors">
+          {isSubstormAlert && substormActivity && (
+             <button onClick={onSubstormAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors text-left">
               {(isFlareAlert || isAuroraAlert) && <span className="hidden sm:inline">|</span>}
-              <span role="img" aria-label="Magnetic Field">⚡</span>
-              <strong>Substorm Watch:</strong> Magnetic field is stretching!
+              <span role="img" aria-label="Magnetic Field" className="self-start mt-1 sm:self-center">⚡</span>
+              <div>
+                <strong>Substorm Watch:</strong> There is a&nbsp;
+                <strong>~{substormActivity.probability?.toFixed(0) ?? '...'}% chance</strong> of activity between&nbsp;
+                <strong>{formatTime(substormActivity.predictedStartTime)}</strong> and&nbsp;
+                <strong>{formatTime(substormActivity.predictedEndTime)}</strong>.
+                <br className="sm:hidden" />
+                <span className="opacity-80 ml-1 sm:ml-0">
+                  Expected visibility: <strong>{getVisibilityLevel(auroraScore)}</strong>.
+                </span>
+              </div>
             </button>
           )}
         </div>
