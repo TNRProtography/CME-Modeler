@@ -74,6 +74,7 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
     return outputArray;
 };
 
+
 export const subscribeUserToPush = async (): Promise<PushSubscription | null> => {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.warn('Service Workers or Push Messaging are not supported by this browser.');
