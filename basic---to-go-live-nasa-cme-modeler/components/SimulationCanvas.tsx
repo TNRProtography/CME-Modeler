@@ -139,7 +139,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     activeView,
     focusTarget,
     currentlyModeledCMEId,
-    // onCMEClick, // not used (kept to preserve signature)
+    // onCMEClick,
     timelineActive,
     timelinePlaying,
     timelineSpeed,
@@ -172,7 +172,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // Visual refs
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
-  const skyDomeRef = useRef<any>(null);
 
   const timelineValueRef = useRef(timelineValue);
   const lastTimeRef = useRef(0);
@@ -240,8 +239,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const sunRadius = PLANET_DATA_MAP.SUN.size;
 
-    // Only hide if before start (negative distance)
-    if (distTraveledInSceneUnits < 0) {
+    if (distTraveledInSceneUnits < 0) { // before start
       cmeObject.visible = false;
       return;
     }
@@ -253,7 +251,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
 
-    // Scale the cone (unit length=1) up to desired length
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
@@ -268,12 +265,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-const camera = new THREE.PerspectiveCamera(
-  75,
-  mountRef.current.clientWidth / mountRef.current.clientHeight,
-  0.001 * SCENE_SCALE,
-  5000 * SCENE_SCALE
-);
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      0.001 * SCENE_SCALE,
+      120 * SCENE_SCALE
+    );
+    cameraRef.current = camera;
+    onCameraReady(camera);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
@@ -301,33 +300,9 @@ const camera = new THREE.PerspectiveCamera(
       milkyWay: withAniso(loader.load(TEX.MILKY_WAY)),
     };
 
-    // --- Milky Way sky *mesh* (skydome) ---
-{
-  // Remove any old sky mesh if present
-  const oldSky = scene.getObjectByName('milkyway-sky');
-  if (oldSky) {
-    scene.remove(oldSky);
-    (oldSky as any).geometry?.dispose?.();
-    (oldSky as any).material?.dispose?.();
-  }
-
-  // Radius must be LESS than camera far (your far is 120 * SCENE_SCALE)
-  const skyGeo = new THREE.SphereGeometry(90 * SCENE_SCALE, 64, 64);
-  const skyMat = new THREE.MeshBasicMaterial({
-    map: tex.milkyWay,
-    side: THREE.BackSide,
-    depthWrite: false,
-    depthTest: false,
-    transparent: false
-  });
-
-  const skydome = new THREE.Mesh(skyGeo, skyMat);
-  skydome.name = 'milkyway-sky';
-  skydome.renderOrder = -1000; // render first
-  scene.add(skydome);
-  skyDomeRef.current = skydome;
-}
-
+    // ***** KEY FIX: use Milky Way as true background (no mesh) *****
+    tex.milkyWay.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = tex.milkyWay;
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
     scene.add(ambientLight);
@@ -345,13 +320,6 @@ const camera = new THREE.PerspectiveCamera(
     // CME container
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
-
-    // --- Milky Way sky dome ---
-    const skyGeo = new THREE.SphereGeometry(150 * SCENE_SCALE, 64, 64);
-    const skyMat = new THREE.MeshBasicMaterial({ map: tex.milkyWay, side: THREE.BackSide });
-    const skydome = new THREE.Mesh(skyGeo, skyMat);
-    skydome.name = 'milkyway-sky';
-    scene.add(skydome);
 
     // --- Stars: two brighter layers ---
     const makeStars = (count: number, spread: number, size: number) => {
@@ -482,12 +450,6 @@ const camera = new THREE.PerspectiveCamera(
         planetMesh.add(aurora);
       }
 
-      // Moon texture if your PLANET_DATA_MAP includes a Moon as a planet (if not, handled in "moons" section)
-      if (name === 'MOON') {
-        planetMaterial.map = tex.moon;
-        planetMaterial.needsUpdate = true;
-      }
-
       // Orbit tube (your thicker style)
       const orbitPoints = [];
       const orbitSegments = 128;
@@ -519,7 +481,8 @@ const camera = new THREE.PerspectiveCamera(
 
       parentBody.mesh.add(moonMesh);
       celestialBodiesRef.current[name] = { mesh: moonMesh, name: data.name, labelId: data.labelElementId, userData: data };
-      planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
+      const existing = (name === 'MOON') ? planetLabelInfos.find(p => p.name === 'Moon') : undefined;
+      if (!existing) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
 
       // Moon orbit tube
       const orbitPoints = [];
