@@ -18,7 +18,6 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: { text: string; color: string } | null) => void;
-  // --- NEW: Prop to receive navigation commands ---
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string; }
@@ -63,7 +62,7 @@ interface Camera {
   name: string;
   url: string;
   type: 'image' | 'iframe';
-  sourceUrl: string; // MODIFIED: Added sourceUrl for attribution
+  sourceUrl: string;
 }
 
 // --- Constants ---
@@ -109,7 +108,7 @@ const GAUGE_EMOJIS = {
     purple: '\u{1F60D}', pink:   '\u{1F60D}', error:  '\u{2753}'
 };
 
-// --- HELPER FUNCTIONS (MOVED OUTSIDE COMPONENT) ---
+// --- HELPER FUNCTIONS ---
 
 const calculateLocationAdjustment = (userLat: number): number => {
     const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
@@ -259,7 +258,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { iso: "1600-3200", shutter: "5-15s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
         };
     }
-    // This now covers scores from 10-39
     return {
          overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
          phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
@@ -267,7 +265,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
-// --- CHILD COMPONENTS (MOVED OUTSIDE) ---
+// --- CHILD COMPONENTS ---
 
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
@@ -356,8 +354,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
+    const [stretchingPhaseStartTime, setStretchingPhaseStartTime] = useState<number | null>(null);
 
-    // --- NEW: Effect to handle navigation and expansion from banner clicks ---
     useEffect(() => {
         if (navigationTarget && navigationTarget.page === 'forecast' && navigationTarget.expandId) {
             setExpandedGraph(navigationTarget.expandId);
@@ -413,7 +411,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'imf-graph': `This chart shows the total strength (Bt) and North-South direction (Bz) of the Interplanetary Magnetic Field. A strong and negative Bz is crucial for auroras.<br><br>The colors change based on intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet conditions.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Yellow:</strong> Moderately favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Orange:</strong> Favorable conditions.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Red:</strong> Very favorable/strong conditions.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Purple:</strong> Extremely favorable/severe conditions.</li></ul>`,
         'hemispheric-power-graph': `This chart shows the total energy being deposited by the solar wind into an entire hemisphere (North or South), measured in Gigawatts (GW).<br><br><strong>Effect on Aurora:</strong> Think of this as the aurora's overall brightness level. Higher power means more energy is available for a brighter and more widespread display.<br><br>The colors change based on the intensity of the readings:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low power.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Moderate power.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Elevated power.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">High power.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Very high power.</li></ul>`,
         'goes-mag': `<div><p>This graph shows the <strong>Hp component</strong> of the magnetic field, measured by GOES satellites in geosynchronous orbit. It's one of the best indicators for an imminent substorm.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">Growth Phase:</strong> When energy is building up, the magnetic field stretches out like a rubber band. This causes a slow, steady <strong>drop</strong> in the Hp value over 1-2 hours.</li><li><strong class="text-green-400">Substorm Eruption:</strong> When the field snaps back, it causes a sharp, sudden <strong>jump</strong> in the Hp value (called a "dipolarization"). This is the aurora flaring up brightly!</li></li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
-        'live-cameras': `<strong>What are these?</strong><br>These are publicly available webcams from around New Zealand. They are ordered from south to north.<br><br><strong>How do they help?</strong><br>These cameras provide crucial "ground truth" to supplement the forecast data. You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one obstacle to aurora spotting. See if the sky is clear in a location before you go.</li><li><strong>Spot Faint Aurora:</strong> Some of these cameras are sensitive enough to pick up auroral glows that might not be obvious on other data sources.</li><li><strong>Verify Conditions:</strong> Confirm what the data is suggesting. If the forecast is high and a southern-facing camera shows a clear sky, your chances are good!</li></ul><p class="mt-2 text-xs text-neutral-500">Note: Camera availability and quality can vary. Some may not update at night.</p>`,
+        'live-cameras': `<strong>What are these?</strong><br>These are publicly available webcams from around New Zealand. They are ordered from south to north.<br><br><strong>How do they help?</strong><br>These cameras provide crucial "ground truth" to supplement the forecast data. You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. See if the sky is clear in a location before you go.</li><li><strong>Spot Faint Aurora:</strong> Some of these cameras are sensitive enough to pick up auroral glows that might not be obvious on other data sources.</li><li><strong>Verify Conditions:</strong> Confirm what the data is suggesting. If the forecast is high and a southern-facing camera shows a clear sky, your chances are good!</li></ul><p class="mt-2 text-xs text-neutral-500">Note: Camera availability and quality can vary. Some may not update at night.</p>`,
     }), []);
 
     const openModal = useCallback((id: string) => {
@@ -447,25 +445,85 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
         return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
     }, []);
+    
     const analyzeMagnetometerData = useCallback((data: any[], currentAdjustedScore: number | null) => {
         const prevSubstormStatusText = previousSubstormStatusRef.current;
-        if (data.length < 30) { const status = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' }; setSubstormBlurb(status); setSubstormActivityStatus(status); previousSubstormStatusRef.current = status.text; return; }
-        const latestPoint = data[data.length - 1]; const tenMinAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 600000); const oneHourAgoPoint = data.find((p:any) => p.time >= latestPoint.time - 3600000);
-        if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) { const status = { text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' }; setSubstormBlurb(status); setSubstormActivityStatus(status); previousSubstormStatusRef.current = status.text; return; }
-        const jump = latestPoint.hp - tenMinAgoPoint.hp; const drop = latestPoint.hp - oneHourAgoPoint.hp;
-        let newStatusText: string, newStatusColor: string, shouldNotify = false;
-        if (jump > 20) {
-            const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-            newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`; newStatusColor = 'text-green-400 font-bold animate-pulse';
-            if (currentAdjustedScore !== null && currentAdjustedScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 300000)) shouldNotify = true;
-        } else if (drop < -15) {
-            newStatusText = 'The magnetic field is stretching, storing energy. Conditions are favorable for a potential substorm.'; newStatusColor = 'text-yellow-400'; clearNotificationCooldown('substorm-eruption');
-        } else {
-            newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.'; newStatusColor = 'text-neutral-400'; clearNotificationCooldown('substorm-eruption');
+        if (data.length < 30) {
+            const status = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500' };
+            setSubstormBlurb(status);
+            setSubstormActivityStatus(status);
+            setStretchingPhaseStartTime(null);
+            return;
         }
-        const status = { text: newStatusText, color: newStatusColor }; setSubstormBlurb(status); setSubstormActivityStatus(status); previousSubstormStatusRef.current = newStatusText;
-        if (shouldNotify) sendNotification('Substorm Eruption Alert!', `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${currentAdjustedScore?.toFixed(1)}%.`);
-    }, [setSubstormActivityStatus]);
+
+        const latestPoint = data[data.length - 1];
+        const tenMinAgoPoint = data.find((p: any) => p.time >= latestPoint.time - 600000);
+        const oneHourAgoPoint = data.find((p: any) => p.time >= latestPoint.time - 3600000);
+
+        if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) {
+            const status = { text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' };
+            setSubstormBlurb(status);
+            setSubstormActivityStatus(status);
+            return;
+        }
+
+        const jump = latestPoint.hp - tenMinAgoPoint.hp;
+        const drop = latestPoint.hp - oneHourAgoPoint.hp;
+        const isErupting = jump > 20;
+        const isStretching = drop < -15;
+
+        let newStatusText: string, newStatusColor: string, shouldNotify = false;
+        let newStretchingStartTime = stretchingPhaseStartTime;
+
+        if (isErupting) {
+            const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+            newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`;
+            newStatusColor = 'text-green-400 font-bold animate-pulse';
+            newStretchingStartTime = null;
+            if (currentAdjustedScore !== null && currentAdjustedScore > 40 && prevSubstormStatusText !== newStatusText && canSendNotification('substorm-eruption', 300000)) {
+                shouldNotify = true;
+            }
+        } else if (isStretching) {
+            let probability = 0;
+            if (stretchingPhaseStartTime === null) {
+                newStretchingStartTime = latestPoint.time;
+                newStatusText = 'The magnetic field has begun stretching, storing energy for a potential substorm.';
+            } else {
+                const durationMinutes = (latestPoint.time - stretchingPhaseStartTime) / 60000;
+                const baseProbability = Math.min(80, Math.max(20, 20 + (durationMinutes - 30) * (60 / 90)));
+                const dropBonus = Math.min(15, Math.max(0, (Math.abs(drop) - 15)));
+                const auroraScoreMultiplier = currentAdjustedScore ? Math.min(1.25, Math.max(1.0, 1 + (currentAdjustedScore - 40) * (0.25 / 40))) : 1.0;
+                probability = Math.min(95, (baseProbability + dropBonus) * auroraScoreMultiplier);
+                
+                const predictedStart = new Date(stretchingPhaseStartTime + 60 * 60 * 1000);
+                const predictedEnd = new Date(stretchingPhaseStartTime + 90 * 60 * 1000);
+                const formatTime = (d: Date) => d.toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+                
+                newStatusText = `The magnetic field is stretching. There is a ~${probability.toFixed(0)}% chance of a substorm predicted between ${formatTime(predictedStart)} and ${formatTime(predictedEnd)}.`;
+            }
+            newStatusColor = 'text-yellow-400';
+            clearNotificationCooldown('substorm-eruption');
+        } else {
+            newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.';
+            newStatusColor = 'text-neutral-400';
+            newStretchingStartTime = null;
+            clearNotificationCooldown('substorm-eruption');
+        }
+
+        if (newStretchingStartTime !== stretchingPhaseStartTime) {
+            setStretchingPhaseStartTime(newStretchingStartTime);
+        }
+
+        const status = { text: newStatusText, color: newStatusColor };
+        setSubstormBlurb(status);
+        setSubstormActivityStatus(status);
+        previousSubstormStatusRef.current = newStatusText;
+
+        if (shouldNotify) {
+            sendNotification('Substorm Eruption Alert!', `A magnetic substorm signature has been detected! Aurora activity is likely increasing. Current forecast: ${currentAdjustedScore?.toFixed(1)}%.`);
+        }
+    }, [setSubstormActivityStatus, stretchingPhaseStartTime]);
+
     const getMagnetometerAnnotations = useCallback((data: any[]) => {
         const annotations: any = {}; if (data.length < 60) return annotations;
         const getSegmentAnalysis = (startIdx: number, endIdx: number) => {
@@ -666,7 +724,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 {activityAlertMessage}
                             </div>
                         )}
-                        {/* --- MODIFIED: Added id for scrolling --- */}
                         <div id="forecast-score-section" className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
                             <div>
                                 <div className="flex justify-center items-center mb-4"><h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2><button onClick={() => openModal('forecast')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
@@ -738,7 +795,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             })}
                         </div>
 
-                        {/* --- MODIFIED: Added id for scrolling --- */}
                         <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
                                 <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
@@ -815,4 +871,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE ForecastDashboard.tsx ---
+// --- END OF FILE ForecastDashboard.tsx ---```
