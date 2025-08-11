@@ -7,8 +7,8 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  sendTestNotification, 
-  subscribeUserToPush // ADDED: Import the push subscription function
+  sendTestNotification, // ADDED: Import the test notification function
+  subscribeUserToPush
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
@@ -50,7 +50,7 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  const [isSubscribing, setIsSubscribing] = useState(false); // ADDED: Loading state for subscription
+  const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -101,21 +101,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
   
-  // --- MODIFIED: Handle subscription flow ---
   const handleEnableNotifications = useCallback(async () => {
     setIsSubscribing(true);
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
 
     if (permission === 'granted') {
-      // If permission is granted, subscribe the user to push notifications
       const subscription = await subscribeUserToPush();
       if (subscription) {
         console.log("Successfully subscribed to push notifications.");
-        // UI will now update to show the notification preferences
       } else {
         console.error("Failed to get a push subscription.");
-        // Handle failed subscription, maybe show an error message
       }
     }
     setIsSubscribing(false);
@@ -199,7 +195,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* --- MODIFIED: Notification Section --- */}
+          {/* Push Notifications Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Push Notifications</h3>
             {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser or device does not support push notifications.</p>}
@@ -237,6 +233,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                       onChange={(checked) => handleNotificationToggle(category.id, checked)}
                     />
                   ))}
+                </div>
+                {/* --- ADDED: Test Notification Button --- */}
+                <div className="mt-4 flex justify-center">
+                  <button
+                      onClick={sendTestNotification}
+                      className="px-4 py-2 text-sm bg-sky-600/20 border border-sky-500/50 rounded-md text-sky-300 hover:bg-sky-500/30 hover:border-sky-400 transition-colors"
+                  >
+                      Send Test Notification
+                  </button>
                 </div>
               </div>
             )}
