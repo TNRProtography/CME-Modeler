@@ -308,7 +308,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         
                         <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between">
-                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                             </div>
                             <div className="mt-4 h-[600px] max-h-[60vh]">
                                <ExpandedGraphContent
