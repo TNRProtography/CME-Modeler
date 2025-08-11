@@ -1,5 +1,8 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData, InteractionMode, SimulationCanvasHandle } from '../types';
+import {
+  ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
+  InteractionMode, SimulationCanvasHandle
+} from '../types';
 import {
   PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
@@ -8,53 +11,23 @@ import {
 } from '../constants';
 
 /** =========================================================
- *  VISUAL UPGRADE ASSET URLS (swap for your own if desired)
+ *  STABLE, HOTLINK-SAFE TEXTURE URLS (Wikimedia + Wellesley)
  *  ========================================================= */
 const TEX = {
-  // Earth
-  earthDay:       'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/earth/earth-daymap-4k.jpg',
-  earthNormal:    'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/earth/earth-normal-4k.jpg',
-  earthSpecular:  'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/earth/earth-specular-4k.jpg',
-  earthClouds:    'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/earth/earth-clouds-4k.png',
-  // Optional planets
-  mercury:        'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/mercury/mercury-2k.jpg',
-  venus:          'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/venus/venus-2k.jpg',
-  mars:           'https://cdn.jsdelivr.net/gh/typpo/spacekit@master/assets/planets/mars/mars-2k.jpg',
-  // Milky Way sky (equirectangular)
-  milkyWay:       'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/eso_dark_milkyway.jpg'
-};
-
-// Texture cache
-const _texCache: Record<string, any> = {};
-const loadTexture = (THREE: any, url?: string | null) => {
-  if (!url) return null;
-  if (_texCache[url]) return _texCache[url];
-  const t = new THREE.TextureLoader().load(url);
-  t.anisotropy = 8;
-  _texCache[url] = t;
-  return t;
-};
-
-// Procedural soft corona sprite cache
-let coronaTextureCache: any = null;
-const getCoronaTexture = (THREE: any) => {
-  if (coronaTextureCache) return coronaTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-
-  const size = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const g = ctx.createRadialGradient(size/2, size/2, size*0.05, size/2, size/2, size*0.5);
-  g.addColorStop(0.0, 'rgba(255,240,210,0.80)');
-  g.addColorStop(0.35,'rgba(255,190,80,0.40)');
-  g.addColorStop(0.7, 'rgba(255,150,0,0.12)');
-  g.addColorStop(1.0, 'rgba(255,120,0,0.00)');
-  ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
-
-  coronaTextureCache = new THREE.CanvasTexture(canvas);
-  coronaTextureCache.anisotropy = 4;
-  return coronaTextureCache;
+  EARTH_DAY:
+    "https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg",
+  EARTH_NORMAL:
+    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_normal_2048.jpg",
+  EARTH_SPEC:
+    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_specular_2048.jpg",
+  EARTH_CLOUDS:
+    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_clouds_2048.png",
+  MOON:
+    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/moon_1024.jpg",
+  SUN_PHOTOSPHERE:
+    "https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg",
+  MILKY_WAY:
+    "https://upload.wikimedia.org/wikipedia/commons/8/85/Solarsystemscope_texture_8k_stars_milky_way.jpg",
 };
 
 /** =========================================================
@@ -196,7 +169,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
 
-  // New visual refs
+  // Visual refs
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
 
@@ -243,10 +216,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  /** Distance from Sun center in SCENE units:
-   *  - Earth-directed CMEs can optionally use a “deceleration to arrival” approximation
-   *  - Otherwise constant-speed km/s -> AU -> scene units (matches your original feel)
-   */
+  /** Distance from Sun center in SCENE units (keeps your original mode/feel) */
   const calculateDistance = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number, useDeceleration: boolean): number => {
     const speed_km_per_sec = cme.speed;
     const speed_AU_per_sec = speed_km_per_sec / AU_IN_KM;
@@ -260,7 +230,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       return distanceActualAU * SCENE_SCALE;
     }
 
-    // simple ballistic
     const distanceActualAU = speed_AU_per_sec * Math.max(0, timeSinceEventSeconds);
     return distanceActualAU * SCENE_SCALE;
   }, []);
@@ -309,6 +278,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     rendererRef.current = renderer;
     setRendererDomElement(renderer.domElement);
 
+    // Texture loader + anisotropy helper
+    const loader = new THREE.TextureLoader();
+    (loader as any).crossOrigin = "anonymous";
+    const withAniso = (t: any) => {
+      if (renderer.capabilities?.getMaxAnisotropy) {
+        t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      }
+      return t;
+    };
+    const tex = {
+      earthDay: withAniso(loader.load(TEX.EARTH_DAY)),
+      earthNormal: withAniso(loader.load(TEX.EARTH_NORMAL)),
+      earthSpec: withAniso(loader.load(TEX.EARTH_SPEC)),
+      earthClouds: withAniso(loader.load(TEX.EARTH_CLOUDS)),
+      moon: withAniso(loader.load(TEX.MOON)),
+      sunPhoto: withAniso(loader.load(TEX.SUN_PHOTOSPHERE)),
+      milkyWay: withAniso(loader.load(TEX.MILKY_WAY)),
+    };
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
     scene.add(ambientLight);
     const pointLight = new THREE.PointLight(0xffffff, 2.4, 300 * SCENE_SCALE);
@@ -326,51 +314,42 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- Stars: two twinkling layers ---
-    const starLayers: any[] = [];
+    // --- Milky Way sky dome ---
+    const skyGeo = new THREE.SphereGeometry(150 * SCENE_SCALE, 64, 64);
+    const skyMat = new THREE.MeshBasicMaterial({ map: tex.milkyWay, side: THREE.BackSide });
+    const skydome = new THREE.Mesh(skyGeo, skyMat);
+    skydome.name = 'milkyway-sky';
+    scene.add(skydome);
+
+    // --- Stars: two brighter layers ---
     const makeStars = (count: number, spread: number, size: number) => {
-      const geo = new THREE.BufferGeometry();
-      const pos = new Float32Array(count * 3);
-      const phase = new Float32Array(count);
+      const verts: number[] = [];
       for (let i = 0; i < count; i++) {
-        pos[3 * i + 0] = THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE);
-        pos[3 * i + 1] = THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE);
-        pos[3 * i + 2] = THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE);
-        phase[i] = Math.random() * Math.PI * 2;
+        verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
+        verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
+        verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
       }
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      geo.setAttribute('phase', new THREE.BufferAttribute(phase, 1));
-      const mat = new THREE.PointsMaterial({
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+      const m = new THREE.PointsMaterial({
+        color: 0xffffff,
         size: size * SCENE_SCALE,
+        sizeAttenuation: true,
         transparent: true,
-        opacity: 0.9,
-        blending: THREE.AdditiveBlending,
+        opacity: 0.95,
         depthWrite: false
       });
-      const mesh = new THREE.Points(geo, mat);
-      starLayers.push(mesh);
-      scene.add(mesh);
-      return mesh;
+      return new THREE.Points(g, m);
     };
-    const starsNear = makeStars(14000, 260, 0.012);
-    const starsFar = makeStars(22000, 480, 0.009);
+    const starsNear = makeStars(30000, 250, 0.012);
+    const starsFar  = makeStars(20000, 300, 0.006);
+    starsFar.rotation.y = Math.PI / 7;
+    scene.add(starsNear);
+    scene.add(starsFar);
     starsNearRef.current = starsNear;
     starsFarRef.current = starsFar;
 
-    // --- Milky Way sky dome (equirectangular) ---
-    try {
-      const milky = loadTexture(THREE, TEX.milkyWay);
-      if (milky) {
-        milky.mapping = THREE.EquirectangularReflectionMapping;
-        const skyGeo = new THREE.SphereGeometry(1000 * SCENE_SCALE, 64, 64);
-        const skyMat = new THREE.MeshBasicMaterial({ map: milky, side: THREE.BackSide, depthWrite: false, opacity: 0.95, transparent: true });
-        const sky = new THREE.Mesh(skyGeo, skyMat);
-        sky.name = 'milkyway-sky';
-        scene.add(sky);
-      }
-    } catch {}
-
-    // --- Sun (keep your shader), add soft corona halo ---
+    // --- Sun (your shader) ---
     const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
     const sunMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
@@ -379,23 +358,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       transparent: true,
     });
     const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+    sunMesh.name = 'sun-shader';
     scene.add(sunMesh);
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
-    const coronaTex = getCoronaTexture(THREE);
-    if (coronaTex) {
-      const coronaMat = new THREE.SpriteMaterial({
-        map: coronaTex,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        opacity: 0.7
-      });
-      const corona = new THREE.Sprite(coronaMat);
-      corona.name = 'sun-corona';
-      corona.scale.setScalar(PLANET_DATA_MAP.SUN.size * 5.2);
-      sunMesh.add(corona);
-    }
+    // Sun photosphere overlay (additive detail)
+    const sunOverlayGeo = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64);
+    const sunOverlayMat = new THREE.MeshBasicMaterial({
+      map: tex.sunPhoto,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const sunOverlay = new THREE.Mesh(sunOverlayGeo, sunOverlayMat);
+    sunOverlay.name = "sun-photosphere";
+    scene.add(sunOverlay);
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
 
@@ -403,9 +380,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
 
-      // Start with plain mesh
-      let planetMaterial: any = new THREE.MeshPhongMaterial({ color: data.color, shininess: 32, specular: 0x222222 });
       let planetGeometry = new THREE.SphereGeometry(data.size, 64, 64);
+      let planetMaterial: any = new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 });
       let planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
       planetMesh.position.x = data.radius * Math.sin(data.angle);
       planetMesh.position.z = data.radius * Math.cos(data.angle);
@@ -414,43 +390,30 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       celestialBodiesRef.current[name] = { mesh: planetMesh, name: data.name, labelId: data.labelElementId, userData: data };
       planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: planetMesh });
 
-      // Upgrade planet textures where available
       if (name === 'EARTH') {
         const earthData = data as PlanetData;
 
-        const dayMap = loadTexture(THREE, TEX.earthDay);
-        const normMap = loadTexture(THREE, TEX.earthNormal);
-        const specMap = loadTexture(THREE, TEX.earthSpecular);
-
-        const earthGeo = new THREE.SphereGeometry(earthData.size, 64, 64);
+        // Photoreal Earth surface with normal + specular
         const earthMat = new THREE.MeshPhongMaterial({
-          map: dayMap,
-          normalMap: normMap,
-          specularMap: specMap,
-          specular: new THREE.Color(0x222222),
-          shininess: 15
+          map: tex.earthDay,
+          normalMap: tex.earthNormal,
+          specularMap: tex.earthSpec,
+          specular: new THREE.Color(0x111111),
+          shininess: 6
         });
-        const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-        earthMesh.position.copy(planetMesh.position);
-        earthMesh.userData = planetMesh.userData;
-        scene.remove(planetMesh);
-        scene.add(earthMesh);
-        celestialBodiesRef.current[name].mesh = earthMesh;
+        planetMesh.material = earthMat;
 
         // Clouds layer
-        const cloudsTex = loadTexture(THREE, TEX.earthClouds);
-        if (cloudsTex) {
-          const cloudsGeo = new THREE.SphereGeometry(earthData.size * 1.015, 64, 64);
-          const cloudsMat = new THREE.MeshPhongMaterial({
-            map: cloudsTex,
-            transparent: true,
-            opacity: 0.5,
-            depthWrite: false
-          });
-          const clouds = new THREE.Mesh(cloudsGeo, cloudsMat);
-          clouds.name = 'clouds';
-          earthMesh.add(clouds);
-        }
+        const cloudsGeo = new THREE.SphereGeometry(earthData.size * 1.01, 48, 48);
+        const cloudsMat = new THREE.MeshLambertMaterial({
+          map: tex.earthClouds,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false
+        });
+        const clouds = new THREE.Mesh(cloudsGeo, cloudsMat);
+        clouds.name = 'clouds';
+        planetMesh.add(clouds);
 
         // Atmosphere (yours)
         const atmosphereGeo = new THREE.SphereGeometry(earthData.size * 1.2, 32, 32);
@@ -465,7 +428,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
         const atmosphere = new THREE.Mesh(atmosphereGeo, atmosphereMat);
         atmosphere.name = 'atmosphere';
-        earthMesh.add(atmosphere);
+        planetMesh.add(atmosphere);
 
         // Aurora (yours)
         const auroraGeo = new THREE.SphereGeometry(earthData.size * 1.25, 64, 64);
@@ -484,20 +447,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
         const aurora = new THREE.Mesh(auroraGeo, auroraMat);
         aurora.name = 'aurora';
-        earthMesh.add(aurora);
+        planetMesh.add(aurora);
+      }
 
-        // Replace label info reference
-        const idx = planetLabelInfos.findIndex(p => p.name === 'Earth');
-        if (idx >= 0) planetLabelInfos[idx] = { id: earthData.labelElementId, name: earthData.name, mesh: earthMesh };
-      } else if (name === 'MERCURY') {
-        const tex = loadTexture(THREE, TEX.mercury);
-        if (tex) { (planetMesh.material as any).map = tex; (planetMesh.material as any).needsUpdate = true; }
-      } else if (name === 'VENUS') {
-        const tex = loadTexture(THREE, TEX.venus);
-        if (tex) { (planetMesh.material as any).map = tex; (planetMesh.material as any).needsUpdate = true; }
-      } else if (name === 'MARS') {
-        const tex = loadTexture(THREE, TEX.mars);
-        if (tex) { (planetMesh.material as any).map = tex; (planetMesh.material as any).needsUpdate = true; }
+      // Moon texture if your PLANET_DATA_MAP includes a Moon as a planet (if not, handled in "moons" section)
+      if (name === 'MOON') {
+        planetMaterial.map = tex.moon;
+        planetMaterial.needsUpdate = true;
       }
 
       // Orbit tube (your thicker style)
@@ -523,7 +479,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (!parentBody) return;
 
       const moonGeometry = new THREE.SphereGeometry(data.size, 16, 16);
-      const moonMaterial = new THREE.MeshPhongMaterial({ color: data.color, shininess: 6 });
+      const moonMaterial = new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null });
       const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
       moonMesh.position.x = data.radius * Math.sin(data.angle);
       moonMesh.position.z = data.radius * Math.cos(data.angle);
@@ -592,17 +548,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
 
-      // Twinkle stars (mobile-safe subtlety)
-      const twinkle = (layer: any, mul: number, t: number) => {
-        if (!layer) return;
-        const mat = layer.material;
-        const base = (layer === starsNearRef.current) ? 0.012 * SCENE_SCALE : 0.009 * SCENE_SCALE;
-        mat.size = base * (1.0 + 0.08 * Math.sin(t * 0.8 * mul));
-        layer.rotation.y += 0.00015 * mul;
-      };
-      const tNow = performance.now() * 0.001;
-      twinkle(starsNearRef.current, 1.0, tNow);
-      twinkle(starsFarRef.current, 0.6, tNow);
+      // Tiny star parallax / life (mobile-safe)
+      if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
+      if (starsFarRef.current)  starsFarRef.current.rotation.y += 0.00009;
 
       // Orbits motion
       const ORBIT_SPEED_SCALE = 2000;
@@ -630,7 +578,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         l1Body.mesh.lookAt(earthPos);
       }
 
-      // Sun shader + Earth rotate + shader uniforms
+      // Sun shader animate + Earth spin
       if (celestialBodiesRef.current.SUN) {
         (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
       }
@@ -722,10 +670,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (particleTextureCache) {
         particleTextureCache.dispose?.();
         particleTextureCache = null;
-      }
-      if (coronaTextureCache) {
-        coronaTextureCache.dispose?.();
-        coronaTextureCache = null;
       }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
@@ -958,7 +902,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, [showMoonL1]);
 
-  // Impact detection (proxy) — keep your approach, just read tip vs Earth vicinity
+  // Impact detection (proxy) — keep your approach
   const checkImpacts = useCallback(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
@@ -992,7 +936,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const aurora = earth.children.find((c: any) => c.name === 'aurora');
     const atmosphere = earth.children.find((c: any) => c.name === 'atmosphere');
 
-    // Slightly more sensitive than before: /1500 instead of /2000
+    // Slightly more sensitive than before
     const hit = clamp(maxImpactSpeed / 1500, 0, 1);
 
     if (aurora?.material?.uniforms) {
