@@ -117,10 +117,10 @@ interface ExpandedGraphContentProps {
 
 export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.memo(({
     graphId,
-    solarWindTimeRange, setSolarWindTimeRange, solarWindTimeLabel,
-    magneticFieldTimeRange, setMagneticFieldTimeRange, magneticFieldTimeLabel,
-    hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange, hemisphericPowerChartTimeLabel,
-    magnetometerTimeRange, setMagnetometerTimeRange, magnetometerTimeLabel,
+    solarWindTimeRange, setSolarWindTimeRange,
+    magneticFieldTimeRange, setMagneticFieldTimeRange,
+    hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange,
+    magnetometerTimeRange, setMagnetometerTimeRange,
     openModal,
     allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
     goes18Data, goes19Data, loadingMagnetometer, substormBlurb, getMagnetometerAnnotations
@@ -137,7 +137,9 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
     const densityChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, 'Density (p/cm³)'), [solarWindTimeRange]);
     const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, 'Magnetic Field (nT)'), [magneticFieldTimeRange]);
     const hemisphericPowerChartOptions = useMemo(() => createChartOptions(hemisphericPowerChartTimeRange, 'Hemispheric Power (GW)'), [hemisphericPowerChartTimeRange]);
-    const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data]);
+    
+    // --- THIS IS THE FIX ---
+    const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data, getMagnetometerAnnotations]);
     const magnetometerOptions = useMemo(() => createChartOptions(magnetometerTimeRange, 'Hp (nT)', true, magnetometerAnnotations), [magnetometerTimeRange, magnetometerAnnotations]);
 
     switch (graphId) {
