@@ -27,15 +27,31 @@ interface CustomNotificationOptions extends NotificationOptions {
     tag?: string; // Custom tag for grouping/replacing notifications
 }
 
+// --- NEW: Helper function to check if the app document is currently visible ---
+const isAppVisible = (): boolean => {
+    // This browser API is supported on all modern browsers and PWAs.
+    // It returns true if the tab/app is in the foreground.
+    return typeof document !== 'undefined' && document.visibilityState === 'visible';
+};
+
+
 // Function to send a notification (This is for *in-app* notifications, not push)
 export const sendNotification = (title: string, body: string, options?: CustomNotificationOptions) => {
-  // Ensure notifications are supported and permission is granted
+  // --- MODIFIED: The core fix is here ---
+  // 1. First, check if the app is already open and visible to the user.
+  if (isAppVisible()) {
+    // If the user is already looking at the app, they can see the alert banner.
+    // We don't need to send a distracting system notification.
+    console.log('Notification suppressed because the application is currently visible.');
+    return;
+  }
+
+  // 2. If the app is hidden or in the background, proceed with the notification.
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return;
   }
 
-  // Check if the specific notification category is enabled by the user
   if (options?.tag && !getNotificationPreference(options.tag)) {
     console.log(`Notification for category '${options.tag}' is disabled by user preference.`);
     return;
@@ -51,9 +67,9 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
     };
 
     new Notification(title, notificationOptions);
-    console.log('Notification sent (in-app):', title, body);
+    console.log('Notification sent (app was hidden):', title, body);
   } else {
-    console.warn('Notification not sent (in-app). Permission:', Notification.permission);
+    console.warn('Notification not sent. Permission:', Notification.permission);
   }
 };
 
@@ -81,8 +97,6 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
     return null;
   }
   
-  // --- THIS IS THE CORRECTED LOGIC ---
-  // It checks against the placeholder, not your actual key.
   if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY_HERE') {
     console.error('VAPID_PUBLIC_KEY has not been replaced. Cannot subscribe to push notifications.');
     alert('Push notification setup is incomplete. Please contact the administrator.');
@@ -185,22 +199,19 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 };
 
 // --- Test Notification Function ---
-// --- MODIFIED: Function now accepts optional title and body ---
 export const sendTestNotification = (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
     return;
   }
   if (Notification.permission === 'granted') {
-    // --- MODIFIED: Use the provided title/body or fall back to defaults ---
     const finalTitle = title || 'Test Notification';
     const finalBody = body || 'This is a test notification. If you received this, your device is set up correctly!';
     
     new Notification(finalTitle, {
       body: finalBody,
       icon: '/icons/android-chrome-192x192.png',
-      // A static tag ensures test notifications replace each other so you don't get spammed
-      tag: 'test-notification' 
+      tag: 'test-notification' // A static tag ensures test notifications replace each other
     });
   } else {
     alert(`Cannot send test notification. Permission status is: ${Notification.permission}. Please enable notifications first.`);
