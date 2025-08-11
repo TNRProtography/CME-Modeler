@@ -138,7 +138,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
-// --- THIS IS THE RESTORED FUNCTION ---
 const getMagnetometerAnnotations = (data: any[]) => {
     const annotations: any = {};
     if (data.length < 60) return annotations;
@@ -301,23 +300,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             onOpenModal={openModal}
                             onExpandGraph={setExpandedGraph}
                             expandedGraph={expandedGraph}
+                            chartData={{
+                                allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
+                                goes18Data, goes19Data, loadingMagnetometer, substormBlurb
+                            }}
+                            getMagnetometerAnnotations={getMagnetometerAnnotations}
+                            timeRanges={{
+                                solarWindTimeRange, setSolarWindTimeRange: (d:number, l:string) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }, solarWindTimeLabel,
+                                magneticFieldTimeRange, setMagneticFieldTimeRange: (d:number, l:string) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }, magneticFieldTimeLabel,
+                                hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange: (d:number, l:string) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }, hemisphericPowerChartTimeLabel,
+                                magnetometerTimeRange, setMagnetometerTimeRange: (d:number, l:string) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }, magnetometerTimeLabel,
+                            }}
                         />
-
-                        {expandedGraph && !expandedGraph.includes('goes-mag') && (
-                            <div className="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100">
-                                <ExpandedGraphContent 
-                                    graphId={expandedGraph}
-                                    openModal={openModal}
-                                    getMagnetometerAnnotations={getMagnetometerAnnotations}
-                                    allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
-                                    goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
-                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
-                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
-                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
-                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
-                                />
-                            </div>
-                        )}
                         
                         <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
