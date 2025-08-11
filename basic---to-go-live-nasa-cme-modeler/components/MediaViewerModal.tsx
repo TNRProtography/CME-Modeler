@@ -113,7 +113,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
 
   return (
     <div 
-      className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex flex-col justify-center items-center"
+      className="fixed inset-0 bg-black/80 backdrop-blur-md z-[4000] flex flex-col justify-center items-center"
       onClick={onClose}
     >
         {/* Top Controls */}
