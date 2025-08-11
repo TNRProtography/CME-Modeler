@@ -59,7 +59,7 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
 
 // --- New: Web Push Subscription Logic ---
 
-const VAPID_PUBLIC_KEY = 'BJFhRHKlybzXdM37Hz0Tv0chiN0mkTP9YuUe_-RWWJJnkWs-Xt1asrQ99OYf5QiUAD77hyZTxrrh0S5768lhVms';
+const VAPID_PUBLIC_KEY = 'BIQ9JadNJgyMDPebgXu5Vpf7-7XuCcl5uEaxocFXeIdUxDq1Q9bGe0E5C8-a2qQ-psKhqbAzV2vELkRxpnWqebU';
 
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
