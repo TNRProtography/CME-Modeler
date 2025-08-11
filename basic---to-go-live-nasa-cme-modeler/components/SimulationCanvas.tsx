@@ -267,9 +267,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    cameraRef.current = camera;
-    onCameraReady(camera);
+const camera = new THREE.PerspectiveCamera(
+  75,
+  mountRef.current.clientWidth / mountRef.current.clientHeight,
+  0.001 * SCENE_SCALE,
+  5000 * SCENE_SCALE
+);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
