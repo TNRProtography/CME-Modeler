@@ -430,5 +430,4 @@ const App: React.FC = () => {
 };
 
 export default App;
-
 // --- END OF FILE App.tsx ---
