@@ -20,6 +20,7 @@ import {
     ExpandedGraphContent
 } from './ForecastCharts';
 import { SubstormActivity } from '../types';
+import CaretIcon from './icons/CaretIcon'; // Import CaretIcon
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -142,6 +143,7 @@ const getMagnetometerAnnotations = (data: any[]) => {
     return {};
 };
 
+
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, navigationTarget }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -185,9 +187,36 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [navigationTarget]);
 
-    const tooltipContent = useMemo(() => ({ /* Full tooltip content object */ }), []);
+    const tooltipContent = useMemo(() => ({
+        'forecast': `This percentage is a simple forecast...`,
+        'power': `<strong>What it is:</strong> ...`,
+        'speed': `<strong>What it is:</strong> ...`,
+        'density': `<strong>What it is:</strong> ...`,
+        'bt': `<strong>What it is:</strong> ...`,
+        'bz': `<strong>What it is:</strong> ...`,
+        'epam': `<strong>What it is:</strong> ...`,
+        'moon': `<strong>What it is:</strong> ...`,
+        'ips': `<strong>What it is:</strong> ...`,
+        'solar-wind-graph': `This chart shows the Speed and Density...`,
+        'imf-graph': `This chart shows the magnetic field...`,
+        'hemispheric-power-graph': `This chart shows the total energy...`,
+        'goes-mag': `<div><p>This measures the stretching of Earth's magnetic field...`,
+        'live-cameras': `<strong>What are these?</strong>...`,
+    }), []);
+    
     const openModal = useCallback((id: string) => { 
-        // Logic to open modal based on tooltipContent
+        const contentData = tooltipContent[id as keyof typeof tooltipContent];
+        if (contentData) {
+            let title = 'About'; // Basic default
+            // A simple mapping for titles
+            const titleMap: Record<string, string> = {
+                'forecast': 'About The Forecast Score',
+                'goes-mag': 'GOES Magnetometer (Hp)',
+                'ips': 'About Interplanetary Shocks',
+            };
+            title = titleMap[id] || `About ${id.toUpperCase()}`;
+            setModalState({ isOpen: true, title, content: contentData });
+        }
     }, [tooltipContent]);
     const closeModal = useCallback(() => setModalState(null), []);
 
@@ -245,7 +274,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             expandedGraph={expandedGraph}
                         />
 
-                        {expandedGraph && (
+                        {expandedGraph && !expandedGraph.includes('goes-mag') && (
                             <div className="col-span-full card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100">
                                 <ExpandedGraphContent 
                                     graphId={expandedGraph}
@@ -261,6 +290,31 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                         )}
                         
+                        <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
+                                <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
+                                <div className="flex items-center">
+                                    <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                                    <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                                        <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                               <ExpandedGraphContent
+                                    graphId={'goes-mag-graph-container'}
+                                    openModal={openModal}
+                                    getMagnetometerAnnotations={getMagnetometerAnnotations}
+                                    allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
+                                    goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
+                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
+                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
+                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
+                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
+                                />
+                            </div>
+                        </div>
+
                         <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                             <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
                             <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
