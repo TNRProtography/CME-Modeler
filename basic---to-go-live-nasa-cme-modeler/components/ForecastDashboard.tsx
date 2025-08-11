@@ -12,7 +12,7 @@ import GuideIcon from './icons/GuideIcon';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 import ToggleSwitch from './ToggleSwitch';
-import { SubstormPrediction } from '../types'; // Import the new type
+import { SubstormPrediction } from '../types';
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -112,6 +112,21 @@ const GAUGE_EMOJIS = {
 
 // --- HELPER FUNCTIONS ---
 
+const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
+    if (score >= 80) return 'pink';
+    if (score >= 50) return 'purple';
+    if (score >= 40) return 'red';
+    if (score >= 25) return 'orange';
+    if (score >= 10) return 'yellow';
+    return 'gray';
+};
+
+const getAuroraEmoji = (s: number | null): string => {
+    if (s === null) return GAUGE_EMOJIS.error;
+    const colorKey = getForecastScoreColorKey(s);
+    return GAUGE_EMOJIS[colorKey];
+};
+
 const calculateLocationAdjustment = (userLat: number): number => {
     const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
     const R = 6371;
@@ -127,15 +142,6 @@ const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: nu
     if (value >= thresholds.red) return 'red';
     if (value >= thresholds.orange) return 'orange';
     if (value >= thresholds.yellow) return 'yellow';
-    return 'gray';
-};
-
-const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
-    if (score >= 80) return 'pink';
-    if (score >= 50) return 'purple';
-    if (score >= 40) return 'red';
-    if (score >= 25) return 'orange';
-    if (score >= 10) return 'yellow';
     return 'gray';
 };
 
@@ -399,6 +405,55 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return null;
     }, [isDaylight, celestialTimes, auroraScoreHistory]);
 
+    const tooltipContent = useMemo(() => ({
+        'forecast': `This percentage is a simple forecast for your chances of seeing an aurora. It combines live data from space with local factors for New Zealand.<br><br><strong>What the Percentage Means:</strong><ul><li><strong>&lt; 25%:</strong> Very unlikely to see anything with the naked eye. A good camera might pick up a faint glow on the horizon.</li><li><strong>25-50%:</strong> A good chance for cameras to capture clear color and structure. A faint white glow may be visible to the naked eye in very dark locations.</li><li><strong>50-80%:</strong> A strong display is likely. You should be able to see colors and movement with your own eyes.</li><li><strong>80%+:</strong> A major aurora storm is possible. Expect bright, fast-moving curtains of color across the sky!</li></ul>`,
+        'power': `<strong>What it is:</strong> Think of this as the 'volume knob' for the aurora's brightness. It measures the total amount of energy the Sun's particles are dumping into Earth's atmosphere.<br><br><strong>Effect on Aurora:</strong> The higher the power, the more energy is available to light up the sky. High power can lead to a brighter and more widespread aurora.`,
+        'speed': `<strong>What it is:</strong> The Sun constantly streams out a flow of particles called the solar wind. This measures how fast that stream is moving.<br><br><strong>Effect on Aurora:</strong> Faster particles hit our atmosphere with more energy, like a faster pitch. This can create more vibrant colors (like pinks and purples) and cause the aurora to dance and move more quickly.`,
+        'density': `<strong>What it is:</strong> This measures how 'crowded' or 'thick' the stream of solar wind particles is.<br><br><strong>Effect on Aurora:</strong> Higher density is like using a wider paintbrush. More particles are hitting the atmosphere at once, which can make the aurora appear brighter and cover a larger area of the sky.`,
+        'bt': `<strong>What it is:</strong> The stream of particles from the Sun has its own magnetic field. 'Bt' measures the total strength of that magnetic field.<br><br><strong>Effect on Aurora:</strong> A high Bt value means the magnetic field is strong and carrying a lot of energy. By itself, it doesn't do much, but if the 'Bz' direction is right, this stored energy can be unleashed to create a powerful display.`,
+        'bz': `<strong>What it is:</strong> This is the most important ingredient for an aurora. Earth is protected by a magnetic shield. The 'Bz' value tells us the North-South direction of the Sun's magnetic field.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the 'master switch'. When Bz points **South (a negative number)**, it's like a key turning in a lock. It opens a door in Earth's shield, allowing energy and particles to pour in. When Bz is North (positive), the door is closed. **The more negative the Bz, the better the aurora!**`,
+        'epam': `<strong>What it is:</strong> A sensor on a satellite far away that acts as an early-warning system. It counts very fast, high-energy particles that are often pushed ahead of a major solar eruption.<br><br><strong>Effect on Aurora:</strong> A sudden, sharp spike on this chart is a strong clue that a 'shockwave' from a solar eruption (a CME) is about to hit Earth, which can trigger a major aurora storm.`,
+        'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows.`,
+        'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
+        'solar-wind-graph': `This chart shows the Speed and Density of the solar wind. The colors change to show how active conditions are.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Active</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Moderate</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Strong</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Severe</li></ul>`,
+        'imf-graph': `This chart shows the magnetic field of the solar wind. A strong (high Bt) and southward-pointing (negative Bz) field is the perfect recipe for an aurora.<br><br>The colors change based on how favorable the conditions are:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Not favorable.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Slightly favorable.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Favorable.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Very Favorable.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Extremely Favorable.</li></ul>`,
+        'hemispheric-power-graph': `This chart shows the total energy being dumped into the atmosphere, which relates to the aurora's brightness.<br><br>The colors change based on the intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low Power</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Moderate Power</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Elevated Power</li><li><strong style="color:${GAUGE_COLORS.red.solid}">High Power</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Very High Power</li></ul>`,
+        'goes-mag': `<div><p>This measures the stretching of Earth's magnetic field, like a rubber band. It's one of the best tools for predicting when an aurora might suddenly flare up.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">The Drop (Growth Phase):</strong> The line goes down slowly for 1-2 hours. This is the 'rubber band' stretching and storing energy.</li><li><strong class="text-green-400">The Jump (Eruption):</strong> The line suddenly jumps back up. This is the 'rubber band' snapping back, releasing all its energy at once. This is the moment the aurora flares up brightly and starts to dance!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
+        'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one obstacle to aurora spotting. See if the sky is clear before you go.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
+    }), []);
+
+    const openModal = useCallback((id: string) => {
+        const contentData = tooltipContent[id as keyof typeof tooltipContent];
+        if (contentData) {
+            let title = '';
+            if (id === 'forecast') title = 'About The Forecast Score';
+            else if (id === 'solar-wind-graph') title = 'About The Solar Wind Graph';
+            else if (id === 'imf-graph') title = 'About The IMF Graph';
+            else if (id === 'goes-mag') title = 'GOES Magnetometer (Hp)';
+            else if (id === 'hemispheric-power-graph') title = 'About The Hemispheric Power Graph';
+            else if (id === 'ips') title = 'About Interplanetary Shocks';
+            else if (id === 'live-cameras') title = 'About Live Cameras';
+            else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
+            setModalState({ isOpen: true, title: title, content: contentData });
+        }
+    }, [tooltipContent]);
+
+    const closeModal = useCallback(() => setModalState(null), []);
+    const formatNZTimestamp = useCallback((timestamp: number | string) => { try { const d = new Date(timestamp); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; } }, []);
+    
+    const getGaugeStyle = useCallback((v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
+        if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+        let key: keyof typeof GAUGE_COLORS = 'pink'; let percentage = 0; const thresholds = GAUGE_THRESHOLDS[type];
+        if (type === 'bz') {
+            if (v <= thresholds.pink) key = 'pink'; else if (v <= thresholds.purple) key = 'purple'; else if (v <= thresholds.red) key = 'red'; else if (v <= thresholds.orange) key = 'orange'; else if (v <= thresholds.yellow) key = 'yellow'; else key = 'gray';
+            if (v < 0 && thresholds.maxNegativeExpected) percentage = Math.min(100, Math.max(0, (v / thresholds.maxNegativeExpected) * 100)); else percentage = 0;
+        } else {
+            if (v <= thresholds.gray) key = 'gray'; else if (v <= thresholds.yellow) key = 'yellow'; else if (v <= thresholds.orange) key = 'orange'; else if (v <= thresholds.red) key = 'red'; else if (v <= thresholds.purple) key = 'purple';
+            percentage = Math.min(100, Math.max(0, (v / thresholds.maxExpected) * 100));
+        }
+        return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
+    }, []);
+    
     const analyzeMagnetometerData = useCallback((data: any[], currentAdjustedScore: number | null) => {
         const prevSubstormStatusText = previousSubstormStatusRef.current;
         if (data.length < 30) {
@@ -488,9 +543,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [setSubstormActivityStatus, stretchingPhaseStartTime, setSubstormPrediction]);
 
-    // ... (The rest of the component, including fetchAllData, useMemo hooks, and JSX, remains unchanged) ...
-    // --- (The large block of unchanged code is omitted for brevity) ---
-
+    // ... (The rest of the component remains the same) ...
+    
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
             <div className="absolute inset-0 bg-black/50 z-0"></div>
