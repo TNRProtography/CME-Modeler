@@ -472,13 +472,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     };
     // Safe ResizeObserver creation (no optional-chaining after `new`)
-const RO: any = (window as any).ResizeObserver;
-const ro = RO ? new RO(() => handleResize()) : null;
-if (ro && mountRef.current) {
-  ro.observe(mountRef.current);
-}
-window.addEventListener('resize', handleResize);;
-
+    const RO: any = (window as any).ResizeObserver;
+    const ro = RO ? new RO(() => handleResize()) : null;
+    if (ro && mountRef.current) ro.observe(mountRef.current);
+    window.addEventListener('resize', handleResize);
 
     // Keyboard shortcuts
     const onKey = (e: KeyboardEvent) => {
