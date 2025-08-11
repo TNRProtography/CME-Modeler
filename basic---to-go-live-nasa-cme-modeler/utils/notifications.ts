@@ -97,7 +97,7 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
   }
   
   // --- ADDED: Check if VAPID key is still the placeholder ---
-  if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY_HERE') {
+  if (VAPID_PUBLIC_KEY === 'BJFhRHKlybzXdM37Hz0Tv0chiN0mkTP9YuUe_-RWWJJnkWs-Xt1asrQ99OYf5QiUAD77hyZTxrrh0S5768lhVms') {
     console.error('VAPID_PUBLIC_KEY is not set. Cannot subscribe to push notifications.');
     alert('Push notification setup is incomplete. Please contact the administrator.');
     return null;
