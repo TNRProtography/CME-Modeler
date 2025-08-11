@@ -62,11 +62,10 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
 // --- New: Web Push Subscription Logic ---
 
 // =========================================================================
-// === IMPORTANT: REPLACE THIS WITH YOUR ACTUAL VAPID PUBLIC KEY! ===
+// === IMPORTANT: This should be your actual VAPID PUBLIC KEY! ===
 // This key identifies your application server to the push service.
-// Your VAPID PRIVATE key must be kept secret on your server.
 // =========================================================================
-const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE'; // <-- REPLACE THIS!
+const VAPID_PUBLIC_KEY = 'BJFhRHKlybzXdM37Hz0Tv0chiN0mkTP9YuUe_-RWWJJnkWs-Xt1asrQ99OYf5QiUAD77hyZTxrrh0S5768lhVms'; // <-- MAKE SURE YOU'VE REPLACED THIS
 
 /**
  * Helper function to convert a Base64 URL-safe string to a Uint8Array.
@@ -98,7 +97,7 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
   }
   
   // --- ADDED: Check if VAPID key is still the placeholder ---
-  if (VAPID_PUBLIC_KEY === 'YBJFhRHKlybzXdM37Hz0Tv0chiN0mkTP9YuUe_-RWWJJnkWs-Xt1asrQ99OYf5QiUAD77hyZTxrrh0S5768lhVms') {
+  if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY_HERE') {
     console.error('VAPID_PUBLIC_KEY is not set. Cannot subscribe to push notifications.');
     alert('Push notification setup is incomplete. Please contact the administrator.');
     return null;
@@ -146,14 +145,10 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
 
 /**
  * Sends the PushSubscription object to your backend server.
- * You will need to create a backend endpoint (e.g., a Cloudflare Worker)
- * to receive and store these subscription objects.
  */
 const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
   try {
-    // IMPORTANT: You will need to create this API endpoint on your Cloudflare Worker.
-    // It should accept a POST request with the subscription object in the body.
-    const response = await fetch('https://push-notification-worker.thenamesrock.workers.dev/', { 
+    const response = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -239,6 +234,24 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
     localStorage.setItem(NOTIFICATION_PREF_PREFIX + categoryId, JSON.stringify(enabled));
   } catch (e) {
     console.error(`Error saving notification preference for ${categoryId}:`, e);
+  }
+};
+
+// --- ADDED THIS ENTIRE FUNCTION ---
+// Can be called from a button in your UI to test if notifications are working
+export const sendTestNotification = () => {
+  if (!('Notification' in window)) {
+    alert('This browser does not support notifications.');
+    return;
+  }
+
+  if (Notification.permission === 'granted') {
+    new Notification('Test Notification', {
+      body: 'If you can see this, in-app notifications are working!',
+      icon: '/icons/android-chrome-192x192.png',
+    });
+  } else {
+    alert(`Cannot send test notification. Permission status is: ${Notification.permission}. Please enable notifications first.`);
   }
 };
 // --- END OF FILE src/utils/notifications.ts ---
