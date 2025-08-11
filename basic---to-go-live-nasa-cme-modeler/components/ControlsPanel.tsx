@@ -126,7 +126,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         <h1 className="text-xl font-bold text-neutral-100 leading-tight">
           Spot The Aurora
           <br />
-          CME Modeler
+          CME Visualization
         </h1>
       </div>
 
