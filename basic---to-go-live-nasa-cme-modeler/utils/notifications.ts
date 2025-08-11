@@ -56,7 +56,7 @@ const showNotification = async (title: string, options: NotificationOptions) => 
   return false;
 };
 
-/** Build options, honoring stacking rules (NO custom icon/badge) */
+/** Build options, honoring stacking rules (no icon; transparent badge; no URL) */
 const buildStackingOptions = (
   opts?: CustomNotificationOptions & { body?: string }
 ): NotificationOptions => {
@@ -64,9 +64,12 @@ const buildStackingOptions = (
 
   const base: NotificationOptions = {
     body: opts?.body,
-    // Intentionally omit icon & badge so the OS/app default is used
+    // No large icon
+    // Transparent badge to avoid colored letter-circle
+    badge: '/icons/notification-badge.png',
     vibrate: opts?.vibrate ?? [200, 100, 200],
-    data: opts?.data,
+    // Do not include any URL in data to avoid any hint of it in UI
+    data: {}, 
     requireInteraction: opts?.requireInteraction,
     silent: opts?.silent,
     actions: opts?.actions,
@@ -259,7 +262,7 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 // ----------------- Test Notification -----------------
 
 /**
- * Test notifications now stack by default and use no custom icon/badge.
+ * Test notifications stack by default and use no icon.
  * Uses Service Worker if possible; falls back to window Notification.
  */
 export const sendTestNotification = async (title?: string, body?: string) => {
@@ -284,7 +287,7 @@ export const sendTestNotification = async (title?: string, body?: string) => {
   await sendNotification(finalTitle, finalBody, {
     forceWhenVisible: true,
     stacking: true,
-    // Intentionally no icon or badge here
+    // No icon; transparent badge comes from buildStackingOptions
   });
 };
 
