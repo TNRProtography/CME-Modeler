@@ -1,105 +1,141 @@
 // --- START OF FILE src/utils/notifications.ts ---
 
-// Function to request notification permission from the user
+/**
+ * Request Notification permission from the user.
+ */
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
-  // Check if the browser supports notifications
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return 'unsupported';
   }
 
-  // If permission is already granted or denied, return current status
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Notification.permission;
   }
 
-  // Request permission from the user
   try {
     const permission = await Notification.requestPermission();
     return permission;
   } catch (error) {
     console.error('Error requesting notification permission:', error);
-    return 'denied'; // Assume denied if an error occurs
+    return 'denied';
   }
 };
 
 interface CustomNotificationOptions extends NotificationOptions {
-    tag?: string; // Custom tag for grouping/replacing notifications
+  tag?: string; // category key
+  /** If true, don't auto-suppress when app is visible. Default: false. */
+  forceWhenVisible?: boolean;
 }
 
-// --- NEW: Helper function to check if the app document is currently visible ---
-const isAppVisible = (): boolean => {
-    // This browser API is supported on all modern browsers and PWAs.
-    // It returns true if the tab/app is in the foreground.
-    return typeof document !== 'undefined' && document.visibilityState === 'visible';
-};
+/** App visibility utility */
+const isAppVisible = (): boolean =>
+  typeof document !== 'undefined' && document.visibilityState === 'visible';
 
-
-// Function to send a notification (This is for *in-app* notifications, not push)
-export const sendNotification = (title: string, body: string, options?: CustomNotificationOptions) => {
-  // --- MODIFIED: The core fix is here ---
-  // 1. First, check if the app is already open and visible to the user.
-  if (isAppVisible()) {
-    // If the user is already looking at the app, they can see the alert banner.
-    // We don't need to send a distracting system notification.
-    console.log('Notification suppressed because the application is currently visible.');
-    return;
+/** Prefer SW notifications when possible (more reliable on Android) */
+const showNotification = async (title: string, options: NotificationOptions) => {
+  // Use SW if possible
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg?.showNotification) {
+        await reg.showNotification(title, options);
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('SW showNotification failed, falling back to window Notification:', e);
   }
 
-  // 2. If the app is hidden or in the background, proceed with the notification.
+  // Fallback to window Notification
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, options);
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Send an in-app (local) notification.
+ * - Respects user preference per tag.
+ * - **No longer suppresses test notifications.**
+ * - Default behavior: suppress if app visible, unless `forceWhenVisible` or tag === 'test-notification'.
+ */
+export const sendNotification = async (title: string, body: string, options?: CustomNotificationOptions) => {
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return;
   }
 
-  if (options?.tag && !getNotificationPreference(options.tag)) {
-    console.log(`Notification for category '${options.tag}' is disabled by user preference.`);
+  const tag = options?.tag;
+
+  // Respect user category preferences
+  if (tag && !getNotificationPreference(tag)) {
+    console.log(`Notification for category '${tag}' is disabled by user preference.`);
     return;
   }
 
-  if (Notification.permission === 'granted') {
-    const notificationOptions: NotificationOptions = {
-      body: body,
-      icon: '/icons/android-chrome-192x192.png',
-      badge: '/icons/android-chrome-192x192.png',
-      vibrate: [200, 100, 200],
-      ...options,
-    };
-
-    new Notification(title, notificationOptions);
-    console.log('Notification sent (app was hidden):', title, body);
-  } else {
+  // Make sure we have permission
+  if (Notification.permission !== 'granted') {
     console.warn('Notification not sent. Permission:', Notification.permission);
+    return;
+  }
+
+  const isTest = tag === 'test-notification';
+  const force = !!options?.forceWhenVisible;
+
+  // Suppress only if app is visible AND not a test AND not forced
+  if (isAppVisible() && !isTest && !force) {
+    console.log('Notification suppressed because the application is currently visible.');
+    return;
+  }
+
+  const notificationOptions: NotificationOptions = {
+    body,
+    icon: options?.icon ?? '/icons/android-chrome-192x192.png',
+    badge: options?.badge ?? '/icons/android-chrome-192x192.png',
+    vibrate: options?.vibrate ?? [200, 100, 200],
+    tag,
+    data: options?.data,
+    requireInteraction: options?.requireInteraction,
+    silent: options?.silent,
+    renotify: options?.renotify,
+    actions: options?.actions,
+    image: options?.image,
+  };
+
+  const shown = await showNotification(title, notificationOptions);
+  if (shown) {
+    console.log('Notification shown:', title, body);
+  } else {
+    console.warn('Notification could not be shown (no permission or no API available).');
   }
 };
 
-// --- New: Web Push Subscription Logic ---
+// ----------------- Web Push Subscription Logic -----------------
 
-const VAPID_PUBLIC_KEY = 'BIQ9JadNJgyMDPebgXu5Vpf7-7XuCcl5uEaxocFXeIdUxDq1Q9bGe0E5C8-a2qQ-psKhqbAzV2vELkRxpnWqebU';
+// Your base64url VAPID public key (uncompressed P-256, 65 bytes -> base64url)
+const VAPID_PUBLIC_KEY =
+  'BIQ9JadNJgyMDPebgXu5Vpf7-7XuCcl5uEaxocFXeIdUxDq1Q9bGe0E5C8-a2qQ-psKhqbAzV2vELkRxpnWqebU';
 
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-        .replace(/\-/g, '+')
-        .replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
 };
-
 
 export const subscribeUserToPush = async (): Promise<PushSubscription | null> => {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.warn('Service Workers or Push Messaging are not supported by this browser.');
     return null;
   }
-  
-  if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY_HERE') {
-    console.error('VAPID_PUBLIC_KEY has not been replaced. Cannot subscribe to push notifications.');
-    alert('Push notification setup is incomplete. Please contact the administrator.');
+
+  if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.length < 50) {
+    console.error('VAPID_PUBLIC_KEY is missing/invalid.');
     return null;
   }
 
@@ -110,63 +146,73 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
   }
 
   try {
-    const registration = await navigator.serviceWorker.ready;
-    const existingSubscription = await registration.pushManager.getSubscription();
+    // Ensure a SW is registered (in most apps you did this elsewhere)
+    const reg = await navigator.serviceWorker.ready;
 
-    if (existingSubscription) {
-      console.log('User already has a push subscription:', existingSubscription);
-      await sendPushSubscriptionToServer(existingSubscription);
-      return existingSubscription;
+    // Reuse existing subscription
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      console.log('Existing push subscription:', existing);
+      await sendPushSubscriptionToServer(existing);
+      return existing;
     }
 
-    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    const options = { userVisibleOnly: true, applicationServerKey: applicationServerKey };
-    const subscription = await registration.pushManager.subscribe(options);
+    // Create new
+    const appServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    const subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: appServerKey,
+    });
 
-    console.log('Successfully subscribed to push:', subscription);
+    console.log('New push subscription:', subscription);
     await sendPushSubscriptionToServer(subscription);
     return subscription;
-
   } catch (error) {
     console.error('Failed to subscribe the user to push:', error);
-    if (Notification.permission === 'denied') {
-        console.warn('User denied push permission or blocked notifications.');
-    }
     return null;
   }
 };
 
 const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
   try {
-    const response = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
+    const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(subscription),
     });
 
-    if (response.ok) {
-      console.log('Push subscription sent to server successfully.');
+    if (!resp.ok) {
+      console.error('Failed to send push subscription to server:', await resp.text());
     } else {
-      console.error('Failed to send push subscription to server:', await response.text());
+      console.log('Push subscription sent to server successfully.');
     }
   } catch (error) {
     console.error('Error sending push subscription to server:', error);
   }
 };
 
-// --- Cooldown Mechanism ---
+/** Helper to trigger your worker (for end-to-end testing) */
+export const triggerServerPush = async (): Promise<void> => {
+  try {
+    const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/trigger-push');
+    const json = await resp.json();
+    console.log('Trigger push result:', json);
+  } catch (e) {
+    console.error('Error triggering server push:', e);
+  }
+};
+
+// ----------------- Cooldown Mechanism -----------------
+
 const notificationCooldowns: Map<string, number> = new Map();
 const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
 
 export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS): boolean => {
-  if (!getNotificationPreference(tag)) {
-    return false;
-  }
-  const lastSent = notificationCooldowns.get(tag) || 0;
+  if (!getNotificationPreference(tag)) return false;
+
+  const last = notificationCooldowns.get(tag) ?? 0;
   const now = Date.now();
-  if (now - lastSent > cooldownMs) {
+  if (now - last > cooldownMs) {
     notificationCooldowns.set(tag, now);
     return true;
   }
@@ -177,13 +223,14 @@ export const clearNotificationCooldown = (tag: string) => {
   notificationCooldowns.delete(tag);
 };
 
-// --- User Notification Preferences ---
+// ----------------- User Notification Preferences -----------------
+
 const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
 
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
-    const storedValue = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
-    return storedValue === null ? true : JSON.parse(storedValue);
+    const stored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
+    return stored === null ? true : JSON.parse(stored);
   } catch (e) {
     console.error(`Error reading notification preference for ${categoryId}:`, e);
     return true;
@@ -198,23 +245,36 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
   }
 };
 
-// --- Test Notification Function ---
-export const sendTestNotification = (title?: string, body?: string) => {
+// ----------------- Test Notification -----------------
+
+/**
+ * Always attempt to show a test notification (even when app is visible).
+ * Uses Service Worker if possible; falls back to window Notification.
+ */
+export const sendTestNotification = async (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
     return;
   }
-  if (Notification.permission === 'granted') {
-    const finalTitle = title || 'Test Notification';
-    const finalBody = body || 'This is a test notification. If you received this, your device is set up correctly!';
-    
-    new Notification(finalTitle, {
-      body: finalBody,
-      icon: '/icons/android-chrome-192x192.png',
-      tag: 'test-notification' // A static tag ensures test notifications replace each other
-    });
-  } else {
-    alert(`Cannot send test notification. Permission status is: ${Notification.permission}. Please enable notifications first.`);
+
+  if (Notification.permission !== 'granted') {
+    const perm = await requestNotificationPermission();
+    if (perm !== 'granted') {
+      alert(`Cannot send test notification. Permission status is: ${Notification.permission}.`);
+      return;
+    }
   }
+
+  const finalTitle = title || 'Test Notification';
+  const finalBody =
+    body ||
+    'This is a test notification. If you received this, your device is set up correctly!';
+
+  await sendNotification(finalTitle, finalBody, {
+    tag: 'test-notification',
+    forceWhenVisible: true, // <- ensures it shows even if app is foregrounded
+    renotify: true,         // replace prior test notifications with same tag
+  });
 };
+
 // --- END OF FILE src/utils/notifications.ts ---
