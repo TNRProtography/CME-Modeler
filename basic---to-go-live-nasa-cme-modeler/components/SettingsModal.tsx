@@ -7,7 +7,8 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  sendTestNotification 
+  sendTestNotification, 
+  subscribeUserToPush // ADDED: Import the push subscription function
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
@@ -49,16 +50,17 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  const [isSubscribing, setIsSubscribing] = useState(false); // ADDED: Loading state for subscription
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-  const [isCopied, setIsCopied] = useState(false); // State for copy button feedback
+  const [isCopied, setIsCopied] = useState(false); 
 
   useEffect(() => {
     if (isOpen) {
-      if (!('Notification' in window)) {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         setNotificationStatus('unsupported');
       } else {
         setNotificationStatus(Notification.permission);
@@ -99,9 +101,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
   
-  const handleRequestPermission = useCallback(async () => {
+  // --- MODIFIED: Handle subscription flow ---
+  const handleEnableNotifications = useCallback(async () => {
+    setIsSubscribing(true);
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
+
+    if (permission === 'granted') {
+      // If permission is granted, subscribe the user to push notifications
+      const subscription = await subscribeUserToPush();
+      if (subscription) {
+        console.log("Successfully subscribed to push notifications.");
+        // UI will now update to show the notification preferences
+      } else {
+        console.error("Failed to get a push subscription.");
+        // Handle failed subscription, maybe show an error message
+      }
+    }
+    setIsSubscribing(false);
   }, []);
 
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
@@ -127,13 +144,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       console.error('Error during app installation:', error);
     }
   }, [deferredPrompt]);
-
-  // --- NEW: Handler for copying bank account number ---
+  
   const handleCopy = useCallback(() => {
     const accountNumber = '12-3168-0005239-53';
     navigator.clipboard.writeText(accountNumber).then(() => {
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+      setTimeout(() => setIsCopied(false), 2000); 
     }).catch(err => {
       console.error('Failed to copy text: ', err);
     });
@@ -183,27 +199,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* Notification Section */}
+          {/* --- MODIFIED: Notification Section --- */}
           <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
-            {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser does not support web notifications.</p>}
-            {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings to receive future alerts.</p></div>}
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Push Notifications</h3>
+            {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser or device does not support push notifications.</p>}
+            
+            {notificationStatus === 'denied' && (
+              <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm">
+                <p className="text-red-300">Notification permission was denied. You must enable them in your browser or system settings to receive alerts.</p>
+              </div>
+            )}
+
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
-                <p className="text-orange-300 mb-2">Enable notifications to be alerted of major space weather events.</p>
-                <button onClick={handleRequestPermission} className="px-3 py-1 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 text-xs">Enable Notifications</button>
+                <p className="text-orange-300 mb-3">Enable push notifications to be alerted of major space weather events, even when the app is closed.</p>
+                <button 
+                  onClick={handleEnableNotifications} 
+                  disabled={isSubscribing}
+                  className="px-4 py-2 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {isSubscribing ? 'Subscribing...' : 'Enable Notifications'}
+                </button>
               </div>
             )}
             
             {notificationStatus === 'granted' && (
               <div className="space-y-4">
-                <p className="text-green-400 text-sm">Notifications are enabled.</p>
-                <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-4 text-center">
-                    <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
-                    <p className="text-sm text-neutral-400 mt-2">
-                        The ability to customize which alerts you receive is under development.
-                        For now, you are set to receive critical notifications.
-                    </p>
+                <div className="bg-green-900/30 border border-green-700/50 rounded-md p-3 text-sm">
+                    <p className="text-green-300">Push notifications are enabled! You can now customize your alerts below.</p>
+                </div>
+                <div className="space-y-3 bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+                  {NOTIFICATION_CATEGORIES.map(category => (
+                    <ToggleSwitch
+                      key={category.id}
+                      label={category.label}
+                      checked={notificationSettings[category.id] ?? true}
+                      onChange={(checked) => handleNotificationToggle(category.id, checked)}
+                    />
+                  ))}
                 </div>
               </div>
             )}
@@ -216,8 +249,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
-
-          {/* --- MODIFIED: Support the Cause Section --- */}
+          
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
             <p className="text-sm text-neutral-400 mb-4">

@@ -61,11 +61,11 @@ export const sendNotification = (title: string, body: string, options?: CustomNo
 
 // --- New: Web Push Subscription Logic ---
 
-// You need to generate these VAPID keys on your backend server.
-// For example, using the 'web-push' library in Node.js:
-// webpush.generateVAPIDKeys();
-// Store these securely on your server.
-// The public key goes here (replace with your actual public key).
+// =========================================================================
+// === IMPORTANT: REPLACE THIS WITH YOUR ACTUAL VAPID PUBLIC KEY! ===
+// This key identifies your application server to the push service.
+// Your VAPID PRIVATE key must be kept secret on your server.
+// =========================================================================
 const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE'; // <-- REPLACE THIS!
 
 /**
@@ -96,6 +96,13 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
     console.warn('Service Workers or Push Messaging are not supported by this browser.');
     return null;
   }
+  
+  // --- ADDED: Check if VAPID key is still the placeholder ---
+  if (VAPID_PUBLIC_KEY === 'YBJFhRHKlybzXdM37Hz0Tv0chiN0mkTP9YuUe_-RWWJJnkWs-Xt1asrQ99OYf5QiUAD77hyZTxrrh0S5768lhVms') {
+    console.error('VAPID_PUBLIC_KEY is not set. Cannot subscribe to push notifications.');
+    alert('Push notification setup is incomplete. Please contact the administrator.');
+    return null;
+  }
 
   // Ensure notification permission is granted
   const permission = await requestNotificationPermission();
@@ -112,9 +119,8 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
     const existingSubscription = await registration.pushManager.getSubscription();
     if (existingSubscription) {
       console.log('User already has a push subscription:', existingSubscription);
-      // Optionally, you might want to send this subscription to your backend again
-      // to ensure your server has the latest one.
-      // sendPushSubscriptionToServer(existingSubscription);
+      // Send subscription to server to ensure it's up to date.
+      await sendPushSubscriptionToServer(existingSubscription);
       return existingSubscription;
     }
 
@@ -124,10 +130,9 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
     const subscription = await registration.pushManager.subscribe(options);
 
     console.log('Successfully subscribed to push:', subscription);
-    // TODO: Send this subscription object to your backend server.
-    // Your backend will store this unique subscription for this user
-    // and use it to send push messages later.
-    await sendPushSubscriptionToServer(subscription); // See function below
+    
+    // Send this new subscription object to your backend server.
+    await sendPushSubscriptionToServer(subscription);
     return subscription;
 
   } catch (error) {
@@ -141,11 +146,14 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
 
 /**
  * Sends the PushSubscription object to your backend server.
- * Replace with your actual API endpoint.
+ * You will need to create a backend endpoint (e.g., a Cloudflare Worker)
+ * to receive and store these subscription objects.
  */
 const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
   try {
-    const response = await fetch('/api/save-push-subscription', { // <-- REPLACE WITH YOUR BACKEND ENDPOINT
+    // IMPORTANT: You will need to create this API endpoint on your Cloudflare Worker.
+    // It should accept a POST request with the subscription object in the body.
+    const response = await fetch('https://push-notification-worker.thenamesrock.workers.dev/', { 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -156,7 +164,7 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
     if (response.ok) {
       console.log('Push subscription sent to server successfully.');
     } else {
-      console.error('Failed to send push subscription to server:', response.statusText);
+      console.error('Failed to send push subscription to server:', await response.text());
     }
   } catch (error) {
     console.error('Error sending push subscription to server:', error);

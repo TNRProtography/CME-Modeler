@@ -1,3 +1,5 @@
+// --- START OF FILE public/sw.js ---
+
 // public/sw.js - Network-Only Strategy with Push and Notification Click Handlers
 
 const CACHE_NAME = 'cme-modeler-cache-v32-network-only'; // New version name to force update
@@ -102,3 +104,4 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+// --- END OF FILE public/sw.js ---
