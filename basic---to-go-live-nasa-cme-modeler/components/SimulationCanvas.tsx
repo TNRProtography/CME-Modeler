@@ -172,6 +172,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // Visual refs
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
+  const skyDomeRef = useRef<any>(null);
 
   const timelineValueRef = useRef(timelineValue);
   const lastTimeRef = useRef(0);
@@ -299,6 +300,34 @@ const camera = new THREE.PerspectiveCamera(
       sunPhoto: withAniso(loader.load(TEX.SUN_PHOTOSPHERE)),
       milkyWay: withAniso(loader.load(TEX.MILKY_WAY)),
     };
+
+    // --- Milky Way sky *mesh* (skydome) ---
+{
+  // Remove any old sky mesh if present
+  const oldSky = scene.getObjectByName('milkyway-sky');
+  if (oldSky) {
+    scene.remove(oldSky);
+    (oldSky as any).geometry?.dispose?.();
+    (oldSky as any).material?.dispose?.();
+  }
+
+  // Radius must be LESS than camera far (your far is 120 * SCENE_SCALE)
+  const skyGeo = new THREE.SphereGeometry(90 * SCENE_SCALE, 64, 64);
+  const skyMat = new THREE.MeshBasicMaterial({
+    map: tex.milkyWay,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    transparent: false
+  });
+
+  const skydome = new THREE.Mesh(skyGeo, skyMat);
+  skydome.name = 'milkyway-sky';
+  skydome.renderOrder = -1000; // render first
+  scene.add(skydome);
+  skyDomeRef.current = skydome;
+}
+
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
     scene.add(ambientLight);
