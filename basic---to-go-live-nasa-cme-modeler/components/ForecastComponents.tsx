@@ -4,7 +4,6 @@ import React, { useState, useMemo } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
 import GuideIcon from './icons/GuideIcon';
-import { ExpandedGraphContent } from './ForecastCharts'; // Import the chart component
 
 // --- TYPE DEFINITIONS ---
 interface ForecastScoreProps {
@@ -19,16 +18,10 @@ interface ForecastScoreProps {
   onOpenModal: () => void;
 }
 
-// This interface is expanded to accept all props needed by ExpandedGraphContent
 interface DataGaugesProps {
     gaugeData: Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string }>;
     onOpenModal: (id: string) => void;
     onExpandGraph: (graphId: string | null) => void;
-    expandedGraph: string | null;
-    // Props to pass through to ExpandedGraphContent
-    chartData: any;
-    getMagnetometerAnnotations: (data: any[]) => any;
-    timeRanges: any;
 }
 
 interface CollapsibleSectionProps {
@@ -96,55 +89,39 @@ export const ForecastScore: React.FC<ForecastScoreProps> = ({
 };
 
 
-export const DataGauges: React.FC<DataGaugesProps> = ({ gaugeData, onOpenModal, onExpandGraph, expandedGraph, chartData, getMagnetometerAnnotations, timeRanges }) => {
+export const DataGauges: React.FC<DataGaugesProps> = ({ gaugeData, onOpenModal, onExpandGraph }) => {
     return (
-        <div className="col-span-12">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-                {Object.entries(gaugeData).map(([key, data]) => {
-                    const isGraphable = !['moon'].includes(key);
-                    let graphId: string | null = null;
-                    if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
-                    else if (key === 'power') graphId = 'hemispheric-power-graph-container';
-                    else if (key === 'speed') graphId = 'speed-graph-container';
-                    else if (key === 'density') graphId = 'density-graph-container';
+        <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+            {Object.entries(gaugeData).map(([key, data]) => {
+                const isGraphable = !['moon'].includes(key);
+                let graphId: string | null = null;
+                if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
+                else if (key === 'power') graphId = 'hemispheric-power-graph-container';
+                else if (key === 'speed') graphId = 'speed-graph-container';
+                else if (key === 'density') graphId = 'density-graph-container';
 
-                    const isCurrentlyExpanded = expandedGraph === graphId;
-                    
-                    return (
-                        <div key={key} className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
-                            <button 
-                                onClick={() => isGraphable && onExpandGraph(isCurrentlyExpanded ? null : graphId)} 
-                                className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''} ${isCurrentlyExpanded ? 'bg-neutral-800/70' : ''}`} 
-                                disabled={!isGraphable}
-                            >
-                                <div className="flex justify-center items-center">
-                                    <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
-                                    <button onClick={(e) => { e.stopPropagation(); onOpenModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                </div>
-                                <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                                <div className="text-3xl my-2">{data.emoji}</div>
-                                <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
-                                    <div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div>
-                                </div>
-                                <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
-                                {isGraphable && ( <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400 transform transition-transform duration-300 ${isCurrentlyExpanded ? 'rotate-180' : 'rotate-0'}`} /> )}
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-
-            {expandedGraph && !expandedGraph.includes('goes-mag') && (
-                <div className="mt-6 card bg-neutral-950/80 p-4 flex flex-col transition-all duration-500 ease-in-out max-h-[700px] opacity-100">
-                    <ExpandedGraphContent 
-                        graphId={expandedGraph}
-                        openModal={onOpenModal}
-                        getMagnetometerAnnotations={getMagnetometerAnnotations}
-                        {...chartData}
-                        {...timeRanges}
-                    />
-                </div>
-            )}
+                return (
+                    <div key={key} className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
+                        <button 
+                            onClick={() => isGraphable && onExpandGraph(graphId)} 
+                            className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''}`} 
+                            disabled={!isGraphable}
+                        >
+                            <div className="flex justify-center items-center">
+                                <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                <button onClick={(e) => { e.stopPropagation(); onOpenModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                            <div className="text-3xl my-2">{data.emoji}</div>
+                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
+                                <div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div>
+                            </div>
+                            <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                            {isGraphable && ( <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400`} /> )}
+                        </button>
+                    </div>
+                );
+            })}
         </div>
     );
 };

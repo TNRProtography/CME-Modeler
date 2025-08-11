@@ -5,6 +5,7 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
+import GraphModal from './GraphModal'; // Import the new GraphModal
 
 import {
     ForecastScore,
@@ -20,7 +21,7 @@ import {
     ExpandedGraphContent
 } from './ForecastCharts';
 import { SubstormActivity } from '../types';
-import CaretIcon from './icons/CaretIcon'; // Import CaretIcon
+import CaretIcon from './icons/CaretIcon';
 
 // --- Type Definitions ---
 interface ForecastDashboardProps {
@@ -208,7 +209,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
     const [isFaqOpen, setIsFaqOpen] = useState(false);
-    const [expandedGraph, setExpandedGraph] = useState<string | null>(null);
+    const [graphModalId, setGraphModalId] = useState<string | null>(null);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
@@ -238,7 +239,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
         if (navigationTarget?.page === 'forecast' && navigationTarget.expandId) {
-            setExpandedGraph(navigationTarget.expandId);
+            setGraphModalId(navigationTarget.expandId);
         }
     }, [navigationTarget]);
 
@@ -298,43 +299,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <DataGauges
                             gaugeData={gaugeData}
                             onOpenModal={openModal}
-                            onExpandGraph={setExpandedGraph}
-                            expandedGraph={expandedGraph}
-                            chartData={{
-                                allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-                                goes18Data, goes19Data, loadingMagnetometer, substormBlurb
-                            }}
-                            getMagnetometerAnnotations={getMagnetometerAnnotations}
-                            timeRanges={{
-                                solarWindTimeRange, setSolarWindTimeRange: (d:number, l:string) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }, solarWindTimeLabel,
-                                magneticFieldTimeRange, setMagneticFieldTimeRange: (d:number, l:string) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }, magneticFieldTimeLabel,
-                                hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange: (d:number, l:string) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }, hemisphericPowerChartTimeLabel,
-                                magnetometerTimeRange, setMagnetometerTimeRange: (d:number, l:string) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }, magnetometerTimeLabel,
-                            }}
+                            onExpandGraph={setGraphModalId}
                         />
                         
                         <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
-                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedGraph(expandedGraph === 'goes-mag-graph-container' ? null : 'goes-mag-graph-container')}>
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setGraphModalId('goes-mag-graph-container')}>
                                 <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
                                 <div className="flex items-center">
                                     <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                     <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                        <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${expandedGraph === 'goes-mag-graph-container' ? 'rotate-180' : 'rotate-0'}`} />
+                                        <CaretIcon className={`w-6 h-6 transform transition-transform duration-300`} />
                                     </button>
                                 </div>
-                            </div>
-                            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${expandedGraph === 'goes-mag-graph-container' ? 'max-h-[750px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                               <ExpandedGraphContent
-                                    graphId={'goes-mag-graph-container'}
-                                    openModal={openModal}
-                                    getMagnetometerAnnotations={getMagnetometerAnnotations}
-                                    allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
-                                    goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
-                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
-                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
-                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
-                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
-                                />
                             </div>
                         </div>
 
@@ -389,6 +365,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     </footer>
                  </div>
             </div>
+
+            <GraphModal 
+                isOpen={!!graphModalId}
+                onClose={() => setGraphModalId(null)}
+                graphId={graphModalId}
+                openModal={openModal}
+                getMagnetometerAnnotations={getMagnetometerAnnotations}
+                allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
+                goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
+                solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
+                magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
+                hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
+                magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
+            />
+
             {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
             <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
         </div>
@@ -396,3 +387,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
+// --- END OF FILE ForecastDashboard.tsx ---
