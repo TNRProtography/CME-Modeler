@@ -7,7 +7,7 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  sendTestNotification, // ADDED: Import the test notification function
+  sendTestNotification, // This function will be modified to handle specific tests
   subscribeUserToPush
 } from '../utils/notifications.ts';
 
@@ -154,6 +154,53 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     });
   }, []);
 
+  const handleTestCategory = useCallback((categoryId: string) => {
+    let title = 'Test Notification';
+    let body = 'This is a sample alert for your selected category.';
+
+    switch (categoryId) {
+        case 'aurora-40percent':
+            title = 'Aurora Alert: Phone Visible!';
+            body = 'Forecast has reached 42%. Good chance to capture with a phone camera.';
+            break;
+        case 'aurora-50percent':
+            title = 'Aurora Alert: Faint Eye Visibility!';
+            body = 'Forecast has reached 51%. A faint glow may be visible to the naked eye.';
+            break;
+        case 'aurora-60percent':
+            title = 'Aurora Alert: Eye Visible!';
+            body = 'Forecast has reached 65%. Good chance of naked-eye visibility.';
+            break;
+        case 'aurora-80percent':
+            title = 'Major Aurora Alert!';
+            body = 'Forecast has reached 82%! A significant display is likely!';
+            break;
+        case 'flare-M1':
+            title = 'Solar Flare: ≥M1-Class';
+            body = 'An M1.3 flare is in progress. Minor radio blackouts possible.';
+            break;
+        case 'flare-M5':
+            title = 'Major Flare: ≥M5-Class';
+            body = 'A strong M5.8 flare is in progress. Moderate radio blackouts likely.';
+            break;
+        case 'flare-X1':
+            title = 'Significant Flare: ≥X1-Class';
+            body = 'A powerful X1.2 flare is in progress. Strong, widespread radio blackouts expected.';
+            break;
+        case 'flare-X5':
+            title = 'Extreme Flare: ≥X5-Class';
+            body = 'An extreme X5.1 flare is in progress. Severe radio blackouts and radiation storms possible.';
+            break;
+        case 'substorm-forecast':
+            title = 'Substorm Forecast Issued';
+            body = 'Forecast: ~75% chance of activity between 11:30pm and 12:00am. Expected visibility: Faint Eye Visible.';
+            break;
+    }
+    // Use the generic test notification function, passing our specific title and body
+    sendTestNotification(title, body);
+  }, []);
+
+
   if (!isOpen) return null;
 
   return (
@@ -229,22 +276,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 </div>
                 <div className="space-y-3 bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
                   {NOTIFICATION_CATEGORIES.map(category => (
-                    <ToggleSwitch
-                      key={category.id}
-                      label={category.label}
-                      checked={notificationSettings[category.id] ?? true}
-                      onChange={(checked) => handleNotificationToggle(category.id, checked)}
-                    />
+                    <div key={category.id} className="flex items-center justify-between gap-4">
+                      <ToggleSwitch
+                        label={category.label}
+                        checked={notificationSettings[category.id] ?? true}
+                        onChange={(checked) => handleNotificationToggle(category.id, checked)}
+                      />
+                      <button
+                        onClick={() => handleTestCategory(category.id)}
+                        className="flex-shrink-0 px-3 py-1 text-xs bg-sky-600/20 border border-sky-500/50 rounded-md text-sky-300 hover:bg-sky-500/30 transition-colors"
+                      >
+                        Test
+                      </button>
+                    </div>
                   ))}
                 </div>
-                {/* --- ADDED: Test Notification Button --- */}
                 <div className="mt-4 flex justify-center">
-                  <button
-                      onClick={sendTestNotification}
-                      className="px-4 py-2 text-sm bg-sky-600/20 border border-sky-500/50 rounded-md text-sky-300 hover:bg-sky-500/30 hover:border-sky-400 transition-colors"
-                  >
-                      Send Test Notification
-                  </button>
+                    <button
+                        onClick={() => sendTestNotification()} // Sends a generic test
+                        className="px-4 py-2 text-sm bg-neutral-700 border border-neutral-600 rounded-md text-neutral-300 hover:bg-neutral-600 transition-colors"
+                    >
+                        Send Generic Test Notification
+                    </button>
                 </div>
               </div>
             )}

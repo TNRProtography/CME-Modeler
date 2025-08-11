@@ -185,16 +185,19 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 };
 
 // --- Test Notification Function ---
-export const sendTestNotification = () => {
+export const sendTestNotification = (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
     return;
   }
   if (Notification.permission === 'granted') {
-    new Notification('Test Notification', {
-      body: 'This is a test notification. If you received this, your device is set up correctly!',
+    const finalTitle = title || 'Test Notification';
+    const finalBody = body || 'This is a test notification. If you received this, your device is set up correctly!';
+    
+    new Notification(finalTitle, {
+      body: finalBody,
       icon: '/icons/android-chrome-192x192.png',
-      tag: 'test-notification'
+      tag: 'test-notification' // A static tag ensures test notifications replace each other
     });
   } else {
     alert(`Cannot send test notification. Permission status is: ${Notification.permission}. Please enable notifications first.`);
