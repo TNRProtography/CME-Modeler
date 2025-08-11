@@ -10,7 +10,7 @@ import TutorialModal from './components/TutorialModal'; // This is the general t
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormPrediction } from './types';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -32,22 +32,19 @@ import GlobalBanner from './components/GlobalBanner';
 import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
 import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
 
-// DELETED: Inline icon components are now moved to their own files.
-
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
-// --- NEW: Type for navigation/scroll targets ---
 interface NavigationTarget {
   page: 'forecast' | 'solar-activity';
   elementId: string;
-  expandId?: string; // Optional ID for components that need to be expanded
+  expandId?: string;
 }
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.3beta'; // Define your app version here
+const APP_VERSION = 'v0.3beta';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -62,14 +59,12 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // For the CME Page Guide
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // For the First Visit Tour
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
-
-  // --- NEW: State to handle navigation from banner clicks ---
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
@@ -91,6 +86,8 @@ const App: React.FC = () => {
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<{ text: string; color: string } | null>(null);
+  // --- NEW: State to hold substorm prediction details ---
+  const [substormPrediction, setSubstormPrediction] = useState<SubstormPrediction | null>(null);
 
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
@@ -102,22 +99,16 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- NEW: Effect to handle scrolling after navigation ---
   useEffect(() => {
     if (navigationTarget) {
-      // Switch to the target page
       setActivePage(navigationTarget.page);
-
-      // Use a timeout to allow the new page component to render before we try to scroll
       const scrollTimer = setTimeout(() => {
         const element = document.getElementById(navigationTarget.elementId);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        // Reset the target after attempting to scroll
         setNavigationTarget(null);
-      }, 100); // 100ms delay should be enough for rendering
-
+      }, 100);
       return () => clearTimeout(scrollTimer);
     }
   }, [navigationTarget]);
@@ -273,7 +264,7 @@ const App: React.FC = () => {
   const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
   const flareClass = useMemo(() => { if (latestXrayFlux === null) return undefined; if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`; if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`; return undefined; }, [latestXrayFlux]);
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
-  const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching') && !substormActivityStatus.text.includes('substorm signature detected'), [substormActivityStatus]);
+  const isSubstormAlert = useMemo(() => substormActivityStatus !== null && substormActivityStatus.text.includes('stretching'), [substormActivityStatus]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
@@ -284,7 +275,6 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [cmeData, handleSelectCMEForModeling]);
 
-  // --- MODIFIED: Banner click handlers ---
   const handleFlareAlertClick = useCallback(() => {
     setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
   }, []);
@@ -322,6 +312,8 @@ const App: React.FC = () => {
             onFlareAlertClick={handleFlareAlertClick}
             onAuroraAlertClick={handleAuroraAlertClick}
             onSubstormAlertClick={handleSubstormAlertClick}
+            // --- NEW: Pass prediction data to the banner ---
+            substormPrediction={substormPrediction}
         />
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
@@ -399,6 +391,8 @@ const App: React.FC = () => {
                     setCurrentAuroraScore={setCurrentAuroraScore} 
                     setSubstormActivityStatus={setSubstormActivityStatus} 
                     navigationTarget={navigationTarget}
+                    // --- NEW: Pass the setter function to the dashboard ---
+                    setSubstormPrediction={setSubstormPrediction}
                 />
             )}
             {activePage === 'solar-activity' && (

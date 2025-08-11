@@ -128,3 +128,10 @@ export interface SightingReport {
   key?: string; // a unique key from the KV store
   isPending?: boolean; // For client-side state
 }
+
+// --- NEW: Type for Substorm Prediction Data ---
+export interface SubstormPrediction {
+  chance: number;       // The percentage chance of a substorm
+  startTime: number;    // The start time of the predicted window (timestamp)
+  endTime: number;      // The end time of the predicted window (timestamp)
+}
