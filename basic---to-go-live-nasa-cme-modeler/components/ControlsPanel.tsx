@@ -3,7 +3,6 @@ import { TimeRange, ViewMode, FocusTarget, CMEFilter } from '../types';
 import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
-// import ToggleSwitch from './ToggleSwitch'; // Assuming ToggleSwitch is imported from './ToggleSwitch'
 
 // Re-defining ToggleSwitch to accept an ID. You should update your actual ToggleSwitch.tsx
 interface ToggleSwitchProps {
@@ -99,7 +98,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onCmeFilterChange,
 }) => {
   return (
-    <div className="panel lg:relative lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl space-y-5 lg:max-w-xs w-full h-full flex flex-col">
+    <div className="panel lg:relative lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl lg:max-w-xs w-full h-full flex flex-col">
       
       <div className="absolute top-4 right-4 flex items-center space-x-1 z-10">
         <button
@@ -117,7 +116,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         )}
       </div>
 
-      <div className="flex flex-col items-center border-b border-neutral-700/80 pb-3 mb-3 text-center">
+      <div className="flex flex-col items-center border-b border-neutral-700/80 pb-3 text-center">
         <img 
           src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
           alt="TNR Protography Logo"
@@ -130,7 +129,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         </h1>
       </div>
 
-      <div className="flex-grow overflow-y-auto pr-2 space-y-5">
+      <div className="flex-grow overflow-y-auto pr-2 space-y-5 pt-5">
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Date Range:</label>
           <div className="flex space-x-2">
@@ -177,7 +176,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         <Disclaimer />
       </div>
 
-      <div className="mt-auto pt-4">
+      <div className="flex-shrink-0 pt-4">
         <ColorScaleGuide isMobileView={true} />
       </div>
     </div>
