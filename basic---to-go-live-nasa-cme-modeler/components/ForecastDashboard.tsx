@@ -239,7 +239,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
         if (navigationTarget?.page === 'forecast' && navigationTarget.expandId) {
-            setGraphModalId(navigationTarget.expandId);
+            // Note: This won't work for the GOES chart anymore since it's always open.
+            // Kept for other potential expandable sections.
+            if (navigationTarget.expandId !== 'goes-mag-graph-container') {
+                 setGraphModalId(navigationTarget.expandId);
+            }
         }
     }, [navigationTarget]);
 
@@ -303,14 +307,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         />
                         
                         <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
-                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setGraphModalId('goes-mag-graph-container')}>
+                            <div className="flex items-center justify-between">
                                 <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
-                                <div className="flex items-center">
-                                    <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                                    <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
-                                        <CaretIcon className={`w-6 h-6 transform transition-transform duration-300`} />
-                                    </button>
-                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <div className="mt-4 h-[600px] max-h-[60vh]">
+                               <ExpandedGraphContent
+                                    graphId={'goes-mag-graph-container'}
+                                    openModal={openModal}
+                                    getMagnetometerAnnotations={getMagnetometerAnnotations}
+                                    allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
+                                    goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
+                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
+                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
+                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
+                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
+                                />
                             </div>
                         </div>
 
