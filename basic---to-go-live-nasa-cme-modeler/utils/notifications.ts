@@ -23,24 +23,16 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
 };
 
 interface CustomNotificationOptions extends NotificationOptions {
-  /**
-   * Category key for user preferences. If stacking=false, this becomes the stable tag to replace prior notices.
-   */
-  tag?: string;
-  /** If true, don't suppress when the app is visible. Default: false. */
-  forceWhenVisible?: boolean;
-  /**
-   * If true (default), notifications stack (no stable tag used).
-   * If false, we use a stable tag (either the provided tag, or "default") so new ones replace old ones.
-   */
-  stacking?: boolean;
+  tag?: string; // category key
+  forceWhenVisible?: boolean; // show even if app visible
+  stacking?: boolean; // default true
 }
 
 /** App visibility utility */
 const isAppVisible = (): boolean =>
   typeof document !== 'undefined' && document.visibilityState === 'visible';
 
-/** Prefer SW notifications when possible (more reliable on Android) */
+/** Prefer SW notifications when possible */
 const showNotification = async (title: string, options: NotificationOptions) => {
   try {
     if ('serviceWorker' in navigator) {
@@ -61,45 +53,32 @@ const showNotification = async (title: string, options: NotificationOptions) => 
   return false;
 };
 
-/**
- * Build final NotificationOptions honoring stacking rules.
- * - stacking === true  -> omit 'tag' (or use a unique tag) so notices stack.
- * - stacking === false -> use stable 'tag' so new replaces old.
- */
-const buildStackingOptions = (opts?: CustomNotificationOptions): NotificationOptions => {
+/** Build options, honoring stacking rules */
+const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string }): NotificationOptions => {
   const stacking = opts?.stacking ?? true;
 
-  // Base options (no tag here yet)
   const base: NotificationOptions = {
     body: opts?.body,
-    icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
-    badge: opts?.badge ?? '/icons/android-chrome-192x192.png',
+    icon: opts?.icon ?? '/icons/favicon-32x32.png',
+    badge: opts?.badge ?? '/icons/favicon-32x32.png',
     vibrate: opts?.vibrate ?? [200, 100, 200],
     data: opts?.data,
     requireInteraction: opts?.requireInteraction,
     silent: opts?.silent,
     actions: opts?.actions,
     image: opts?.image,
-    renotify: false, // stacking: false means replacement happens via tag, not renotify spam
+    renotify: false,
   };
 
   if (stacking) {
-    // To stack, best is to omit 'tag'.
-    // If you want per-category stacks but no cross-replacement, you could use a unique tag per event:
-    // base.tag = (opts?.tag ? `${opts.tag}-` : '') + Date.now().toString();
-    // But omitting tag entirely gives the most natural stacking behavior across platforms.
-    return base;
+    return base; // omit tag for stacking
   } else {
-    // Replacement mode: use a stable tag (either provided or "default")
     return { ...base, tag: opts?.tag ?? 'default' };
   }
 };
 
 /**
  * Send an in-app (local) notification.
- * - Respects user preference per tag.
- * - Stacks by default (no tag => no replacement).
- * - Use { stacking:false, tag:'category-id' } to make replacements per category.
  */
 export const sendNotification = async (title: string, body: string, options?: CustomNotificationOptions) => {
   if (!('Notification' in window)) {
@@ -108,14 +87,11 @@ export const sendNotification = async (title: string, body: string, options?: Cu
   }
 
   const categoryKey = options?.tag;
-
-  // Respect user category preferences when a category tag exists
   if (categoryKey && !getNotificationPreference(categoryKey)) {
     console.log(`Notification for category '${categoryKey}' is disabled by user preference.`);
     return;
   }
 
-  // Permission check
   if (Notification.permission !== 'granted') {
     console.warn('Notification not sent. Permission:', Notification.permission);
     return;
@@ -123,27 +99,22 @@ export const sendNotification = async (title: string, body: string, options?: Cu
 
   const force = !!options?.forceWhenVisible;
   if (isAppVisible() && !force) {
-    // App is in foreground and not forced: keep it quiet
     console.log('Notification suppressed because the application is currently visible.');
     return;
   }
 
-  const finalOptions = buildStackingOptions({
-    ...options,
-    body, // ensure body passed through
-  });
-
+  const finalOptions = buildStackingOptions({ ...options, body });
   const shown = await showNotification(title, finalOptions);
+
   if (shown) {
     console.log('Notification shown:', title, body, finalOptions);
   } else {
-    console.warn('Notification could not be shown (no permission or no API available).');
+    console.warn('Notification could not be shown.');
   }
 };
 
 // ----------------- Web Push Subscription Logic -----------------
 
-// Your base64url VAPID public key (uncompressed P-256, 65 bytes -> base64url)
 const VAPID_PUBLIC_KEY =
   'BIQ9JadNJgyMDPebgXu5Vpf7-7XuCcl5uEaxocFXeIdUxDq1Q9bGe0E5C8-a2qQ-psKhqbAzV2vELkRxpnWqebU';
 
@@ -216,7 +187,6 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
   }
 };
 
-/** Helper to trigger your worker (for end-to-end testing) */
 export const triggerServerPush = async (): Promise<void> => {
   try {
     const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/trigger-push');
@@ -272,11 +242,6 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 
 // ----------------- Test Notification -----------------
 
-/**
- * Test notifications now STACK by default.
- * - No stable tag (so they won’t replace each other)
- * - Still forces showing even if app is visible.
- */
 export const sendTestNotification = async (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
@@ -297,10 +262,10 @@ export const sendTestNotification = async (title?: string, body?: string) => {
     'This is a test notification. If you received this, your device is set up correctly!';
 
   await sendNotification(finalTitle, finalBody, {
-    // stacking true by default; no stable tag -> stack
     forceWhenVisible: true,
     stacking: true,
-    // No 'tag' and no 'renotify' so each test shows as a new item
+    icon: '/icons/favicon-32x32.png',
+    badge: '/icons/favicon-32x32.png',
   });
 };
 
