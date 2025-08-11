@@ -315,18 +315,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(cmeGroupRef.current);
 
     // --- Milky Way sky dome ---
-const skyGeo = new THREE.SphereGeometry(1000 * SCENE_SCALE, 64, 64);
-const skyMat = new THREE.MeshBasicMaterial({
-  map: tex.milkyWay,
-  side: THREE.BackSide,
-  depthWrite: false,
-  depthTest: false,
-  transparent: false
-});
-const skydome = new THREE.Mesh(skyGeo, skyMat);
-skydome.renderOrder = -1000; // render first
-scene.add(skydome);
-
+    const skyGeo = new THREE.SphereGeometry(150 * SCENE_SCALE, 64, 64);
+    const skyMat = new THREE.MeshBasicMaterial({ map: tex.milkyWay, side: THREE.BackSide });
+    const skydome = new THREE.Mesh(skyGeo, skyMat);
+    skydome.name = 'milkyway-sky';
+    scene.add(skydome);
 
     // --- Stars: two brighter layers ---
     const makeStars = (count: number, spread: number, size: number) => {
