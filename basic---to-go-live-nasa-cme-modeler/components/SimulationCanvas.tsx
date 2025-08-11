@@ -471,9 +471,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     };
-    const ro = new (window as any).ResizeObserver(() => handleResize());
-    if (ro && mountRef.current) ro.observe(mountRef.current);
-    window.addEventListener('resize', handleResize);
+    // Safe ResizeObserver creation (no optional-chaining after `new`)
+const RO: any = (window as any).ResizeObserver;
+const ro = RO ? new RO(() => handleResize()) : null;
+if (ro && mountRef.current) {
+  ro.observe(mountRef.current);
+}
+window.addEventListener('resize', handleResize);;
+
 
     // Keyboard shortcuts
     const onKey = (e: KeyboardEvent) => {
@@ -913,5 +918,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   return <div ref={mountRef} className="w-full h-full" />;
 };
+
+
 
 export default React.forwardRef(SimulationCanvas);
