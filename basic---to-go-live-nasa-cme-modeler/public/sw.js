@@ -1,70 +1,83 @@
 // --- START OF FILE public/sw.js ---
+// Network-only + Push handlers (Updated for server-sent payloads)
 
 const CACHE_NAME = 'cme-modeler-cache-v32-network-only';
 
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
+  // skipWaiting forces the new service worker to activate immediately.
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  // Clean up old caches.
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(key => {
-        if (key !== CACHE_NAME) return caches.delete(key);
-      }))
-    )
+    caches.keys().then(keys => Promise.all(keys.map(key => {
+      if (key !== CACHE_NAME) return caches.delete(key);
+    })))
   );
+  // claim() ensures that the new service worker takes control of the page immediately.
   return self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
+  // Network-only strategy: Always go to the network.
+  // This is good for an app that needs the absolute latest data.
   event.respondWith(
-    fetch(event.request).catch(() =>
-      new Response('<h1>Network Error</h1><p>Please check your internet connection.</p>', {
-        headers: { 'Content-Type': 'text/html' },
-        status: 503,
-        statusText: 'Service Unavailable'
-      })
-    )
+    fetch(event.request).catch(() => new Response(
+      '<h1>Network Error</h1><p>Please check your internet connection.</p>',
+      { headers: { 'Content-Type': 'text/html' }, status: 503, statusText: 'Service Unavailable' }
+    ))
   );
 });
 
-// ---- Push handler: no icon, transparent badge, no URL in payload/options ----
+// ---- Push notifications ----
+// --- MODIFIED: This handler now expects a JSON payload from the server ---
 self.addEventListener('push', (event) => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch {}
+  if (!event.data) {
+    console.error('Push event received but no data was sent.');
+    return;
+  }
 
-  const title = data.title || '✨ Aurora Alert';
+  // The worker now sends a JSON string with a title and body. We parse it here.
+  const data = event.data.json();
+  
+  const title = data.title || 'Spot The Aurora'; // A safe fallback title
   const options = {
-    body: data.body || 'Strong solar activity detected. Tap to open.',
-    // No large icon to avoid gray square thumbnails
-    // Use a fully transparent small badge to avoid the colored letter-circle
-    badge: '/icons/notification-badge.png',
-    vibrate: data.vibrate || [200, 100, 200],
-    tag: data.tag, // omit or vary to stack; set stable to replace
-    requireInteraction: data.requireInteraction ?? false,
-    // Do NOT attach a URL into data to avoid showing anything derived from it
-    // (Note: Chrome will still show site origin by design; that can't be removed.)
-    data: { } 
+    body: data.body || 'You have a new alert. Tap to see the latest updates.', // A safe fallback body
+    icon: '/icons/android-chrome-192x192.png',
+    badge: '/icons/android-chrome-192x192.png',
+    vibrate: [200, 100, 200],
+    tag: 'spot-the-aurora-alert', // A general tag to allow new notifications to replace old ones.
+    data: {
+      url: '/', // The URL to open when the notification is clicked.
+    },
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// ---- Click always opens app root (no URL shown/stored in notification data) ----
+// ---- Click -> focus/open app ----
+// --- UNCHANGED: This logic is still correct and robust ---
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = '/';
+  const urlToOpen = (event.notification.data && event.notification.data.url) || '/';
+  
   event.waitUntil((async () => {
-    const all = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of all) {
+    // Get a list of all open windows/tabs controlled by this service worker.
+    const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    
+    // Check if there's an existing window open for the app.
+    for (const client of allClients) {
       if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-        await client.focus();
-        return;
+        // If a window is found, bring it into focus.
+        return await client.focus();
       }
     }
-    await clients.openWindow(urlToOpen);
+    
+    // If no window is found, open a new one.
+    if (clients.openWindow) {
+      return await clients.openWindow(urlToOpen);
+    }
   })());
 });
-
 // --- END OF FILE public/sw.js ---

@@ -1,19 +1,17 @@
 // --- START OF FILE src/utils/notifications.ts ---
 
 /**
- * Notifications utility (hardened)
+ * Notifications utility (hardened for server-side push)
  *
- * Key changes:
- * - sendNotification now requests permission on-demand (if still "default").
- * - New sendNotificationWithCooldown(tag, cooldownMs, ...) updates cooldown ONLY on success.
- * - canSendNotification now supports optional `reserve` param (defaults to old behavior).
- * - Safer SW usage with timeout + clean fallback to window Notification.
- * - Force-when-visible remains default true so notifications appear even if app is open.
- *
- * Usage (recommended):
- *   await sendNotificationWithCooldown('hemispheric-power', 30*60*1000,
- *     'Aurora Update', 'Hemispheric power spiked to 60 GW', { tag: 'hemispheric-power' });
+ * This file handles both local (in-app) notifications and the logic for
+ * subscribing to the server-side push notification worker.
  */
+
+// A single source of truth for all notification categories used in the app.
+const NOTIFICATION_CATEGORIES = [
+    'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
+    'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'substorm-forecast',
+];
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
   if (!('Notification' in window)) {
@@ -35,7 +33,6 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
 };
 
 interface CustomNotificationOptions extends NotificationOptions {
-  // Note: NotificationOptions already has `tag`; we redeclare for clarity.
   tag?: string;
   forceWhenVisible?: boolean;
   stacking?: boolean;
@@ -72,7 +69,6 @@ const waitForServiceWorkerReady = async (timeoutMs = 4000): Promise<ServiceWorke
 };
 
 const showNotification = async (title: string, options: NotificationOptions): Promise<boolean> => {
-  // Prefer SW path (better on mobile/Android).
   try {
     const reg = await waitForServiceWorkerReady();
     if (reg && typeof reg.showNotification === 'function') {
@@ -83,7 +79,6 @@ const showNotification = async (title: string, options: NotificationOptions): Pr
     if (DEBUG) console.warn('SW showNotification failed, falling back to window Notification:', e);
   }
 
-  // Fallback to window Notification
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(title, options);
     return true;
@@ -93,7 +88,6 @@ const showNotification = async (title: string, options: NotificationOptions): Pr
 
 const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string }): NotificationOptions => {
   const stacking = opts?.stacking ?? true;
-
   const base: NotificationOptions = {
     body: opts?.body,
     icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
@@ -106,15 +100,9 @@ const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string
     image: opts?.image,
     renotify: false,
   };
-
-  // When stacking=false, use a tag so subsequent ones replace the prior.
   return stacking ? base : { ...base, tag: opts?.tag ?? 'default' };
 };
 
-/**
- * Ensure permission for local notifications.
- * If status is "default", request it now rather than silently failing.
- */
 const ensurePermission = async (): Promise<boolean> => {
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
@@ -123,7 +111,6 @@ const ensurePermission = async (): Promise<boolean> => {
   if (Notification.permission === 'granted') return true;
   if (Notification.permission === 'denied') return false;
 
-  // permission === 'default'
   try {
     const perm = await Notification.requestPermission();
     return perm === 'granted';
@@ -133,11 +120,6 @@ const ensurePermission = async (): Promise<boolean> => {
   }
 };
 
-/**
- * Send a notification (returns true if actually shown).
- * - Requests permission on-demand if still "default".
- * - Respects options.forceWhenVisible (default true).
- */
 export const sendNotification = async (
   title: string,
   body: string,
@@ -147,41 +129,32 @@ export const sendNotification = async (
     console.warn('Notifications are not supported by this browser.');
     return false;
   }
-
-  // On-demand permission if needed
   const hasPerm = await ensurePermission();
   if (!hasPerm) {
     console.warn('Notification not sent. Permission:', Notification.permission);
     return false;
   }
-
-  // Category preference gate (if tag present)
   const categoryKey = options?.tag;
   if (categoryKey && !getNotificationPreference(categoryKey)) {
     if (DEBUG) console.log(`Notification for category '${categoryKey}' is disabled by user preference.`);
     return false;
   }
-
-  // Show even if the app is visible unless explicitly disabled
   const force = options?.forceWhenVisible ?? true;
   if (isAppVisible() && !force) {
     if (DEBUG) console.log('Notification suppressed because the application is currently visible.');
     return false;
   }
-
   const finalOptions = buildStackingOptions({ ...options, body });
   const shown = await showNotification(title, finalOptions);
-
   if (shown) {
     if (DEBUG) console.log('Notification shown:', title, body, finalOptions);
   } else {
     console.warn('Notification could not be shown.');
   }
-
   return shown;
 };
 
-// --- Push subscription helpers (unchanged, with minor hardening) ---
+// --- Push subscription helpers ---
 
 const VAPID_PUBLIC_KEY =
   'BIQ9JadNJgyMDPebgXu5Vpf7-7XuCcl5uEaxocFXeIdUxDq1Q9bGe0E5C8-a2qQ-psKhqbAzV2vELkRxpnWqebU';
@@ -195,23 +168,24 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   return out;
 };
 
+/**
+ * --- MODIFIED FOR SERVER-SIDE PUSH ---
+ * This function now gathers user preferences and sends them with the subscription.
+ */
 export const subscribeUserToPush = async (): Promise<PushSubscription | null> => {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.warn('Service Workers or Push Messaging are not supported by this browser.');
     return null;
   }
-
   if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.length < 50) {
     console.error('VAPID_PUBLIC_KEY is missing/invalid.');
     return null;
   }
-
   const permission = await requestNotificationPermission();
   if (permission !== 'granted') {
     console.warn('Notification permission not granted. Cannot subscribe to push.');
     return null;
   }
-
   try {
     const reg = await waitForServiceWorkerReady();
     if (!reg) {
@@ -219,21 +193,28 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
       return null;
     }
 
-    const existing = await reg.pushManager.getSubscription();
-    if (existing) {
-      if (DEBUG) console.log('Existing push subscription:', existing);
-      await sendPushSubscriptionToServer(existing);
-      return existing;
+    // --- NEW: Gather all current notification preferences ---
+    const preferences: Record<string, boolean> = {};
+    NOTIFICATION_CATEGORIES.forEach(id => {
+        preferences[id] = getNotificationPreference(id);
+    });
+
+    let subscription = await reg.pushManager.getSubscription();
+    if (subscription) {
+      if (DEBUG) console.log('Existing push subscription found.');
+      // Always resend to server to ensure preferences are up-to-date.
+      await sendPushSubscriptionToServer(subscription, preferences);
+      return subscription;
     }
 
     const appServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    const subscription = await reg.pushManager.subscribe({
+    subscription = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: appServerKey,
     });
 
-    if (DEBUG) console.log('New push subscription:', subscription);
-    await sendPushSubscriptionToServer(subscription);
+    if (DEBUG) console.log('New push subscription created.');
+    await sendPushSubscriptionToServer(subscription, preferences);
     return subscription;
   } catch (error) {
     console.error('Failed to subscribe the user to push:', error);
@@ -241,31 +222,26 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
   }
 };
 
-const sendPushSubscriptionToServer = async (subscription: PushSubscription) => {
+/**
+ * --- MODIFIED FOR SERVER-SIDE PUSH ---
+ * Sends the subscription AND the user's preferences to the worker.
+ */
+const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
   try {
+    const body = JSON.stringify({ subscription, preferences });
     const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
+      body: body,
     });
 
     if (!resp.ok) {
       console.error('Failed to send push subscription to server:', await resp.text());
     } else if (DEBUG) {
-      console.log('Push subscription sent to server successfully.');
+      console.log('Push subscription and preferences sent to server successfully.');
     }
   } catch (error) {
     console.error('Error sending push subscription to server:', error);
-  }
-};
-
-export const triggerServerPush = async (): Promise<void> => {
-  try {
-    const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/trigger-push');
-    const json = await resp.json();
-    if (DEBUG) console.log('Trigger push result:', json);
-  } catch (e) {
-    console.error('Error triggering server push:', e);
   }
 };
 
@@ -274,17 +250,12 @@ export const triggerServerPush = async (): Promise<void> => {
 const notificationCooldowns: Map<string, number> = new Map();
 const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
 
-/**
- * Check cooldown + (optionally) reserve the slot immediately.
- * Old behavior preserved by default (reserve=true).
- */
 export const canSendNotification = (
   tag: string,
   cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS,
   reserve: boolean = true
 ): boolean => {
   if (!getNotificationPreference(tag)) return false;
-
   const last = notificationCooldowns.get(tag) ?? 0;
   const now = Date.now();
   const ok = now - last > cooldownMs;
@@ -298,10 +269,6 @@ export const clearNotificationCooldown = (tag: string) => {
   notificationCooldowns.delete(tag);
 };
 
-/**
- * Preferred helper: Only sets cooldown if the notification was actually shown.
- * If it fails (permission, OS block, etc.), cooldown is NOT updated.
- */
 export const sendNotificationWithCooldown = async (
   tag: string,
   cooldownMs: number,
@@ -309,13 +276,10 @@ export const sendNotificationWithCooldown = async (
   body: string,
   options?: CustomNotificationOptions
 ): Promise<boolean> => {
-  // Check without reserving
-  const allowed = canSendNotification(tag, cooldownMs, /*reserve*/ false);
+  const allowed = canSendNotification(tag, cooldownMs, false);
   if (!allowed) return false;
-
   const shown = await sendNotification(title, body, { ...options, tag });
   if (shown) {
-    // Commit cooldown on success only
     notificationCooldowns.set(tag, Date.now());
   } else if (DEBUG) {
     console.warn(`Notification "${tag}" not shown; cooldown not updated.`);
@@ -352,21 +316,17 @@ export const sendTestNotification = async (title?: string, body?: string) => {
     alert('This browser does not support notifications.');
     return;
   }
-
   const hasPerm = await ensurePermission();
   if (!hasPerm) {
     alert(`Cannot send test notification. Permission status is: ${Notification.permission}.`);
     return;
   }
-
   const finalTitle = title || 'Test Notification';
   const finalBody = body || 'This is a test notification. If you received this, your device is set up correctly!';
-
   await sendNotification(finalTitle, finalBody, {
     forceWhenVisible: true,
-    stacking: true,
-    icon: '/icons/android-chrome-192x192.png',
-    badge: '/icons/android-chrome-192x192.png',
+    stacking: true, // Use a new notification for each test
+    tag: `test-${Date.now()}` // Unique tag to prevent stacking for tests
   });
 };
 
