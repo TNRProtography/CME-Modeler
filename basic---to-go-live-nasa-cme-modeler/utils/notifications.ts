@@ -125,6 +125,12 @@ export const sendNotification = async (
   body: string,
   options?: CustomNotificationOptions
 ): Promise<boolean> => {
+  // --- MODIFIED: Added isAppVisible check here for safety ---
+  if (isAppVisible() && !(options?.forceWhenVisible)) {
+    if (DEBUG) console.log('Notification suppressed because the application is currently visible.');
+    return false;
+  }
+
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return false;
@@ -139,11 +145,7 @@ export const sendNotification = async (
     if (DEBUG) console.log(`Notification for category '${categoryKey}' is disabled by user preference.`);
     return false;
   }
-  const force = options?.forceWhenVisible ?? true;
-  if (isAppVisible() && !force) {
-    if (DEBUG) console.log('Notification suppressed because the application is currently visible.');
-    return false;
-  }
+  
   const finalOptions = buildStackingOptions({ ...options, body });
   const shown = await showNotification(title, finalOptions);
   if (shown) {
@@ -325,8 +327,8 @@ export const sendTestNotification = async (title?: string, body?: string) => {
   const finalBody = body || 'This is a test notification. If you received this, your device is set up correctly!';
   await sendNotification(finalTitle, finalBody, {
     forceWhenVisible: true,
-    stacking: true, // Use a new notification for each test
-    tag: `test-${Date.now()}` // Unique tag to prevent stacking for tests
+    stacking: true,
+    tag: `test-${Date.now()}`
   });
 };
 
