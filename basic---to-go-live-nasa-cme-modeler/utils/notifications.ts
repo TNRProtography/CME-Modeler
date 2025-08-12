@@ -1,7 +1,7 @@
 // --- START OF FILE src/utils/notifications.ts ---
 
 /**
- * Notifications utility (hardened for server-side push)
+ * Notifications utility (hardened for server-side push with enhanced logging)
  *
  * This file handles both local (in-app) notifications and the logic for
  * subscribing to the server-side push notification worker.
@@ -18,11 +18,9 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
     console.warn('Notifications are not supported by this browser.');
     return 'unsupported';
   }
-
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Notification.permission;
   }
-
   try {
     const permission = await Notification.requestPermission();
     return permission;
@@ -51,14 +49,12 @@ const isAppVisible = (): boolean =>
 
 const waitForServiceWorkerReady = async (timeoutMs = 4000): Promise<ServiceWorkerRegistration | null> => {
   if (!('serviceWorker' in navigator)) return null;
-
   const timeout = new Promise<null>((resolve) => {
     const id = setTimeout(() => {
       clearTimeout(id);
       resolve(null);
     }, timeoutMs);
   });
-
   try {
     const ready = navigator.serviceWorker.ready;
     const reg = (await Promise.race([ready, timeout])) as ServiceWorkerRegistration | null;
@@ -78,7 +74,6 @@ const showNotification = async (title: string, options: NotificationOptions): Pr
   } catch (e) {
     if (DEBUG) console.warn('SW showNotification failed, falling back to window Notification:', e);
   }
-
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(title, options);
     return true;
@@ -89,16 +84,10 @@ const showNotification = async (title: string, options: NotificationOptions): Pr
 const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string }): NotificationOptions => {
   const stacking = opts?.stacking ?? true;
   const base: NotificationOptions = {
-    body: opts?.body,
-    icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
-    badge: opts?.badge ?? '/icons/android-chrome-192x192.png',
-    vibrate: opts?.vibrate ?? [200, 100, 200],
-    data: opts?.data,
-    requireInteraction: opts?.requireInteraction,
-    silent: opts?.silent,
-    actions: opts?.actions,
-    image: opts?.image,
-    renotify: false,
+    body: opts?.body, icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
+    badge: opts?.badge ?? '/icons/android-chrome-192x192.png', vibrate: opts?.vibrate ?? [200, 100, 200],
+    data: opts?.data, requireInteraction: opts?.requireInteraction, silent: opts?.silent,
+    actions: opts?.actions, image: opts?.image, renotify: false,
   };
   return stacking ? base : { ...base, tag: opts?.tag ?? 'default' };
 };
@@ -110,7 +99,6 @@ const ensurePermission = async (): Promise<boolean> => {
   }
   if (Notification.permission === 'granted') return true;
   if (Notification.permission === 'denied') return false;
-
   try {
     const perm = await Notification.requestPermission();
     return perm === 'granted';
@@ -125,12 +113,10 @@ export const sendNotification = async (
   body: string,
   options?: CustomNotificationOptions
 ): Promise<boolean> => {
-  // --- MODIFIED: Added isAppVisible check here for safety ---
   if (isAppVisible() && !(options?.forceWhenVisible)) {
     if (DEBUG) console.log('Notification suppressed because the application is currently visible.');
     return false;
   }
-
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return false;
@@ -145,7 +131,6 @@ export const sendNotification = async (
     if (DEBUG) console.log(`Notification for category '${categoryKey}' is disabled by user preference.`);
     return false;
   }
-  
   const finalOptions = buildStackingOptions({ ...options, body });
   const shown = await showNotification(title, finalOptions);
   if (shown) {
@@ -171,113 +156,100 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
 };
 
 /**
- * --- MODIFIED FOR SERVER-SIDE PUSH ---
- * This function now gathers user preferences and sends them with the subscription.
+ * --- MODIFIED with Diagnostic Logging ---
  */
 export const subscribeUserToPush = async (): Promise<PushSubscription | null> => {
+  console.log("DIAGNOSTIC: Attempting to subscribe user to push notifications...");
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.warn('Service Workers or Push Messaging are not supported by this browser.');
+    console.error('DIAGNOSTIC: CRITICAL - Service Worker or Push Manager not supported.');
     return null;
   }
   if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.length < 50) {
-    console.error('VAPID_PUBLIC_KEY is missing/invalid.');
+    console.error('DIAGNOSTIC: CRITICAL - VAPID_PUBLIC_KEY is missing or invalid.');
     return null;
   }
   const permission = await requestNotificationPermission();
   if (permission !== 'granted') {
-    console.warn('Notification permission not granted. Cannot subscribe to push.');
+    console.warn('DIAGNOSTIC: Push subscription failed: Permission not granted.');
     return null;
   }
   try {
     const reg = await waitForServiceWorkerReady();
     if (!reg) {
-      console.error('Service worker is not ready; cannot subscribe to push.');
+      console.error('DIAGNOSTIC: Service worker is not ready; cannot subscribe to push.');
       return null;
     }
+    console.log("DIAGNOSTIC: Service worker is ready.");
 
-    // --- NEW: Gather all current notification preferences ---
     const preferences: Record<string, boolean> = {};
     NOTIFICATION_CATEGORIES.forEach(id => {
         preferences[id] = getNotificationPreference(id);
     });
+    console.log("DIAGNOSTIC: Gathered user preferences:", preferences);
 
     let subscription = await reg.pushManager.getSubscription();
     if (subscription) {
-      if (DEBUG) console.log('Existing push subscription found.');
-      // Always resend to server to ensure preferences are up-to-date.
-      await sendPushSubscriptionToServer(subscription, preferences);
-      return subscription;
+      console.log('DIAGNOSTIC: Existing push subscription found.');
+    } else {
+      console.log('DIAGNOSTIC: No existing subscription found, creating a new one...');
+      const appServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey,
+      });
+      console.log('DIAGNOSTIC: New push subscription created successfully.');
     }
-
-    const appServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    subscription = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: appServerKey,
-    });
-
-    if (DEBUG) console.log('New push subscription created.');
+    
     await sendPushSubscriptionToServer(subscription, preferences);
     return subscription;
   } catch (error) {
-    console.error('Failed to subscribe the user to push:', error);
+    console.error('DIAGNOSTIC: CRITICAL ERROR during subscribeUserToPush:', error);
     return null;
   }
 };
 
 /**
- * --- MODIFIED FOR SERVER-SIDE PUSH ---
- * Sends the subscription AND the user's preferences to the worker.
+ * --- MODIFIED with Diagnostic Logging ---
  */
 const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
+  console.log("DIAGNOSTIC: Sending subscription to server...");
+  const body = JSON.stringify({ subscription, preferences });
+  console.log("DIAGNOSTIC: Request Body being sent:", body);
+
   try {
-    const body = JSON.stringify({ subscription, preferences });
     const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body,
     });
 
+    console.log("DIAGNOSTIC: Server responded with status:", resp.status);
     if (!resp.ok) {
-      console.error('Failed to send push subscription to server:', await resp.text());
-    } else if (DEBUG) {
-      console.log('Push subscription and preferences sent to server successfully.');
+      const errorText = await resp.text();
+      console.error('DIAGNOSTIC: SERVER REJECTED SUBSCRIPTION:', errorText);
+      alert(`Error: The server rejected the notification subscription. Please check the console for details. Server message: ${errorText}`);
+    } else {
+      console.log('DIAGNOSTIC: Push subscription and preferences sent to server successfully.');
     }
   } catch (error) {
-    console.error('Error sending push subscription to server:', error);
+    console.error('DIAGNOSTIC: FATAL NETWORK ERROR sending push subscription to server:', error);
+    alert('Fatal Error: Could not send subscription to the server. Check network connection and console logs.');
   }
 };
 
 // --- Cooldown management ---
-
 const notificationCooldowns: Map<string, number> = new Map();
 const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
-
-export const canSendNotification = (
-  tag: string,
-  cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS,
-  reserve: boolean = true
-): boolean => {
+export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS, reserve: boolean = true): boolean => {
   if (!getNotificationPreference(tag)) return false;
   const last = notificationCooldowns.get(tag) ?? 0;
   const now = Date.now();
   const ok = now - last > cooldownMs;
-  if (ok && reserve) {
-    notificationCooldowns.set(tag, now);
-  }
+  if (ok && reserve) { notificationCooldowns.set(tag, now); }
   return ok;
 };
-
-export const clearNotificationCooldown = (tag: string) => {
-  notificationCooldowns.delete(tag);
-};
-
-export const sendNotificationWithCooldown = async (
-  tag: string,
-  cooldownMs: number,
-  title: string,
-  body: string,
-  options?: CustomNotificationOptions
-): Promise<boolean> => {
+export const clearNotificationCooldown = (tag: string) => { notificationCooldowns.delete(tag); };
+export const sendNotificationWithCooldown = async (tag: string, cooldownMs: number, title: string, body: string, options?: CustomNotificationOptions): Promise<boolean> => {
   const allowed = canSendNotification(tag, cooldownMs, false);
   if (!allowed) return false;
   const shown = await sendNotification(title, body, { ...options, tag });
@@ -290,9 +262,7 @@ export const sendNotificationWithCooldown = async (
 };
 
 // --- Preferences ---
-
 const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
-
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
     const stored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
@@ -302,7 +272,6 @@ export const getNotificationPreference = (categoryId: string): boolean => {
     return true;
   }
 };
-
 export const setNotificationPreference = (categoryId: string, enabled: boolean) => {
   try {
     localStorage.setItem(NOTIFICATION_PREF_PREFIX + categoryId, JSON.stringify(enabled));
@@ -312,7 +281,6 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 };
 
 // --- Quick test helper ---
-
 export const sendTestNotification = async (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
