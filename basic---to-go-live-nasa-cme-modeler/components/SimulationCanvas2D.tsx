@@ -83,10 +83,10 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         sideCameraRef.current = new THREE.PerspectiveCamera(50, sideViewMountRef.current.clientWidth / sideViewMountRef.current.clientHeight, near, far);
         
         const cameraDistance = PLANET_DATA_MAP.EARTH.radius * 2.5;
-        const lookAtPoint = new THREE.Vector3(0, 0, 0); // Look at the center point
+        const lookAtPoint = new THREE.Vector3(0, 0, 0);
         topCameraRef.current.position.set(lookAtPoint.x, cameraDistance, lookAtPoint.z + 0.01);
         topCameraRef.current.lookAt(lookAtPoint);
-        sideCameraRef.current.position.set(lookAtPoint.x, 0, cameraDistance);
+        sideCameraRef.current.position.set(0, 0, cameraDistance); // Changed to a Z-axis view for a classic side-on profile
         sideCameraRef.current.lookAt(lookAtPoint);
 
         topRendererRef.current = new THREE.WebGLRenderer({ antialias: true });
@@ -221,18 +221,22 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             }
             lastTimeRef.current = elapsedTime;
 
+            // --- NEW CME ANIMATION LOGIC FOR DETACHMENT ---
             cmeGroupRef.current?.children.forEach((cmeMesh: any) => {
                 const cme = cmeMesh.userData;
-                let timeSinceEventSeconds = props.timelineActive ? (currentTimelineTime - cme.startTime.getTime()) / 1000 : (Date.now() - cme.startTime.getTime()) / 1000;
-                const dist = calculateDistance(cme, timeSinceEventSeconds);
+                const timeSinceEventSeconds = props.timelineActive ? (currentTimelineTime - cme.startTime.getTime()) / 1000 : (Date.now() - cme.startTime.getTime()) / 1000;
+                
+                const tipDistance = calculateDistance(cme, timeSinceEventSeconds);
                 const sunRadius = PLANET_DATA_MAP.SUN.size;
-                cmeMesh.visible = dist > sunRadius;
+                const cmeDisplayLength = PLANET_DATA_MAP.EARTH.radius * 0.4; // The visible "length" of the particle cloud
+                const baseDistance = tipDistance - cmeDisplayLength;
+
+                cmeMesh.visible = baseDistance > sunRadius;
+
                 if (cmeMesh.visible) {
-                    const cmeLength = dist - sunRadius;
                     const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeMesh.quaternion);
-                    // This logic correctly makes the CME detach and grow from the sun's surface
-                    cmeMesh.position.copy(dir.clone().multiplyScalar(sunRadius));
-                    cmeMesh.scale.set(cmeLength, cmeLength, cmeLength);
+                    cmeMesh.position.copy(dir.clone().multiplyScalar(baseDistance));
+                    cmeMesh.scale.set(cmeDisplayLength, cmeDisplayLength, cmeDisplayLength);
                 }
             });
 
