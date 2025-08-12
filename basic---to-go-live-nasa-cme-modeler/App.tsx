@@ -6,7 +6,7 @@ import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
+import TutorialModal from './components/TutorialModal';
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
@@ -17,11 +17,15 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
+import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import SunIcon from './components/icons/SunIcon';         // ADDED
-import CmeIcon from './components/icons/CmeIcon';         // ADDED
+import SunIcon from './components/icons/SunIcon';
+import CmeIcon from './components/icons/CmeIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
+import View2DIcon from './components/icons/View2DIcon'; // --- NEW: Import for the 2D toggle button ---
+
+// --- NEW: Import for the 2D Simulation Canvas ---
+import SimulationCanvas2D from './components/SimulationCanvas2D';
 
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
@@ -29,25 +33,22 @@ import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
-import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
-
-// DELETED: Inline icon components are now moved to their own files.
+import SettingsModal from './components/SettingsModal';
+import FirstVisitTutorial from './components/FirstVisitTutorial';
 
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
-// --- NEW: Type for navigation/scroll targets ---
 interface NavigationTarget {
   page: 'forecast' | 'solar-activity';
   elementId: string;
-  expandId?: string; // Optional ID for components that need to be expanded
+  expandId?: string;
 }
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.3beta'; // Define your app version here
+const APP_VERSION = 'v0.3beta';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -62,15 +63,16 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // For the CME Page Guide
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // For the First Visit Tour
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
-
-  // --- NEW: State to handle navigation from banner clicks ---
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
+
+  // --- NEW: State to toggle between 3D and 2D simulation modes ---
+  const [simulationMode, setSimulationMode] = useState<'3D' | '2D'>('3D');
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -102,22 +104,16 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- NEW: Effect to handle scrolling after navigation ---
   useEffect(() => {
     if (navigationTarget) {
-      // Switch to the target page
       setActivePage(navigationTarget.page);
-
-      // Use a timeout to allow the new page component to render before we try to scroll
       const scrollTimer = setTimeout(() => {
         const element = document.getElementById(navigationTarget.elementId);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        // Reset the target after attempting to scroll
         setNavigationTarget(null);
-      }, 100); // 100ms delay should be enough for rendering
-
+      }, 100);
       return () => clearTimeout(scrollTimer);
     }
   }, [navigationTarget]);
@@ -284,7 +280,6 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [cmeData, handleSelectCMEForModeling]);
 
-  // --- MODIFIED: Banner click handlers ---
   const handleFlareAlertClick = useCallback(() => {
     setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
   }, []);
@@ -301,16 +296,14 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // --- NEW: Handler for the 2D/3D toggle button ---
+  const handleToggleSimulationMode = useCallback(() => {
+    setSimulationMode(prev => (prev === '3D' ? '2D' : '3D'));
+  }, []);
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
-        <style>{`
-          .tutorial-highlight {
-            position: relative;
-            z-index: 2003 !important;
-            box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7);
-            border-color: #3b82f6 !important;
-          }
-        `}</style>
+        <style>{`.tutorial-highlight { position: relative; z-index: 2003 !important; box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7); border-color: #3b82f6 !important; }`}</style>
         
         <GlobalBanner 
             isFlareAlert={isFlareAlert} 
@@ -326,42 +319,12 @@ const App: React.FC = () => {
 
         <header className="flex-shrink-0 p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
             <div className="flex items-center space-x-2">
-                <button 
-                id="nav-forecast" onClick={() => setActivePage('forecast')}
-                className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
-                            ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
-                            ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
-                title="View Live Aurora Forecasts">
-                    <ForecastIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">Aurora Forecast</span>
-                </button>
-                <button 
-                id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} 
-                className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
-                            ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
-                            ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
-                title="View Solar Activity">
-                    <SunIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">Solar Activity</span>
-                </button>
-                 <button 
-                id="nav-modeler" onClick={() => setActivePage('modeler')}
-                className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all
-                            ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}
-                            ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
-                title="View CME Visualization">
-                    <CmeIcon className="w-5 h-5" />
-                    <span className="text-sm font-semibold hidden md:inline">CME Visualization</span>
-                </button>
+                <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts"><ForecastIcon className="w-5 h-5" /><span className="text-sm font-semibold hidden md:inline">Aurora Forecast</span></button>
+                <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity"><SunIcon className="w-5 h-5" /><span className="text-sm font-semibold hidden md:inline">Solar Activity</span></button>
+                <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization"><CmeIcon className="w-5 h-5" /><span className="text-sm font-semibold hidden md:inline">CME Visualization</span></button>
             </div>
             <div className="flex-grow flex justify-end">
-                <button 
-                    id="nav-settings" onClick={() => setIsSettingsOpen(true)}
-                    className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90
-                               ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
-                    title="Open Settings">
-                    <SettingsIcon className="w-6 h-6" />
-                </button>
+                <button id="nav-settings" onClick={() => setIsSettingsOpen(true)} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
             </div>
         </header>
 
@@ -371,12 +334,28 @@ const App: React.FC = () => {
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
                 <main className="flex-1 relative min-w-0 h-full">
-                    <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
-                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                    {/* --- MODIFIED: Conditionally render 3D or 2D canvas --- */}
+                    {simulationMode === '3D' && (
+                        <>
+                            <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
+                            {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                        </>
+                    )}
+                    {simulationMode === '2D' && (
+                        <SimulationCanvas2D cmeData={cmesToRender} activeView={activeView} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showLabels={showLabels} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} />
+                    )}
+
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-4 pointer-events-none">
                         <div className="flex items-center space-x-2 pointer-events-auto">
                             <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="lg:hidden p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
-                            <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View"><CmeIcon className="w-6 h-6" /></button>
+                            {/* --- MODIFIED: Reset button is now 3D only --- */}
+                            {simulationMode === '3D' && <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset 3D View"><CmeIcon className="w-6 h-6" /></button>}
+                            
+                            {/* --- NEW: 2D/3D Toggle Button --- */}
+                            <button id="toggle-simulation-mode-button" onClick={handleToggleSimulationMode} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title={simulationMode === '3D' ? 'Switch to 2D View' : 'Switch to 3D View'}>
+                                {simulationMode === '3D' ? <View2DIcon className="w-6 h-6" /> : <CmeIcon className="w-6 h-6" />}
+                            </button>
+
                             <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models"><GlobeIcon className="w-6 h-6" /></button>
                         </div>
                         <div className="flex items-center space-x-2 pointer-events-auto">
