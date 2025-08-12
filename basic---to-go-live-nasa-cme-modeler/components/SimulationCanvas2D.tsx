@@ -7,7 +7,7 @@ import { PLANET_DATA_MAP, SCENE_SCALE, AU_IN_KM } from '../constants';
 // --- Props Interface ---
 interface SimulationCanvas2DProps {
   cmeData: ProcessedCME[];
-  activeView: ViewMode; // Although we show both, this could be used for highlighting
+  activeView: ViewMode;
   currentlyModeledCMEId: string | null;
   onCMEClick: (cme: ProcessedCME) => void;
   timelineActive: boolean;
@@ -27,7 +27,6 @@ interface SimulationCanvas2DProps {
 // --- Helper Functions (adapted for 2D canvas) ---
 const ORBIT_SPEED_SCALE = 2000;
 
-// Calculates CME distance from the sun
 const calculateDistance = (cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const speed_km_per_sec = cme.speed;
     const speed_AU_per_sec = speed_km_per_sec / AU_IN_KM;
@@ -35,7 +34,6 @@ const calculateDistance = (cme: ProcessedCME, timeSinceEventSeconds: number): nu
     return distanceActualAU * SCENE_SCALE;
 };
 
-// Gets CME color based on speed
 const getCmeCoreColor = (speed: number): string => {
     if (speed >= 2500) return '#ff69b4'; // Hot Pink
     if (speed >= 1800) return '#9370db'; // Medium Purple
@@ -43,7 +41,6 @@ const getCmeCoreColor = (speed: number): string => {
     if (speed >= 800) return '#ffa500'; // Orange
     if (speed >= 500) return '#ffff00'; // Yellow
     if (speed < 350) return '#808080'; // Grey
-    // Linear interpolation between Grey and Yellow for speeds between 350 and 500
     const t = (speed - 350) / (500 - 350);
     const r = Math.round(128 * (1 - t) + 255 * t);
     const g = Math.round(128 * (1 - t) + 255 * t);
@@ -51,7 +48,6 @@ const getCmeCoreColor = (speed: number): string => {
     return `rgb(${r},${g},${b})`;
 };
 
-// Gets CME opacity based on speed
 const getCmeOpacity = (speed: number): number => {
     const minSpeed = 300, maxSpeed = 3000, minOpacity = 0.15, maxOpacity = 0.7;
     const s = Math.max(minSpeed, Math.min(speed, maxSpeed));
@@ -63,7 +59,9 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
     const topDownCanvasRef = useRef<HTMLCanvasElement>(null);
     const sideViewCanvasRef = useRef<HTMLCanvasElement>(null);
     const animationFrameId = useRef<number>();
-    const lastTimeRef = useRef(0);
+    
+    // --- NEW: Filter for only Earth-directed CMEs ---
+    const earthDirectedCMEs = props.cmeData.filter(cme => cme.isEarthDirected);
 
     const draw = useCallback(() => {
         const canvases = [topDownCanvasRef.current, sideViewCanvasRef.current];
@@ -81,11 +79,9 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             const maxOrbitRadius = PLANET_DATA_MAP.MARS.radius * 1.2;
             const scale = Math.min(width, height) / (maxOrbitRadius * 2);
 
-            // Clear canvas
             ctx.fillStyle = '#0a0a0a';
             ctx.fillRect(0, 0, width, height);
 
-            // --- Draw Orbits ---
             ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
             ctx.lineWidth = 1;
             ['EARTH', 'MERCURY', 'VENUS', 'MARS'].forEach(name => {
@@ -104,11 +100,37 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             });
 
             const elapsedTime = props.getClockElapsedTime();
+            const currentTimelineTime = props.timelineMinDate + (props.timelineMaxDate - props.timelineMinDate) * (props.timelineValue / 1000);
+
+            // --- Draw Sun ---
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, PLANET_DATA_MAP.SUN.size * scale, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // --- Calculate Earth's position for the prediction line ---
+            let earthX = centerX, earthY = centerY;
+            const earthData = PLANET_DATA_MAP.EARTH;
+            const earthAngularVelocity = (2 * Math.PI) / (earthData.orbitalPeriodDays! * 24 * 3600) * ORBIT_SPEED_SCALE;
+            const earthAngle = earthData.angle + earthAngularVelocity * elapsedTime;
+            earthX = centerX + Math.sin(earthAngle) * earthData.radius * scale;
+            earthY = isSideView ? centerY : centerY + Math.cos(earthAngle) * earthData.radius * scale;
+
+            // --- NEW: Draw prediction line from Sun to Earth in top-down view ---
+            if (!isSideView) {
+                ctx.save();
+                ctx.setLineDash([5, 10]);
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.lineTo(earthX, earthY);
+                ctx.stroke();
+                ctx.restore();
+            }
 
             // --- Draw CMEs ---
-            const currentTimelineTime = props.timelineMinDate + (props.timelineMaxDate - props.timelineMinDate) * (props.timelineValue / 1000);
-            
-            props.cmeData.forEach(cme => {
+            earthDirectedCMEs.forEach(cme => {
                 let timeSinceEventSeconds;
                 if (props.timelineActive) {
                     timeSinceEventSeconds = (currentTimelineTime - cme.startTime.getTime()) / 1000;
@@ -118,14 +140,22 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
 
                 if (timeSinceEventSeconds < 0) return;
 
-                const dist = calculateDistance(cme, timeSinceEventSeconds);
-                if (dist <= PLANET_DATA_MAP.SUN.size) return;
+                const sunRadius = PLANET_DATA_MAP.SUN.size * scale;
+                const dist = calculateDistance(cme, timeSinceEventSeconds) * scale;
+                if (dist <= sunRadius) return;
 
                 const lonRad = (cme.longitude * Math.PI) / 180;
                 const latRad = (cme.latitude * Math.PI) / 180;
                 const halfAngleRad = (cme.halfAngle * Math.PI) / 180;
                 
-                ctx.fillStyle = getCmeCoreColor(cme.speed);
+                // --- NEW: Create a radial gradient to simulate particle cloud ---
+                const coreColor = getCmeCoreColor(cme.speed);
+                const gradient = ctx.createRadialGradient(centerX, centerY, sunRadius, centerX, centerY, dist);
+                gradient.addColorStop(0, 'rgba(0,0,0,0)'); // Transparent at the sun
+                gradient.addColorStop(0.7, `${coreColor}B0`); // Semi-transparent body
+                gradient.addColorStop(1, `${coreColor}20`); // Fading edge
+                
+                ctx.fillStyle = gradient;
                 ctx.globalAlpha = getCmeOpacity(cme.speed);
 
                 if(isSideView) {
@@ -133,7 +163,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
                     const endAngle = latRad + halfAngleRad;
                     ctx.beginPath();
                     ctx.moveTo(centerX, centerY);
-                    ctx.arc(centerX, centerY, dist * scale, -endAngle, -startAngle);
+                    ctx.arc(centerX, centerY, dist, -endAngle, -startAngle);
                     ctx.closePath();
                     ctx.fill();
                 } else {
@@ -141,19 +171,13 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
                     const endAngle = -lonRad + halfAngleRad - Math.PI / 2;
                     ctx.beginPath();
                     ctx.moveTo(centerX, centerY);
-                    ctx.arc(centerX, centerY, dist * scale, startAngle, endAngle);
+                    ctx.arc(centerX, centerY, dist, startAngle, endAngle);
                     ctx.closePath();
                     ctx.fill();
                 }
             });
             ctx.globalAlpha = 1.0;
 
-
-            // --- Draw Sun ---
-            ctx.fillStyle = '#ffff00';
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, PLANET_DATA_MAP.SUN.size * scale, 0, 2 * Math.PI);
-            ctx.fill();
 
             // --- Draw Planets & Labels ---
             ['EARTH', 'MERCURY', 'VENUS', 'MARS'].forEach(name => {
@@ -176,16 +200,13 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
                     ctx.fillText(planet.name, planetX + 5, planetY + 4);
                 }
             });
-
         });
 
         animationFrameId.current = requestAnimationFrame(draw);
-    }, [props]);
+    }, [props, earthDirectedCMEs]); // Depend on the filtered array
 
-    // Animation Loop
     useEffect(() => {
         props.resetClock();
-        lastTimeRef.current = props.getClockElapsedTime();
         animationFrameId.current = requestAnimationFrame(draw);
 
         const resizeObserver = new ResizeObserver(() => {
@@ -201,14 +222,11 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         if (sideViewCanvasRef.current?.parentElement) resizeObserver.observe(sideViewCanvasRef.current.parentElement);
 
         return () => {
-            if (animationFrameId.current) {
-                cancelAnimationFrame(animationFrameId.current);
-            }
+            if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
             resizeObserver.disconnect();
         };
     }, [draw, props.resetClock]);
     
-    // Click Handler for CME selection
     const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>, isSideView: boolean) => {
         const canvas = event.currentTarget;
         const rect = canvas.getBoundingClientRect();
@@ -222,16 +240,14 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         const maxOrbitRadius = PLANET_DATA_MAP.MARS.radius * 1.2;
         const scale = Math.min(width, height) / (maxOrbitRadius * 2);
 
-        // Convert click to world coordinates
         const clickDist = Math.sqrt((x - centerX)**2 + (y - centerY)**2);
         let clickAngle = Math.atan2(y - centerY, x - centerX);
 
         const currentTimelineTime = props.timelineMinDate + (props.timelineMaxDate - props.timelineMinDate) * (props.timelineValue / 1000);
 
-        // Find the topmost (last drawn) CME that was clicked
         let clickedCME: ProcessedCME | null = null;
-        [...props.cmeData].reverse().forEach(cme => {
-            if (clickedCME) return; // already found one
+        [...earthDirectedCMEs].reverse().forEach(cme => { // Use filtered array
+            if (clickedCME) return;
             
             let timeSinceEventSeconds;
             if (props.timelineActive) {
@@ -264,7 +280,6 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             props.onCMEClick(clickedCME);
         }
     };
-
 
     return (
         <div className="w-full h-full flex flex-col p-4 gap-4 bg-black">
