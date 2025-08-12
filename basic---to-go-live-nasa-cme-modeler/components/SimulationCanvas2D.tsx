@@ -86,7 +86,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         const lookAtPoint = new THREE.Vector3(0, 0, 0);
         topCameraRef.current.position.set(lookAtPoint.x, cameraDistance, lookAtPoint.z + 0.01);
         topCameraRef.current.lookAt(lookAtPoint);
-        sideCameraRef.current.position.set(0, 0, cameraDistance); // Changed to a Z-axis view for a classic side-on profile
+        sideCameraRef.current.position.set(lookAtPoint.x, 0, cameraDistance);
         sideCameraRef.current.lookAt(lookAtPoint);
 
         topRendererRef.current = new THREE.WebGLRenderer({ antialias: true });
@@ -120,7 +120,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
         const sunMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER });
         const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
-        sunMesh.position.set(-PLANET_DATA_MAP.EARTH.radius / 1.5, 0, 0);
+        sunMesh.position.set(-PLANET_DATA_MAP.EARTH.radius, 0, 0);
         scene.add(sunMesh);
         celestialBodiesRef.current['SUN'] = sunMesh;
 
@@ -129,7 +129,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         const earthGeo = new THREE.SphereGeometry(earthSize, 32, 32);
         const earthMat = new THREE.MeshPhongMaterial({ map: loader.load(TEX.EARTH_DAY) });
         const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-        earthMesh.position.set(PLANET_DATA_MAP.EARTH.radius / 1.5, 0, 0);
+        earthMesh.position.set(PLANET_DATA_MAP.EARTH.radius, 0, 0);
         scene.add(earthMesh);
         celestialBodiesRef.current['EARTH'] = earthMesh;
 
@@ -175,6 +175,11 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         if (!THREE || !cmeGroupRef.current) return;
         while (cmeGroupRef.current.children.length) { cmeGroupRef.current.remove(cmeGroupRef.current.children[0]); }
         const particleTexture = createParticleTexture(THREE);
+        
+        const sunToEarthDirection = new THREE.Vector3().subVectors(
+            celestialBodiesRef.current['EARTH'].position, 
+            celestialBodiesRef.current['SUN'].position
+        ).normalize();
 
         earthDirectedCMEs.forEach(cme => {
             const particleCount = getCmeParticleCount(cme.speed);
@@ -197,8 +202,10 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             });
             const particleSystem = new THREE.Points(geo, mat);
             particleSystem.userData = cme;
-            const direction = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - (cme.latitude * Math.PI) / 180, (cme.longitude * Math.PI) / 180);
-            particleSystem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            
+            // --- CRITICAL FIX: Force orientation from Sun to Earth ---
+            particleSystem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), sunToEarthDirection);
+            
             cmeGroupRef.current.add(particleSystem);
         });
     }, [earthDirectedCMEs]);
@@ -216,25 +223,24 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             }
             const earthMesh = celestialBodiesRef.current['EARTH'];
             if (earthMesh) {
-                earthMesh.rotation.y += 0.05 * (elapsedTime - (lastTimeRef.current || elapsedTime));
+                earthMesh.rotation.y += 0.01 * (elapsedTime - (lastTimeRef.current || elapsedTime));
                 earthMesh.children.forEach((child:any) => { if(child.material.uniforms?.uTime) child.material.uniforms.uTime.value = elapsedTime; });
             }
             lastTimeRef.current = elapsedTime;
 
-            // --- NEW CME ANIMATION LOGIC FOR DETACHMENT ---
             cmeGroupRef.current?.children.forEach((cmeMesh: any) => {
                 const cme = cmeMesh.userData;
                 const timeSinceEventSeconds = props.timelineActive ? (currentTimelineTime - cme.startTime.getTime()) / 1000 : (Date.now() - cme.startTime.getTime()) / 1000;
                 
                 const tipDistance = calculateDistance(cme, timeSinceEventSeconds);
                 const sunRadius = PLANET_DATA_MAP.SUN.size;
-                const cmeDisplayLength = PLANET_DATA_MAP.EARTH.radius * 0.4; // The visible "length" of the particle cloud
+                const cmeDisplayLength = PLANET_DATA_MAP.EARTH.radius * 0.4;
                 const baseDistance = tipDistance - cmeDisplayLength;
-
+                
                 cmeMesh.visible = baseDistance > sunRadius;
 
                 if (cmeMesh.visible) {
-                    const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeMesh.quaternion);
+                    const dir = new THREE.Vector3().setFromQuaternion(cmeMesh.quaternion);
                     cmeMesh.position.copy(dir.clone().multiplyScalar(baseDistance));
                     cmeMesh.scale.set(cmeDisplayLength, cmeDisplayLength, cmeDisplayLength);
                 }
@@ -269,13 +275,13 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
-        raycaster.params.Points.threshold = PLANET_DATA_MAP.EARTH.radius * 0.2;
+        raycaster.params.Points.threshold = PLANET_DATA_MAP.EARTH.radius;
         const intersects = raycaster.intersectObjects(cmeGroupRef.current.children);
         if (intersects.length > 0) props.onCMEClick(intersects[0].object.userData);
     };
     
     return (
-        <div className="w-full h-full flex flex-col lg:flex-row p-4 pt-16 lg:pt-4 gap-4 bg-black">
+        <div className="w-full h-full flex flex-col lg:flex-row p-4 pt-16 lg:pt-4 pb-28 gap-4 bg-black">
             <div className="flex-1 min-h-0 relative">
                 <h2 className="absolute top-2 left-2 text-white font-bold bg-black/50 px-2 py-1 rounded z-10">Top-Down View</h2>
                 <div ref={topDownMountRef} className="w-full h-full rounded-lg border border-neutral-700 cursor-pointer" onClick={(e) => handleCanvasClick(e, topCameraRef.current)} />
@@ -291,4 +297,4 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
 };
 
 export default SimulationCanvas2D;
-// --- END OF FILE src/components/SimulationCanvas2D.tsx ---
+// --- END OF FILE src/components/SimulationCanvas2D.tsx ---```
