@@ -50,22 +50,6 @@ const getCmeCoreColor = (THREE: any, speed: number) => {
 const calculateDistance = (cme: ProcessedCME, timeSinceEventSeconds: number): number => (cme.speed / AU_IN_KM) * Math.max(0, timeSinceEventSeconds) * SCENE_SCALE;
 const ORBIT_SPEED_SCALE = 2000;
 
-// --- A Simple, Self-Contained Label Component ---
-const SimpleLabel: React.FC<{ name: string; position: { x: number; y: number; visible: boolean } }> = ({ name, position }) => (
-    <div
-        className="absolute text-white text-xs pointer-events-none transition-opacity duration-200"
-        style={{
-            left: position.x,
-            top: position.y,
-            opacity: position.visible ? 1 : 0,
-            transform: 'translate(-50%, 10px)',
-            textShadow: '0 0 4px black',
-        }}
-    >
-        {name}
-    </div>
-);
-
 
 const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
     const topDownMountRef = useRef<HTMLDivElement>(null);
@@ -78,10 +62,9 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
     const sideRendererRef = useRef<any>();
     const cmeGroupRef = useRef<any>();
     const animationFrameId = useRef<number>();
+    const lastTimeRef = useRef(0);
     const celestialBodiesRef = useRef<Record<string, any>>({});
-
-    const [labelPositions, setLabelPositions] = useState<Record<string, { top: any, side: any }>>({});
-
+    
     const earthDirectedCMEs = props.cmeData.filter(cme => cme.isEarthDirected);
 
     useEffect(() => {
@@ -93,12 +76,15 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
 
         const loader = new THREE.TextureLoader();
 
-        topCameraRef.current = new THREE.PerspectiveCamera(50, topDownMountRef.current.clientWidth / topDownMountRef.current.clientHeight, 0.1, 1000);
-        sideCameraRef.current = new THREE.PerspectiveCamera(50, sideViewMountRef.current.clientWidth / sideViewMountRef.current.clientHeight, 0.1, 1000);
+        // --- CRITICAL FIX: The camera frustum MUST be scaled to the world space ---
+        const near = 0.1 * SCENE_SCALE;
+        const far = 1000 * SCENE_SCALE;
+
+        topCameraRef.current = new THREE.PerspectiveCamera(50, topDownMountRef.current.clientWidth / topDownMountRef.current.clientHeight, near, far);
+        sideCameraRef.current = new THREE.PerspectiveCamera(50, sideViewMountRef.current.clientWidth / sideViewMountRef.current.clientHeight, near, far);
         
-        // --- MODIFIED: Zoomed in camera distance based on Earth's orbit ---
         const cameraDistance = PLANET_DATA_MAP.EARTH.radius * 2.5;
-        topCameraRef.current.position.set(0, cameraDistance, 0.01); // slight offset to ensure correct up vector
+        topCameraRef.current.position.set(0, cameraDistance, 0.01);
         topCameraRef.current.lookAt(0, 0, 0);
         sideCameraRef.current.position.set(cameraDistance, 0, 0);
         sideCameraRef.current.lookAt(0, 0, 0);
@@ -116,7 +102,6 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
         scene.add(new THREE.PointLight(0xffffff, 1.5, 300 * SCENE_SCALE));
 
-        // --- MODIFIED: Use high-fidelity Sun from 3D view ---
         const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
         const sunMaterial = new THREE.ShaderMaterial({
             uniforms: { uTime: { value: 0 } },
@@ -127,7 +112,6 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         scene.add(sunMesh);
         celestialBodiesRef.current['SUN'] = sunMesh;
 
-        // --- MODIFIED: Use high-fidelity Earth from 3D view ---
         const earthData = PLANET_DATA_MAP.EARTH;
         const earthGeo = new THREE.SphereGeometry(earthData.size, 32, 32);
         const earthMat = new THREE.MeshPhongMaterial({ map: loader.load(TEX.EARTH_DAY) });
@@ -154,14 +138,11 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         cmeGroupRef.current = new THREE.Group();
         scene.add(cmeGroupRef.current);
         
-        // --- REMOVED: All other planets and orbit lines ---
-
         const handleResize = () => {
              if (topDownMountRef.current && sideViewMountRef.current) {
                 topRendererRef.current.setSize(topDownMountRef.current.clientWidth, topDownMountRef.current.clientHeight);
                 topCameraRef.current.aspect = topDownMountRef.current.clientWidth / topDownMountRef.current.clientHeight;
                 topCameraRef.current.updateProjectionMatrix();
-
                 sideRendererRef.current.setSize(sideViewMountRef.current.clientWidth, sideViewMountRef.current.clientHeight);
                 sideCameraRef.current.aspect = sideViewMountRef.current.clientWidth / sideViewMountRef.current.clientHeight;
                 sideCameraRef.current.updateProjectionMatrix();
@@ -171,8 +152,8 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
 
         return () => {
             window.removeEventListener('resize', handleResize);
-            if(topDownMountRef.current && topRendererRef.current) topDownMountRef.current.removeChild(topRendererRef.current.domElement);
-            if(sideViewMountRef.current && sideRendererRef.current) sideViewMountRef.current.removeChild(sideRendererRef.current.domElement);
+            if(topDownMountRef.current && topRendererRef.current.domElement) topDownMountRef.current.removeChild(topRendererRef.current.domElement);
+            if(sideViewMountRef.current && sideRendererRef.current.domElement) sideViewMountRef.current.removeChild(sideRendererRef.current.domElement);
             topRendererRef.current.dispose();
             sideRendererRef.current.dispose();
         };
@@ -249,31 +230,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
                     cmeMesh.scale.set(cmeLength, cmeLength, cmeLength);
                 }
             });
-
-            // Update Labels
-            if (props.showLabels) {
-                const newPositions: Record<string, any> = {};
-                Object.entries(celestialBodiesRef.current).forEach(([name, mesh]) => {
-                    const getScreenPos = (camera: any, mount: HTMLDivElement) => {
-                        const vector = new THREE.Vector3();
-                        mesh.getWorldPosition(vector);
-                        vector.project(camera);
-                        return {
-                            x: (vector.x * 0.5 + 0.5) * mount.clientWidth,
-                            y: (-vector.y * 0.5 + 0.5) * mount.clientHeight,
-                            visible: vector.z < 1,
-                        };
-                    };
-                    if (topDownMountRef.current && sideViewMountRef.current) {
-                        newPositions[name] = {
-                            top: getScreenPos(topCameraRef.current, topDownMountRef.current),
-                            side: getScreenPos(sideCameraRef.current, sideViewMountRef.current),
-                        };
-                    }
-                });
-                setLabelPositions(newPositions);
-            }
-
+            
             if (topRendererRef.current) topRendererRef.current.render(sceneRef.current, topCameraRef.current);
             if (sideRendererRef.current) sideRendererRef.current.render(sceneRef.current, sideCameraRef.current);
         };
@@ -298,16 +255,27 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
     };
     
     return (
-        <div className="w-full h-full flex flex-col p-4 gap-4 bg-black">
+        // --- MODIFIED: Dynamic flex layout for responsiveness ---
+        <div className="w-full h-full flex flex-col lg:flex-row p-2 gap-2 bg-black">
             <div className="flex-1 min-h-0 relative">
-                <h2 className="absolute top-2 left-2 text-white font-bold bg-black/50 px-2 py-1 rounded z-10">Top-Down View</h2>
+                {props.showLabels && <h2 className="absolute top-2 left-2 text-white font-bold bg-black/50 px-2 py-1 rounded z-10">Top-Down View</h2>}
                 <div ref={topDownMountRef} className="w-full h-full rounded-lg border border-neutral-700 cursor-pointer" onClick={(e) => handleCanvasClick(e, topCameraRef.current)} />
-                {props.showLabels && Object.entries(labelPositions).map(([name, pos]) => pos.top && <SimpleLabel key={name} name={name} position={pos.top} />)}
+                 {props.showLabels && 
+                    <>
+                        <div className="absolute bottom-2 left-2 text-white text-xs bg-black/50 px-2 py-1 rounded z-10">Sun</div>
+                        <div className="absolute top-1/2 right-2 text-white text-xs bg-black/50 px-2 py-1 rounded z-10 -translate-y-1/2">Earth</div>
+                    </>
+                 }
             </div>
             <div className="flex-1 min-h-0 relative">
-                <h2 className="absolute top-2 left-2 text-white font-bold bg-black/50 px-2 py-1 rounded z-10">Side View</h2>
+                {props.showLabels && <h2 className="absolute top-2 left-2 text-white font-bold bg-black/50 px-2 py-1 rounded z-10">Side View</h2>}
                 <div ref={sideViewMountRef} className="w-full h-full rounded-lg border border-neutral-700 cursor-pointer" onClick={(e) => handleCanvasClick(e, sideCameraRef.current)} />
-                {props.showLabels && Object.entries(labelPositions).map(([name, pos]) => pos.side && <SimpleLabel key={name} name={name} position={pos.side} />)}
+                 {props.showLabels && 
+                    <>
+                        <div className="absolute bottom-1/2 left-2 text-white text-xs bg-black/50 px-2 py-1 rounded z-10 translate-y-1/2">Sun</div>
+                        <div className="absolute bottom-1/2 right-2 text-white text-xs bg-black/50 px-2 py-1 rounded z-10 translate-y-1/2">Earth</div>
+                    </>
+                 }
             </div>
         </div>
     );
