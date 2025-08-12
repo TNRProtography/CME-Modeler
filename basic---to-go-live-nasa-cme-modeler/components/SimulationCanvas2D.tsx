@@ -4,7 +4,6 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { ProcessedCME } from '../types';
 import { PLANET_DATA_MAP, SCENE_SCALE, AU_IN_KM, SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER, EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER } from '../constants';
 
-// --- Props Interface (Simplified for this view) ---
 interface SimulationCanvas2DProps {
   cmeData: ProcessedCME[];
   currentlyModeledCMEId: string | null;
@@ -22,14 +21,12 @@ interface SimulationCanvas2DProps {
   resetClock: () => void;
 }
 
-// --- Texture URLs (to match 3D view) ---
 const TEX = {
   EARTH_DAY: "https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg",
   EARTH_CLOUDS: "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_clouds_2048.png",
   MILKY_WAY: "https://upload.wikimedia.org/wikipedia/commons/8/85/Solarsystemscope_texture_8k_stars_milky_way.jpg",
 };
 
-// --- Helper Functions (Identical to 3D Canvas) ---
 const createParticleTexture = (THREE: any) => {
     const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
     const context = canvas.getContext('2d'); if (!context) return null;
@@ -38,9 +35,9 @@ const createParticleTexture = (THREE: any) => {
     gradient.addColorStop(1, 'rgba(255,255,255,0)'); context.fillStyle = gradient; context.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(canvas);
 };
-const getCmeOpacity = (speed: number): number => Math.min(0.65, Math.max(0.06, (speed - 300) / (2700) * 0.59 + 0.06));
-const getCmeParticleCount = (speed: number): number => Math.floor(Math.min(7000, Math.max(1500, (speed - 300) / (2700) * 5500 + 1500)));
-const getCmeParticleSize = (speed: number, scale: number): number => Math.min(0.08, Math.max(0.04, (speed - 300) / (2700) * 0.04 + 0.04)) * scale;
+const getCmeOpacity = (speed: number): number => Math.min(0.65, Math.max(0.06, (speed - 300) / 2700 * 0.59 + 0.06));
+const getCmeParticleCount = (speed: number): number => Math.floor(Math.min(7000, Math.max(1500, (speed - 300) / 2700 * 5500 + 1500)));
+const getCmeParticleSize = (speed: number, scale: number): number => Math.min(0.08, Math.max(0.04, (speed - 300) / 2700 * 0.04 + 0.04)) * scale;
 const getCmeCoreColor = (THREE: any, speed: number) => {
     if (speed >= 2500) return new THREE.Color(0xff69b4); if (speed >= 1800) return new THREE.Color(0x9370db);
     if (speed >= 1000) return new THREE.Color(0xff4500); if (speed >= 800) return new THREE.Color(0xffa500);
@@ -48,7 +45,6 @@ const getCmeCoreColor = (THREE: any, speed: number) => {
     return new THREE.Color(0x808080).lerp(new THREE.Color(0xffff00), (speed - 350) / 150);
 };
 const calculateDistance = (cme: ProcessedCME, timeSinceEventSeconds: number): number => (cme.speed / AU_IN_KM) * Math.max(0, timeSinceEventSeconds) * SCENE_SCALE;
-const ORBIT_SPEED_SCALE = 2000;
 
 const SimpleLabel: React.FC<{ name: string; position: { x: number; y: number; visible: boolean } }> = ({ name, position }) => (
     <div className="absolute text-white text-xs pointer-events-none transition-opacity duration-200" style={{ left: position.x, top: position.y, opacity: position.visible ? 1 : 0, transform: 'translate(-50%, 12px)', textShadow: '0 0 4px black' }}>
@@ -87,10 +83,11 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         sideCameraRef.current = new THREE.PerspectiveCamera(50, sideViewMountRef.current.clientWidth / sideViewMountRef.current.clientHeight, near, far);
         
         const cameraDistance = PLANET_DATA_MAP.EARTH.radius * 2.5;
-        topCameraRef.current.position.set(0, cameraDistance, 0.01);
-        topCameraRef.current.lookAt(0, 0, 0);
-        sideCameraRef.current.position.set(cameraDistance, 0, 0);
-        sideCameraRef.current.lookAt(0, 0, 0);
+        const lookAtPoint = new THREE.Vector3(0, 0, 0); // Look at the center point
+        topCameraRef.current.position.set(lookAtPoint.x, cameraDistance, lookAtPoint.z + 0.01);
+        topCameraRef.current.lookAt(lookAtPoint);
+        sideCameraRef.current.position.set(lookAtPoint.x, 0, cameraDistance);
+        sideCameraRef.current.lookAt(lookAtPoint);
 
         topRendererRef.current = new THREE.WebGLRenderer({ antialias: true });
         topRendererRef.current.setSize(topDownMountRef.current.clientWidth, topDownMountRef.current.clientHeight);
@@ -123,15 +120,16 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
         const sunMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER });
         const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+        sunMesh.position.set(-PLANET_DATA_MAP.EARTH.radius / 1.5, 0, 0);
         scene.add(sunMesh);
         celestialBodiesRef.current['SUN'] = sunMesh;
 
         const earthData = PLANET_DATA_MAP.EARTH;
-        const earthSize = earthData.size * 5; // --- Increased Earth size ---
+        const earthSize = earthData.size * 5;
         const earthGeo = new THREE.SphereGeometry(earthSize, 32, 32);
         const earthMat = new THREE.MeshPhongMaterial({ map: loader.load(TEX.EARTH_DAY) });
         const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-        earthMesh.userData = earthData;
+        earthMesh.position.set(PLANET_DATA_MAP.EARTH.radius / 1.5, 0, 0);
         scene.add(earthMesh);
         celestialBodiesRef.current['EARTH'] = earthMesh;
 
@@ -148,6 +146,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         earthMesh.add(new THREE.Mesh(atmosphereGeo, atmosphereMat));
 
         cmeGroupRef.current = new THREE.Group();
+        cmeGroupRef.current.position.copy(sunMesh.position);
         scene.add(cmeGroupRef.current);
         
         const handleResize = () => {
@@ -217,10 +216,6 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             }
             const earthMesh = celestialBodiesRef.current['EARTH'];
             if (earthMesh) {
-                const data = earthMesh.userData;
-                const angularVelocity = (2 * Math.PI) / (data.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE;
-                const angle = data.angle + angularVelocity * elapsedTime;
-                earthMesh.position.set(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius);
                 earthMesh.rotation.y += 0.05 * (elapsedTime - (lastTimeRef.current || elapsedTime));
                 earthMesh.children.forEach((child:any) => { if(child.material.uniforms?.uTime) child.material.uniforms.uTime.value = elapsedTime; });
             }
@@ -235,6 +230,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
                 if (cmeMesh.visible) {
                     const cmeLength = dist - sunRadius;
                     const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeMesh.quaternion);
+                    // This logic correctly makes the CME detach and grow from the sun's surface
                     cmeMesh.position.copy(dir.clone().multiplyScalar(sunRadius));
                     cmeMesh.scale.set(cmeLength, cmeLength, cmeLength);
                 }
