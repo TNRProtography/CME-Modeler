@@ -175,7 +175,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         if (!THREE || !cmeGroupRef.current) return;
         while (cmeGroupRef.current.children.length) { cmeGroupRef.current.remove(cmeGroupRef.current.children[0]); }
         const particleTexture = createParticleTexture(THREE);
-        
+
         const sunToEarthDirection = new THREE.Vector3().subVectors(
             celestialBodiesRef.current['EARTH'].position, 
             celestialBodiesRef.current['SUN'].position
@@ -202,10 +202,7 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             });
             const particleSystem = new THREE.Points(geo, mat);
             particleSystem.userData = cme;
-            
-            // --- CRITICAL FIX: Force orientation from Sun to Earth ---
             particleSystem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), sunToEarthDirection);
-            
             cmeGroupRef.current.add(particleSystem);
         });
     }, [earthDirectedCMEs]);
@@ -232,17 +229,16 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
                 const cme = cmeMesh.userData;
                 const timeSinceEventSeconds = props.timelineActive ? (currentTimelineTime - cme.startTime.getTime()) / 1000 : (Date.now() - cme.startTime.getTime()) / 1000;
                 
-                const tipDistance = calculateDistance(cme, timeSinceEventSeconds);
+                const dist = calculateDistance(cme, timeSinceEventSeconds);
                 const sunRadius = PLANET_DATA_MAP.SUN.size;
-                const cmeDisplayLength = PLANET_DATA_MAP.EARTH.radius * 0.4;
-                const baseDistance = tipDistance - cmeDisplayLength;
-                
-                cmeMesh.visible = baseDistance > sunRadius;
+                cmeMesh.visible = dist > sunRadius;
 
                 if (cmeMesh.visible) {
-                    const dir = new THREE.Vector3().setFromQuaternion(cmeMesh.quaternion);
-                    cmeMesh.position.copy(dir.clone().multiplyScalar(baseDistance));
-                    cmeMesh.scale.set(cmeDisplayLength, cmeDisplayLength, cmeDisplayLength);
+                    // --- THIS IS THE CORRECTED LOGIC FROM THE MAIN 3D SIMULATION ---
+                    const cmeLength = dist - sunRadius;
+                    const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeMesh.quaternion);
+                    cmeMesh.position.copy(dir.clone().multiplyScalar(sunRadius));
+                    cmeMesh.scale.set(cmeLength, cmeLength, cmeLength);
                 }
             });
 
@@ -297,4 +293,5 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
 };
 
 export default SimulationCanvas2D;
-// --- END OF FILE src/components/SimulationCanvas2D.tsx ---```
+// --- END OF FILE src/components/SimulationCanvas2D.tsx ---
+// --- END OF FILE src/components/SimulationCanvas2D.tsx ---
