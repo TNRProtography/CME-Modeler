@@ -88,11 +88,11 @@ export const sendNotification = async (title: string, body: string, options?: Cu
     return;
   }
 
-  const force = !!options?.forceWhenVisible;
-  if (isAppVisible() && !force) {
-    console.log('Notification suppressed because the application is currently visible.');
-    return;
-  }
+const force = options?.forceWhenVisible ?? true;  // <- default true now
+if (isAppVisible() && !force) {
+  console.log('Notification suppressed because the application is currently visible.');
+  return;
+}
 
   const finalOptions = buildStackingOptions({ ...options, body });
   const shown = await showNotification(title, finalOptions);
