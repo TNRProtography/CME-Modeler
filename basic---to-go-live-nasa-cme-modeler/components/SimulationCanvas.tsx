@@ -27,7 +27,7 @@ const TEX = {
   SUN_PHOTOSPHERE:
     "https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg",
   MILKY_WAY:
-    "https://upload.wikimedia.org/wikipedia/commons/8/85/Solarsystemscope_texture_8k_stars_milky_way.jpg",
+    "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
 };
 
 /** =========================================================
