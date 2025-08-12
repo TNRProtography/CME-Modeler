@@ -19,8 +19,8 @@ import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
 import GlobeIcon from './components/icons/GlobeIcon';
-import SunIcon from './components/icons/SunIcon';         // ADDED
-import CmeIcon from './components/icons/CmeIcon';         // ADDED
+import SunIcon from './components/icons/SunIcon';
+import CmeIcon from './components/icons/CmeIcon';
 import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
@@ -29,23 +29,22 @@ import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal'; // This is the global app settings modal
-import FirstVisitTutorial from './components/FirstVisitTutorial'; // This is the first visit tutorial modal
+import SettingsModal from './components/SettingsModal';
+import FirstVisitTutorial from './components/FirstVisitTutorial';
 
 type ViewerMedia = 
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
-// --- NEW: Type for navigation/scroll targets ---
 interface NavigationTarget {
   page: 'forecast' | 'solar-activity';
   elementId: string;
-  expandId?: string; // Optional ID for components that need to be expanded
+  expandId?: string;
 }
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const APP_VERSION = 'v0.3beta'; // Define your app version here
+const APP_VERSION = 'v0.3beta';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -60,14 +59,12 @@ const App: React.FC = () => {
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false); // For the CME Page Guide
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false); // For the First Visit Tour
+  const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
-
-  // --- NEW: State to handle navigation from banner clicks ---
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
   const [showLabels, setShowLabels] = useState(true);
@@ -100,22 +97,16 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- NEW: Effect to handle scrolling after navigation ---
   useEffect(() => {
     if (navigationTarget) {
-      // Switch to the target page
       setActivePage(navigationTarget.page);
-
-      // Use a timeout to allow the new page component to render before we try to scroll
       const scrollTimer = setTimeout(() => {
         const element = document.getElementById(navigationTarget.elementId);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        // Reset the target after attempting to scroll
         setNavigationTarget(null);
-      }, 100); // 100ms delay should be enough for rendering
-
+      }, 100);
       return () => clearTimeout(scrollTimer);
     }
   }, [navigationTarget]);
@@ -271,6 +262,8 @@ const App: React.FC = () => {
   const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
   const flareClass = useMemo(() => { if (latestXrayFlux === null) return undefined; if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`; if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`; return undefined; }, [latestXrayFlux]);
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
+
+  // --- THIS IS THE CORRECTED BANNER LOGIC ---
   const isSubstormAlert = useMemo(() => 
     substormActivityStatus?.isStretching && 
     !substormActivityStatus?.isErupting &&
