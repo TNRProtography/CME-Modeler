@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { ProcessedCME } from '../types';
 import { PLANET_DATA_MAP, SCENE_SCALE, AU_IN_KM, SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER, EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER } from '../constants';
 
-// --- Props Interface (Unchanged) ---
+// --- Props Interface (Simplified for this view) ---
 interface SimulationCanvas2DProps {
   cmeData: ProcessedCME[];
   currentlyModeledCMEId: string | null;
@@ -12,7 +12,7 @@ interface SimulationCanvas2DProps {
   timelineActive: boolean;
   timelinePlaying: boolean;
   timelineSpeed: number;
-  timelineValue: number; // 0-1000
+  timelineValue: number;
   timelineMinDate: number;
   timelineMaxDate: number;
   onScrubberChangeByAnim: (value: number) => void;
@@ -20,7 +20,6 @@ interface SimulationCanvas2DProps {
   showLabels: boolean;
   getClockElapsedTime: () => number;
   resetClock: () => void;
-  showExtraPlanets: boolean; // This will be ignored, but kept for prop consistency
 }
 
 // --- Texture URLs (to match 3D view) ---
@@ -30,7 +29,7 @@ const TEX = {
   MILKY_WAY: "https://upload.wikimedia.org/wikipedia/commons/8/85/Solarsystemscope_texture_8k_stars_milky_way.jpg",
 };
 
-// --- Helper Functions (Copied from 3D Canvas for consistency) ---
+// --- Helper Functions (Identical to 3D Canvas) ---
 const createParticleTexture = (THREE: any) => {
     const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
     const context = canvas.getContext('2d'); if (!context) return null;
@@ -52,13 +51,7 @@ const calculateDistance = (cme: ProcessedCME, timeSinceEventSeconds: number): nu
 const ORBIT_SPEED_SCALE = 2000;
 
 const SimpleLabel: React.FC<{ name: string; position: { x: number; y: number; visible: boolean } }> = ({ name, position }) => (
-    <div
-        className="absolute text-white text-xs pointer-events-none transition-opacity duration-200"
-        style={{
-            left: position.x, top: position.y, opacity: position.visible ? 1 : 0,
-            transform: 'translate(-50%, 12px)', textShadow: '0 0 4px black',
-        }}
-    >
+    <div className="absolute text-white text-xs pointer-events-none transition-opacity duration-200" style={{ left: position.x, top: position.y, opacity: position.visible ? 1 : 0, transform: 'translate(-50%, 12px)', textShadow: '0 0 4px black' }}>
         {name}
     </div>
 );
@@ -85,37 +78,30 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
 
         const scene = new THREE.Scene();
         sceneRef.current = scene;
-
         const loader = new THREE.TextureLoader();
         (loader as any).crossOrigin = "anonymous";
-
-        // --- CRITICAL FIX: The camera frustum MUST be scaled to the world space ---
+        
         const near = 0.1 * SCENE_SCALE;
         const far = 1000 * SCENE_SCALE;
-
         topCameraRef.current = new THREE.PerspectiveCamera(50, topDownMountRef.current.clientWidth / topDownMountRef.current.clientHeight, near, far);
         sideCameraRef.current = new THREE.PerspectiveCamera(50, sideViewMountRef.current.clientWidth / sideViewMountRef.current.clientHeight, near, far);
         
-        // --- MODIFIED: Zoomed in camera to frame Sun and Earth ---
-        const cameraDistance = PLANET_DATA_MAP.EARTH.radius * 2.0; // Tighter zoom
-        const lookAtPoint = new THREE.Vector3(PLANET_DATA_MAP.EARTH.radius / 2, 0, 0); // Look at midpoint
-        topCameraRef.current.position.set(lookAtPoint.x, cameraDistance, lookAtPoint.z);
-        topCameraRef.current.lookAt(lookAtPoint);
-        sideCameraRef.current.position.set(cameraDistance * 1.5, 0, 0); // Positioned further back to see the profile
-        sideCameraRef.current.lookAt(0,0,0); // Look at the sun for the side view
+        const cameraDistance = PLANET_DATA_MAP.EARTH.radius * 2.5;
+        topCameraRef.current.position.set(0, cameraDistance, 0.01);
+        topCameraRef.current.lookAt(0, 0, 0);
+        sideCameraRef.current.position.set(cameraDistance, 0, 0);
+        sideCameraRef.current.lookAt(0, 0, 0);
 
-
-        topRendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        topRendererRef.current = new THREE.WebGLRenderer({ antialias: true });
         topRendererRef.current.setSize(topDownMountRef.current.clientWidth, topDownMountRef.current.clientHeight);
         topRendererRef.current.setPixelRatio(window.devicePixelRatio);
         topDownMountRef.current.appendChild(topRendererRef.current.domElement);
 
-        sideRendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        sideRendererRef.current = new THREE.WebGLRenderer({ antialias: true });
         sideRendererRef.current.setSize(sideViewMountRef.current.clientWidth, sideViewMountRef.current.clientHeight);
         sideRendererRef.current.setPixelRatio(window.devicePixelRatio);
         sideViewMountRef.current.appendChild(sideRendererRef.current.domElement);
-
-        // --- NEW: Add Milky Way background and stars ---
+        
         const milkyWayTexture = loader.load(TEX.MILKY_WAY);
         milkyWayTexture.mapping = THREE.EquirectangularReflectionMapping;
         scene.background = milkyWayTexture;
@@ -135,44 +121,33 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
         scene.add(new THREE.PointLight(0xffffff, 1.5, 300 * SCENE_SCALE));
 
         const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
-        const sunMaterial = new THREE.ShaderMaterial({
-            uniforms: { uTime: { value: 0 } },
-            vertexShader: SUN_VERTEX_SHADER,
-            fragmentShader: SUN_FRAGMENT_SHADER,
-        });
+        const sunMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER });
         const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
-        // --- MODIFIED: Position Sun to the left ---
-        sunMesh.position.set(-PLANET_DATA_MAP.EARTH.radius / 2, 0, 0);
         scene.add(sunMesh);
         celestialBodiesRef.current['SUN'] = sunMesh;
 
         const earthData = PLANET_DATA_MAP.EARTH;
-        // --- MODIFIED: Increased Earth size ---
-        const earthGeo = new THREE.SphereGeometry(earthData.size * 5, 32, 32);
+        const earthSize = earthData.size * 5; // --- Increased Earth size ---
+        const earthGeo = new THREE.SphereGeometry(earthSize, 32, 32);
         const earthMat = new THREE.MeshPhongMaterial({ map: loader.load(TEX.EARTH_DAY) });
         const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-        earthMesh.userData = { ...earthData, originalRadius: earthData.radius };
-        // --- MODIFIED: Position Earth to the right ---
-        earthMesh.position.set(PLANET_DATA_MAP.EARTH.radius / 2, 0, 0);
+        earthMesh.userData = earthData;
         scene.add(earthMesh);
         celestialBodiesRef.current['EARTH'] = earthMesh;
 
-        const cloudsGeo = new THREE.SphereGeometry(earthData.size * 5 * 1.01, 32, 32);
+        const cloudsGeo = new THREE.SphereGeometry(earthSize * 1.01, 32, 32);
         const cloudsMat = new THREE.MeshLambertMaterial({ map: loader.load(TEX.EARTH_CLOUDS), transparent: true, opacity: 0.7 });
         earthMesh.add(new THREE.Mesh(cloudsGeo, cloudsMat));
 
-        const atmosphereGeo = new THREE.SphereGeometry(earthData.size * 5 * 1.15, 32, 32);
+        const atmosphereGeo = new THREE.SphereGeometry(earthSize * 1.15, 32, 32);
         const atmosphereMat = new THREE.ShaderMaterial({
-            vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER,
-            fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER,
+            vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER,
             blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true,
             uniforms: { uTime: { value: 0.0 } }
         });
         earthMesh.add(new THREE.Mesh(atmosphereGeo, atmosphereMat));
 
         cmeGroupRef.current = new THREE.Group();
-        // --- MODIFIED: Position CME group at the Sun's new location ---
-        cmeGroupRef.current.position.copy(sunMesh.position);
         scene.add(cmeGroupRef.current);
         
         const handleResize = () => {
@@ -242,6 +217,10 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
             }
             const earthMesh = celestialBodiesRef.current['EARTH'];
             if (earthMesh) {
+                const data = earthMesh.userData;
+                const angularVelocity = (2 * Math.PI) / (data.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE;
+                const angle = data.angle + angularVelocity * elapsedTime;
+                earthMesh.position.set(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius);
                 earthMesh.rotation.y += 0.05 * (elapsedTime - (lastTimeRef.current || elapsedTime));
                 earthMesh.children.forEach((child:any) => { if(child.material.uniforms?.uTime) child.material.uniforms.uTime.value = elapsedTime; });
             }
@@ -296,7 +275,6 @@ const SimulationCanvas2D: React.FC<SimulationCanvas2DProps> = (props) => {
     };
     
     return (
-        // --- MODIFIED: Dynamic layout with safe area padding ---
         <div className="w-full h-full flex flex-col lg:flex-row p-4 pt-16 lg:pt-4 gap-4 bg-black">
             <div className="flex-1 min-h-0 relative">
                 <h2 className="absolute top-2 left-2 text-white font-bold bg-black/50 px-2 py-1 rounded z-10">Top-Down View</h2>
