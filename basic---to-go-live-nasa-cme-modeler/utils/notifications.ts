@@ -1,16 +1,18 @@
 // --- START OF FILE src/utils/notifications.ts ---
 
 /**
- * Notifications utility (hardened for server-side push with enhanced logging)
+ * Notifications utility (server-push + local notifications + diagnostics)
  *
- * This file handles both local (in-app) notifications and the logic for
- * subscribing to the server-side push notification worker.
+ * Adds:
+ * - Category tagging via `tag` and payload `category`
+ * - Self-test helper that hits /trigger-test-push-for-me
+ * - Returns subscription id (hash of endpoint) for easier single-device testing
  */
 
 // A single source of truth for all notification categories used in the app.
 const NOTIFICATION_CATEGORIES = [
-    'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
-    'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'substorm-forecast',
+  'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
+  'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'substorm-forecast',
 ];
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
@@ -84,12 +86,19 @@ const showNotification = async (title: string, options: NotificationOptions): Pr
 const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string }): NotificationOptions => {
   const stacking = opts?.stacking ?? true;
   const base: NotificationOptions = {
-    body: opts?.body, icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
-    badge: opts?.badge ?? '/icons/android-chrome-192x192.png', vibrate: opts?.vibrate ?? [200, 100, 200],
-    data: opts?.data, requireInteraction: opts?.requireInteraction, silent: opts?.silent,
-    actions: opts?.actions, image: opts?.image, renotify: false,
+    body: opts?.body,
+    icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
+    badge: opts?.badge ?? '/icons/android-chrome-192x192.png',
+    vibrate: opts?.vibrate ?? [200, 100, 200],
+    data: { ...(opts?.data || {}), category: (opts?.tag || 'general') },
+    requireInteraction: opts?.requireInteraction,
+    silent: opts?.silent,
+    actions: opts?.actions,
+    image: opts?.image,
+    renotify: false,
+    timestamp: Date.now(),
   };
-  return stacking ? base : { ...base, tag: opts?.tag ?? 'default' };
+  return stacking ? base : { ...base, tag: opts?.tag ?? 'general' };
 };
 
 const ensurePermission = async (): Promise<boolean> => {
@@ -155,10 +164,21 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   return out;
 };
 
+// Compute the same id as the server (b64url(sha256(endpoint))) for debugging/single-device tests.
+async function computeSubscriptionId(endpoint: string): Promise<string> {
+  const enc = new TextEncoder().encode(endpoint);
+  // @ts-ignore
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  const b = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 /**
- * --- MODIFIED with Diagnostic Logging ---
+ * Subscribe and send preferences + return subscription and id
  */
-export const subscribeUserToPush = async (): Promise<PushSubscription | null> => {
+export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscription, id: string } | null> => {
   console.log("DIAGNOSTIC: Attempting to subscribe user to push notifications...");
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.error('DIAGNOSTIC: CRITICAL - Service Worker or Push Manager not supported.');
@@ -183,7 +203,7 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
 
     const preferences: Record<string, boolean> = {};
     NOTIFICATION_CATEGORIES.forEach(id => {
-        preferences[id] = getNotificationPreference(id);
+      preferences[id] = getNotificationPreference(id);
     });
     console.log("DIAGNOSTIC: Gathered user preferences:", preferences);
 
@@ -199,18 +219,20 @@ export const subscribeUserToPush = async (): Promise<PushSubscription | null> =>
       });
       console.log('DIAGNOSTIC: New push subscription created successfully.');
     }
-    
+
     await sendPushSubscriptionToServer(subscription, preferences);
-    return subscription;
+
+    const id = await computeSubscriptionId(subscription.endpoint);
+    try { localStorage.setItem('push_subscription_id', id); } catch {}
+    console.log('DIAGNOSTIC: Your subscription id is:', id);
+
+    return { subscription, id };
   } catch (error) {
     console.error('DIAGNOSTIC: CRITICAL ERROR during subscribeUserToPush:', error);
     return null;
   }
 };
 
-/**
- * --- MODIFIED with Diagnostic Logging ---
- */
 const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
   console.log("DIAGNOSTIC: Sending subscription to server...");
   const body = JSON.stringify({ subscription, preferences });
@@ -229,6 +251,14 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription, pref
       console.error('DIAGNOSTIC: SERVER REJECTED SUBSCRIPTION:', errorText);
       alert(`Error: The server rejected the notification subscription. Please check the console for details. Server message: ${errorText}`);
     } else {
+      // optional: surface id returned by server (if you want)
+      try {
+        const j = await resp.json().catch(() => null);
+        if (j?.id) {
+          localStorage.setItem('push_subscription_id', j.id);
+          console.log('DIAGNOSTIC: Server returned id:', j.id);
+        }
+      } catch {}
       console.log('DIAGNOSTIC: Push subscription and preferences sent to server successfully.');
     }
   } catch (error) {
@@ -280,7 +310,9 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
   }
 };
 
-// --- Quick test helper ---
+// --- Quick test helpers ---
+
+/** Local toast-style test (foreground allowed). */
 export const sendTestNotification = async (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
@@ -298,6 +330,32 @@ export const sendTestNotification = async (title?: string, body?: string) => {
     stacking: true,
     tag: `test-${Date.now()}`
   });
+};
+
+/** Server→phone self-test: hits the worker without admin secret and pings ONLY this device. */
+export const sendServerSelfTest = async (category: 'general'|'aurora'|'flare'|'substorm' = 'general') => {
+  const reg = await waitForServiceWorkerReady();
+  if (!reg) { alert('Service worker not ready'); return; }
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) { alert('No push subscription found. Please enable notifications first.'); return; }
+
+  const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/trigger-test-push-for-me', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription: sub.toJSON(), category }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text();
+    console.error('Self-test failed:', t);
+    alert('Self-test failed. See console.');
+  } else {
+    console.log('Self-test ok:', await resp.json().catch(() => ({})));
+  }
+};
+
+// Export id helper if you want to surface it in UI
+export const getLocalSubscriptionId = (): string | null => {
+  try { return localStorage.getItem('push_subscription_id'); } catch { return null; }
 };
 
 // --- END OF FILE src/utils/notifications.ts ---

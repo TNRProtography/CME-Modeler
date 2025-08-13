@@ -1,14 +1,22 @@
 // --- START OF FILE public/sw.js ---
 
-const CACHE_NAME = 'cme-modeler-cache-v36';
+const CACHE_NAME = 'cme-modeler-cache-v37';
 const FALLBACK_ENDPOINTS = [
   // Legacy fallback only; most pushes now include the full payload
   'https://spottheaurora.thenamesrock.workers.dev/get-latest-alert',
 ];
 
 const GENERIC_BODY = 'New activity detected. Open the app for details.';
-const NOTIF_TAG = 'spot-the-aurora-alert';
-const RETRY_DELAYS = [0, 600, 1200]; // lighter retries now that payloads exist
+
+// Category tags (used by Chrome/Android for grouping)
+const TAGS = {
+  general:  'sta-general',
+  aurora:   'sta-aurora',
+  flare:    'sta-flare',
+  substorm: 'sta-substorm',
+};
+
+const RETRY_DELAYS = [0, 600, 1200];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -36,19 +44,35 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   const show = async (payload) => {
     const title = payload?.title || 'Spot The Aurora';
+
+    // Infer category from payload.category or payload.topic
+    const rawCat = (payload?.category || (payload?.topic ? inferCategoryFromTopic(payload.topic) : '') || 'general');
+    const category = (['general','aurora','flare','substorm'].includes(rawCat) ? rawCat : 'general');
+
     const options = {
       body: payload?.body || GENERIC_BODY,
       icon: '/icons/android-chrome-192x192.png',
       badge: '/icons/android-chrome-192x192.png',
       vibrate: [200, 100, 200],
-      tag: NOTIF_TAG,
+      // Use category tag so Android groups them separately
+      tag: TAGS[category] || TAGS.general,
       renotify: false,
-      data: { url: '/' },
+      timestamp: Date.now(),
+      data: {
+        url: '/',
+        category,
+        topic: payload?.topic || undefined,
+      },
+      // (Optional) You could add category-specific actions later
+      // actions: [{ action:'open', title:'Open' }],
     };
+
+    // De-duplicate by tag (close existing)
     try {
-      const existing = await self.registration.getNotifications({ tag: NOTIF_TAG });
+      const existing = await self.registration.getNotifications({ tag: options.tag });
       existing.forEach(n => n.close());
     } catch {}
+
     await self.registration.showNotification(title, options);
   };
 
@@ -62,7 +86,7 @@ self.addEventListener('push', (event) => {
           return;
         } catch {
           const text = await event.data.text().catch(() => '');
-          await show({ title: 'Spot The Aurora', body: text || GENERIC_BODY });
+          await show({ title: 'Spot The Aurora', body: text || GENERIC_BODY, category: 'general' });
           return;
         }
       }
@@ -105,5 +129,14 @@ self.addEventListener('notificationclick', (event) => {
     if (clients.openWindow) return clients.openWindow(urlToOpen);
   })());
 });
+
+// ---- helpers ----
+function inferCategoryFromTopic(topic) {
+  if (!topic) return 'general';
+  if (topic.startsWith('flare-')) return 'flare';
+  if (topic.startsWith('aurora-')) return 'aurora';
+  if (topic === 'substorm-forecast') return 'substorm';
+  return 'general';
+}
 
 // --- END OF FILE public/sw.js ---
