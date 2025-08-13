@@ -1,21 +1,45 @@
 // --- START OF FILE public/sw.js ---
 
-const CACHE_NAME = 'cme-modeler-cache-v37';
+const CACHE_NAME = 'cme-modeler-cache-v38';
 
 /**
  * Fallback endpoints:
  * 1) Your push-notification worker (correct one for LATEST_ALERT payloads)
- * 2) (Optional) keep the old endpoint as a secondary fallback if you still run it
  */
 const FALLBACK_ENDPOINTS = [
   'https://push-notification-worker.thenamesrock.workers.dev/get-latest-alert',
-  // 'https://spottheaurora.thenamesrock.workers.dev/get-latest-alert', // optional legacy
 ];
 
 const GENERIC_BODY = 'New activity detected. Open the app for details.';
-// Default tag is used only if payload doesn’t provide a category/tag
 const DEFAULT_TAG = 'spot-the-aurora-alert';
 const RETRY_DELAYS = [0, 600, 1200];
+
+// Simple helper: pick icons based on category/topic/tag
+function chooseIcons(tagOrCategory) {
+  const key = String(tagOrCategory || '').toLowerCase();
+
+  // Flares
+  if (key.startsWith('flare-')) {
+    return {
+      icon: '/icons/flare_icon192.png',
+      badge: '/icons/flare_icon72.png',
+    };
+  }
+
+  // Aurora forecast & substorm forecast use aurora icon set
+  if (key.startsWith('aurora-') || key === 'substorm-forecast') {
+    return {
+      icon: '/icons/aurora_icon192.png',
+      badge: '/icons/aurora_icon72.png',
+    };
+  }
+
+  // Default app icons (same as before)
+  return {
+    icon: '/icons/android-chrome-192x192.png',
+    badge: '/icons/android-chrome-192x192.png',
+  };
+}
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -45,14 +69,16 @@ self.addEventListener('push', (event) => {
     const title = payload?.title || 'Spot The Aurora';
 
     // Accept category/tag from payload for better grouping/stacking
-    // NOTE: This does not create Android system channels; it only affects grouping.
     const tagFromPayload =
       (payload && (payload.tag || payload.category || payload.topic)) || DEFAULT_TAG;
 
+    // Choose icons based on the resolved category/tag/topic
+    const { icon, badge } = chooseIcons(tagFromPayload);
+
     const options = {
       body: payload?.body || GENERIC_BODY,
-      icon: '/icons/android-chrome-192x192.png',
-      badge: '/icons/android-chrome-192x192.png',
+      icon,
+      badge,
       vibrate: [200, 100, 200],
       tag: String(tagFromPayload),
       renotify: false,
