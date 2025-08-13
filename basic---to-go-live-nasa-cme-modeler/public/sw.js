@@ -31,30 +31,37 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ---- Push notifications ----
-// --- MODIFIED: This handler now expects a JSON payload from the server ---
+// --- CRITICAL FIX: Rewritten to handle asynchronous data parsing correctly ---
 self.addEventListener('push', (event) => {
   if (!event.data) {
     console.error('Push event received but no data was sent.');
     return;
   }
 
-  // The worker now sends a JSON string with a title and body. We parse it here.
-  const data = event.data.json();
-  
-  const title = data.title || 'Spot The Aurora'; // A safe fallback title
-  const options = {
-    body: data.body || 'You have a new alert. Tap to see the latest updates.', // A safe fallback body
-    icon: '/icons/android-chrome-192x192.png',
-    badge: '/icons/android-chrome-192x192.png',
-    vibrate: [200, 100, 200],
-    tag: 'spot-the-aurora-alert', // A general tag to allow new notifications to replace old ones.
-    data: {
-      url: '/', // The URL to open when the notification is clicked.
-    },
-  };
+  // The event.data.json() method returns a Promise. We must handle it asynchronously.
+  // The entire operation needs to be wrapped in event.waitUntil to ensure the
+  // service worker stays alive long enough to parse the data AND show the notification.
+  const promiseChain = event.data.json().then(data => {
+    const title = data.title || 'Spot The Aurora'; // A safe fallback title
+    const options = {
+      body: data.body || 'You have a new alert. Tap to see the latest updates.', // A safe fallback body
+      icon: '/icons/android-chrome-192x192.png',
+      badge: '/icons/android-chrome-192x192.png',
+      vibrate: [200, 100, 200],
+      tag: 'spot-the-aurora-alert', // A general tag to allow new notifications to replace old ones.
+      data: {
+        url: '/', // The URL to open when the notification is clicked.
+      },
+    };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+    // Show the notification after the data has been parsed.
+    return self.registration.showNotification(title, options);
+  });
+
+  // Tell the browser to wait until our promise chain is complete.
+  event.waitUntil(promiseChain);
 });
+
 
 // ---- Click -> focus/open app ----
 // --- UNCHANGED: This logic is still correct and robust ---
