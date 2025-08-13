@@ -1,6 +1,12 @@
-// --- START OF FILE public/sw.js (Corrected, Browser-Side Code) ---
+// --- START OF FILE public/sw.js (Fixed & resilient) ---
 
 const CACHE_NAME = 'cme-modeler-cache-v32-network-only';
+
+// If your API runs on a different origin, add it here as a fallback:
+const ALERT_ENDPOINTS = [
+  '/get-latest-alert',
+  'https://spottheaurora.thenamesrock.workers.dev/get-latest-alert', // <— fallback to Workers.dev API (CORS-enabled)
+];
 
 self.addEventListener('install', (event) => {
   console.log('SW: Install event fired. Forcing activation.');
@@ -31,13 +37,21 @@ self.addEventListener('push', (event) => {
 
   const promiseChain = (async () => {
     try {
-      // 1. Call back to the worker to get the latest alert details.
-      const response = await fetch('/get-latest-alert');
-      const data = await response.json();
-      
-      const title = data.title || 'Spot The Aurora';
+      // Try each endpoint until one returns OK JSON
+      let data = null;
+      for (const url of ALERT_ENDPOINTS) {
+        try {
+          const res = await fetch(url, { mode: 'cors' });
+          if (res.ok) {
+            data = await res.json();
+            break;
+          }
+        } catch (_) { /* try next */ }
+      }
+
+      const title = data?.title || 'Spot The Aurora';
       const options = {
-        body: data.body || 'New activity detected. Open the app for details.',
+        body: data?.body || 'New activity detected. Open the app for details.',
         icon: '/icons/android-chrome-192x192.png',
         badge: '/icons/android-chrome-192x192.png',
         vibrate: [200, 100, 200],
@@ -45,12 +59,9 @@ self.addEventListener('push', (event) => {
         data: { url: '/' },
       };
 
-      // 2. Show the notification with the fetched data.
       await self.registration.showNotification(title, options);
-
     } catch (err) {
       console.error('SW: Error during push handler:', err);
-      // Fallback notification if the fetch fails
       await self.registration.showNotification('Spot The Aurora', {
         body: 'New activity detected. Open the app for details.',
         icon: '/icons/android-chrome-192x192.png',
@@ -64,7 +75,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const urlToOpen = (event.notification.data && event.notification.data.url) || '/';
-  
+
   event.waitUntil((async () => {
     const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of allClients) {
@@ -77,3 +88,5 @@ self.addEventListener('notificationclick', (event) => {
     }
   })());
 });
+
+// --- END OF FILE public/sw.js ---
