@@ -1,14 +1,14 @@
-// --- START OF FILE public/sw.js (with Deep Diagnostics) ---
+// --- START OF FILE public/sw.js (Corrected, Browser-Side Code) ---
 
 const CACHE_NAME = 'cme-modeler-cache-v32-network-only';
 
 self.addEventListener('install', (event) => {
-  console.log('SW DIAGNOSTIC: Install event fired. Forcing activation.');
+  console.log('SW: Install event fired. Forcing activation.');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('SW DIAGNOSTIC: Activate event fired. Claiming clients.');
+  console.log('SW: Activate event fired. Claiming clients.');
   event.waitUntil(
     caches.keys().then(keys => Promise.all(keys.map(key => {
       if (key !== CACHE_NAME) return caches.delete(key);
@@ -26,27 +26,18 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// ---- Push notifications ----
 self.addEventListener('push', (event) => {
-  console.log('SW DIAGNOSTIC: Push event received!');
-
-  if (!event.data) {
-    console.error('SW DIAGNOSTIC: Push event had no data. Cannot show notification.');
-    return;
-  }
-
-  // --- CRITICAL DIAGNOSTIC STEP: Log the raw data first ---
-  const payloadText = event.data.text();
-  console.log('SW DIAGNOSTIC: Raw payload text received:', payloadText);
+  console.log('SW: Push event received (wake-up call).');
 
   const promiseChain = (async () => {
     try {
-      const data = JSON.parse(payloadText);
-      console.log('SW DIAGNOSTIC: Payload parsed successfully:', data);
-
+      // 1. Call back to the worker to get the latest alert details.
+      const response = await fetch('/get-latest-alert');
+      const data = await response.json();
+      
       const title = data.title || 'Spot The Aurora';
       const options = {
-        body: data.body || 'You have a new alert. Tap to see the latest updates.',
+        body: data.body || 'New activity detected. Open the app for details.',
         icon: '/icons/android-chrome-192x192.png',
         badge: '/icons/android-chrome-192x192.png',
         vibrate: [200, 100, 200],
@@ -54,15 +45,14 @@ self.addEventListener('push', (event) => {
         data: { url: '/' },
       };
 
-      console.log('SW DIAGNOSTIC: Attempting to show notification with title:', title);
+      // 2. Show the notification with the fetched data.
       await self.registration.showNotification(title, options);
-      console.log('SW DIAGNOSTIC: showNotification command issued successfully.');
 
     } catch (err) {
-      console.error('SW DIAGNOSTIC: CRITICAL ERROR in push handler:', err);
-      // As a fallback, show a generic error notification
-      await self.registration.showNotification('Notification Error', {
-        body: 'Could not parse incoming alert. Check the console for details.',
+      console.error('SW: Error during push handler:', err);
+      // Fallback notification if the fetch fails
+      await self.registration.showNotification('Spot The Aurora', {
+        body: 'New activity detected. Open the app for details.',
         icon: '/icons/android-chrome-192x192.png',
       });
     }
@@ -71,8 +61,6 @@ self.addEventListener('push', (event) => {
   event.waitUntil(promiseChain);
 });
 
-
-// ---- Click -> focus/open app ----
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const urlToOpen = (event.notification.data && event.notification.data.url) || '/';
@@ -89,4 +77,3 @@ self.addEventListener('notificationclick', (event) => {
     }
   })());
 });
-// --- END OF FILE public/sw.js ---
