@@ -1,19 +1,18 @@
-// --- START OF FILE public/sw.js (KV-race-resilient) ---
+// --- START OF FILE public/sw.js ---
 
-const CACHE_NAME = 'cme-modeler-cache-v34';
+const CACHE_NAME = 'cme-modeler-cache-v35';
 
-// IMPORTANT: First entry = your app origin (routes to 404 HTML on Pages — expected).
-// Second entry = your Workers.dev API (CORS OK), which returns JSON.
+// Only use the Workers API endpoint (returns JSON). We add ?ts= to bust any cache.
+// If you have a custom domain API, add it to this list too.
 const ALERT_ENDPOINTS = [
-  '/get-latest-alert',
   'https://spottheaurora.thenamesrock.workers.dev/get-latest-alert',
 ];
 
-// The generic copy your Worker returns when KV has no payload yet:
 const GENERIC_BODY = 'New activity detected. Open the app for details.';
 const NOTIF_TAG = 'spot-the-aurora-alert';
-const RETRY_TOTAL_MS = 5000;      // total retry window
-const RETRY_INTERVAL_MS = 800;    // step between retries
+
+// Backoff schedule (ms): total ~15s, 6 fetches max per push per device
+const RETRY_DELAYS = [0, 500, 1000, 2000, 4000, 8000];
 
 self.addEventListener('install', (event) => {
   console.log('SW DIAGNOSTIC: Install -> skipWaiting');
@@ -21,7 +20,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('SW DIAGNOSTIC: Activate -> claim clients & clean old caches');
+  console.log('SW DIAGNOSTIC: Activate -> claim & clean caches');
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
@@ -32,10 +31,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request).catch(() =>
-      new Response(
-        '<h1>Network Error</h1><p>Please check your internet connection.</p>',
-        { headers: { 'Content-Type': 'text/html' }, status: 503, statusText: 'Service Unavailable' }
-      )
+      new Response('<h1>Network Error</h1><p>Please check your internet connection.</p>', {
+        headers: { 'Content-Type': 'text/html' }, status: 503, statusText: 'Service Unavailable'
+      })
     )
   );
 });
@@ -50,25 +48,36 @@ self.addEventListener('push', (event) => {
       icon: '/icons/android-chrome-192x192.png',
       badge: '/icons/android-chrome-192x192.png',
       vibrate: [200, 100, 200],
-      tag: NOTIF_TAG,      // same tag -> updates in-place
+      tag: NOTIF_TAG,
       renotify: false,
       data: { url: '/' },
     };
+
+    // Close any prior generic one so the new one replaces cleanly across platforms
+    try {
+      const existing = await self.registration.getNotifications({ tag: NOTIF_TAG });
+      existing.forEach(n => n.close());
+    } catch (_) {}
+
     await self.registration.showNotification(title, options);
   };
 
-  const fetchLatestAlert = async () => {
-    // Attempt both endpoints; ignore non-JSON/404 HTML on app origin
-    for (const url of ALERT_ENDPOINTS) {
+  const fetchLatestAlertOnce = async () => {
+    for (const base of ALERT_ENDPOINTS) {
+      const url = `${base}?ts=${Date.now()}&rnd=${Math.random().toString(36).slice(2)}`; // cache-bust
       try {
-        const res = await fetch(url, { mode: 'cors' });
+        const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
         if (!res.ok) {
           console.warn('SW DIAGNOSTIC: Alert fetch not OK', url, res.status);
           continue;
         }
-        // Pages /get-latest-alert returns HTML -> .json() will throw SyntaxError (expected)
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          console.warn('SW DIAGNOSTIC: Alert fetch non-JSON content-type', ct);
+          continue;
+        }
         const data = await res.json();
-        console.log('SW DIAGNOSTIC: Loaded alert payload from', url);
+        console.log('SW DIAGNOSTIC: Loaded alert payload', data?.ts || null, data?.nonce || null);
         return data;
       } catch (err) {
         console.warn('SW DIAGNOSTIC: Alert fetch failed', url, err && (err.name || err.message));
@@ -77,67 +86,60 @@ self.addEventListener('push', (event) => {
     return null;
   };
 
-  const retryUntilRealPayload = async () => {
-    const deadline = Date.now() + RETRY_TOTAL_MS;
-    while (Date.now() < deadline) {
-      const data = await fetchLatestAlert();
-      if (data && data.body && data.body !== GENERIC_BODY) {
-        console.log('SW DIAGNOSTIC: Got real payload after retry; updating notification.');
-        await show(data); // same tag => replaces generic
-        return true;
-      }
-      await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
-    }
-    return false;
-  };
-
-  const handlePush = (async () => {
+  const run = (async () => {
     try {
+      // If a payload is ever sent directly, support it
       if (event.data) {
-        // You don't send payloads today, but this supports them if you add it later
         console.log('SW DIAGNOSTIC: Push included data payload.');
-        let payload = null;
-        try { payload = event.data.json(); } catch { payload = { body: await event.data.text() }; }
-        await show(payload);
-        return;
+        try {
+          const json = event.data.json();
+          await show(json);
+          return;
+        } catch {
+          const text = await event.data.text().catch(() => '');
+          await show({ title: 'Spot The Aurora', body: text || GENERIC_BODY });
+          return;
+        }
       }
 
-      // No payload -> first fetch attempt
-      console.warn('SW DIAGNOSTIC: Push had no payload. Fetching latest alert...');
-      const data = await fetchLatestAlert();
+      // No payload: fetch with backoff and replace-in-place
+      let usedReal = false;
+      for (let i = 0; i < RETRY_DELAYS.length; i++) {
+        if (i > 0) await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
+        const data = await fetchLatestAlertOnce();
 
-      if (data) {
-        await show(data);
-        // If we only got the generic body, start a short retry loop to replace it
-        if (!data.body || data.body === GENERIC_BODY) {
-          console.warn('SW DIAGNOSTIC: Got generic payload; retrying briefly to beat KV propagation…');
-          await retryUntilRealPayload();
+        if (data) {
+          await show(data);
+          if (data.body && data.body !== GENERIC_BODY) {
+            usedReal = true;
+            break;
+          }
+          // first iteration shows generic; keep looping to replace later
+        } else if (i === 0) {
+          // show generic immediately on first failure, then try to upgrade later
+          await show(null);
         }
-      } else {
-        console.error('SW DIAGNOSTIC: Could not fetch latest alert. Showing generic fallback.');
-        await show(null);
-        await retryUntilRealPayload();
+      }
+
+      if (!usedReal) {
+        console.warn('SW DIAGNOSTIC: Could not fetch non-generic payload within retry window; user sees generic.');
       }
     } catch (err) {
-      console.error('SW DIAGNOSTIC: Error in push handler:', err);
+      console.error('SW DIAGNOSTIC: Fatal in push handler', err);
       await show(null);
-      await retryUntilRealPayload();
     }
   })();
 
-  event.waitUntil(handlePush);
+  event.waitUntil(run);
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const urlToOpen = (event.notification.data && event.notification.data.url) || '/';
-
   event.waitUntil((async () => {
     const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of allClients) {
-      if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-        return client.focus();
-      }
+      if (client.url.startsWith(self.location.origin) && 'focus' in client) return client.focus();
     }
     if (clients.openWindow) return clients.openWindow(urlToOpen);
   })());
