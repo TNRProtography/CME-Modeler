@@ -1,21 +1,20 @@
 // --- START OF FILE public/sw.js ---
 
 const CACHE_NAME = 'cme-modeler-cache-v37';
+
+/**
+ * Fallback endpoints:
+ * 1) Your push-notification worker (correct one for LATEST_ALERT payloads)
+ * 2) (Optional) keep the old endpoint as a secondary fallback if you still run it
+ */
 const FALLBACK_ENDPOINTS = [
-  // Legacy fallback only; most pushes now include the full payload
-  'https://spottheaurora.thenamesrock.workers.dev/get-latest-alert',
+  'https://push-notification-worker.thenamesrock.workers.dev/get-latest-alert',
+  // 'https://spottheaurora.thenamesrock.workers.dev/get-latest-alert', // optional legacy
 ];
 
 const GENERIC_BODY = 'New activity detected. Open the app for details.';
-
-// Category tags (used by Chrome/Android for grouping)
-const TAGS = {
-  general:  'sta-general',
-  aurora:   'sta-aurora',
-  flare:    'sta-flare',
-  substorm: 'sta-substorm',
-};
-
+// Default tag is used only if payload doesn’t provide a category/tag
+const DEFAULT_TAG = 'spot-the-aurora-alert';
 const RETRY_DELAYS = [0, 600, 1200];
 
 self.addEventListener('install', (event) => {
@@ -45,40 +44,33 @@ self.addEventListener('push', (event) => {
   const show = async (payload) => {
     const title = payload?.title || 'Spot The Aurora';
 
-    // Infer category from payload.category or payload.topic
-    const rawCat = (payload?.category || (payload?.topic ? inferCategoryFromTopic(payload.topic) : '') || 'general');
-    const category = (['general','aurora','flare','substorm'].includes(rawCat) ? rawCat : 'general');
+    // Accept category/tag from payload for better grouping/stacking
+    // NOTE: This does not create Android system channels; it only affects grouping.
+    const tagFromPayload =
+      (payload && (payload.tag || payload.category || payload.topic)) || DEFAULT_TAG;
 
     const options = {
       body: payload?.body || GENERIC_BODY,
       icon: '/icons/android-chrome-192x192.png',
       badge: '/icons/android-chrome-192x192.png',
       vibrate: [200, 100, 200],
-      // Use category tag so Android groups them separately
-      tag: TAGS[category] || TAGS.general,
+      tag: String(tagFromPayload),
       renotify: false,
-      timestamp: Date.now(),
-      data: {
-        url: '/',
-        category,
-        topic: payload?.topic || undefined,
-      },
-      // (Optional) You could add category-specific actions later
-      // actions: [{ action:'open', title:'Open' }],
+      // Keep a suggested URL (can be overridden by payload.data.url)
+      data: { url: (payload && payload.data && payload.data.url) || '/' },
     };
 
-    // De-duplicate by tag (close existing)
     try {
+      // Close any existing notification with the same tag (prevents stacking spam if desired)
       const existing = await self.registration.getNotifications({ tag: options.tag });
       existing.forEach(n => n.close());
     } catch {}
-
     await self.registration.showNotification(title, options);
   };
 
   const run = (async () => {
     try {
-      // 1) Prefer encrypted payload (now standard)
+      // 1) Prefer encrypted payload (common path)
       if (event.data) {
         try {
           const json = event.data.json();
@@ -86,7 +78,7 @@ self.addEventListener('push', (event) => {
           return;
         } catch {
           const text = await event.data.text().catch(() => '');
-          await show({ title: 'Spot The Aurora', body: text || GENERIC_BODY, category: 'general' });
+          await show({ title: 'Spot The Aurora', body: text || GENERIC_BODY });
           return;
         }
       }
@@ -108,9 +100,9 @@ self.addEventListener('push', (event) => {
         }
       }
 
-      // 3) Fallback generic if absolutely nothing else worked
+      // 3) Final generic fallback
       await show(null);
-    } catch (err) {
+    } catch {
       await show(null);
     }
   })();
@@ -129,14 +121,5 @@ self.addEventListener('notificationclick', (event) => {
     if (clients.openWindow) return clients.openWindow(urlToOpen);
   })());
 });
-
-// ---- helpers ----
-function inferCategoryFromTopic(topic) {
-  if (!topic) return 'general';
-  if (topic.startsWith('flare-')) return 'flare';
-  if (topic.startsWith('aurora-')) return 'aurora';
-  if (topic === 'substorm-forecast') return 'substorm';
-  return 'general';
-}
 
 // --- END OF FILE public/sw.js ---
