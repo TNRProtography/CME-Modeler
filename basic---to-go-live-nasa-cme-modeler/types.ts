@@ -1,14 +1,16 @@
+//--- START OF FILE types.ts ---
+
 // Assuming global THREE is available from CDN
-// import * as THREE from 'three'; 
+// import * as THREE from 'three';
 
 export interface PlanetData {
   radius: number; // AU for planets, visual orbital radius for moons
-  size: number; // visual size in scene units
+  size: number;   // visual size in scene units
   color: number | string;
-  angle: number; // initial orbital angle
+  angle: number;  // initial orbital angle
   name: string;
   labelElementId: string;
-  orbits?: string; // Name of the celestial body it orbits (e.g., 'EARTH')
+  orbits?: string;            // Name of the celestial body it orbits (e.g., 'EARTH')
   orbitalPeriodDays?: number; // Orbital period in days for moons
 }
 
@@ -17,17 +19,16 @@ export interface POIData {
   size: number;
   color: number | string;
   labelElementId: string;
-  parent: string; // The body it's positioned relative to
+  parent: string;            // The body it's positioned relative to
   distanceFromParent: number; // In scene units, towards the Sun
 }
 
-
 export interface CelestialBody {
-  mesh: any; // THREE.Mesh
+  mesh: any;                        // THREE.Mesh
   labelElement?: HTMLElement | null; // For original HTML labels
-  labelId?: string; // For React-managed labels
+  labelId?: string;                 // For React-managed labels
   name: string;
-  userData?: PlanetData | POIData; // Store original data for animation
+  userData?: PlanetData | POIData;  // Store original data for animation
 }
 
 export interface CMEAnalysis {
@@ -64,14 +65,14 @@ export interface CMEData {
 export interface ProcessedCME {
   id: string;
   startTime: Date;
-  speed: number; // km/s
-  longitude: number; // degrees
-  latitude:number; // degrees
+  speed: number;          // km/s
+  longitude: number;      // degrees
+  latitude: number;       // degrees
   isEarthDirected: boolean;
   note: string;
   predictedArrivalTime: Date | null;
   simulationStartTime?: number; // For individual modeling, relative to THREE.Clock elapsed time
-  mesh?: any; // THREE.Mesh
+  mesh?: any;            // THREE.Mesh
   link: string;
   instruments: string;
   sourceLocation: string;
@@ -113,13 +114,23 @@ export interface PlanetLabelInfo {
 
 // --- NEW/MODIFIED TYPE FOR SUBSTORM ACTIVITY ---
 export interface SubstormActivity {
-  text: string;           // The original text blurb for display inside the dashboard
-  color: string;          // The color for the text inside the dashboard
-  isStretching: boolean;  // True if the field is stretching (the condition for the banner alert)
-  isErupting: boolean;    // True if a substorm signature (jump) is detected
+  text: string;              // The original text blurb for display inside the dashboard
+  color: string;             // The color for the text inside the dashboard
+  isStretching: boolean;     // True if the field is stretching (the condition for the banner alert)
+  isErupting: boolean;       // True if a substorm signature (jump) is detected
   probability?: number;      // The calculated probability percentage
   predictedStartTime?: number; // The predicted start timestamp of the eruption window
-  predictedEndTime?: number;  // The predicted end timestamp of the eruption window
+  predictedEndTime?: number;   // The predicted end timestamp of the eruption window
+}
+
+// --- NEW TYPE FOR THE PREDICTIVE FORECAST ---
+export interface SubstormForecast {
+  status: 'QUIET' | 'WATCH' | 'LIKELY_60' | 'IMMINENT_30' | 'ONSET';
+  likelihood: number;   // 0-100
+  windowLabel: string;  // e.g., "10 – 60 min"
+  action: string;       // e.g., "Prepare to go..."
+  p30: number;          // raw probability for 30 mins
+  p60: number;          // raw probability for 60 mins
 }
 
 export interface SimulationCanvasHandle {
@@ -127,7 +138,6 @@ export interface SimulationCanvasHandle {
 }
 
 // --- NEW TYPES FOR AURORA SIGHTINGS ---
-
 export type SightingStatus = 'eye' | 'phone' | 'dslr' | 'cloudy' | 'nothing';
 
 export interface SightingReport {
@@ -136,6 +146,16 @@ export interface SightingReport {
   status: SightingStatus;
   name: string;
   timestamp: number;
-  key?: string; // a unique key from the KV store
+  key?: string;        // a unique key from the KV store
   isPending?: boolean; // For client-side state
 }
+
+/**
+ * If you truly need a type representing a Vite config shape in this file,
+ * use a valid identifier (no dots) like this. Otherwise, feel free to remove it.
+ */
+export interface ViteConfig {
+  plugins: any[];
+}
+
+//--- END OF FILE types.ts ---

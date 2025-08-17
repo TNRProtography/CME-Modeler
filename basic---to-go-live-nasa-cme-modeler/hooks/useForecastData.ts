@@ -1,12 +1,11 @@
 //--- START OF FILE src/hooks/useForecastData.ts ---
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
 SubstormActivity,
 SightingReport,
+SubstormForecast, // New type for the richer forecast object
 } from '../types';
-// --- REMOVED: No longer sending notifications from the client-side hook ---
-// import { sendNotification, canSendNotification, clearNotificationCooldown } from '../utils/notifications.ts';
 
 // --- Type Definitions ---
 interface CelestialTimeData {
@@ -45,6 +44,12 @@ location: string;
 link: string;
 }
 
+// --- NEW: Types for the predictive model ---
+type SWRow = { t: number; by?: number; bz?: number; v?: number; };
+type GOESRow = { t: number; hp?: number; };
+type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
+
+
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
@@ -54,6 +59,50 @@ const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
+
+// --- NEW: Physics and Model Helpers ---
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+function newellCoupling(V: number, By: number, Bz: number) {
+  const BT = Math.sqrt((By ?? 0) ** 2 + (Bz ?? 0) ** 2);
+  const theta = Math.atan2(By ?? 0, Bz ?? 0);
+  const s = Math.sin(theta / 2);
+  const val = Math.pow(V, 4 / 3) * Math.pow(BT, 2 / 3) * Math.pow(Math.abs(s), 8 / 3);
+  return val / 1000;
+}
+
+function movingAvg(vals: number[], n: number) {
+  if (!vals.length) return undefined;
+  const m = Math.min(vals.length, n);
+  const sub = vals.slice(vals.length - m);
+  return sub.reduce((a, b) => a + b, 0) / m;
+}
+
+function sustainedSouth(bzSeries: number[], minutes = 15) {
+  if (!bzSeries.length) return false;
+  const m = Math.min(bzSeries.length, minutes);
+  const sub = bzSeries.slice(bzSeries.length - m);
+  const fracSouth = sub.filter(bz => bz <= -3).length / sub.length;
+  return fracSouth >= 0.8;
+}
+
+function slopePerMin(series: { t: number; v: number }[], minutes = 2) {
+  if (series.length < 2) return undefined;
+  const end = series[series.length - 1];
+  for (let i = series.length - 2; i >= 0; i--) {
+    const dtm = (end.t - series[i].t) / 60000;
+    if (dtm >= minutes - 0.5) return (end.v - series[i].v) / dtm;
+  }
+  return undefined;
+}
+
+function probabilityModel(dPhiNow: number, dPhiMean15: number, bzMean15: number) {
+  const base = Math.tanh(0.015 * (dPhiMean15 || dPhiNow) + 0.01 * dPhiNow);
+  const bzBoost = bzMean15 < -3 ? 0.10 : bzMean15 < -1 ? 0.05 : 0;
+  const P60 = Math.min(0.9, Math.max(0.01, 0.25 + 0.6 * base + bzBoost));
+  const P30 = Math.min(0.9, Math.max(0.01, 0.15 + 0.7 * base + bzBoost));
+  return { P30, P60 };
+}
 
 // Helper functions
 const calculateLocationAdjustment = (userLat: number): number => {
@@ -81,7 +130,7 @@ setSubstormActivityStatus: (status: SubstormActivity | null) => void
 ) => {
 const [isLoading, setIsLoading] = useState(true);
 const [auroraScore, setAuroraScore] = useState<number | null>(null);
-const [baseAuroraScore, setBaseAuroraScore] = useState<number | null>(null); // ADDED: To store the unadjusted score
+const [baseAuroraScore, setBaseAuroraScore] = useState<number | null>(null);
 const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
 const [gaugeData, setGaugeData] = useState<Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string }>>({
 bt: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
@@ -99,7 +148,6 @@ const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
 const [goes18Data, setGoes18Data] = useState<any[]>([]);
 const [goes19Data, setGoes19Data] = useState<any[]>([]);
 const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
-const [substormBlurb, setSubstormBlurb] = useState<{ text: string; color: string }>({ text: 'Analyzing magnetic field stability...', color: 'text-neutral-400' });
 const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
 const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
 const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
@@ -107,8 +155,16 @@ const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]
 const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
 const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
 const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
-const [stretchingPhaseStartTime, setStretchingPhaseStartTime] = useState<number | null>(null);
-const previousSubstormStatusRef = useRef<string | null>(null);
+
+// --- REPLACED: Old state is replaced by the new forecast object ---
+const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
+    status: 'QUIET',
+    likelihood: 0,
+    windowLabel: '30 – 90 min',
+    action: 'Low chance for now.',
+    p30: 0,
+    p60: 0,
+});
 
 const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
     const moonIllumination = Math.max(0, (illumination ?? 0));
@@ -130,80 +186,92 @@ const getMoonData = useCallback((illumination: number | null, rise: number | nul
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
 }, []);
 
-const analyzeMagnetometerData = useCallback((data: any[], currentAdjustedScore: number | null) => {
-    // This function no longer sends notifications. It only analyzes data for the UI.
-    const prevSubstormStatusText = previousSubstormStatusRef.current;
-    if (data.length < 30) {
-        const status: SubstormActivity = { text: 'Awaiting more magnetic field data...', color: 'text-neutral-500', isStretching: false, isErupting: false };
-        setSubstormBlurb(status);
-        setSubstormActivityStatus(status);
-        setStretchingPhaseStartTime(null);
-        return;
-    }
+// --- NEW: Predictive model logic, implemented with useMemo for efficiency ---
 
-    const latestPoint = data[data.length - 1];
-    const tenMinAgoPoint = data.find((p: any) => p.time >= latestPoint.time - 600000);
-    const oneHourAgoPoint = data.find((p: any) => p.time >= latestPoint.time - 3600000);
-
-    if (!latestPoint || !tenMinAgoPoint || !oneHourAgoPoint || isNaN(latestPoint.hp) || isNaN(tenMinAgoPoint.hp) || isNaN(oneHourAgoPoint.hp)) {
-        const status: SubstormActivity = { text: 'Analyzing magnetic field stability...', color: 'text-neutral-400', isStretching: false, isErupting: false };
-        setSubstormBlurb(status);
-        setSubstormActivityStatus(status);
-        return;
-    }
-
-    const jump = latestPoint.hp - tenMinAgoPoint.hp;
-    const drop = latestPoint.hp - oneHourAgoPoint.hp;
-    const isErupting = jump > 20;
-    const isStretching = drop < -15;
-
-    let newStatusText: string, newStatusColor: string;
-    let newStretchingStartTime = stretchingPhaseStartTime;
-    let finalSubstormActivity: SubstormActivity;
-
-    if (isErupting) {
-        const eruptionTime = new Date(latestPoint.time).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-        newStatusText = `Substorm signature detected at ${eruptionTime}! A sharp field increase suggests a recent or ongoing eruption. Look south!`;
-        newStatusColor = 'text-green-400 font-bold animate-pulse';
-        newStretchingStartTime = null;
-        finalSubstormActivity = { text: newStatusText, color: newStatusColor, isErupting: true, isStretching: false };
-    } else if (isStretching) {
-        let probability = 0;
-        let predictedStart, predictedEnd;
-        if (stretchingPhaseStartTime === null) {
-            newStretchingStartTime = latestPoint.time;
-            newStatusText = 'The magnetic field has begun stretching, storing energy for a potential substorm.';
-        } else {
-            const durationMinutes = (latestPoint.time - stretchingPhaseStartTime) / 60000;
-            const baseProbability = Math.min(80, Math.max(20, 20 + (durationMinutes - 30) * (60 / 90)));
-            const dropBonus = Math.min(15, Math.max(0, (Math.abs(drop) - 15)));
-            const auroraScoreMultiplier = currentAdjustedScore ? Math.min(1.25, Math.max(1.0, 1 + (currentAdjustedScore - 40) * (0.25 / 40))) : 1.0;
-            probability = Math.min(95, (baseProbability + dropBonus) * auroraScoreMultiplier);
-            predictedStart = new Date(stretchingPhaseStartTime + 60 * 60 * 1000);
-            predictedEnd = new Date(stretchingPhaseStartTime + 90 * 60 * 1000);
-            const formatTime = (d: Date) => d.toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-            newStatusText = `The magnetic field is stretching. There is a ~${probability.toFixed(0)}% chance of a substorm predicted between ${formatTime(predictedStart)} and ${formatTime(predictedEnd)}.`;
-        }
-        newStatusColor = 'text-yellow-400';
-        finalSubstormActivity = { 
-            text: newStatusText, color: newStatusColor, isErupting: false, isStretching: true, 
-            probability, predictedStartTime: predictedStart?.getTime(), predictedEndTime: predictedEnd?.getTime() 
-        };
-    } else {
-        newStatusText = 'The magnetic field appears stable. No immediate signs of substorm development.';
-        newStatusColor = 'text-neutral-400';
-        newStretchingStartTime = null;
-        finalSubstormActivity = { text: newStatusText, color: newStatusColor, isErupting: false, isStretching: false };
+const recentL1Data = useMemo(() => {
+    if (!allMagneticData.length || !allSpeedData.length) return null;
+    const mapV = new Map<number, number>();
+    allSpeedData.forEach(p => mapV.set(p.x, p.y));
+    
+    const joined: { t: number; By: number; Bz: number; V: number }[] = [];
+    for (const m of allMagneticData) {
+      const V = mapV.get(m.time);
+      if (V && m.by && m.bz) {
+        joined.push({ t: m.time, By: m.by, Bz: m.bz, V });
+      }
     }
     
-    if (newStretchingStartTime !== stretchingPhaseStartTime) {
-        setStretchingPhaseStartTime(newStretchingStartTime);
-    }
+    const cutoff = Date.now() - 120 * 60_000;
+    const win = joined.filter(x => x.t >= cutoff);
+    const dPhi = win.map(w => newellCoupling(w.V, w.By, w.Bz));
+    const bz = win.map(w => w.Bz);
     
-    setSubstormBlurb({ text: newStatusText, color: newStatusColor });
-    setSubstormActivityStatus(finalSubstormActivity);
-    previousSubstormStatusRef.current = newStatusText;
-}, [setSubstormActivityStatus, stretchingPhaseStartTime]);
+    return {
+      dPhiSeries: dPhi,
+      bzSeries: bz,
+      dPhiNow: dPhi.at(-1) ?? 0,
+      dPhiMean15: movingAvg(dPhi, 15) ?? (dPhi.at(-1) ?? 0),
+      bzMean15: movingAvg(bz, 15) ?? (bz.at(-1) ?? 0),
+      sustained: sustainedSouth(bz, 15)
+    };
+}, [allMagneticData, allSpeedData]);
+
+const goesOnset = useMemo(() => {
+    if (!goes18Data.length) return false;
+    const cutoff = Date.now() - 15 * 60_000;
+    const series = goes18Data.filter(g => g.time >= cutoff && g.hp)
+                         .map(g => ({ t: g.time, v: g.hp }));
+    const slope = slopePerMin(series, 2);
+    return typeof slope === "number" && slope >= 8;
+}, [goes18Data]);
+
+useEffect(() => {
+    if (!recentL1Data) return;
+
+    const probs = probabilityModel(recentL1Data.dPhiNow, recentL1Data.dPhiMean15, recentL1Data.bzMean15);
+    const P30_ALERT = 0.60, P60_ALERT = 0.60;
+    let status: Status = 'QUIET';
+
+    if (goesOnset) {
+        status = "ONSET";
+    } else if (recentL1Data.sustained && probs.P30 >= P30_ALERT && (auroraScore ?? 0) >= 25) {
+        status = "IMMINENT_30";
+    } else if (recentL1Data.sustained && probs.P60 >= P60_ALERT && (auroraScore ?? 0) >= 20) {
+        status = "LIKELY_60";
+    } else if (recentL1Data.sustained && recentL1Data.dPhiNow >= (movingAvg(recentL1Data.dPhiSeries, 60) ?? 0) && (auroraScore ?? 0) >= 15) {
+        status = "WATCH";
+    }
+
+    const likelihood = Math.round((0.4 * clamp01(probs.P30) + 0.6 * clamp01(probs.P60)) * 100);
+    
+    let windowLabel = '30 – 90 min';
+    if (status === "ONSET") windowLabel = "Now – 10 min";
+    else if (status === "IMMINENT_30") windowLabel = "0 – 30 min";
+    else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
+    else if (status === "WATCH") windowLabel = "20 – 90 min";
+
+    let action = 'Low chance for now.';
+    if (status === "ONSET") action = "Look now — activity is underway.";
+    else if (status === "IMMINENT_30" || likelihood >= 65) action = "Head outside or to a darker spot now.";
+    else if (status === "LIKELY_60" || likelihood >= 50) action = "Prepare to go; check the sky within the next hour.";
+    else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. The forecast will upgrade to an Alert if an eruption becomes likely.";
+
+    setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
+
+    // Also update the global banner state
+    setSubstormActivityStatus({
+        isStretching: status === 'WATCH' || status === 'LIKELY_60' || status === 'IMMINENT_30',
+        isErupting: status === 'ONSET',
+        probability: likelihood,
+        // These are approximations for the banner, not the detailed window
+        predictedStartTime: status !== 'QUIET' ? Date.now() : undefined,
+        predictedEndTime: status !== 'QUIET' ? Date.now() + 60 * 60 * 1000 : undefined,
+        text: action, // The action text is a good summary
+        color: '' // Color is handled by the banner component now
+    });
+
+}, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
+
 
 const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
@@ -222,11 +290,8 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
         
         const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
-        setBaseAuroraScore(baseScore); // MODIFIED: Store the raw score from the API
+        setBaseAuroraScore(baseScore);
 
-        // The score will be properly calculated and set by the new useEffect hook
-        // that listens for changes to baseAuroraScore and locationAdjustment.
-        // We still set it here for the initial render before location is known.
         const initialAdjustedScore = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
         setAuroraScore(initialAdjustedScore);
         setCurrentAuroraScore(initialAdjustedScore);
@@ -262,16 +327,14 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
 
     if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
         const magData = magResult.value; const headers = magData[0]; const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm'); const timeIdx = headers.indexOf('time_tag');
-        setAllMagneticData(magData.slice(1).map((r: any[]) => ({ time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null })));
+        const byIdx = headers.indexOf('by_gsm');
+        setAllMagneticData(magData.slice(1).map((r: any[]) => ({ time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null, by: parseFloat(r[byIdx]) > -9999 ? parseFloat(r[byIdx]) : null })));
     }
 
     let anyGoesDataFound = false;
     if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
         const processed = goes18Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: new Date(d.time_tag).getTime(), hp: d.Hp })).sort((a, b) => a.time - b.time);
         setGoes18Data(processed);
-        const baseScore = (forecastResult.status === 'fulfilled' && forecastResult.value.currentForecast?.spotTheAuroraForecast !== null) ? forecastResult.value.currentForecast.spotTheAuroraForecast : null;
-        const currentAdjustedScore = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
-        analyzeMagnetometerData(processed, currentAdjustedScore);
         if (processed.length > 0) anyGoesDataFound = true;
     }
 
@@ -284,7 +347,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
     
     if (isInitialLoad) setIsLoading(false);
-}, [locationAdjustment, getMoonData, analyzeMagnetometerData, setCurrentAuroraScore, setSubstormActivityStatus]);
+}, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
 
 useEffect(() => {
     if (navigator.geolocation) {
@@ -306,19 +369,13 @@ useEffect(() => {
     }
 }, []);
 
-// ADDED: This new effect recalculates the score whenever the base score or location adjustment changes.
 useEffect(() => {
     if (baseAuroraScore !== null) {
         const adjustedScore = Math.max(0, Math.min(100, baseAuroraScore + locationAdjustment));
         setAuroraScore(adjustedScore);
         setCurrentAuroraScore(adjustedScore);
-
-        // Re-run magnetometer analysis with the updated score
-        if (goes18Data.length > 0) {
-            analyzeMagnetometerData(goes18Data, adjustedScore);
-        }
     }
-}, [locationAdjustment, baseAuroraScore, goes18Data, analyzeMagnetometerData, setCurrentAuroraScore]);
+}, [locationAdjustment, baseAuroraScore, setCurrentAuroraScore]);
 
 
 useEffect(() => {
@@ -344,7 +401,7 @@ return {
     goes18Data,
     goes19Data,
     loadingMagnetometer,
-    substormBlurb,
+    substormForecast, // MODIFIED: Return the new forecast object
     auroraScoreHistory,
     hemisphericPowerHistory,
     dailyCelestialHistory,

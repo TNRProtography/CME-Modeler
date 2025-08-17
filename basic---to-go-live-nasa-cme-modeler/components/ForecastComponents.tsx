@@ -1,4 +1,4 @@
-// --- START OF FILE src/components/ForecastComponents.tsx ---
+//--- START OF FILE src/components/ForecastComponents.tsx ---
 
 import React, { useState, useMemo } from 'react';
 import CloseIcon from './icons/CloseIcon';
@@ -256,4 +256,4 @@ export const ActivityAlert: React.FC<ActivityAlertProps> = ({ isDaylight, celest
         </div>
     );
 };
-// --- END OF FILE src/components/ForecastComponents.tsx ---
+//--- END OF FILE src/components/ForecastComponents.tsx ---

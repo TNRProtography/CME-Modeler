@@ -1,4 +1,4 @@
-// --- START OF FILE ForecastDashboard.tsx ---
+//--- START OF FILE src/components/ForecastDashboard.tsx ---
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -20,7 +20,7 @@ import {
     ForecastTrendChart,
     ExpandedGraphContent
 } from './ForecastCharts';
-import { SubstormActivity } from '../types';
+import { SubstormActivity, SubstormForecast } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
 // --- Type Definitions ---
@@ -88,7 +88,6 @@ const getGaugeStyle = (v: number | null, type: keyof typeof GAUGE_THRESHOLDS) =>
     return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
 };
 
-// --- UPDATED FUNCTION ---
 const getAuroraBlurb = (score: number) => {
     if (score < 10) return 'Little to no auroral activity.';
     if (score < 25) return 'Minimal auroral activity likely, possibly only a faint glow detectable by professional cameras.';
@@ -98,7 +97,6 @@ const getAuroraBlurb = (score: number) => {
     return 'High probability of significant auroral substorms, potentially displaying a wide range of colors and dynamic activity overhead or in the northern sky.';
 };
 
-// --- UPDATED FUNCTION ---
 const getAuroraEmoji = (s: number | null) => {
     if (s === null) return '❓';
     if (s < 10) return '😞';
@@ -110,7 +108,6 @@ const getAuroraEmoji = (s: number | null) => {
 };
 
 const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
-    // This function can be expanded with the full logic again, simplified here for brevity
     if (isDaylight) {
         return {
             overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
@@ -118,7 +115,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
             dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" }
         };
     }
-    // ... add other score conditions back here ...
     return {
          overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
          phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
@@ -126,64 +122,69 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
-const getMagnetometerAnnotations = (data: any[]) => {
-    const annotations: any = {};
-    if (data.length < 60) return annotations;
-    
-    const getSegmentAnalysis = (startIdx: number, endIdx: number) => {
-        if (startIdx >= endIdx || endIdx >= data.length) return null;
-        const start = data[startIdx];
-        const end = data[endIdx];
-        if (!start || !end || isNaN(start.hp) || isNaN(end.hp)) return null;
-        const hpChange = end.hp - start.hp;
-        const durationMins = (end.time - start.time) / 60000;
-        if (durationMins < 10) return null;
-        if (hpChange > 20) return { type: 'substorm', xMin: start.time, xMax: end.time };
-        if (hpChange < -15 && durationMins > 30) return { type: 'stretching', xMin: start.time, xMax: end.time };
-        return null;
-    };
+// --- NEW: Substorm Forecast Panel Component ---
+const SubstormForecastPanel: React.FC<{ forecast: SubstormForecast; auroraScore: number | null; onOpenModal: (id: string) => void; }> = ({ forecast, auroraScore, onOpenModal }) => {
+    const { status, action, windowLabel, likelihood } = forecast;
+    const meaning = useMemo(() => {
+        const s = Math.max(0, Math.min(100, Math.round(auroraScore ?? 0)));
+        if (s < 10)  return { emoji: "😞", title: "Little to no auroral activity", advice: "Low chance right now. Monitor updates." };
+        if (s < 25)  return { emoji: "😐", title: "Minimal activity likely", advice: "Maybe a very faint glow. Dark skies help." };
+        if (s < 40)  return { emoji: "😊", title: "Aurora clear in photos; sometimes naked-eye", advice: "Check a dark southern horizon; watch for subtle motion." };
+        if (s < 50)  return { emoji: "🙂", title: "Faint naked-eye glow possible", advice: "Be patient; give eyes 5–10 min to adapt." };
+        if (s < 80)  return { emoji: "😀", title: "Good chance of visible color", advice: "Head to a darker spot; expect waves/brightenings." };
+        return { emoji: "🤩", title: "High probability of significant substorms", advice: "Look mid-sky to high to the south; dynamic activity likely." };
+    }, [auroraScore]);
 
-    for (let i = 0; i < data.length; i++) {
-        const current = data[i];
-        const tenMinAgoIdx = data.findIndex(p => p.time >= current.time - 600000);
-        if (tenMinAgoIdx !== -1 && tenMinAgoIdx < i) {
-            const jump = getSegmentAnalysis(tenMinAgoIdx, i);
-            if (jump?.type === 'substorm') {
-                annotations[`substorm-${current.time}`] = { 
-                    type: 'box', 
-                    xMin: jump.xMin, 
-                    xMax: current.time + 300000, 
-                    backgroundColor: 'rgba(34, 197, 94, 0.2)', 
-                    borderColor: 'transparent', 
-                    borderWidth: 0, 
-                    drawTime: 'beforeDatasetsDraw' 
-                };
-            }
-        }
-        const oneHourAgoIdx = data.findIndex(p => p.time >= current.time - 3600000);
-        if (oneHourAgoIdx !== -1 && oneHourAgoIdx < i) {
-            const stretch = getSegmentAnalysis(oneHourAgoIdx, i);
-            if (stretch?.type === 'stretching') {
-                const overlap = Object.values(annotations).some((ann: any) => 
-                    ann.type === 'box' && 
-                    ann.backgroundColor === 'rgba(34, 197, 94, 0.2)' && 
-                    Math.max(stretch.xMin, ann.xMin) < Math.min(stretch.xMax, ann.xMax)
-                );
-                if (!overlap) {
-                    annotations[`stretching-${current.time}`] = { 
-                        type: 'box', 
-                        xMin: stretch.xMin, 
-                        xMax: stretch.xMax, 
-                        backgroundColor: 'rgba(255, 215, 0, 0.1)', 
-                        borderColor: 'transparent', 
-                        borderWidth: 0, 
-                        drawTime: 'beforeDatasetsDraw' 
-                    };
-                }
-            }
-        }
-    }
-    return annotations;
+    const likelihoodGrad = useMemo(() => {
+        if (likelihood >= 80) return "from-emerald-400 to-green-600";
+        if (likelihood >= 50) return "from-amber-400 to-orange-500";
+        if (likelihood >= 25) return "from-yellow-300 to-amber-400";
+        return "from-neutral-600 to-neutral-700";
+    }, [likelihood]);
+
+    return (
+        <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
+            <div className="flex justify-center items-center gap-2">
+                <h2 className="text-2xl font-bold text-white">Substorm Forecast</h2>
+                <button onClick={() => onOpenModal('substorm-forecast')} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the substorm forecast">
+                    <GuideIcon className="w-6 h-6" />
+                </button>
+            </div>
+
+            <div className="rounded-xl bg-black/30 border border-neutral-700/30 p-4">
+                <div className="text-sm text-neutral-300">Suggested action</div>
+                <div className="text-base mt-1">{action}</div>
+                <div className="text-xs text-neutral-500 mt-1">Status: {status.replace("_", " ")}</div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <div className="text-sm text-neutral-300">Expected window</div>
+                    <div className="text-2xl font-semibold">{windowLabel}</div>
+                </div>
+                <div>
+                    <div className="flex justify-between items-end">
+                        <div className="text-sm text-neutral-300">Likelihood (next hour)</div>
+                        <div className="text-lg font-semibold">{likelihood}%</div>
+                    </div>
+                    <div className="mt-2 h-2.5 w-full rounded-full bg-neutral-800 overflow-hidden">
+                        <div className={`h-full bg-gradient-to-r ${likelihoodGrad}`} style={{ width: `${likelihood}%` }} />
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div className="text-sm text-neutral-300 mb-1">Expected Visibility (based on Spot The Aurora score)</div>
+                <div className="rounded-lg bg-black/30 border border-neutral-700/30 p-3">
+                    <div className="text-base">
+                        <span className="mr-2">{meaning.emoji}</span>
+                        <span className="font-medium">{meaning.title}</span>
+                    </div>
+                    <div className="text-xs text-neutral-400 mt-1">{meaning.advice}</div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 
@@ -191,7 +192,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormBlurb
+        goes18Data, goes19Data, loadingMagnetometer, substormForecast
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -232,7 +233,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [navigationTarget]);
 
-    // --- UPDATED OBJECT ---
     const tooltipContent = useMemo(() => ({
         'forecast': `This forecast combines live space weather data with local New Zealand factors to provide a simple percentage chance of seeing an aurora.<br><br>
             <ul class='space-y-2'>
@@ -251,10 +251,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'epam': `<strong>What it is:</strong> A sensor on a satellite far away that acts as an early-warning system. It counts very fast, high-energy particles that are often pushed ahead of a major solar eruption.<br><br><strong>Effect on Aurora:</strong> A sudden, sharp spike on this chart is a strong clue that a 'shockwave' from a solar eruption (a CME) is about to hit Earth, which can trigger a major aurora storm.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows.`,
         'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
-        'solar-wind-graph': `This chart shows the Speed and Density of the solar wind. The colors change to show how active conditions are.<br><br><ul class="list-disc list-inside space-y-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Quiet</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Active</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Moderate</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Strong</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Severe</li></ul>`,
-        'imf-graph': `This chart shows the magnetic field of the solar wind. A strong (high Bt) and southward-pointing (negative Bz) field is the perfect recipe for an aurora.<br><br>The colors change based on how favorable the conditions are:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Not favorable.</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Slightly favorable.</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Favorable.</li><li><strong style="color:${GAUGE_COLORS.red.solid}">Very Favorable.</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Extremely Favorable.</li></ul>`,
-        'hemispheric-power-graph': `This chart shows the total energy being dumped into the atmosphere, which relates to the aurora's brightness.<br><br>The colors change based on the intensity:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong style="color:${GAUGE_COLORS.gray.solid}">Gray:</strong> Low Power</li><li><strong style="color:${GAUGE_COLORS.yellow.solid}">Moderate Power</li><li><strong style="color:${GAUGE_COLORS.orange.solid}">Elevated Power</li><li><strong style="color:${GAUGE_COLORS.red.solid}">High Power</li><li><strong style="color:${GAUGE_COLORS.purple.solid}">Very High Power</li></ul>`,
-        'goes-mag': `<div><p>This measures the stretching of Earth's magnetic field, like a rubber band. It's one of the best tools for predicting when an aurora might suddenly flare up.</p><br><p><strong>How to read it:</strong></p><ul class="list-disc list-inside space-y-2 mt-2"><li><strong class="text-yellow-400">The Drop (Growth Phase):</strong> The line goes down slowly for 1-2 hours. This is the 'rubber band' stretching and storing energy.</li><li><strong class="text-green-400">The Jump (Eruption):</strong> The line suddenly jumps back up. This is the 'rubber band' snapping back, releasing all its energy at once. This is the moment the aurora flares up brightly and starts to dance!</li></ul><br><p>By watching for the drop, you can anticipate the jump.</p></div>`,
+        'substorm-forecast': `<strong>What is this?</strong><br>This is a predictive forecast for short, intense bursts of aurora called substorms. It uses live solar wind data from 1.5 million km away to anticipate when energy will be released into Earth's atmosphere.<br><br>
+            <ul class='space-y-2'>
+                <li><strong>Status:</strong> Tells you the current phase, from QUIET (low energy) to WATCH (energy is building) to ONSET (an eruption is happening now).</li>
+                <li><strong>Suggested Action:</strong> A plain-English recommendation on what you should do based on the current status.</li>
+                <li><strong>Expected Window:</strong> The model's best estimate for when the substorm might begin. This window gets shorter and more precise as the likelihood increases.</li>
+                <li><strong>Likelihood:</strong> A percentage chance of a substorm occurring within the next hour, based on a physics model of energy transfer from the sun.</li>
+            </ul>`,
         'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
     }), []);
     
@@ -263,10 +266,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (contentData) {
             let title = '';
             if (id === 'forecast') title = 'About The Forecast Score';
-            else if (id === 'solar-wind-graph') title = 'About The Solar Wind Graph';
-            else if (id === 'imf-graph') title = 'About The IMF Graph';
-            else if (id === 'goes-mag') title = 'GOES Magnetometer (Hp)';
-            else if (id === 'hemispheric-power-graph') title = 'About The Hemispheric Power Graph';
+            else if (id === 'substorm-forecast') title = 'About The Substorm Forecast';
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else if (id === 'live-cameras') title = 'About Live Cameras';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
@@ -328,25 +328,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             onExpandGraph={setGraphModalId}
                         />
                         
-                        <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-4">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-semibold text-neutral-100">GOES Magnetometer (Substorm Watch)</h2>
-                                <button onClick={(e) => { e.stopPropagation(); openModal('goes-mag'); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                            </div>
-                            <div className="mt-4 h-[600px] max-h-[60vh]">
-                               <ExpandedGraphContent
-                                    graphId={'goes-mag-graph-container'}
-                                    openModal={openModal}
-                                    getMagnetometerAnnotations={getMagnetometerAnnotations}
-                                    allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
-                                    goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
-                                    solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
-                                    magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
-                                    hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
-                                    magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
-                                />
-                            </div>
-                        </div>
+                        <SubstormForecastPanel 
+                            forecast={substormForecast}
+                            auroraScore={auroraScore}
+                            onOpenModal={openModal}
+                        />
 
                         <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                             <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
@@ -405,9 +391,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 onClose={() => setGraphModalId(null)}
                 graphId={graphModalId}
                 openModal={openModal}
-                getMagnetometerAnnotations={getMagnetometerAnnotations}
+                getMagnetometerAnnotations={() => ({})}
                 allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
-                goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={substormBlurb}
+                goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={{text: substormForecast.action, color: ''}}
                 solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
                 magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
                 hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
@@ -421,4 +407,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-// --- END OF FILE ForecastDashboard.tsx ---
+//--- END OF FILE src/components/ForecastDashboard.tsx ---
