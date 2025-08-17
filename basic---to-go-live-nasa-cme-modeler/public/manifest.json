@@ -5,7 +5,7 @@
   "description": "A 3D modeler for NASA CMEs with a live aurora forecast and solar activity dashboard.",
   "start_url": "/",
   "scope": "/",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "any",
   "background_color": "#171717",
   "theme_color": "#171717",
