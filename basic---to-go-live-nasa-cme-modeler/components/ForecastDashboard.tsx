@@ -23,6 +23,11 @@ import {
 import { SubstormActivity, SubstormForecast } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
+// --- NEW: lightweight chart bits for inline NZ mags panel ---
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
+
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
@@ -122,7 +127,14 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
-// --- NEW: Substorm Forecast Panel Component ---
+// --- NEW: small helper to color station lines consistently ---
+const STATION_COLORS: Record<string, string> = {
+  EY2M: '#60a5fa', // blue
+  EYWM: '#34d399', // green
+  SBAM: '#f59e0b', // amber
+  AHAM: '#f472b6'  // pink
+};
+
 const SubstormForecastPanel: React.FC<{ forecast: SubstormForecast; auroraScore: number | null; onOpenModal: (id: string) => void; }> = ({ forecast, auroraScore, onOpenModal }) => {
     const { status, action, windowLabel, likelihood } = forecast;
     const meaning = useMemo(() => {
@@ -192,7 +204,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormForecast
+        goes18Data, goes19Data, loadingMagnetometer, substormForecast,
+
+        // --- NEW from the hook ---
+        nzMagSeries, loadingNZMag
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -210,6 +225,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [hemisphericPowerChartTimeLabel, setHemisphericPowerChartTimeLabel] = useState('6 Hr');
     const [magnetometerTimeRange, setMagnetometerTimeRange] = useState(3 * 3600000);
     const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState('3 Hr');
+
+    // --- NEW: collapsible NZ panel + metric toggle ---
+    const [isNZMagOpen, setIsNZMagOpen] = useState(false);
+    const [nzMetric, setNzMetric] = useState<'dHdt' | 'H'>('dHdt'); // default to rate-of-change (best for onset)
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -232,6 +251,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         }
     }, [navigationTarget]);
+
+    // --- NEW: Build chart-friendly rows for NZ panel within selected time window ---
+    const nzChartData = useMemo(() => {
+      if (!nzMagSeries || nzMagSeries.length === 0) return [];
+      const cutoff = Date.now() - magnetometerTimeRange;
+      // collect all unique timestamps in window
+      const tsSet = new Set<number>();
+      nzMagSeries.forEach(s => s.rows.forEach(r => { if (r.t >= cutoff) tsSet.add(r.t); }));
+      const tsSorted = Array.from(tsSet).sort((a,b) => a - b);
+
+      // map per timestamp
+      const rows = tsSorted.map(t => {
+        const obj: any = { t, time: new Date(t).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' }) };
+        nzMagSeries.forEach(s => {
+          const found = s.rows.find(r => r.t === t);
+          const val = nzMetric === 'dHdt' ? found?.dHdt : (found?.H != null ? (found.H - (s.rows[0]?.H ?? 0)) : undefined);
+          // for H metric, plot as delta from first sample in window for readability
+          const key = s.station;
+          obj[key] = (typeof val === 'number' && isFinite(val)) ? Number(val.toFixed(1)) : undefined;
+        });
+        return obj;
+      });
+      return rows;
+    }, [nzMagSeries, magnetometerTimeRange, nzMetric]);
 
     const tooltipContent = useMemo(() => ({
         'forecast': `This forecast combines live space weather data with local New Zealand factors to provide a simple percentage chance of seeing an aurora.<br><br>
@@ -313,6 +356,76 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             auroraScore={auroraScore}
                             onOpenModal={openModal}
                         />
+
+                        {/* NEW: NZ Magnetometers (advanced) hidden by default */}
+                        <div className="col-span-12">
+                          <button
+                            className="w-full text-left px-4 py-3 bg-neutral-900/70 border border-neutral-700/30 rounded-lg hover:bg-neutral-800 flex justify-between items-center"
+                            onClick={() => setIsNZMagOpen(o => !o)}
+                            aria-expanded={isNZMagOpen}
+                            aria-controls="nz-mags-panel"
+                          >
+                            <span className="text-white font-medium">NZ Magnetometers (advanced)</span>
+                            <div className="flex items-center gap-3 text-xs text-neutral-400">
+                              <span className="hidden md:inline">{isNZMagOpen ? 'Hide' : 'Show'} real-time ΔB/dH/dt traces</span>
+                              <CaretIcon className={`w-5 h-5 transform transition-transform ${isNZMagOpen ? 'rotate-180' : ''}`} />
+                            </div>
+                          </button>
+
+                          <div id="nz-mags-panel" className={`transition-all duration-500 ease-in-out overflow-hidden ${isNZMagOpen ? 'max-h-[1000px] opacity-100 mt-3' : 'max-h-0 opacity-0'}`}>
+                            <div className="p-4 bg-neutral-950/80 rounded-lg border border-neutral-700/30">
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <div className="text-sm text-neutral-300">Live NZ ground magnetometers — {nzMetric === 'dHdt' ? 'dH/dt (nT/min)' : 'ΔH from window start (nT)'}.</div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center bg-neutral-900/60 border border-neutral-700/40 rounded overflow-hidden">
+                                    <button className={`px-2 py-1 text-xs ${nzMetric === 'dHdt' ? 'bg-sky-600 text-white' : 'text-neutral-300'}`} onClick={() => setNzMetric('dHdt')}>dH/dt</button>
+                                    <button className={`px-2 py-1 text-xs ${nzMetric === 'H' ? 'bg-sky-600 text-white' : 'text-neutral-300'}`} onClick={() => setNzMetric('H')}>ΔH</button>
+                                  </div>
+                                  <div className="flex items-center bg-neutral-900/60 border border-neutral-700/40 rounded overflow-hidden">
+                                    <button className={`px-2 py-1 text-xs ${magnetometerTimeRange === 1*3600000 ? 'bg-neutral-700 text-white' : 'text-neutral-300'}`} onClick={() => { setMagnetometerTimeRange(1*3600000); setMagnetometerTimeLabel('1 Hr'); }}>1h</button>
+                                    <button className={`px-2 py-1 text-xs ${magnetometerTimeRange === 3*3600000 ? 'bg-neutral-700 text-white' : 'text-neutral-300'}`} onClick={() => { setMagnetometerTimeRange(3*3600000); setMagnetometerTimeLabel('3 Hr'); }}>3h</button>
+                                    <button className={`px-2 py-1 text-xs ${magnetometerTimeRange === 6*3600000 ? 'bg-neutral-700 text-white' : 'text-neutral-300'}`} onClick={() => { setMagnetometerTimeRange(6*3600000); setMagnetometerTimeLabel('6 Hr'); }}>6h</button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="h-64 w-full">
+                                {loadingNZMag ? (
+                                  <div className="h-full flex items-center justify-center text-neutral-400 text-sm">{loadingNZMag}</div>
+                                ) : nzChartData.length === 0 ? (
+                                  <div className="h-full flex items-center justify-center text-neutral-400 text-sm">No NZ magnetometer data available.</div>
+                                ) : (
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={nzChartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                                      <XAxis dataKey="time" stroke="#aaa" />
+                                      <YAxis stroke="#aaa" />
+                                      <Tooltip />
+                                      <Legend />
+                                      {Object.keys(STATION_COLORS).filter(k =>
+                                        nzMagSeries.some(s => s.station === (k as any))
+                                      ).map((stationKey) => (
+                                        <Line
+                                          key={stationKey}
+                                          type="monotone"
+                                          dataKey={stationKey}
+                                          stroke={STATION_COLORS[stationKey]}
+                                          dot={false}
+                                          strokeWidth={1.75}
+                                          isAnimationActive={false}
+                                        />
+                                      ))}
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                )}
+                              </div>
+
+                              <div className="text-[11px] text-neutral-500 mt-2">
+                                Tip: sharp, short spikes in <strong>dH/dt</strong> often align with local substorm onset. This panel mirrors what powers the ONSET state in the forecast.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
 
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <TipsSection />
@@ -407,4 +520,5 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
+
 //--- END OF FILE src/components/ForecastDashboard.tsx ---
