@@ -2,16 +2,16 @@
 
 import React, { useState, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, TimeScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler } from 'chart.js';
+import 'chartjs-adapter-date-fns';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import { ChartOptions, ScriptableContext } from 'chart.js';
 import CaretIcon from './icons/CaretIcon';
 import ToggleSwitch from './ToggleSwitch';
 import { DailyHistoryEntry, OwmDailyForecastEntry } from '../types';
 
-// ---------- Types for NZ magnetometer data ----------
-type NZMagPoint = { time: number; value: number };
-type NZMagSeries = NZMagPoint[];
-type NZMagAll = Record<string, { X: NZMagSeries; Y: NZMagSeries; Z: NZMagSeries; H: NZMagSeries; dH: NZMagSeries }>;
+// --- IMPORTANT: register Chart.js bits once (prevents runtime plugin errors)
+ChartJS.register(TimeScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler, annotationPlugin);
 
 // --- CONSTANTS & HELPERS (from ForecastDashboard) ---
 const GAUGE_THRESHOLDS = {
@@ -50,27 +50,25 @@ const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
 };
 
 const createVerticalThresholdGradient = (ctx: ScriptableContext<'line'>, thresholds: any, isBz: boolean = false) => {
-  const chart = ctx.chart; const { chartArea, scales: { y: yScale } } = chart;
+  const chart = ctx.chart; const { chartArea, scales: { y: yScale } } = chart as any;
   if (!chartArea || !yScale) return undefined;
   const gradient = chart.ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
   const yScaleRange = yScale.max - yScale.min;
   if (yScaleRange === 0) return GAUGE_COLORS.gray.semi;
-
   const getYStopPosition = (value: number) => Math.max(0, Math.min(1, 1 - ((value - yScale.min) / yScaleRange)));
-
   if (isBz) {
     gradient.addColorStop(getYStopPosition(yScale.max), GAUGE_COLORS.gray.trans);
     Object.entries(thresholds).reverse().forEach(([key, value]) => {
-      if (typeof value === 'number' && GAUGE_COLORS[key as keyof typeof GAUGE_COLORS]) {
-        gradient.addColorStop(getYStopPosition(value), GAUGE_COLORS[key as keyof typeof GAUGE_COLORS].semi);
+      if (typeof value === 'number' && (GAUGE_COLORS as any)[key]) {
+        gradient.addColorStop(getYStopPosition(value as number), (GAUGE_COLORS as any)[key].semi);
       }
     });
     gradient.addColorStop(getYStopPosition(yScale.min), GAUGE_COLORS.pink.semi);
   } else {
     gradient.addColorStop(getYStopPosition(yScale.min), GAUGE_COLORS.gray.semi);
     Object.entries(thresholds).forEach(([key, value]) => {
-      if (typeof value === 'number' && GAUGE_COLORS[key as keyof typeof GAUGE_COLORS]) {
-        gradient.addColorStop(getYStopPosition(value), GAUGE_COLORS[key as keyof typeof GAUGE_COLORS].semi);
+      if (typeof value === 'number' && (GAUGE_COLORS as any)[key]) {
+        gradient.addColorStop(getYStopPosition(value as number), (GAUGE_COLORS as any)[key].semi);
       }
     });
     gradient.addColorStop(getYStopPosition(yScale.max), GAUGE_COLORS.pink.trans);
@@ -83,15 +81,12 @@ const createChartOptions = (rangeMs: number, yLabel: string, showLegend: boolean
   const startTime = now - rangeMs;
   const options: ChartOptions<'line'> = {
     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
-    plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } },
-    scales: { 
+    plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false }, annotation: extraAnnotations ? { annotations: extraAnnotations } : undefined },
+    scales: {
       x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
       y: { type: isLog ? 'logarithmic' : 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } }
     }
   };
-  if (extraAnnotations) {
-    options.plugins = { ...options.plugins, annotation: { annotations: extraAnnotations } };
-  }
   return options;
 };
 
@@ -104,58 +99,6 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
           {label}
         </button>
       ))}
-    </div>
-  );
-};
-
-// ---------- NEW: Inline (collapsible) NZ magnetometers chart ----------
-export const NZMagnetometersChart: React.FC<{
-  nzMagnometer: NZMagAll;
-  timeRangeMs: number;
-}> = ({ nzMagnometer, timeRangeMs }) => {
-  const [open, setOpen] = useState(false);
-
-  const chart = useMemo(() => {
-    const cutoff = Date.now() - (timeRangeMs || 3 * 3600_000);
-    const stations = Object.keys(nzMagnometer || {});
-    const datasets: any[] = [];
-
-    stations.forEach(st => {
-      const H  = (nzMagnometer[st]?.H  || []).filter(p => p.time >= cutoff).map(p => ({ x: p.time, y: p.value }));
-      const dH = (nzMagnometer[st]?.dH || []).filter(p => p.time >= cutoff).map(p => ({ x: p.time, y: p.value }));
-      if (H.length)  datasets.push({ label: `${st} H`,  data: H,  borderWidth: 1.5, tension: 0.2, pointRadius: 0, fill: false });
-      if (dH.length) datasets.push({ label: `${st} dH`, data: dH, borderWidth: 1.5, tension: 0.2, pointRadius: 0, fill: false, borderDash: [5, 4] });
-    });
-
-    return {
-      hasData: datasets.length > 0,
-      data: { datasets },
-      options: createChartOptions(timeRangeMs, 'nT, nT/min', true) as ChartOptions<'line'>
-    };
-  }, [nzMagnometer, timeRangeMs]);
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(s => !s)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-black/40 border border-neutral-700/50 hover:bg-black/60 transition-colors"
-      >
-        <span className="text-white font-semibold flex items-center gap-2">
-          NZ Magnetometers (Beta)
-        </span>
-        <CaretIcon className={`w-5 h-5 text-neutral-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      <div className={`transition-all duration-500 ease-in-out overflow-hidden ${open ? 'max-h-[600px] opacity-100 mt-3' : 'max-h-0 opacity-0'}`}>
-        <div className="h-[360px] bg-neutral-900/70 rounded-lg border border-neutral-700/50 p-2">
-          {chart.hasData ? <Line data={chart.data} options={chart.options} /> : (
-            <div className="h-full flex items-center justify-center text-neutral-400 text-sm">Waiting for NZ geomag data…</div>
-          )}
-        </div>
-        <div className="text-xs text-neutral-500 mt-2">
-          H (horizontal intensity) and dH (rate of change) are shown per station. Rapid changes often accompany substorm onset.
-        </div>
-      </div>
     </div>
   );
 };
@@ -173,8 +116,8 @@ interface ExpandedGraphContentProps {
   goes18Data: any[]; goes19Data: any[]; loadingMagnetometer: string | null; substormBlurb: { text: string; color: string };
   getMagnetometerAnnotations: (data: any[]) => any;
 
-  // NEW: NZ magnetometers (for modal)
-  nzMagnometer?: NZMagAll;
+  // NEW: NZ magnometer bundle
+  nzMagnometer?: Record<string, { X: {time:number,value:number}[]; Y: {time:number,value:number}[]; Z: {time:number,value:number}[]; H: {time:number,value:number}[]; dH: {time:number,value:number}[]; }>;
 }
 
 export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.memo(({
@@ -186,14 +129,17 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
   openModal,
   allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
   goes18Data, goes19Data, loadingMagnetometer, substormBlurb, getMagnetometerAnnotations,
-  nzMagnometer
+  nzMagnometer = {}
 }) => {
   const CHART_HEIGHT = 'h-full';
 
+  // ---- Data transformers ----
   const speedChartData = useMemo(() => ({
     datasets: [{
       label: 'Speed',
-      data: allSpeedData, yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+      data: allSpeedData,
+      yAxisID: 'y',
+      order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
       segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid },
       backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false)
     }]
@@ -202,7 +148,9 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
   const densityChartData = useMemo(() => ({
     datasets: [{
       label: 'Density',
-      data: allDensityData, yAxisID: 'y', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+      data: allDensityData,
+      yAxisID: 'y',
+      order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
       segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid },
       backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false)
     }]
@@ -212,13 +160,15 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
     datasets: [
       {
         label: 'Bt',
-        data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+        data: allMagneticData.map(p => ({ x: p.time, y: p.bt })),
+        order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
         segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid },
         backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false)
       },
       {
         label: 'Bz',
-        data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+        data: allMagneticData.map(p => ({ x: p.time, y: p.bz })),
+        order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2,
         segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid },
         backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true)
       }
@@ -235,12 +185,56 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
     }]
   }), [hemisphericPowerHistory]);
 
-  const magnetometerChartData = useMemo(() => ({
-    datasets: [
-      { label: 'GOES-18 (Primary)',   data: goes18Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(56, 189, 248)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false },
-      { label: 'GOES-19 (Secondary)', data: goes19Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(255, 69, 0)',  backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false }
-    ]
-  }), [goes18Data, goes19Data]);
+  // Colors for NZ stations
+  const nzPalette = ['#22d3ee', '#84cc16', '#f59e0b', '#e879f9', '#38bdf8', '#f97316'];
+
+  const magnetometerChartData = useMemo(() => {
+    const ds: any[] = [
+      {
+        label: 'GOES-18 (Primary)',
+        data: goes18Data.map(p => ({ x: p.time, y: p.hp })),
+        borderColor: 'rgb(56, 189, 248)',
+        backgroundColor: 'transparent',
+        pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false
+      },
+      {
+        label: 'GOES-19 (Secondary)',
+        data: goes19Data.map(p => ({ x: p.time, y: p.hp })),
+        borderColor: 'rgb(255, 69, 0)',
+        backgroundColor: 'transparent',
+        pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false
+      }
+    ];
+
+    // Add NZ dH (best for onset) & H for context
+    const stationKeys = Object.keys(nzMagnometer);
+    stationKeys.forEach((st, idx) => {
+      const color = nzPalette[idx % nzPalette.length];
+      const dH = nzMagnometer[st].dH || [];
+      const H  = nzMagnometer[st].H  || [];
+      if (dH.length > 0) {
+        ds.push({
+          label: `${st} dH`,
+          data: dH.map(p => ({ x: p.time, y: p.value })),
+          borderColor: color,
+          backgroundColor: 'transparent',
+          pointRadius: 0, tension: 0.1, borderWidth: 1.2, fill: false,
+          borderDash: [6, 3]
+        });
+      }
+      if (H.length > 0) {
+        ds.push({
+          label: `${st} H`,
+          data: H.map(p => ({ x: p.time, y: p.value })),
+          borderColor: color.replace('rgb', 'rgba').replace(')', ',0.5)'),
+          backgroundColor: 'transparent',
+          pointRadius: 0, tension: 0.1, borderWidth: 1, fill: false
+        });
+      }
+    });
+
+    return { datasets: ds };
+  }, [goes18Data, goes19Data, nzMagnometer]);
 
   const speedChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, 'Speed (km/s)'), [solarWindTimeRange]);
   const densityChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, 'Density (p/cm³)'), [solarWindTimeRange]);
@@ -248,34 +242,10 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
   const hemisphericPowerChartOptions = useMemo(() => createChartOptions(hemisphericPowerChartTimeRange, 'Hemispheric Power (GW)'), [hemisphericPowerChartTimeRange]);
 
   const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data, getMagnetometerAnnotations]);
-  const magnetometerOptions = useMemo(() => createChartOptions(magnetometerTimeRange, 'Hp (nT)', true, magnetometerAnnotations), [magnetometerTimeRange, magnetometerAnnotations]);
-
-  // NEW: NZ magnetometers in modal
-  if (graphId === 'nz-magnetometers-container') {
-    const cutoff = Date.now() - magnetometerTimeRange;
-    const stations = Object.keys(nzMagnometer || {});
-    const datasets: any[] = [];
-
-    stations.forEach(st => {
-      const H  = (nzMagnometer?.[st]?.H  || []).filter(p => p.time >= cutoff).map(p => ({ x: p.time, y: p.value }));
-      const dH = (nzMagnometer?.[st]?.dH || []).filter(p => p.time >= cutoff).map(p => ({ x: p.time, y: p.value }));
-      if (H.length)  datasets.push({ label: `${st} H`,  data: H,  pointRadius: 0, borderWidth: 1.5, tension: 0.2, fill: false });
-      if (dH.length) datasets.push({ label: `${st} dH`, data: dH, pointRadius: 0, borderWidth: 1.5, tension: 0.2, fill: false, borderDash: [5, 4] });
-    });
-
-    const options = createChartOptions(magnetometerTimeRange, 'nT, nT/min', true);
-
-    return (
-      <div className="h-full flex flex-col">
-        <TimeRangeButtons onSelect={setMagnetometerTimeRange} selected={magnetometerTimeRange} />
-        <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
-          {datasets.length ? <Line data={{ datasets }} options={options} /> : (
-            <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer || 'No NZ magnetometer data available.'}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const magnetometerOptions = useMemo(
+    () => createChartOptions(magnetometerTimeRange, 'Hp / H / dH', true, magnetometerAnnotations),
+    [magnetometerTimeRange, magnetometerAnnotations]
+  );
 
   switch (graphId) {
     case 'speed-graph-container':
@@ -287,6 +257,7 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
           </div>
         </div>
       );
+
     case 'density-graph-container':
       return (
         <div className="h-full flex flex-col">
@@ -296,6 +267,7 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
           </div>
         </div>
       );
+
     case 'imf-graph-container':
       return (
         <div className="h-full flex flex-col">
@@ -305,6 +277,7 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
           </div>
         </div>
       );
+
     case 'hemispheric-power-graph-container':
       return (
         <div className="h-full flex flex-col">
@@ -314,6 +287,7 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
           </div>
         </div>
       );
+
     case 'goes-mag-graph-container':
       return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
@@ -322,15 +296,20 @@ export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.m
             <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}>
               {loadingMagnetometer
                 ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p>
-                : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />}
+                : <Line data={magnetometerChartData} options={magnetometerOptions} />
+              }
             </div>
           </div>
           <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg h-full">
             <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3>
             <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p>
+            <div className="text-xs text-neutral-400 mt-3 text-center px-2">
+              GOES Hp shows geosynchronous response; NZ <code>dH</code> &amp; <code>H</code> show local ionospheric currents. Sharp <code>dH</code> swings often coincide with onset in the local sector.
+            </div>
           </div>
         </div>
       );
+
     default:
       return null;
   }
@@ -342,6 +321,7 @@ interface ForecastTrendChartProps {
   owmDailyForecast: OwmDailyForecastEntry[];
   onOpenModal: () => void;
 }
+
 export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraScoreHistory, dailyCelestialHistory, owmDailyForecast, onOpenModal }) => {
   const [timeRange, setTimeRange] = useState(6 * 3600000);
   const [timeLabel, setTimeLabel] = useState('6 Hr');
@@ -353,34 +333,33 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
     const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
     const addAnnotation = (key: string, ts: number | null | undefined, text: string, emoji: string, color: string, pos: 'start' | 'end') => {
       if (ts && ts > startTime && ts < now) annotations[`${key}-${ts}`] = {
-        type: 'line', xMin: ts, xMax: ts, borderColor: color.replace(/, 1\)/, ', 0.7)'), borderWidth: 1.5, borderDash: [6, 6],
+        type: 'line', xMin: ts, xMax: ts, borderColor: color, borderWidth: 1.5, borderDash: [6, 6],
         label: { content: `${emoji} ${text}: ${formatTime(ts)}`, display: true, position: pos, color, font: { size: 10, weight: 'bold' }, backgroundColor: 'rgba(10, 10, 10, 0.7)', padding: 3, borderRadius: 3 }
       };
     };
     dailyCelestialHistory.forEach(day => {
-      if (day.sun) {
-        addAnnotation('sunrise', day.sun.rise, 'Sunrise', '☀️', '#fcd34d', 'start');
-        addAnnotation('sunset', day.sun.set, 'Sunset', '☀️', '#fcd34d', 'end');
-      }
-      if (day.moon) {
-        addAnnotation('moonrise', day.moon.rise, 'Moonrise', '🌕', '#d1d5db', 'start');
-        addAnnotation('moonset', day.moon.set, 'Moonset', '🌕', '#d1d5db', 'end');
-      }
+      if (day.sun) { addAnnotation('sunrise', day.sun.rise, 'Sunrise', '☀️', '#fcd34d', 'start'); addAnnotation('sunset', day.sun.set, 'Sunset', '☀️', '#fcd34d', 'end'); }
+      if (day.moon) { addAnnotation('moonrise', day.moon.rise, 'Moonrise', '🌕', '#d1d5db', 'start'); addAnnotation('moonset', day.moon.set, 'Moonset', '🌕', '#d1d5db', 'end'); }
     });
     owmDailyForecast.forEach(day => {
       if (day.sunrise) addAnnotation('owm-sr-' + day.dt, day.sunrise * 1000, 'Sunrise', '☀️', '#fcd34d', 'start');
-      if (day.sunset)  addAnnotation('owm-ss-' + day.dt, day.sunset  * 1000, 'Sunset',  '☀️', '#fcd34d', 'end');
+      if (day.sunset) addAnnotation('owm-ss-' + day.dt, day.sunset * 1000, 'Sunset', '☀️', '#fcd34d', 'end');
       if (day.moonrise) addAnnotation('owm-mr-' + day.dt, day.moonrise * 1000, 'Moonrise', '🌕', '#d1d5db', 'start');
-      if (day.moonset)  addAnnotation('owm-ms-' + day.dt, day.moonset  * 1000, 'Moonset',  '🌕', '#d1d5db', 'end');
+      if (day.moonset) addAnnotation('owm-ms-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end');
     });
     return annotations;
   }, [timeRange, dailyCelestialHistory, owmDailyForecast, showAnnotations]);
-  
+
   const chartOptions = useMemo((): ChartOptions<'line'> => ({
     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
     plugins: {
       legend: { labels: { color: '#a1a1aa' }},
-      tooltip: { callbacks: { title: (ctx) => ctx.length > 0 ? `Time: ${new Date(ctx[0].parsed.x).toLocaleTimeString('en-NZ')}` : '', label: (ctx) => `${ctx.dataset.label || ''}: ${ctx.parsed.y.toFixed(1)}%` }},
+      tooltip: {
+        callbacks: {
+          title: (ctx) => ctx.length > 0 ? `Time: ${new Date(ctx[0].parsed.x).toLocaleTimeString('en-NZ')}` : '',
+          label: (ctx) => `${ctx.dataset.label || ''}: ${ctx.parsed.y.toFixed(1)}%`
+        }
+      },
       annotation: { annotations: chartAnnotations, drawTime: 'afterDatasetsDraw' }
     },
     scales: {
@@ -388,11 +367,11 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
       y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (v: any) => `${v}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } }
     }
   }), [timeRange, chartAnnotations]);
-  
+
   const chartData = useMemo(() => {
     if (auroraScoreHistory.length === 0) return { datasets: [] };
     const getForecastGradient = (ctx: ScriptableContext<'line'>) => {
-      const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined;
+      const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart as any; if (!chartArea) return undefined;
       const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
       const colorKey0 = getForecastScoreColorKey(ctx.p0?.parsed?.y ?? 0); const colorKey1 = getForecastScoreColorKey(ctx.p1?.parsed?.y ?? 0);
       gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi); gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi); return gradient;
@@ -403,12 +382,14 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
           label: 'Spot The Aurora Forecast',
           data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
           borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getForecastScoreColorKey(ctx.p1?.parsed?.y ?? 0)].solid,
-          backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1
+          backgroundColor: getForecastGradient,
+          fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1
         },
         {
           label: 'Base Score',
           data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })),
-          borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2
+          borderColor: 'rgba(255, 255, 255, 1)',
+          backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2
         }
       ]
     };
@@ -430,4 +411,5 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
     </div>
   );
 };
+
 // --- END OF FILE src/components/ForecastCharts.tsx ---
