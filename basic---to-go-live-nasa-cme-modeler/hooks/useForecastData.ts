@@ -314,10 +314,20 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
 
     if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
         const plasmaData = plasmaResult.value; const headers = plasmaData[0]; const speedIdx = headers.indexOf('speed'); const densityIdx = headers.indexOf('density'); const timeIdx = headers.indexOf('time_tag');
-        const processed = plasmaData.slice(1).map((r:any[]) => ({ time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null }));
-        setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed }))); setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
+        const processed = plasmaData.slice(1).map((r:any[]) => {
+            if (!r || !r[timeIdx]) return null;
+            return {
+                time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), 
+                speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, 
+                density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null 
+            }
+        }).filter(Boolean);
+        setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed }))); 
+        setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
         const latest = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
-        const speedVal = latest ? parseFloat(latest[speedIdx]) : null; const densityVal = latest ? parseFloat(latest[densityIdx]) : null; const time = latest?.[timeIdx] ? new Date(latest[timeIdx].replace(' ', 'T') + 'Z').getTime() : Date.now();
+        const speedVal = latest ? parseFloat(latest[speedIdx]) : null; 
+        const densityVal = latest ? parseFloat(latest[densityIdx]) : null; 
+        const time = latest?.[timeIdx] ? new Date(latest[timeIdx].replace(' ', 'T') + 'Z').getTime() : Date.now();
         setGaugeData(prev => ({ 
             ...prev, 
             speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`}, 
@@ -328,7 +338,16 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
         const magData = magResult.value; const headers = magData[0]; const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm'); const timeIdx = headers.indexOf('time_tag');
         const byIdx = headers.indexOf('by_gsm');
-        setAllMagneticData(magData.slice(1).map((r: any[]) => ({ time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null, by: parseFloat(r[byIdx]) > -9999 ? parseFloat(r[byIdx]) : null })));
+        const processed = magData.slice(1).map((r: any[]) => {
+            if (!r || !r[timeIdx]) return null;
+            return {
+                time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), 
+                bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, 
+                bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null, 
+                by: byIdx > -1 && parseFloat(r[byIdx]) > -9999 ? parseFloat(r[byIdx]) : null 
+            }
+        }).filter(Boolean);
+        setAllMagneticData(processed);
     }
 
     let anyGoesDataFound = false;
