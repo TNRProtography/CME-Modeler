@@ -308,6 +308,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             onOpenModal={() => openModal('forecast')}
                         />
 
+                        <SubstormForecastPanel 
+                            forecast={substormForecast}
+                            auroraScore={auroraScore}
+                            onOpenModal={openModal}
+                        />
+
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <TipsSection />
                             <CameraSettingsSection settings={cameraSettings} />
@@ -326,12 +332,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             gaugeData={gaugeData}
                             onOpenModal={openModal}
                             onExpandGraph={setGraphModalId}
-                        />
-                        
-                        <SubstormForecastPanel 
-                            forecast={substormForecast}
-                            auroraScore={auroraScore}
-                            onOpenModal={openModal}
                         />
 
                         <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
