@@ -86,7 +86,6 @@ function sustainedSouth(bzSeries: number[], minutes = 15) {
   return fracSouth >= 0.8;
 }
 
-// --- NEW: Helper for detecting a "locked-in" strong negative Bz ---
 function isBzLockedIn(bzSeries: number[], minutes = 10, threshold = -8) {
     if (bzSeries.length < minutes) return false;
     const sub = bzSeries.slice(-minutes);
@@ -165,7 +164,6 @@ const [interplanetaryShockData, setInterplanetaryShockData] = useState<Interplan
 const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
 const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
 
-// --- REPLACED: Old state is replaced by the new forecast object ---
 const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
@@ -194,8 +192,6 @@ const getMoonData = useCallback((illumination: number | null, rise: number | nul
     const value = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${upSVG} ${riseStr}   ${downSVG} ${setStr}</span>`;
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
 }, []);
-
-// --- NEW: Predictive model logic, implemented with useMemo for efficiency ---
 
 const recentL1Data = useMemo(() => {
     if (!allMagneticData.length || !allSpeedData.length) return null;
@@ -238,11 +234,10 @@ useEffect(() => {
     if (!recentL1Data) return;
 
     const probs = probabilityModel(recentL1Data.dPhiNow, recentL1Data.dPhiMean15, recentL1Data.bzMean15);
-    const bzLocked = isBzLockedIn(recentL1Data.bzSeries); // <-- MODIFIED: Check for the new condition
+    const bzLocked = isBzLockedIn(recentL1Data.bzSeries);
     const P30_ALERT = 0.60, P60_ALERT = 0.60;
     let status: Status = 'QUIET';
 
-    // --- MODIFIED: The status logic now includes the high-priority bzLocked check ---
     if (goesOnset) {
         status = "ONSET";
     } else if (bzLocked && (auroraScore ?? 0) >= 25) {
@@ -269,27 +264,22 @@ useEffect(() => {
     else if (status === "LIKELY_60" || likelihood >= 50) action = "Prepare to go; check the sky within the next hour.";
     else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. An alert may be issued if conditions escalate.";
 
-    // --- MODIFIED: Override the action text for our more urgent condition ---
     if (status === "IMMINENT_30" && bzLocked) {
         action = "Bz is strongly negative! A substorm is highly likely very soon. Head outside now.";
     }
 
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
-
-    // Also update the global banner state
     setSubstormActivityStatus({
         isStretching: status === 'WATCH' || status === 'LIKELY_60' || status === 'IMMINENT_30',
         isErupting: status === 'ONSET',
         probability: likelihood,
-        // These are approximations for the banner, not the detailed window
         predictedStartTime: status !== 'QUIET' ? Date.now() : undefined,
         predictedEndTime: status !== 'QUIET' ? Date.now() + 60 * 60 * 1000 : undefined,
-        text: action, // The action text is a good summary
-        color: '' // Color is handled by the banner component now
+        text: action,
+        color: ''
     });
 
 }, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
-
 
 const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
@@ -306,17 +296,13 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
         const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
         setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
-        
         const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
         setBaseAuroraScore(baseScore);
-
         const initialAdjustedScore = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
         setAuroraScore(initialAdjustedScore);
         setCurrentAuroraScore(initialAdjustedScore);
-
         setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
         const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
-
         if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
         if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
         setGaugeData(prev => ({ 
@@ -386,8 +372,10 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (isInitialLoad) setIsLoading(false);
 }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
 
+// --- MODIFIED: Added a check for `window` to prevent server-side errors ---
 useEffect(() => {
-    if (navigator.geolocation) {
+    // This check ensures this code only runs in a browser environment
+    if (typeof window !== 'undefined' && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const adjustment = calculateLocationAdjustment(position.coords.latitude);
@@ -438,7 +426,7 @@ return {
     goes18Data,
     goes19Data,
     loadingMagnetometer,
-    substormForecast, // MODIFIED: Return the new forecast object
+    substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,
     dailyCelestialHistory,
