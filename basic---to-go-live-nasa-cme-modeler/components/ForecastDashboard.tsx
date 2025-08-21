@@ -1,432 +1,268 @@
-//--- START OF FILE src/components/ForecastDashboard.tsx ---
+//--- START OF FILE src/components/ForecastComponents.tsx ---
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import LoadingSpinner from './icons/LoadingSpinner';
-import AuroraSightings from './AuroraSightings';
-import GuideIcon from './icons/GuideIcon';
-import { useForecastData } from '../hooks/useForecastData';
-import GraphModal from './GraphModal'; // Import the new GraphModal
-
-import {
-    ForecastScore,
-    DataGauges,
-    TipsSection,
-    CameraSettingsSection,
-    InfoModal,
-    ActivityAlert
-} from './ForecastComponents';
-
-import {
-    ForecastTrendChart,
-    ExpandedGraphContent
-} from './ForecastCharts';
-import { SubstormActivity, SubstormForecast } from '../types';
+import React, { useState, useMemo } from 'react';
+import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
+import GuideIcon from './icons/GuideIcon';
 
-// --- Type Definitions ---
-interface ForecastDashboardProps {
-  setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
-  setCurrentAuroraScore: (score: number | null) => void;
-  setSubstormActivityStatus: (status: SubstormActivity | null) => void;
-  navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
+// --- TYPE DEFINITIONS ---
+interface ForecastScoreProps {
+  score: number | null;
+  blurb: string;
+  lastUpdated: string;
+  locationBlurb: string;
+  isDaylight: boolean; // Added isDaylight prop
+  getGaugeStyle: (v: number | null, type: 'power' | 'speed' | 'density' | 'bt' | 'bz') => { color: string; emoji: string; percentage: number };
+  getScoreColorKey: (score: number) => 'gray' | 'yellow' | 'orange' | 'red' | 'purple' | 'pink';
+  getAuroraEmoji: (score: number | null) => string;
+  gaugeColors: Record<string, { solid: string }>;
+  onOpenModal: () => void;
 }
 
-interface Camera {
-  name: string;
-  url: string;
-  type: 'image' | 'iframe';
-  sourceUrl: string;
+interface DataGaugesProps {
+    gaugeData: Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string }>;
+    onOpenModal: (id: string) => void;
+    onExpandGraph: (graphId: string | null) => void;
 }
 
-// --- Constants ---
-const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
+interface CollapsibleSectionProps {
+    title: string;
+    children: React.ReactNode;
+}
 
-const CAMERAS: Camera[] = [
-  { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
-  { name: 'Queenstown', url: 'https://queenstown.roundshot.com/#/', type: 'iframe', sourceUrl: 'queenstown.roundshot.com' },
-  { name: 'Twizel', url: 'https://www.trafficnz.info/camera/737.jpg', type: 'image', sourceUrl: 'trafficnz.info' },
-  { name: 'Taylors Mistake', url: 'https://metdata.net.nz/lpc/camera/taylorsmistake1/image.php', type: 'image', sourceUrl: 'metdata.net.nz' },
-  { name: 'Opiki', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Opiki_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
-  { name: 'Rangitikei', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Rangitikeicarpark_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
-  { name: 'New Plymouth', url: 'https://www.primo.nz/webcameras/snapshot_twlbuilding_sth.jpg', type: 'image', sourceUrl: 'primo.nz' },
-];
+interface CameraSettings {
+    overall: string;
+    phone: { android: Record<string, string>; apple: Record<string, string>; };
+    dslr: Record<string, string>;
+}
 
-const GAUGE_THRESHOLDS = {
-  speed:   { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
-  density: { gray: 5,   yellow: 10,  orange: 15,  red: 20,  purple: 50,  pink: Infinity, maxExpected: 70 },
-  power:   { gray: 20,  yellow: 40,  orange: 70,  red: 150, purple: 200, pink: Infinity, maxExpected: 250 },
-  bt:      { gray: 5,   yellow: 10,  orange: 15,  red: 20,  purple: 50,  pink: Infinity, maxExpected: 60 },
-  bz:      { gray: -5,  yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }
+interface CameraSettingsSectionProps {
+    settings: CameraSettings;
+}
+
+interface InfoModalProps { 
+    isOpen: boolean; 
+    onClose: () => void; 
+    title: string; 
+    content: string | React.ReactNode; 
+}
+
+interface ActivityAlertProps {
+    isDaylight: boolean;
+    celestialTimes: any;
+    auroraScoreHistory: any[];
+}
+
+
+// --- COMPONENTS ---
+
+export const ForecastScore: React.FC<ForecastScoreProps> = ({
+  score, blurb, lastUpdated, locationBlurb, isDaylight, getGaugeStyle, getScoreColorKey, getAuroraEmoji, gaugeColors, onOpenModal
+}) => {
+  return (
+    <div id="forecast-score-section" className="col-span-12 card bg-neutral-950/80 p-6 md:grid md:grid-cols-2 md:gap-8 items-center">
+      <div>
+        <div className="flex justify-center items-center mb-4">
+          <h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2>
+          <button onClick={onOpenModal} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+        </div>
+        <div className="text-6xl font-extrabold text-white text-center">
+          {/* MODIFIED: Conditionally show sun emoji or aurora emoji */}
+          {score !== null ? `${score.toFixed(1)}%` : '...'} <span className="text-5xl">{isDaylight ? '☀️' : getAuroraEmoji(score)}</span>
+        </div>
+        <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
+          <div
+            className="h-3 rounded-full"
+            style={{
+              width: `${score !== null ? getGaugeStyle(score, 'power').percentage : 0}%`,
+              backgroundColor: score !== null ? gaugeColors[getScoreColorKey(score)].solid : gaugeColors.gray.solid,
+            }}
+          ></div>
+        </div>
+        <div className="text-sm text-neutral-400 mt-2">{lastUpdated}</div>
+        <div className="text-xs text-neutral-500 mt-1 italic h-4">{locationBlurb}</div>
+      </div>
+      <div>
+        <p className="text-neutral-300 mt-4 md:mt-0">
+          {isDaylight ? "The sun is currently up. Aurora visibility is not possible until after sunset. The score reflects the underlying solar wind conditions." : blurb}
+        </p>
+        {/* MODIFIED: Added new text explaining the relationship with the substorm forecast */}
+        {!isDaylight && (
+            <p className="text-sm text-sky-300/80 mt-4 p-3 bg-sky-900/20 border border-sky-700/30 rounded-lg">
+                <strong>Tip:</strong> This score shows the overall potential. For predicting short, intense bursts of activity, use this in conjunction with the **Substorm Forecast** below.
+            </p>
+        )}
+      </div>
+    </div>
+  );
 };
 
-const GAUGE_COLORS = {
-    gray:   { solid: '#808080' }, yellow: { solid: '#FFD700' }, orange: { solid: '#FFA500' },
-    red:    { solid: '#FF4500' }, purple: { solid: '#800080' }, pink:   { solid: '#FF1493' }
-};
 
-const GAUGE_EMOJIS = {
-    gray:   '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red:    '\u{1F604}',
-    purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}' // Updated pink to match 80%+
-};
-
-const getForecastScoreColorKey = (score: number) => {
-    if (score >= 80) return 'pink'; if (score >= 50) return 'purple'; if (score >= 40) return 'red';
-    if (score >= 25) return 'orange'; if (score >= 10) return 'yellow';
-    return 'gray';
-};
-
-const getGaugeStyle = (v: number | null, type: keyof typeof GAUGE_THRESHOLDS) => {
-    if (v == null || isNaN(v)) return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
-    let key: keyof typeof GAUGE_COLORS = 'pink'; let percentage = 0; const thresholds = GAUGE_THRESHOLDS[type];
-    if (type === 'bz') {
-        if (v <= thresholds.pink) key = 'pink'; else if (v <= thresholds.purple) key = 'purple'; else if (v <= thresholds.red) key = 'red'; else if (v <= thresholds.orange) key = 'orange'; else if (v <= thresholds.yellow) key = 'yellow'; else key = 'gray';
-        if (v < 0 && thresholds.maxNegativeExpected) percentage = Math.min(100, Math.max(0, (v / thresholds.maxNegativeExpected) * 100)); else percentage = 0;
-    } else {
-        if (v <= thresholds.gray) key = 'gray'; else if (v <= thresholds.yellow) key = 'yellow'; else if (v <= thresholds.orange) key = 'orange'; else if (v <= thresholds.red) key = 'red'; else if (v <= thresholds.purple) key = 'purple';
-        percentage = Math.min(100, Math.max(0, (v / thresholds.maxExpected) * 100));
-    }
-    return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
-};
-
-const getAuroraBlurb = (score: number) => {
-    if (score < 10) return 'Little to no auroral activity.';
-    if (score < 25) return 'Minimal auroral activity likely, possibly only a faint glow detectable by professional cameras.';
-    if (score < 40) return 'Clear auroral activity visible in camera/phone images, potentially visible to the naked eye under ideal conditions.';
-    if (score < 50) return 'Faint auroral glow potentially visible to the naked eye, possibly with some color.';
-    if (score < 80) return 'Good chance of seeing auroral color with the naked eye (depending on individual eyesight and viewing conditions).';
-    return 'High probability of significant auroral substorms, potentially displaying a wide range of colors and dynamic activity overhead or in the northern sky.';
-};
-
-const getAuroraEmoji = (s: number | null) => {
-    if (s === null) return '❓';
-    if (s < 10) return '😞';
-    if (s < 25) return '😐';
-    if (s < 40) return '😊';
-    if (s < 50) return '🙂';
-    if (s < 80) return '😀';
-    return '🤩';
-};
-
-const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
-    if (isDaylight) {
-        return {
-            overall: "The sun is currently up. It is not possible to photograph the aurora during daylight hours.",
-            phone: { android: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" }, apple: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" } },
-            dslr: { iso: "N/A", shutter: "N/A", aperture: "N/A", focus: "N/A", wb: "N/A" }
-        };
-    }
-    return {
-         overall: "Minimal activity expected. A DSLR/Mirrorless camera might capture a faint glow, but phones will likely struggle.",
-         phone: { android: { iso: "3200-6400 (Max)", shutter: "15-30s", aperture: "Lowest f-number", focus: "Infinity", wb: "Auto or 3500K-4000K" }, apple: { iso: "Auto (max Night Mode)", shutter: "Longest Night Mode (10-30s)", aperture: "N/A (fixed)", focus: "Infinity", wb: "Auto or 3500K-4000K" } },
-         dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
-     };
-};
-
-// --- MODIFIED: Substorm Forecast Panel Component with conditional rendering ---
-const SubstormForecastPanel: React.FC<{ forecast: SubstormForecast; auroraScore: number | null; onOpenModal: (id: string) => void; }> = ({ forecast, auroraScore, onOpenModal }) => {
-    const { status, action, windowLabel, likelihood } = forecast;
-
-    const meaning = useMemo(() => {
-        const s = Math.max(0, Math.min(100, Math.round(auroraScore ?? 0)));
-        if (s < 10)  return { emoji: "😞", title: "Little to no auroral activity", advice: "Low chance right now. Monitor updates." };
-        if (s < 25)  return { emoji: "😐", title: "Minimal activity likely", advice: "Maybe a very faint glow. Dark skies help." };
-        if (s < 40)  return { emoji: "😊", title: "Aurora clear in photos; sometimes naked-eye", advice: "Check a dark southern horizon; watch for subtle motion." };
-        if (s < 50)  return { emoji: "🙂", title: "Faint naked-eye glow possible", advice: "Be patient; give eyes 5–10 min to adapt." };
-        if (s < 80)  return { emoji: "😀", title: "Good chance of visible color", advice: "Head to a darker spot; expect waves/brightenings." };
-        return { emoji: "🤩", title: "High probability of significant substorms", advice: "Look mid-sky to high to the south; dynamic activity likely." };
-    }, [auroraScore]);
-
-    const likelihoodGrad = useMemo(() => {
-        if (likelihood >= 80) return "from-emerald-400 to-green-600";
-        if (likelihood >= 50) return "from-amber-400 to-orange-500";
-        if (likelihood >= 25) return "from-yellow-300 to-amber-400";
-        return "from-neutral-600 to-neutral-700";
-    }, [likelihood]);
-    
-    // --- Render a simplified view for the QUIET state ---
-    if (status === 'QUIET') {
-        return (
-            <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
-                <div className="flex justify-center items-center gap-2">
-                    <h2 className="text-2xl font-bold text-white">Substorm Forecast</h2>
-                    <button onClick={() => onOpenModal('substorm-forecast')} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the substorm forecast">
-                        <GuideIcon className="w-6 h-6" />
-                    </button>
-                </div>
-                <div className="text-center">
-                    <div className="inline-block bg-neutral-800/50 border border-neutral-700/50 rounded-full px-4 py-1 text-lg text-neutral-300">
-                        Status: Quiet
-                    </div>
-                    <p className="text-neutral-400 mt-3 max-w-md mx-auto">{action}</p>
-                </div>
-            </div>
-        );
-    }
-
-    // --- Render the full detailed view for all other active states ---
+export const DataGauges: React.FC<DataGaugesProps> = ({ gaugeData, onOpenModal, onExpandGraph }) => {
     return (
-        <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
-            <div className="flex justify-center items-center gap-2">
-                <h2 className="text-2xl font-bold text-white">Substorm Forecast</h2>
-                <button onClick={() => onOpenModal('substorm-forecast')} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the substorm forecast">
-                    <GuideIcon className="w-6 h-6" />
+        <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+            {Object.entries(gaugeData).map(([key, data]) => {
+                const isGraphable = !['moon'].includes(key);
+                let graphId: string | null = null;
+                if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
+                else if (key === 'power') graphId = 'hemispheric-power-graph-container';
+                else if (key === 'speed') graphId = 'speed-graph-container';
+                else if (key === 'density') graphId = 'density-graph-container';
+
+                return (
+                    <div key={key} className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
+                        <button 
+                            onClick={() => isGraphable && onExpandGraph(graphId)} 
+                            className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''}`} 
+                            disabled={!isGraphable}
+                        >
+                            <div className="flex justify-center items-center">
+                                <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
+                                <button onClick={(e) => { e.stopPropagation(); onOpenModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                            </div>
+                            <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
+                            <div className="text-3xl my-2">{data.emoji}</div>
+                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
+                                <div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div>
+                            </div>
+                            <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
+                            {isGraphable && ( <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400`} /> )}
+                        </button>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+
+export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, children }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    return (
+        <div className="card bg-neutral-950/80 p-4">
+            <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
+                <h2 className="text-xl font-bold text-neutral-100">{title}</h2>
+                <button className="p-2 rounded-full text-neutral-300 hover:bg-neutral-700/60 transition-colors">
+                    <CaretIcon className={`w-6 h-6 transform transition-transform duration-300 ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
                 </button>
             </div>
-
-            <div className="rounded-xl bg-black/30 border border-neutral-700/30 p-4">
-                <div className="text-sm text-neutral-300">Suggested action</div>
-                <div className="text-base mt-1">{action}</div>
-                <div className="text-xs text-neutral-500 mt-1">Status: {status.replace("_", " ")}</div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <div className="text-sm text-neutral-300">Expected window</div>
-                    <div className="text-2xl font-semibold">{windowLabel}</div>
-                </div>
-                <div>
-                    <div className="flex justify-between items-end">
-                        <div className="text-sm text-neutral-300">Likelihood (next hour)</div>
-                        <div className="text-lg font-semibold">{likelihood}%</div>
-                    </div>
-                    <div className="mt-2 h-2.5 w-full rounded-full bg-neutral-800 overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${likelihoodGrad}`} style={{ width: `${likelihood}%` }} />
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <div className="text-sm text-neutral-300 mb-1">Expected Visibility (based on Spot The Aurora score)</div>
-                <div className="rounded-lg bg-black/30 border border-neutral-700/30 p-3">
-                    <div className="text-base">
-                        <span className="mr-2">{meaning.emoji}</span>
-                        <span className="font-medium">{meaning.title}</span>
-                    </div>
-                    <div className="text-xs text-neutral-400 mt-1">{meaning.advice}</div>
-                </div>
+            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'max-h-[150vh] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                {children}
             </div>
         </div>
     );
 };
 
+export const TipsSection: React.FC = () => (
+    <CollapsibleSection title="Tips for Spotting the Aurora">
+        <ul className="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2">
+            <li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li>
+            <li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become.</li>
+            <li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. Weather changes fast, so check the map before and during your session.</li>
+            <li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li>
+            <li><strong>The Camera Sees More:</strong> Your phone or DSLR camera is much more sensitive to light than your eyes. Take a long exposure shot (5-15 seconds) even if you can't see anything. You might be surprised!</li>
+            <li><strong>New Moon is Best:</strong> Check the moon illumination gauge. A bright moon acts like a giant street light, washing out the aurora. The lower the percentage, the better your chances.</li>
+            <li><strong>Be Patient & Persistent:</strong> Auroral activity ebbs and flows. A quiet period can be followed by a sudden, bright substorm. Don't give up after just a few minutes.</li>
+        </ul>
+    </CollapsibleSection>
+);
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, navigationTarget }) => {
-    const {
-        isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
-        owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormForecast
-    } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
-    
-    const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
-    const [isFaqOpen, setIsFaqOpen] = useState(false);
-    const [graphModalId, setGraphModalId] = useState<string | null>(null);
-    const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
-    const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
-    const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    
-    const [solarWindTimeRange, setSolarWindTimeRange] = useState(6 * 3600000);
-    const [solarWindTimeLabel, setSolarWindTimeLabel] = useState('6 Hr');
-    const [magneticFieldTimeRange, setMagneticFieldTimeRange] = useState(6 * 3600000);
-    const [magneticFieldTimeLabel, setMagneticFieldTimeLabel] = useState('6 Hr');
-    const [hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange] = useState(6 * 3600000);
-    const [hemisphericPowerChartTimeLabel, setHemisphericPowerChartTimeLabel] = useState('6 Hr');
-    const [magnetometerTimeRange, setMagnetometerTimeRange] = useState(3 * 3600000);
-    const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState('3 Hr');
+export const CameraSettingsSection: React.FC<CameraSettingsSectionProps> = ({ settings }) => (
+    <CollapsibleSection title="Suggested Camera Settings">
+        <p className="text-neutral-400 text-center mb-6">{settings.overall}</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                <h3 className="text-lg font-semibold text-neutral-200 mb-3">📱 Phone Camera</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                        <h4 className="font-semibold text-neutral-300 mb-2">Android (Pro Mode)</h4>
+                        <ul className="text-xs space-y-1.5 text-neutral-400">
+                            <li>**ISO:** {settings.phone.android.iso}</li>
+                            <li>**Shutter:** {settings.phone.android.shutter}</li>
+                            <li>**Aperture:** {settings.phone.android.aperture}</li>
+                            <li>**Focus:** {settings.phone.android.focus}</li>
+                            <li>**WB:** {settings.phone.android.wb}</li>
+                        </ul>
+                    </div>
+                    <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                        <h4 className="font-semibold text-neutral-300 mb-2">Apple (Night Mode)</h4>
+                        <ul className="text-xs space-y-1.5 text-neutral-400">
+                            <li>**ISO:** {settings.phone.apple.iso}</li>
+                            <li>**Shutter:** {settings.phone.apple.shutter}</li>
+                            <li>**Aperture:** {settings.phone.apple.aperture}</li>
+                            <li>**Focus:** {settings.phone.apple.focus}</li>
+                            <li>**WB:** {settings.phone.apple.wb}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                <h3 className="text-lg font-semibold text-neutral-200 mb-3">📷 DSLR / Mirrorless</h3>
+                <div className="bg-neutral-800/50 p-3 rounded-md border border-neutral-700/50">
+                    <h4 className="font-semibold text-neutral-300 mb-2">Recommended Settings</h4>
+                    <ul className="text-xs space-y-1.5 text-neutral-400">
+                        <li>**ISO:** {settings.dslr.iso}</li>
+                        <li>**Shutter:** {settings.dslr.shutter}</li>
+                        <li>**Aperture:** {settings.dslr.aperture}</li>
+                        <li>**Focus:** {settings.dslr.focus}</li>
+                        <li>**WB:** {settings.dslr.wb}</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <p className="text-neutral-500 text-xs italic mt-6 text-center">**Disclaimer:** These are starting points. Experimentation is key!</p>
+    </CollapsibleSection>
+);
 
-    useEffect(() => {
-      fetchAllData(true, getGaugeStyle);
-      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 60 * 1000);
-      return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+export const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? <div dangerouslySetInnerHTML={{ __html: content }} /> : content}
+        </div>
+      </div>
+    </div>
+  );
+};
 
-    useEffect(() => {
-        setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
-        if (selectedCamera.type === 'image') {
-            setCameraImageSrc(`${selectedCamera.url}?_=${Date.now()}`);
-        }
-    }, [lastUpdated, selectedCamera]);
+export const ActivityAlert: React.FC<ActivityAlertProps> = ({ isDaylight, celestialTimes, auroraScoreHistory }) => {
+    const message = useMemo(() => {
+        if (!isDaylight || !celestialTimes.sun?.set || auroraScoreHistory.length === 0) return null;
+        const now = Date.now();
+        const sunsetTime = celestialTimes.sun.set;
+        const oneHourBeforeSunset = sunsetTime - (60 * 60 * 1000);
+        
+        if (now >= oneHourBeforeSunset && now < sunsetTime) {
+            const latestHistoryPoint = auroraScoreHistory[auroraScoreHistory.length - 1];
+            const latestBaseScore = latestHistoryPoint?.baseScore ?? 0;
 
-    useEffect(() => {
-        if (navigationTarget?.page === 'forecast' && navigationTarget.expandId) {
-             if (navigationTarget.expandId !== 'goes-mag-graph-container') {
-                 setGraphModalId(navigationTarget.expandId);
+            if (latestBaseScore >= 50) {
+                let msg = "Aurora activity is currently high! Good potential for a display as soon as it's dark.";
+                const { moon } = celestialTimes;
+                if (moon?.rise && moon?.set && moon?.illumination !== undefined) {
+                    const moonIsUpAtSunset = (sunsetTime > moon.rise && sunsetTime < moon.set) || (moon.set < moon.rise && (sunsetTime > moon.rise || sunsetTime < moon.set));
+                    if (moonIsUpAtSunset) {
+                        msg += ` Note: The ${moon.illumination.toFixed(0)}% illuminated moon will be up, which may wash out fainter details.`;
+                    }
+                }
+                return msg;
             }
         }
-    }, [navigationTarget]);
+        return null;
+    }, [isDaylight, celestialTimes, auroraScoreHistory]);
 
-    const tooltipContent = useMemo(() => ({
-        'forecast': `This forecast combines live space weather data with local New Zealand factors to provide a simple percentage chance of seeing an aurora.<br><br>
-            <ul class='space-y-2'>
-                <li><strong>Below 10% - 😞:</strong> Little to no auroral activity.</li>
-                <li><strong>10% - 25% - 😐:</strong> Minimal auroral activity likely, possibly only a faint glow detectable by professional cameras.</li>
-                <li><strong>25% - 40% - 😊:</strong> Clear auroral activity visible in camera/phone images, potentially visible to the naked eye under ideal conditions.</li>
-                <li><strong>40% - 50% - 🙂:</strong> Faint auroral glow potentially visible to the naked eye, possibly with some color.</li>
-                <li><strong>50% - 80% - 😀:</strong> Good chance of seeing auroral color with the naked eye (depending on individual eyesight and viewing conditions).</li>
-                <li><strong>80%+ - 🤩:</strong> High probability of significant auroral substorms, potentially displaying a wide range of colors and dynamic activity overhead or in the northern sky.</li>
-            </ul>`,
-        'power': `<strong>What it is:</strong> Think of this as the 'volume knob' for the aurora's brightness. It measures the total amount of energy the Sun's particles are dumping into Earth's atmosphere.<br><br><strong>Effect on Aurora:</strong> The higher the power, the more energy is available to light up the sky. High power can lead to a brighter and more widespread aurora.`,
-        'speed': `<strong>What it is:</strong> The Sun constantly streams out a flow of particles called the solar wind. This measures how fast that stream is moving.<br><br><strong>Effect on Aurora:</strong> Faster particles hit our atmosphere with more energy, like a faster pitch. This can create more vibrant colors (like pinks and purples) and cause the aurora to dance and move more quickly.`,
-        'density': `<strong>What it is:</strong> This measures how 'crowded' or 'thick' the stream of solar wind particles is.<br><br><strong>Effect on Aurora:</strong> Higher density is like using a wider paintbrush. More particles are hitting the atmosphere at once, which can make the aurora appear brighter and cover a larger area of the sky.`,
-        'bt': `<strong>What it is:</strong> The stream of particles from the Sun has its own magnetic field. 'Bt' measures the total strength of that magnetic field.<br><br><strong>Effect on Aurora:</strong> A high Bt value means the magnetic field is strong and carrying a lot of energy. By itself, it doesn't do much, but if the 'Bz' direction is right, this stored energy can be unleashed to create a powerful display.`,
-        'bz': `<strong>What it is:</strong> This is the most important ingredient for an aurora. Earth is protected by a magnetic shield. The 'Bz' value tells us the North-South direction of the Sun's magnetic field.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the 'master switch'. When Bz points **South (a negative number)**, it's like a key turning in a lock. It opens a door in Earth's shield, allowing energy and particles to pour in. When Bz is North (positive), the door is closed. **The more negative the Bz, the better the aurora!**`,
-        'epam': `<strong>What it is:</strong> A sensor on a satellite far away that acts as an early-warning system. It counts very fast, high-energy particles that are often pushed ahead of a major solar eruption.<br><br><strong>Effect on Aurora:</strong> A sudden, sharp spike on this chart is a strong clue that a 'shockwave' from a solar eruption (a CME) is about to hit Earth, which can trigger a major aurora storm.`,
-        'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows.`,
-        'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
-        'substorm-forecast': `<strong>What is this?</strong><br>This is a predictive forecast for short, intense bursts of aurora called substorms. It uses live solar wind data from 1.5 million km away to anticipate when energy will be released into Earth's atmosphere.<br><br>
-            <ul class='space-y-2'>
-                <li><strong>Status:</strong> Tells you the current phase, from QUIET (low energy) to WATCH (energy is building) to ONSET (an eruption is happening now).</li>
-                <li><strong>Suggested Action:</strong> A plain-English recommendation on what you should do based on the current status.</li>
-                <li><strong>Expected Window:</strong> The model's best estimate for when the substorm might begin. This window gets shorter and more precise as the likelihood increases.</li>
-                <li><strong>Likelihood:</strong> A percentage chance of a substorm occurring within the next hour, based on a physics model of energy transfer from the sun.</li>
-            </ul>`,
-        'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
-    }), []);
-    
-    const openModal = useCallback((id: string) => {
-        const contentData = tooltipContent[id as keyof typeof tooltipContent];
-        if (contentData) {
-            let title = '';
-            if (id === 'forecast') title = 'About The Forecast Score';
-            else if (id === 'substorm-forecast') title = 'About The Substorm Forecast';
-            else if (id === 'ips') title = 'About Interplanetary Shocks';
-            else if (id === 'live-cameras') title = 'About Live Cameras';
-            else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
-            setModalState({ isOpen: true, title: title, content: contentData });
-        }
-    }, [tooltipContent]);
-    const closeModal = useCallback(() => setModalState(null), []);
-
-    const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore ?? 0), [auroraScore]);
-
-    if (isLoading) {
-        return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
-    }
-
-    const faqContent = `<div class="space-y-4"><div><h4 class="font-bold text-neutral-200">Why don't you use the Kp-index?</h4><p>The Kp-index is a fantastic tool for measuring global geomagnetic activity, but it's not real-time. It is an "average" calculated every 3 hours, so it often describes what *has already happened*. For a live forecast, we need data that's updated every minute. Relying on the Kp-index would be like reading yesterday's weather report to decide if you need an umbrella right now.</p></div><div><h4 class="font-bold text-neutral-200">What data SHOULD I look at then?</h4><p>The most critical live data points for aurora nowcasting are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>IMF Bz:</strong> The "gatekeeper". A strong negative (southward) value opens the door for the aurora.</li><li><strong>Solar Wind Speed:</strong> The "power". Faster speeds lead to more energetic and dynamic displays.</li><li><strong>Solar Wind Density:</strong> The "thickness". Higher density can result in a brighter, more widespread aurora.</li></ul></div><div><h4 class="font-bold text-neutral-200">The forecast is high but I can't see anything. Why?</h4><p>This can happen for several reasons! The most common are:</p><ul class="list-disc list-inside pl-2 mt-1"><li><strong>Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Light Pollution:</strong> You must be far away from town and urban area lights.</li><li><strong>The Moon:</strong> A bright moon can wash out all but the most intense auroras.</li><li><strong>Eye Adaptation:</strong> It takes at least 15-20 minutes in total darkness for your eyes to become sensitive enough to see faint glows.</li><li><strong>Patience:</strong> Auroral activity happens in waves (substorms). A quiet period can be followed by an intense outburst. Don't give up after just a few minutes.</li></ul></div><div><h4 class="font-bold text-neutral-200">Where does your data from?</h4><p>All our live solar wind and magnetic field data comes directly from NASA and NOAA, sourced from satellites positioned 1.5 million km from Earth, like the DSCOVR and ACE spacecraft. This dashboard fetches new data every minute. The "Spot The Aurora Forecast" score is then calculated using a proprietary algorithm that combines this live data with local factors for the West Coast of NZ, but is still applicable for the entire New Zealand with some modification.</p></div></div>`;
+    if (!message) return null;
 
     return (
-        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
-            <div className="absolute inset-0 bg-black/50 z-0"></div>
-            <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
-                 <div className="container mx-auto">
-                    <header className="text-center mb-8">
-                        <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
-                        <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
-                    </header>
-                    <main className="grid grid-cols-12 gap-6">
-                        <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                        
-                        <ForecastScore 
-                            score={auroraScore}
-                            blurb={auroraBlurb}
-                            lastUpdated={lastUpdated}
-                            locationBlurb={locationBlurb}
-                            getGaugeStyle={getGaugeStyle}
-                            getScoreColorKey={getForecastScoreColorKey}
-                            getAuroraEmoji={getAuroraEmoji}
-                            gaugeColors={GAUGE_COLORS}
-                            onOpenModal={() => openModal('forecast')}
-                        />
-
-                        <SubstormForecastPanel 
-                            forecast={substormForecast}
-                            auroraScore={auroraScore}
-                            onOpenModal={openModal}
-                        />
-
-                        <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <TipsSection />
-                            <CameraSettingsSection settings={cameraSettings} />
-                        </div>
-                        
-                        <AuroraSightings isDaylight={isDaylight} />
-
-                        <ForecastTrendChart 
-                            auroraScoreHistory={auroraScoreHistory}
-                            dailyCelestialHistory={dailyCelestialHistory}
-                            owmDailyForecast={owmDailyForecast}
-                            onOpenModal={() => openModal('forecast')}
-                        />
-
-                        <DataGauges
-                            gaugeData={gaugeData}
-                            onOpenModal={openModal}
-                            onExpandGraph={setGraphModalId}
-                        />
-
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
-                            <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
-                        </div>
-                        
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <div className="flex justify-center items-center mb-4">
-                                <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
-                                <button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                            </div>
-                            <div className="flex justify-center gap-2 my-2 flex-wrap">
-                                {CAMERAS.map((camera) => (
-                                    <button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
-                                        {camera.name}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="mt-4">
-                                <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
-                                    {selectedCamera.type === 'iframe' ? (
-                                        <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
-                                    ) : (
-                                        <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
-                                    )}
-                                </div>
-                                <div className="text-center text-xs text-neutral-500 mt-2">
-                                    Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                             <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
-                        </div>
-                    </main>
-
-                    <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
-                        <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
-                        <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides a 2-hour aurora forecast for the whole of New Zealand and specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.</p>
-                        <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.</p>
-                        <div className="mt-6">
-                            <button onClick={() => setIsFaqOpen(true)} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors">
-                                <GuideIcon className="w-5 h-5" />
-                                <span>Frequently Asked Questions</span>
-                            </button>
-                        </div>
-                        <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a></p><p className="mt-2">Forecast Algorithm, Visualization, and Development by TNR Protography</p></div>
-                    </footer>
-                 </div>
-            </div>
-
-            <GraphModal 
-                isOpen={!!graphModalId}
-                onClose={() => setGraphModalId(null)}
-                graphId={graphModalId}
-                openModal={openModal}
-                getMagnetometerAnnotations={() => ({})}
-                allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
-                goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={{text: substormForecast.action, color: ''}}
-                solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
-                magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
-                hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
-                magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
-            />
-
-            {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
-            <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
+        <div className="col-span-12 card bg-yellow-900/50 border border-yellow-400/30 text-yellow-200 p-4 text-center text-sm rounded-lg">
+            {message}
         </div>
     );
 };
-
-export default ForecastDashboard;
-//--- END OF FILE src/components/ForecastDashboard.tsx ---
+//--- END OF FILE src/components/ForecastComponents.tsx ---
