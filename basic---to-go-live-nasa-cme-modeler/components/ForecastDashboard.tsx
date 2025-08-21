@@ -122,9 +122,10 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
-// --- NEW: Substorm Forecast Panel Component ---
+// --- MODIFIED: Substorm Forecast Panel Component with conditional rendering ---
 const SubstormForecastPanel: React.FC<{ forecast: SubstormForecast; auroraScore: number | null; onOpenModal: (id: string) => void; }> = ({ forecast, auroraScore, onOpenModal }) => {
     const { status, action, windowLabel, likelihood } = forecast;
+
     const meaning = useMemo(() => {
         const s = Math.max(0, Math.min(100, Math.round(auroraScore ?? 0)));
         if (s < 10)  return { emoji: "😞", title: "Little to no auroral activity", advice: "Low chance right now. Monitor updates." };
@@ -141,7 +142,28 @@ const SubstormForecastPanel: React.FC<{ forecast: SubstormForecast; auroraScore:
         if (likelihood >= 25) return "from-yellow-300 to-amber-400";
         return "from-neutral-600 to-neutral-700";
     }, [likelihood]);
+    
+    // --- Render a simplified view for the QUIET state ---
+    if (status === 'QUIET') {
+        return (
+            <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+                <div className="flex justify-center items-center gap-2">
+                    <h2 className="text-2xl font-bold text-white">Substorm Forecast</h2>
+                    <button onClick={() => onOpenModal('substorm-forecast')} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the substorm forecast">
+                        <GuideIcon className="w-6 h-6" />
+                    </button>
+                </div>
+                <div className="text-center">
+                    <div className="inline-block bg-neutral-800/50 border border-neutral-700/50 rounded-full px-4 py-1 text-lg text-neutral-300">
+                        Status: Quiet
+                    </div>
+                    <p className="text-neutral-400 mt-3 max-w-md mx-auto">{action}</p>
+                </div>
+            </div>
+        );
+    }
 
+    // --- Render the full detailed view for all other active states ---
     return (
         <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
             <div className="flex justify-center items-center gap-2">
