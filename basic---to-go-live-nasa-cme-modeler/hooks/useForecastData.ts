@@ -86,6 +86,15 @@ function sustainedSouth(bzSeries: number[], minutes = 15) {
   return fracSouth >= 0.8;
 }
 
+// --- NEW: Helper for detecting a "locked-in" strong negative Bz ---
+function isBzLockedIn(bzSeries: number[], minutes = 10, threshold = -8) {
+    if (bzSeries.length < minutes) return false;
+    const sub = bzSeries.slice(-minutes);
+    const avg = sub.reduce((a, b) => a + b, 0) / sub.length;
+    const allNegative = sub.every(bz => bz < 0);
+    return allNegative && avg <= threshold;
+}
+
 function slopePerMin(series: { t: number; v: number }[], minutes = 2) {
   if (series.length < 2) return undefined;
   const end = series[series.length - 1];
@@ -229,11 +238,15 @@ useEffect(() => {
     if (!recentL1Data) return;
 
     const probs = probabilityModel(recentL1Data.dPhiNow, recentL1Data.dPhiMean15, recentL1Data.bzMean15);
+    const bzLocked = isBzLockedIn(recentL1Data.bzSeries); // <-- MODIFIED: Check for the new condition
     const P30_ALERT = 0.60, P60_ALERT = 0.60;
     let status: Status = 'QUIET';
 
+    // --- MODIFIED: The status logic now includes the high-priority bzLocked check ---
     if (goesOnset) {
         status = "ONSET";
+    } else if (bzLocked && (auroraScore ?? 0) >= 25) {
+        status = "IMMINENT_30";
     } else if (recentL1Data.sustained && probs.P30 >= P30_ALERT && (auroraScore ?? 0) >= 25) {
         status = "IMMINENT_30";
     } else if (recentL1Data.sustained && probs.P60 >= P60_ALERT && (auroraScore ?? 0) >= 20) {
@@ -250,11 +263,16 @@ useEffect(() => {
     else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
     else if (status === "WATCH") windowLabel = "20 – 90 min";
 
-    let action = 'Low chance for now.';
+    let action = 'Conditions are calm. Low chance of substorm activity for now.';
     if (status === "ONSET") action = "Look now — activity is underway.";
     else if (status === "IMMINENT_30" || likelihood >= 65) action = "Head outside or to a darker spot now.";
     else if (status === "LIKELY_60" || likelihood >= 50) action = "Prepare to go; check the sky within the next hour.";
-    else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. The forecast will upgrade to an Alert if an eruption becomes likely.";
+    else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. An alert may be issued if conditions escalate.";
+
+    // --- MODIFIED: Override the action text for our more urgent condition ---
+    if (status === "IMMINENT_30" && bzLocked) {
+        action = "Bz is strongly negative! A substorm is highly likely very soon. Head outside now.";
+    }
 
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
 
