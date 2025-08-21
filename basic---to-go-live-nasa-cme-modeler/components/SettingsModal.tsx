@@ -27,6 +27,8 @@ const NOTIFICATION_CATEGORIES = [
   { id: 'flare-M5', label: 'Solar Flare ≥ M5-Class' },
   { id: 'flare-X1', label: 'Solar Flare ≥ X1-Class' },
   { id: 'flare-X5', label: 'Solar Flare ≥ X5-Class' },
+  { id: 'flare-X10', label: 'Solar Flare ≥ X10-Class (Historic)' },
+  { id: 'flare-peak', label: 'Solar Flare Peak & Decline Alerts' },
   { id: 'substorm-forecast', label: 'Substorm Forecast Issued' },
 ];
 
