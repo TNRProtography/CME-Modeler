@@ -169,8 +169,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, [navigationTarget]);
 
     const tooltipContent = useMemo(() => ({
-        'unified-forecast': `<strong>About the Unified Forecast</strong><br>This panel is your primary guide, combining the general aurora visibility potential with a specific, short-term forecast for intense bursts of activity called substorms.<br><br>
-            <strong>Aurora Visibility Score (Left Side)</strong><br>
+        'unified-forecast': `<strong>About the Spot The Aurora Forecast</strong><br>This panel is your primary guide, combining the general aurora visibility potential with a specific, short-term forecast for intense bursts of activity called substorms.<br><br>
+            <strong>Spot The Aurora Score (Left Side)</strong><br>
             This percentage score indicates the general likelihood of seeing an aurora based on live space weather data.
             <ul class='space-y-2 mt-2'>
                 <li><strong>Below 10% (😞):</strong> Little to no auroral activity.</li>
