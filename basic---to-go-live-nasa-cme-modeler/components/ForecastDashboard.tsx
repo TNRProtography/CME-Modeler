@@ -6,9 +6,9 @@ import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import GraphModal from './GraphModal'; // Import the new GraphModal
+import UnifiedForecastPanel from './UnifiedForecastPanel';
 
 import {
-    ForecastScore,
     DataGauges,
     TipsSection,
     CameraSettingsSection,
@@ -88,13 +88,14 @@ const getGaugeStyle = (v: number | null, type: keyof typeof GAUGE_THRESHOLDS) =>
     return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
 };
 
-const getAuroraBlurb = (score: number) => {
-    if (score < 10) return 'Little to no auroral activity.';
-    if (score < 25) return 'Minimal auroral activity likely, possibly only a faint glow detectable by professional cameras.';
-    if (score < 40) return 'Clear auroral activity visible in camera/phone images, potentially visible to the naked eye under ideal conditions.';
-    if (score < 50) return 'Faint auroral glow potentially visible to the naked eye, possibly with some color.';
-    if (score < 80) return 'Good chance of seeing auroral color with the naked eye (depending on individual eyesight and viewing conditions).';
-    return 'High probability of significant auroral substorms, potentially displaying a wide range of colors and dynamic activity overhead or in the northern sky.';
+const getAuroraBlurb = (score: number | null) => {
+    if (score === null) return 'Loading forecast data...';
+    if (score < 10) return 'Little to no auroral activity is expected.';
+    if (score < 25) return 'Minimal auroral activity likely. A faint glow may be detectable by cameras under dark skies.';
+    if (score < 40) return 'Clear auroral activity should be visible in photos. It may be faintly visible to the naked eye in ideal, dark locations.';
+    if (score < 50) return 'A faint auroral glow could be visible to the naked eye, potentially with some color if conditions are very good.';
+    if (score < 80) return 'There is a good chance of seeing auroral color with the naked eye. Look for movement and brightening in the southern sky.';
+    return 'There is a high probability of a significant aurora display, potentially with a wide range of colors and dynamic activity overhead.';
 };
 
 const getAuroraEmoji = (s: number | null) => {
@@ -121,94 +122,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
          dslr: { iso: "3200-6400", shutter: "15-25s", aperture: "f/2.8-f/4 (widest)", focus: "Manual to Infinity", wb: "3500K-4500K" }
      };
 };
-
-// --- MODIFIED: Substorm Forecast Panel Component with conditional rendering ---
-const SubstormForecastPanel: React.FC<{ forecast: SubstormForecast; auroraScore: number | null; onOpenModal: (id: string) => void; }> = ({ forecast, auroraScore, onOpenModal }) => {
-    const { status, action, windowLabel, likelihood } = forecast;
-
-    const meaning = useMemo(() => {
-        const s = Math.max(0, Math.min(100, Math.round(auroraScore ?? 0)));
-        if (s < 10)  return { emoji: "😞", title: "Little to no auroral activity", advice: "Low chance right now. Monitor updates." };
-        if (s < 25)  return { emoji: "😐", title: "Minimal activity likely", advice: "Maybe a very faint glow. Dark skies help." };
-        if (s < 40)  return { emoji: "😊", title: "Aurora clear in photos; sometimes naked-eye", advice: "Check a dark southern horizon; watch for subtle motion." };
-        if (s < 50)  return { emoji: "🙂", title: "Faint naked-eye glow possible", advice: "Be patient; give eyes 5–10 min to adapt." };
-        if (s < 80)  return { emoji: "😀", title: "Good chance of visible color", advice: "Head to a darker spot; expect waves/brightenings." };
-        return { emoji: "🤩", title: "High probability of significant substorms", advice: "Look mid-sky to high to the south; dynamic activity likely." };
-    }, [auroraScore]);
-
-    const likelihoodGrad = useMemo(() => {
-        if (likelihood >= 80) return "from-emerald-400 to-green-600";
-        if (likelihood >= 50) return "from-amber-400 to-orange-500";
-        if (likelihood >= 25) return "from-yellow-300 to-amber-400";
-        return "from-neutral-600 to-neutral-700";
-    }, [likelihood]);
-    
-    // --- Render a simplified view for the QUIET state ---
-    if (status === 'QUIET') {
-        return (
-            <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
-                <div className="flex justify-center items-center gap-2">
-                    <h2 className="text-2xl font-bold text-white">Substorm Forecast</h2>
-                    <button onClick={() => onOpenModal('substorm-forecast')} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the substorm forecast">
-                        <GuideIcon className="w-6 h-6" />
-                    </button>
-                </div>
-                <div className="text-center">
-                    <div className="inline-block bg-neutral-800/50 border border-neutral-700/50 rounded-full px-4 py-1 text-lg text-neutral-300">
-                        Status: Quiet
-                    </div>
-                    <p className="text-neutral-400 mt-3 max-w-md mx-auto">{action}</p>
-                </div>
-            </div>
-        );
-    }
-
-    // --- Render the full detailed view for all other active states ---
-    return (
-        <div id="goes-magnetometer-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
-            <div className="flex justify-center items-center gap-2">
-                <h2 className="text-2xl font-bold text-white">Substorm Forecast</h2>
-                <button onClick={() => onOpenModal('substorm-forecast')} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the substorm forecast">
-                    <GuideIcon className="w-6 h-6" />
-                </button>
-            </div>
-
-            <div className="rounded-xl bg-black/30 border border-neutral-700/30 p-4">
-                <div className="text-sm text-neutral-300">Suggested action</div>
-                <div className="text-base mt-1">{action}</div>
-                <div className="text-xs text-neutral-500 mt-1">Status: {status.replace("_", " ")}</div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <div className="text-sm text-neutral-300">Expected window</div>
-                    <div className="text-2xl font-semibold">{windowLabel}</div>
-                </div>
-                <div>
-                    <div className="flex justify-between items-end">
-                        <div className="text-sm text-neutral-300">Likelihood (next hour)</div>
-                        <div className="text-lg font-semibold">{likelihood}%</div>
-                    </div>
-                    <div className="mt-2 h-2.5 w-full rounded-full bg-neutral-800 overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${likelihoodGrad}`} style={{ width: `${likelihood}%` }} />
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <div className="text-sm text-neutral-300 mb-1">Expected Visibility (based on Spot The Aurora score)</div>
-                <div className="rounded-lg bg-black/30 border border-neutral-700/30 p-3">
-                    <div className="text-base">
-                        <span className="mr-2">{meaning.emoji}</span>
-                        <span className="font-medium">{meaning.title}</span>
-                    </div>
-                    <div className="text-xs text-neutral-400 mt-1">{meaning.advice}</div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, navigationTarget }) => {
     const {
@@ -256,15 +169,27 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, [navigationTarget]);
 
     const tooltipContent = useMemo(() => ({
-        'forecast': `This forecast combines live space weather data with local New Zealand factors to provide a simple percentage chance of seeing an aurora.<br><br>
-            <ul class='space-y-2'>
-                <li><strong>Below 10% - 😞:</strong> Little to no auroral activity.</li>
-                <li><strong>10% - 25% - 😐:</strong> Minimal auroral activity likely, possibly only a faint glow detectable by professional cameras.</li>
-                <li><strong>25% - 40% - 😊:</strong> Clear auroral activity visible in camera/phone images, potentially visible to the naked eye under ideal conditions.</li>
-                <li><strong>40% - 50% - 🙂:</strong> Faint auroral glow potentially visible to the naked eye, possibly with some color.</li>
-                <li><strong>50% - 80% - 😀:</strong> Good chance of seeing auroral color with the naked eye (depending on individual eyesight and viewing conditions).</li>
-                <li><strong>80%+ - 🤩:</strong> High probability of significant auroral substorms, potentially displaying a wide range of colors and dynamic activity overhead or in the northern sky.</li>
-            </ul>`,
+        'unified-forecast': `<strong>About the Unified Forecast</strong><br>This panel is your primary guide, combining the general aurora visibility potential with a specific, short-term forecast for intense bursts of activity called substorms.<br><br>
+            <strong>Aurora Visibility Score (Left Side)</strong><br>
+            This percentage score indicates the general likelihood of seeing an aurora based on live space weather data.
+            <ul class='space-y-2 mt-2'>
+                <li><strong>Below 10% (😞):</strong> Little to no auroral activity.</li>
+                <li><strong>10% - 25% (😐):</strong> Minimal activity, likely camera-only.</li>
+                <li><strong>25% - 40% (😊):</strong> Visible in photos, maybe faint to the naked eye.</li>
+                <li><strong>40% - 50% (🙂):</strong> Faint naked-eye glow possible.</li>
+                <li><strong>50% - 80% (😀):</strong> Good chance of visible color and movement.</li>
+                <li><strong>80%+ (🤩):</strong> High probability of a significant, dynamic display.</li>
+            </ul>
+            <br>
+            <strong>Substorm Forecast (Right Side)</strong><br>
+            This section activates when conditions are right for a substorm. It's a predictive model for short, powerful bursts of aurora.
+            <ul class='space-y-2 mt-2'>
+                <li><strong>Status:</strong> Shows the current phase, from QUIET (low energy) to WATCH (building energy) to ONSET (erupting now).</li>
+                <li><strong>Recommended Action:</strong> Plain-English advice on what to do. This is your key takeaway.</li>
+                <li><strong>Window & Likelihood:</strong> The model's best guess for when a substorm might begin and its probability in the next hour.</li>
+            </ul>
+            <br>
+            The <strong>Overall Status</strong> at the top-right summarizes the most important current condition.`,
         'power': `<strong>What it is:</strong> Think of this as the 'volume knob' for the aurora's brightness. It measures the total amount of energy the Sun's particles are dumping into Earth's atmosphere.<br><br><strong>Effect on Aurora:</strong> The higher the power, the more energy is available to light up the sky. High power can lead to a brighter and more widespread aurora.`,
         'speed': `<strong>What it is:</strong> The Sun constantly streams out a flow of particles called the solar wind. This measures how fast that stream is moving.<br><br><strong>Effect on Aurora:</strong> Faster particles hit our atmosphere with more energy, like a faster pitch. This can create more vibrant colors (like pinks and purples) and cause the aurora to dance and move more quickly.`,
         'density': `<strong>What it is:</strong> This measures how 'crowded' or 'thick' the stream of solar wind particles is.<br><br><strong>Effect on Aurora:</strong> Higher density is like using a wider paintbrush. More particles are hitting the atmosphere at once, which can make the aurora appear brighter and cover a larger area of the sky.`,
@@ -273,13 +198,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'epam': `<strong>What it is:</strong> A sensor on a satellite far away that acts as an early-warning system. It counts very fast, high-energy particles that are often pushed ahead of a major solar eruption.<br><br><strong>Effect on Aurora:</strong> A sudden, sharp spike on this chart is a strong clue that a 'shockwave' from a solar eruption (a CME) is about to hit Earth, which can trigger a major aurora storm.`,
         'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows.`,
         'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
-        'substorm-forecast': `<strong>What is this?</strong><br>This is a predictive forecast for short, intense bursts of aurora called substorms. It uses live solar wind data from 1.5 million km away to anticipate when energy will be released into Earth's atmosphere.<br><br>
-            <ul class='space-y-2'>
-                <li><strong>Status:</strong> Tells you the current phase, from QUIET (low energy) to WATCH (energy is building) to ONSET (an eruption is happening now).</li>
-                <li><strong>Suggested Action:</strong> A plain-English recommendation on what you should do based on the current status.</li>
-                <li><strong>Expected Window:</strong> The model's best estimate for when the substorm might begin. This window gets shorter and more precise as the likelihood increases.</li>
-                <li><strong>Likelihood:</strong> A percentage chance of a substorm occurring within the next hour, based on a physics model of energy transfer from the sun.</li>
-            </ul>`,
         'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
     }), []);
     
@@ -287,8 +205,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const contentData = tooltipContent[id as keyof typeof tooltipContent];
         if (contentData) {
             let title = '';
-            if (id === 'forecast') title = 'About The Forecast Score';
-            else if (id === 'substorm-forecast') title = 'About The Substorm Forecast';
+            if (id === 'unified-forecast') title = 'About The Unified Forecast';
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else if (id === 'live-cameras') title = 'About Live Cameras';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
@@ -298,7 +215,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const closeModal = useCallback(() => setModalState(null), []);
 
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore ?? 0), [auroraScore]);
+    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
@@ -318,22 +235,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     <main className="grid grid-cols-12 gap-6">
                         <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
                         
-                        <ForecastScore 
-                            score={auroraScore}
-                            blurb={auroraBlurb}
-                            lastUpdated={lastUpdated}
-                            locationBlurb={locationBlurb}
-                            getGaugeStyle={getGaugeStyle}
-                            getScoreColorKey={getForecastScoreColorKey}
-                            getAuroraEmoji={getAuroraEmoji}
-                            gaugeColors={GAUGE_COLORS}
-                            onOpenModal={() => openModal('forecast')}
-                        />
-
-                        <SubstormForecastPanel 
-                            forecast={substormForecast}
-                            auroraScore={auroraScore}
-                            onOpenModal={openModal}
+                        <UnifiedForecastPanel
+                          score={auroraScore}
+                          blurb={auroraBlurb}
+                          lastUpdated={lastUpdated}
+                          locationBlurb={locationBlurb}
+                          getGaugeStyle={getGaugeStyle}
+                          getScoreColorKey={getForecastScoreColorKey}
+                          getAuroraEmoji={getAuroraEmoji}
+                          gaugeColors={GAUGE_COLORS}
+                          onOpenModal={openModal}
+                          substormForecast={substormForecast}
                         />
 
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
