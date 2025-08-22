@@ -733,7 +733,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // longitudinal gradient color
         const relativePos = y / coneHeight;
         const finalColor = new THREE.Color();
-        const wakeEnd = 0.3;
+        const wakeEnd = 0.1;
         const coreEnd = 0.9;
 
         if (relativePos < wakeEnd) {

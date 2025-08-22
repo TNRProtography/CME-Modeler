@@ -350,13 +350,13 @@ const App: React.FC = () => {
                                 <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
                                     <CmeIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset</span>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
                                 <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models">
                                     <GlobeIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Models</span>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Other CME Models</span>
                             </div>
                         </div>
                         <div className="flex items-start text-center space-x-2 pointer-events-auto">
