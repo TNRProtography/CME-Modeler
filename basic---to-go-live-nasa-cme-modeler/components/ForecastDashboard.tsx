@@ -290,6 +290,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     );
 };
 
-export default ForecastDashboard;
-
+export default CombinedForecastPanel;
+export { CombinedForecastPanel };
 //--- END OF FILE src/components/ForecastDashboard.tsx ---
