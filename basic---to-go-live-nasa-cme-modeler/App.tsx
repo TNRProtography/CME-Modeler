@@ -314,15 +314,15 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-2">
                 <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
                     <ForecastIcon className="w-5 h-5" />
-                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Forecast</span>
+                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
                 </button>
                 <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
                     <SunIcon className="w-5 h-5" />
-                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Activity</span>
+                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
                 </button>
                  <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
                     <CmeIcon className="w-5 h-5" />
-                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Modeler</span>
+                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
                 </button>
             </div>
             <div className="flex-grow flex justify-end">
