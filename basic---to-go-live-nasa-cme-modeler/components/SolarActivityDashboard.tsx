@@ -292,12 +292,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
             const response = await fetch(`${NASA_DONKI_BASE_URL}FLR?startDate=${startDate}&endDate=${endDate}&api_key=${apiKey}&_=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (!data || data.length === 0) { 
-                setLoadingFlares('No solar flares in the last 24 hours.'); 
-                setSolarFlares([]); 
-                setLatestRelevantEvent(prev => prev === null ? null : prev);
+            if (!data || data.length === 0) {
+                setSolarFlares([]);
+                setLoadingFlares(null); // <-- CORRECTED: Set loading to null
                 setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
-                return; 
+                return;
             }
             const processedData = data.map((flare: any) => ({ ...flare, hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false, }));
             const sortedFlares = processedData.sort((a: any, b: any) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
@@ -312,9 +311,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                 }
             }
             setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
-        } catch (error) { 
-            console.error('Error fetching flares:', error); 
-            setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`); 
+        } catch (error) {
+            console.error('Error fetching flares:', error);
+            setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
             setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
         }
     }, [apiKey, latestRelevantEvent]);
@@ -344,30 +343,30 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const now = Date.now();
         const startTime = now - xrayTimeRange;
         const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000; 
+        const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
             const midnight = new Date(d).setUTCHours(12,0,0,0);
             if (midnight > startTime && midnight < now) {
-                midnightAnnotations[`midnight-${midnight}`] = { 
-                    type: 'line', xMin: midnight, xMax: midnight, 
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], 
-                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } 
+                midnightAnnotations[`midnight-${midnight}`] = {
+                    type: 'line', xMin: midnight, xMax: midnight,
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
                 };
             }
         }
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { 
-                legend: { display: false }, 
-                tooltip: { callbacks: { 
-                    label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)` 
-                }}, 
-                annotation: { annotations: midnightAnnotations } 
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)`
+                }},
+                annotation: { annotations: midnightAnnotations }
             },
-            scales: { 
-                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, 
-                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } } 
+            scales: {
+                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } }
             }
         };
     }, [xrayTimeRange]);
@@ -376,7 +375,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         if (allXrayData.length === 0) return { datasets: [] };
         return {
             datasets: [{
-                label: 'Short Flux (0.1-0.8 nm)', 
+                label: 'Short Flux (0.1-0.8 nm)',
                 data: allXrayData.map(d => ({x: d.time, y: d.short})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
                 segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2), }
@@ -388,35 +387,35 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         const now = Date.now();
         const startTime = now - protonTimeRange;
         const midnightAnnotations: any = {};
-        const nzOffset = 12 * 3600000; 
+        const nzOffset = 12 * 3600000;
         const startDayNZ = new Date(startTime - nzOffset).setUTCHours(0,0,0,0) + nzOffset;
         for (let d = startDayNZ; d < now + 24 * 3600000; d += 24 * 3600000) {
             const midnight = new Date(d).setUTCHours(12,0,0,0);
             if (midnight > startTime && midnight < now) {
-                midnightAnnotations[`midnight-${midnight}`] = { 
-                    type: 'line', xMin: midnight, xMax: midnight, 
-                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5], 
-                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } } 
+                midnightAnnotations[`midnight-${midnight}`] = {
+                    type: 'line', xMin: midnight, xMax: midnight,
+                    borderColor: 'rgba(156, 163, 175, 0.5)', borderWidth: 1, borderDash: [5, 5],
+                    label: { content: 'Midnight', display: true, position: 'start', color: 'rgba(156, 163, 175, 0.7)', font: { size: 10 } }
                 };
             }
         }
         return {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { 
-                legend: { display: false }, 
-                tooltip: { callbacks: { 
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
                     label: (c: any) => {
                         const flux = c.parsed.y;
                         let sClass = 'S0';
                         if (flux >= 100000) sClass = 'S5'; else if (flux >= 10000) sClass = 'S4'; else if (flux >= 1000) sClass = 'S3'; else if (flux >= 100) sClass = 'S2'; else if (flux >= 10) sClass = 'S1';
                         return `Flux: ${flux.toFixed(2)} pfu (${sClass}-class)`;
-                    } 
-                }}, 
-                annotation: { annotations: midnightAnnotations } 
+                    }
+                }},
+                annotation: { annotations: midnightAnnotations }
             },
-            scales: { 
-                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, 
-                y: { type: 'logarithmic', min: 1e-4, max: 1000000, ticks: { color: '#71717a', callback: (value: any) => { if (value === 100000) return 'S5'; if (value === 10000) return 'S4'; if (value === 1000) return 'S3'; if (value === 100) return 'S2'; if (value === 10) return 'S1'; if (value === 1) return 'S0'; if (value === 0.1 || value === 0.01 || value === 0.001 || value === 0.0001) return value.toString(); return null; } }, grid: { color: '#3f3f46' } } 
+            scales: {
+                x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+                y: { type: 'logarithmic', min: 1e-4, max: 1000000, ticks: { color: '#71717a', callback: (value: any) => { if (value === 100000) return 'S5'; if (value === 10000) return 'S4'; if (value === 1000) return 'S3'; if (value === 100) return 'S2'; if (value === 10) return 'S1'; if (value === 1) return 'S0'; if (value === 0.1 || value === 0.01 || value === 0.001 || value === 0.0001) return value.toString(); return null; } }, grid: { color: '#3f3f46' } }
             }
         };
     }, [protonTimeRange]);
@@ -425,7 +424,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
         if (allProtonData.length === 0) return { datasets: [] };
         return {
             datasets: [{
-                label: 'Proton Flux (>=10 MeV)', 
+                label: 'Proton Flux (>=10 MeV)',
                 data: allProtonData.map(d => ({x: d.time, y: d.flux})),
                 pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
                 segment: { borderColor: (ctx: any) => getColorForProtonFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForProtonFlux(ctx.p1.parsed.y, 0.2), }
@@ -487,7 +486,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                         </div>
                         <div id="solar-flares-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
                             <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (24 Hrs)</h2><button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button></div>
-                            <ul className="space-y-2 overflow-y-auto max-h-96 styled-scrollbar pr-2">{loadingFlares ? <LoadingSpinner message={loadingFlares} /> : solarFlares.length > 0 ? solarFlares.map((flare) => { const { background, text } = getColorForFlareClass(flare.classType); const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent'; return ( <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}> <div className="flex justify-between items-center"> <span> <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong> <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span> </span> {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>} </div> </li> )}) : <li className="text-center text-neutral-400 italic">No recent flares found.</li>}</ul>
+                            <div className="flex-grow overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                                {loadingFlares ? (
+                                    <LoadingSpinner message={loadingFlares} />
+                                ) : solarFlares.length > 0 ? (
+                                    <ul className="space-y-2">
+                                        {solarFlares.map((flare) => {
+                                            const { background, text } = getColorForFlareClass(flare.classType);
+                                            const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
+                                            return (
+                                                <li key={flare.flareID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}>
+                                                    <div className="flex justify-between items-center">
+                                                        <span>
+                                                            <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong>
+                                                            <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span>
+                                                        </span>
+                                                        {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
+                                                    </div>
+                                                </li>
+                                            )
+                                        })}
+                                    </ul>
+                                ) : (
+                                    <div className="flex items-center justify-center h-full">
+                                        <p className="text-center text-neutral-400 italic">No solar flares detected in the past 24 hours.</p>
+                                    </div>
+                                )}
+                            </div>
                             <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastFlaresUpdate || 'N/A'}</div>
                         </div>
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
