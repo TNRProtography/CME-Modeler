@@ -314,15 +314,15 @@ const App: React.FC = () => {
             <div className="flex items-center space-x-2">
                 <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
                     <ForecastIcon className="w-5 h-5" />
-                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
+                    <span className="text-[11px] md:text-sm font-semibold mt-1 md:mt-0">Forecast</span>
                 </button>
                 <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
                     <SunIcon className="w-5 h-5" />
-                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
+                    <span className="text-[11px] md:text-sm font-semibold mt-1 md:mt-0">Activity</span>
                 </button>
                  <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
                     <CmeIcon className="w-5 h-5" />
-                    <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
+                    <span className="text-[11px] md:text-sm font-semibold mt-1 md:mt-0">Modeler</span>
                 </button>
             </div>
             <div className="flex-grow flex justify-end">
@@ -344,19 +344,19 @@ const App: React.FC = () => {
                                 <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
                                     <SettingsIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1">Settings</span>
+                                <span className="text-[11px] text-neutral-400 mt-1">Settings</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
                                 <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
                                     <CmeIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
+                                <span className="text-[11px] text-neutral-400 mt-1 lg:hidden">Reset</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
                                 <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models">
                                     <GlobeIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Other CME Models</span>
+                                <span className="text-[11px] text-neutral-400 mt-1 lg:hidden">Models</span>
                             </div>
                         </div>
                         <div className="flex items-start text-center space-x-2 pointer-events-auto">
@@ -364,7 +364,7 @@ const App: React.FC = () => {
                                 <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME List">
                                     <ListIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1">CME List</span>
+                                <span className="text-[11px] text-neutral-400 mt-1">CME List</span>
                             </div>
                         </div>
                     </div>
