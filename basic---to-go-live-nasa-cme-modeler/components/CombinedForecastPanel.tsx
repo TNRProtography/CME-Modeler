@@ -6,8 +6,7 @@ import { SubstormForecast } from "../types";
  * CombinedForecastPanel
  * Consolidates your main "Forecast" score and "Substorm Forecast" into a single, tidy card.
  *
- * Place this file at components/CombinedForecastPanel.tsx
- * Then import in ForecastDashboard with:
+ * Import in ForecastDashboard with:
  *   import { CombinedForecastPanel } from './CombinedForecastPanel';
  */
 
@@ -15,10 +14,10 @@ type GaugeKey = "gray" | "yellow" | "orange" | "red" | "purple" | "pink";
 
 export interface CombinedForecastPanelProps {
   // Left (Forecast score)
-  score: number | null;
-  blurb: string;
-  lastUpdated: string;
-  locationBlurb: string;
+  score: number | null | undefined;
+  blurb: string | undefined;
+  lastUpdated: string | undefined;
+  locationBlurb: string | undefined;
   getGaugeStyle: (
     v: number | null,
     type: "power" | "speed" | "density" | "bt" | "bz"
@@ -28,15 +27,16 @@ export interface CombinedForecastPanelProps {
   gaugeColors: Record<GaugeKey, { solid: string }>;
 
   // Right (Substorm)
-  forecast: SubstormForecast;
+  forecast?: SubstormForecast | null;
 
   // Help modals
   onOpenModal: (id: string) => void;
 }
 
-const clampPct = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
+const clampPct = (n: number | undefined | null) =>
+  Math.min(100, Math.max(0, Math.round(Number.isFinite(Number(n)) ? Number(n) : 0)));
 
-const visibilityMeaning = (score: number | null) => {
+const visibilityMeaning = (score: number | null | undefined) => {
   const s = clampPct(score ?? 0);
   if (s < 10)
     return {
@@ -94,17 +94,27 @@ function CombinedForecastPanel({
   forecast,
   onOpenModal,
 }: CombinedForecastPanelProps) {
-  const { status, action, windowLabel, likelihood } = forecast;
+  // Safe fallback for forecast on first render
+  const {
+    status = "QUIET",
+    action = "Stand by and monitor conditions.",
+    windowLabel = "—",
+    likelihood = 0,
+  } = forecast ?? ({} as SubstormForecast);
 
   const meaning = useMemo(() => visibilityMeaning(score), [score]);
 
-  const gauge = score != null ? getGaugeStyle(score, "power") : null;
+  // Gauge + bar styling with guards
+  const numericScore = typeof score === "number" ? score : null;
+  const gauge = numericScore != null ? getGaugeStyle(numericScore, "power") : null;
   const barWidth = gauge ? `${gauge.percentage}%` : "0%";
-  const barColor =
-    score != null
-      ? gaugeColors[getScoreColorKey(score)].solid
-      : gaugeColors.gray.solid;
-  const isDaylight = blurb.includes("The sun is currently up");
+  const colorKey = numericScore != null ? getScoreColorKey(numericScore) : "gray";
+  const barColor = (gaugeColors[colorKey] ?? gaugeColors.gray).solid;
+
+  const isDaylight = (blurb || "").includes("The sun is currently up");
+  const statusLabel =
+    typeof status === "string" ? status.replace(/_/g, " ") : "—";
+  const likePct = clampPct(likelihood);
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
@@ -115,6 +125,8 @@ function CombinedForecastPanel({
           onClick={() => onOpenModal("forecast")}
           className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
           title="About the forecast"
+          aria-label="About the forecast"
+          type="button"
         >
           ?
         </button>
@@ -122,6 +134,8 @@ function CombinedForecastPanel({
           onClick={() => onOpenModal("substorm-forecast")}
           className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
           title="About the substorm forecast"
+          aria-label="About the substorm forecast"
+          type="button"
         >
           ?
         </button>
@@ -133,18 +147,20 @@ function CombinedForecastPanel({
         <div className="bg-black/30 border border-neutral-700/30 rounded-xl p-5">
           <div className="flex items-center justify-between">
             <div className="text-6xl font-extrabold text-white">
-              {score !== null ? `${score.toFixed(1)}%` : "..."}{" "}
-              <span className="text-5xl">{getAuroraEmoji(score)}</span>
+              {numericScore !== null ? `${numericScore.toFixed(1)}%` : "..."}{" "}
+              <span className="text-5xl">{getAuroraEmoji(numericScore)}</span>
             </div>
             <div className="text-right">
-              <div className="text-sm text-neutral-400">{lastUpdated}</div>
+              <div className="text-sm text-neutral-400">
+                {lastUpdated || "Updating…"}
+              </div>
               <div className="text-xs text-neutral-500 mt-1 italic h-4">
-                {locationBlurb}
+                {locationBlurb || ""}
               </div>
             </div>
           </div>
 
-          <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
+          <div className="w-full bg-neutral-700 rounded-full h-3 mt-4 overflow-hidden">
             <div
               className="h-3 rounded-full transition-all"
               style={{
@@ -157,7 +173,7 @@ function CombinedForecastPanel({
           <p className="text-neutral-300 mt-4">
             {isDaylight
               ? "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!"
-              : blurb}
+              : blurb || "Forecast updates hourly based on real-time space weather."}
           </p>
         </div>
 
@@ -167,7 +183,7 @@ function CombinedForecastPanel({
             <div className="text-sm text-neutral-300">Suggested action</div>
             <div className="text-base mt-1">{action}</div>
             <div className="text-xs text-neutral-500 mt-1">
-              Status: {status.replaceAll("_", " ")}
+              Status: {statusLabel}
             </div>
           </div>
 
@@ -181,14 +197,14 @@ function CombinedForecastPanel({
                 <div className="text-sm text-neutral-300">
                   Likelihood (next hour)
                 </div>
-                <div className="text-lg font-semibold">{clampPct(likelihood)}%</div>
+                <div className="text-lg font-semibold">{likePct}%</div>
               </div>
               <div className="mt-2 h-2.5 w-full rounded-full bg-neutral-800 overflow-hidden">
                 <div
                   className={`h-full bg-gradient-to-r ${likelihoodGradient(
-                    clampPct(likelihood)
+                    likePct
                   )}`}
-                  style={{ width: `${clampPct(likelihood)}%` }}
+                  style={{ width: `${likePct}%` }}
                 />
               </div>
             </div>
