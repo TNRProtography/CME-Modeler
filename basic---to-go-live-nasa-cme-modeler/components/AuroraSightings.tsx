@@ -10,7 +10,7 @@ import CloseIcon from './icons/CloseIcon';
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
-const REPORTING_COOLDOWN_MS = 60 * 60 * 1000;
+const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
