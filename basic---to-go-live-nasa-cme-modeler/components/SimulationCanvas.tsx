@@ -734,7 +734,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const relativePos = y / coneHeight;
         const finalColor = new THREE.Color();
         const wakeEnd = 0.1;
-        const coreEnd = 0.9;
+        const coreEnd = 0.3;
 
         if (relativePos < wakeEnd) {
           const t = relativePos / wakeEnd;
