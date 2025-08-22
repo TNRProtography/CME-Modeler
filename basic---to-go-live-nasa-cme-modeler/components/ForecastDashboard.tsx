@@ -205,7 +205,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const contentData = tooltipContent[id as keyof typeof tooltipContent];
         if (contentData) {
             let title = '';
-            if (id === 'unified-forecast') title = 'About The Unified Forecast';
+            if (id === 'unified-forecast') title = 'About The Spot the Aurora Forecast';
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else if (id === 'live-cameras') title = 'About Live Cameras';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();

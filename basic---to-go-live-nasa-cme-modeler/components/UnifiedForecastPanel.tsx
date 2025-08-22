@@ -90,7 +90,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
       {/* Header with status */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-white">Aurora & Substorm Forecast</h2>
+          <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>
           <button 
             onClick={() => onOpenModal('unified-forecast')} 
             className="p-1 text-neutral-400 hover:text-neutral-100" 
