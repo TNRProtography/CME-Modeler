@@ -6,7 +6,8 @@ import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import GraphModal from './GraphModal'; // Import the new GraphModal
-import CombinedForecastPanel from './CombinedForecastPanel';
+import { CombinedForecastPanel } from './CombinedForecastPanel';
+
 
 import {
     DataGauges,
