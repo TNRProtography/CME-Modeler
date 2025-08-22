@@ -3,11 +3,102 @@
 /**
  * Notifications utility (server-push + local notifications + diagnostics)
  *
- * Adds:
+ * Adds (hardened):
+ * - Platform detection + exported NOTIFICATION_CHANNELS (android/ios/web), always defined
  * - Category tagging via `tag` and payload `category`
  * - Self-test helper that hits /trigger-test-push-for-me
  * - Returns subscription id (hash of endpoint) for easier single-device testing
+ * - Defensive guards around SW/Notification usage
  */
+
+// ---------------------------------------------------------
+// Platform + channels (exported for UI; always has `.android`)
+// ---------------------------------------------------------
+
+export type PlatformKey = 'android' | 'ios' | 'web';
+
+const getPlatform = (): PlatformKey => {
+  try {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent.toLowerCase() : '';
+    if (/android/.test(ua)) return 'android';
+    if (/(iphone|ipad|ipod|ios)/.test(ua)) return 'ios';
+  } catch {
+    /* ignore */
+  }
+  return 'web';
+};
+
+export const NOTIFICATION_CHANNELS: Record<
+  PlatformKey,
+  {
+    defaultCategory: string;
+    categories: Record<string, string>; // id -> label
+  }
+> = {
+  android: {
+    defaultCategory: 'general',
+    categories: {
+      general: 'General',
+      alerts: 'Alerts',
+      aurora: 'Aurora',
+      solar: 'Solar',
+      system: 'System',
+      'aurora-40percent': 'Aurora ≥40%',
+      'aurora-50percent': 'Aurora ≥50%',
+      'aurora-60percent': 'Aurora ≥60%',
+      'aurora-80percent': 'Aurora ≥80%',
+      'flare-M1': 'Flare M1+',
+      'flare-M5': 'Flare M5+',
+      'flare-X1': 'Flare X1+',
+      'flare-X5': 'Flare X5+',
+      'substorm-forecast': 'Substorm forecast',
+    },
+  },
+  ios: {
+    defaultCategory: 'general',
+    categories: {
+      general: 'General',
+      alerts: 'Alerts',
+      aurora: 'Aurora',
+      solar: 'Solar',
+      system: 'System',
+      'aurora-40percent': 'Aurora ≥40%',
+      'aurora-50percent': 'Aurora ≥50%',
+      'aurora-60percent': 'Aurora ≥60%',
+      'aurora-80percent': 'Aurora ≥80%',
+      'flare-M1': 'Flare M1+',
+      'flare-M5': 'Flare M5+',
+      'flare-X1': 'Flare X1+',
+      'flare-X5': 'Flare X5+',
+      'substorm-forecast': 'Substorm forecast',
+    },
+  },
+  web: {
+    defaultCategory: 'general',
+    categories: {
+      general: 'General',
+      alerts: 'Alerts',
+      aurora: 'Aurora',
+      solar: 'Solar',
+      system: 'System',
+      'aurora-40percent': 'Aurora ≥40%',
+      'aurora-50percent': 'Aurora ≥50%',
+      'aurora-60percent': 'Aurora ≥60%',
+      'aurora-80percent': 'Aurora ≥80%',
+      'flare-M1': 'Flare M1+',
+      'flare-M5': 'Flare M5+',
+      'flare-X1': 'Flare X1+',
+      'flare-X5': 'Flare X5+',
+      'substorm-forecast': 'Substorm forecast',
+    },
+  },
+};
+
+export const CURRENT_PLATFORM: PlatformKey = getPlatform();
+
+// ---------------------------------------------------------
+// Category list (your existing single source of truth)
+// ---------------------------------------------------------
 
 // A single source of truth for all notification categories used in the app.
 const NOTIFICATION_CATEGORIES = [
@@ -15,8 +106,12 @@ const NOTIFICATION_CATEGORIES = [
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'substorm-forecast',
 ];
 
+// ---------------------------------------------------------
+// Permission + helpers
+// ---------------------------------------------------------
+
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
-  if (!('Notification' in window)) {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return 'unsupported';
   }
@@ -50,7 +145,7 @@ const isAppVisible = (): boolean =>
   typeof document !== 'undefined' && document.visibilityState === 'visible';
 
 const waitForServiceWorkerReady = async (timeoutMs = 4000): Promise<ServiceWorkerRegistration | null> => {
-  if (!('serviceWorker' in navigator)) return null;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
   const timeout = new Promise<null>((resolve) => {
     const id = setTimeout(() => {
       clearTimeout(id);
@@ -76,21 +171,32 @@ const showNotification = async (title: string, options: NotificationOptions): Pr
   } catch (e) {
     if (DEBUG) console.warn('SW showNotification failed, falling back to window Notification:', e);
   }
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, options);
-    return true;
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      const n = new Notification(title, options);
+      // Auto-close to reduce clutter
+      setTimeout(() => { try { n.close?.(); } catch {} }, 8000);
+      return true;
+    } catch (err) {
+      if (DEBUG) console.warn('Direct Notification failed:', err);
+    }
   }
   return false;
 };
 
 const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string }): NotificationOptions => {
   const stacking = opts?.stacking ?? true;
+
+  // Use platform categories as tags when none provided
+  const platformMap = NOTIFICATION_CHANNELS[CURRENT_PLATFORM] ?? NOTIFICATION_CHANNELS.web;
+  const tag = opts?.tag ?? platformMap.defaultCategory;
+
   const base: NotificationOptions = {
     body: opts?.body,
     icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
     badge: opts?.badge ?? '/icons/android-chrome-192x192.png',
     vibrate: opts?.vibrate ?? [200, 100, 200],
-    data: { ...(opts?.data || {}), category: (opts?.tag || 'general') },
+    data: { ...(opts?.data || {}), category: tag },
     requireInteraction: opts?.requireInteraction,
     silent: opts?.silent,
     actions: opts?.actions,
@@ -98,11 +204,13 @@ const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string
     renotify: false,
     timestamp: Date.now(),
   };
-  return stacking ? base : { ...base, tag: opts?.tag ?? 'general' };
+
+  // If stacking is disabled, set a tag to coalesce
+  return stacking ? base : { ...base, tag };
 };
 
 const ensurePermission = async (): Promise<boolean> => {
-  if (!('Notification' in window)) {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return false;
   }
@@ -117,6 +225,10 @@ const ensurePermission = async (): Promise<boolean> => {
   }
 };
 
+// ---------------------------------------------------------
+// Public API
+// ---------------------------------------------------------
+
 export const sendNotification = async (
   title: string,
   body: string,
@@ -126,7 +238,7 @@ export const sendNotification = async (
     if (DEBUG) console.log('Notification suppressed because the application is currently visible.');
     return false;
   }
-  if (!('Notification' in window)) {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
     return false;
   }
@@ -135,11 +247,13 @@ export const sendNotification = async (
     console.warn('Notification not sent. Permission:', Notification.permission);
     return false;
   }
+
   const categoryKey = options?.tag;
   if (categoryKey && !getNotificationPreference(categoryKey)) {
     if (DEBUG) console.log(`Notification for category '${categoryKey}' is disabled by user preference.`);
     return false;
   }
+
   const finalOptions = buildStackingOptions({ ...options, body });
   const shown = await showNotification(title, finalOptions);
   if (shown) {
@@ -156,15 +270,15 @@ const VAPID_PUBLIC_KEY =
   'BIQ9JadNJgyMDPebgXu5Vpf7-7XuCcl5uEaxocFXeIdUxDq1Q9bGe0E5C8-a2qQ-psKhqbAzV2vELkRxpnWqebU';
 
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const padding = '='.repeat((4 - (base64String.length % 4) % 4));
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
+  const raw = typeof atob === 'function' ? atob(base64) : '';
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
 };
 
-// Compute the same id as the server (b64url(sha256(endpoint))) for debugging/single-device tests.
+// Compute id = b64url(sha256(endpoint)) for debugging/single-device tests.
 async function computeSubscriptionId(endpoint: string): Promise<string> {
   const enc = new TextEncoder().encode(endpoint);
   // @ts-ignore
@@ -179,8 +293,8 @@ async function computeSubscriptionId(endpoint: string): Promise<string> {
  * Subscribe and send preferences + return subscription and id
  */
 export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscription, id: string } | null> => {
-  console.log("DIAGNOSTIC: Attempting to subscribe user to push notifications...");
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+  console.log('DIAGNOSTIC: Attempting to subscribe user to push notifications...');
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator) || typeof window === 'undefined' || !('PushManager' in window)) {
     console.error('DIAGNOSTIC: CRITICAL - Service Worker or Push Manager not supported.');
     return null;
   }
@@ -199,13 +313,13 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
       console.error('DIAGNOSTIC: Service worker is not ready; cannot subscribe to push.');
       return null;
     }
-    console.log("DIAGNOSTIC: Service worker is ready.");
+    console.log('DIAGNOSTIC: Service worker is ready.');
 
     const preferences: Record<string, boolean> = {};
     NOTIFICATION_CATEGORIES.forEach(id => {
       preferences[id] = getNotificationPreference(id);
     });
-    console.log("DIAGNOSTIC: Gathered user preferences:", preferences);
+    console.log('DIAGNOSTIC: Gathered user preferences:', preferences);
 
     let subscription = await reg.pushManager.getSubscription();
     if (subscription) {
@@ -234,18 +348,18 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
 };
 
 const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
-  console.log("DIAGNOSTIC: Sending subscription to server...");
+  console.log('DIAGNOSTIC: Sending subscription to server...');
   const body = JSON.stringify({ subscription, preferences });
-  console.log("DIAGNOSTIC: Request Body being sent:", body);
+  console.log('DIAGNOSTIC: Request Body being sent:', body);
 
   try {
     const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: body,
+      body,
     });
 
-    console.log("DIAGNOSTIC: Server responded with status:", resp.status);
+    console.log('DIAGNOSTIC: Server responded with status:', resp.status);
     if (!resp.ok) {
       const errorText = await resp.text();
       console.error('DIAGNOSTIC: SERVER REJECTED SUBSCRIPTION:', errorText);
@@ -270,7 +384,12 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription, pref
 // --- Cooldown management ---
 const notificationCooldowns: Map<string, number> = new Map();
 const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
-export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS, reserve: boolean = true): boolean => {
+
+export const canSendNotification = (
+  tag: string,
+  cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS,
+  reserve: boolean = true
+): boolean => {
   if (!getNotificationPreference(tag)) return false;
   const last = notificationCooldowns.get(tag) ?? 0;
   const now = Date.now();
@@ -278,8 +397,16 @@ export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NO
   if (ok && reserve) { notificationCooldowns.set(tag, now); }
   return ok;
 };
+
 export const clearNotificationCooldown = (tag: string) => { notificationCooldowns.delete(tag); };
-export const sendNotificationWithCooldown = async (tag: string, cooldownMs: number, title: string, body: string, options?: CustomNotificationOptions): Promise<boolean> => {
+
+export const sendNotificationWithCooldown = async (
+  tag: string,
+  cooldownMs: number,
+  title: string,
+  body: string,
+  options?: CustomNotificationOptions
+): Promise<boolean> => {
   const allowed = canSendNotification(tag, cooldownMs, false);
   if (!allowed) return false;
   const shown = await sendNotification(title, body, { ...options, tag });
@@ -293,6 +420,7 @@ export const sendNotificationWithCooldown = async (tag: string, cooldownMs: numb
 
 // --- Preferences ---
 const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
+
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
     const stored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
@@ -302,6 +430,7 @@ export const getNotificationPreference = (categoryId: string): boolean => {
     return true;
   }
 };
+
 export const setNotificationPreference = (categoryId: string, enabled: boolean) => {
   try {
     localStorage.setItem(NOTIFICATION_PREF_PREFIX + categoryId, JSON.stringify(enabled));
@@ -314,7 +443,7 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 
 /** Local toast-style test (foreground allowed). */
 export const sendTestNotification = async (title?: string, body?: string) => {
-  if (!('Notification' in window)) {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     alert('This browser does not support notifications.');
     return;
   }
@@ -356,6 +485,17 @@ export const sendServerSelfTest = async (category: 'general'|'aurora'|'flare'|'s
 // Export id helper if you want to surface it in UI
 export const getLocalSubscriptionId = (): string | null => {
   try { return localStorage.getItem('push_subscription_id'); } catch { return null; }
+};
+
+// Also export helpers so other modules can read platform/channels safely
+export const getNotificationPlatform = (): PlatformKey => CURRENT_PLATFORM;
+export const getNotificationCategoriesLabeled = (): { id: string; label: string }[] => {
+  const platformMap = NOTIFICATION_CHANNELS[CURRENT_PLATFORM] ?? NOTIFICATION_CHANNELS.web;
+  // Merge our NOTIFICATION_CATEGORIES with any platform labels, fall back to id
+  return NOTIFICATION_CATEGORIES.map(id => ({
+    id,
+    label: platformMap.categories[id] ?? id,
+  }));
 };
 
 // --- END OF FILE src/utils/notifications.ts ---

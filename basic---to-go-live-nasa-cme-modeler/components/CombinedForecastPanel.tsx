@@ -1,235 +1,214 @@
-// --- START OF FILE components/CombinedForecastPanel.tsx ---
-import React, { useMemo } from "react";
-import { SubstormForecast } from "../types";
-
+// --- START OF FILE src/utils/notifications.ts ---
 /**
- * CombinedForecastPanel
- * Consolidates your main "Forecast" score and "Substorm Forecast" into a single, tidy card.
- *
- * Import in ForecastDashboard with:
- *   import { CombinedForecastPanel } from './CombinedForecastPanel';
+ * Notifications utility — hardened for platform detection and safe fallbacks.
+ * Exposes:
+ *  - requestNotificationPermission()
+ *  - canSendNotification()
+ *  - sendNotification(title, options)
+ *  - clearNotificationCooldown()
  */
 
-type GaugeKey = "gray" | "yellow" | "orange" | "red" | "purple" | "pink";
+export type NotificationPermissionLike = NotificationPermission | "unsupported";
 
-export interface CombinedForecastPanelProps {
-  // Left (Forecast score)
-  score: number | null | undefined;
-  blurb: string | undefined;
-  lastUpdated: string | undefined;
-  locationBlurb: string | undefined;
-  getGaugeStyle: (
-    v: number | null,
-    type: "power" | "speed" | "density" | "bt" | "bz"
-  ) => { color: string; emoji: string; percentage: number };
-  getScoreColorKey: (score: number) => GaugeKey;
-  getAuroraEmoji: (score: number | null) => string;
-  gaugeColors: Record<GaugeKey, { solid: string }>;
-
-  // Right (Substorm)
-  forecast?: SubstormForecast | null;
-
-  // Help modals
-  onOpenModal: (id: string) => void;
+interface CustomNotificationOptions extends NotificationOptions {
+  /** Collapse older notifications with the same tag */
+  tag?: string;
+  /** Show even if the page is visible */
+  forceWhenVisible?: boolean;
+  /** Allow multiple notifications even with same tag */
+  stacking?: boolean;
+  /** Optional Android category/channel hint (treated as a tag on web) */
+  categoryId?: string;
 }
 
-const clampPct = (n: number | undefined | null) =>
-  Math.min(100, Math.max(0, Math.round(Number.isFinite(Number(n)) ? Number(n) : 0)));
+const COOLDOWN_KEY = "sta_notification_cooldown_until";
 
-const visibilityMeaning = (score: number | null | undefined) => {
-  const s = clampPct(score ?? 0);
-  if (s < 10)
-    return {
-      emoji: "😞",
-      title: "Little to no auroral activity",
-      advice: "Low chance right now. Monitor updates.",
-    };
-  if (s < 25)
-    return {
-      emoji: "😐",
-      title: "Minimal activity likely",
-      advice: "Maybe a very faint glow. Dark skies help.",
-    };
-  if (s < 40)
-    return {
-      emoji: "😊",
-      title: "Camera-clear; sometimes naked-eye",
-      advice: "Check a dark southern horizon; look for subtle motion.",
-    };
-  if (s < 50)
-    return {
-      emoji: "🙂",
-      title: "Faint naked-eye glow possible",
-      advice: "Be patient; let eyes adapt 5–10 minutes.",
-    };
-  if (s < 80)
-    return {
-      emoji: "😀",
-      title: "Good chance of visible color",
-      advice: "Head darker; waves/brightenings likely.",
-    };
-  return {
-    emoji: "🤩",
-    title: "High probability of significant substorms",
-    advice: "Watch mid-sky to high south; dynamic activity likely.",
-  };
+// ---- Platform detection (robust; never throws) -----------------------------
+
+type Platform = "android" | "ios" | "web";
+
+const getPlatform = (): Platform => {
+  try {
+    const ua = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent.toLowerCase() : "";
+    if (/android/.test(ua)) return "android";
+    if (/(iphone|ipad|ipod|ios)/.test(ua)) return "ios";
+    return "web";
+  } catch {
+    return "web";
+  }
 };
 
-const likelihoodGradient = (likelihood: number) => {
-  if (likelihood >= 80) return "from-emerald-400 to-green-600";
-  if (likelihood >= 50) return "from-amber-400 to-orange-500";
-  if (likelihood >= 25) return "from-yellow-300 to-amber-400";
-  return "from-neutral-600 to-neutral-700";
+// Optional per-platform categories/channels. On the open web this is mostly
+// advisory; we degrade to tags. We ALWAYS guard lookups.
+const PLATFORM_CHANNELS: Record<Platform, { defaultCategory: string; categories: Record<string, string> }> = {
+  android: {
+    defaultCategory: "general",
+    categories: {
+      general: "General",
+      alerts: "Alerts",
+      aurora: "Aurora",
+      solar: "Solar",
+      system: "System",
+    },
+  },
+  ios: {
+    defaultCategory: "general",
+    categories: {
+      general: "General",
+      alerts: "Alerts",
+      aurora: "Aurora",
+      solar: "Solar",
+      system: "System",
+    },
+  },
+  web: {
+    defaultCategory: "general",
+    categories: {
+      general: "General",
+      alerts: "Alerts",
+      aurora: "Aurora",
+      solar: "Solar",
+      system: "System",
+    },
+  },
 };
 
-function CombinedForecastPanel({
-  score,
-  blurb,
-  lastUpdated,
-  locationBlurb,
-  getGaugeStyle,
-  getScoreColorKey,
-  getAuroraEmoji,
-  gaugeColors,
-  forecast,
-  onOpenModal,
-}: CombinedForecastPanelProps) {
-  // Safe fallback for forecast on first render
-  const {
-    status = "QUIET",
-    action = "Stand by and monitor conditions.",
-    windowLabel = "—",
-    likelihood = 0,
-  } = forecast ?? ({} as SubstormForecast);
+const currentPlatform: Platform = getPlatform();
+const CHANNELS = PLATFORM_CHANNELS[currentPlatform] ?? PLATFORM_CHANNELS.web;
 
-  const meaning = useMemo(() => visibilityMeaning(score), [score]);
+// ---- Permission helpers ----------------------------------------------------
 
-  // Gauge + bar styling with guards
-  const numericScore = typeof score === "number" ? score : null;
-  const gauge = numericScore != null ? getGaugeStyle(numericScore, "power") : null;
-  const barWidth = gauge ? `${gauge.percentage}%` : "0%";
-  const colorKey = numericScore != null ? getScoreColorKey(numericScore) : "gray";
-  const barColor = (gaugeColors[colorKey] ?? gaugeColors.gray).solid;
+export const requestNotificationPermission = async (): Promise<NotificationPermissionLike> => {
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    console.warn("Notifications are not supported by this environment.");
+    return "unsupported";
+  }
+  try {
+    // If already granted/denied, just return it.
+    if (Notification.permission === "granted" || Notification.permission === "denied") {
+      return Notification.permission;
+    }
+    const perm = await Notification.requestPermission();
+    return perm;
+  } catch (err) {
+    console.error("Error requesting notification permission:", err);
+    return "denied";
+  }
+};
 
-  const isDaylight = (blurb || "").includes("The sun is currently up");
-  const statusLabel =
-    typeof status === "string" ? status.replace(/_/g, " ") : "—";
-  const likePct = clampPct(likelihood);
+export const canSendNotification = async (): Promise<boolean> => {
+  const perm = await requestNotificationPermission();
+  return perm === "granted";
+};
 
-  return (
-    <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-center items-center gap-2">
-        <h2 className="text-2xl font-bold text-white">Forecast &amp; Substorm</h2>
-        <button
-          onClick={() => onOpenModal("forecast")}
-          className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
-          title="About the forecast"
-          aria-label="About the forecast"
-          type="button"
-        >
-          ?
-        </button>
-        <button
-          onClick={() => onOpenModal("substorm-forecast")}
-          className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
-          title="About the substorm forecast"
-          aria-label="About the substorm forecast"
-          type="button"
-        >
-          ?
-        </button>
-      </div>
+// ---- Cooldown management (optional) ----------------------------------------
 
-      {/* Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Forecast (compact) */}
-        <div className="bg-black/30 border border-neutral-700/30 rounded-xl p-5">
-          <div className="flex items-center justify-between">
-            <div className="text-6xl font-extrabold text-white">
-              {numericScore !== null ? `${numericScore.toFixed(1)}%` : "..."}{" "}
-              <span className="text-5xl">{getAuroraEmoji(numericScore)}</span>
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-neutral-400">
-                {lastUpdated || "Updating…"}
-              </div>
-              <div className="text-xs text-neutral-500 mt-1 italic h-4">
-                {locationBlurb || ""}
-              </div>
-            </div>
-          </div>
+export const clearNotificationCooldown = (): void => {
+  try {
+    localStorage.removeItem(COOLDOWN_KEY);
+  } catch {
+    // ignore
+  }
+};
 
-          <div className="w-full bg-neutral-700 rounded-full h-3 mt-4 overflow-hidden">
-            <div
-              className="h-3 rounded-full transition-all"
-              style={{
-                width: barWidth,
-                backgroundColor: barColor,
-              }}
-            />
-          </div>
+const isAppVisible = (): boolean =>
+  typeof document !== "undefined" && document.visibilityState === "visible";
 
-          <p className="text-neutral-300 mt-4">
-            {isDaylight
-              ? "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!"
-              : blurb || "Forecast updates hourly based on real-time space weather."}
-          </p>
-        </div>
+const withinCooldown = (): boolean => {
+  try {
+    const until = localStorage.getItem(COOLDOWN_KEY);
+    if (!until) return false;
+    const t = Number(until);
+    return Number.isFinite(t) && Date.now() < t;
+  } catch {
+    return false;
+  }
+};
 
-        {/* Right: Substorm quick status */}
-        <div className="space-y-4">
-          <div className="rounded-xl bg-black/30 border border-neutral-700/30 p-4">
-            <div className="text-sm text-neutral-300">Suggested action</div>
-            <div className="text-base mt-1">{action}</div>
-            <div className="text-xs text-neutral-500 mt-1">
-              Status: {statusLabel}
-            </div>
-          </div>
+const setCooldownMs = (ms: number): void => {
+  try {
+    localStorage.setItem(COOLDOWN_KEY, String(Date.now() + Math.max(0, ms)));
+  } catch {
+    // ignore
+  }
+};
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <div className="text-sm text-neutral-300">Expected window</div>
-              <div className="text-2xl font-semibold">{windowLabel}</div>
-            </div>
-            <div>
-              <div className="flex justify-between items-end">
-                <div className="text-sm text-neutral-300">
-                  Likelihood (next hour)
-                </div>
-                <div className="text-lg font-semibold">{likePct}%</div>
-              </div>
-              <div className="mt-2 h-2.5 w-full rounded-full bg-neutral-800 overflow-hidden">
-                <div
-                  className={`h-full bg-gradient-to-r ${likelihoodGradient(
-                    likePct
-                  )}`}
-                  style={{ width: `${likePct}%` }}
-                />
-              </div>
-            </div>
-          </div>
+// ---- Show Notification (via SW if possible) --------------------------------
 
-          <div>
-            <div className="text-sm text-neutral-300 mb-1">
-              Expected visibility (based on Spot The Aurora score)
-            </div>
-            <div className="rounded-lg bg-black/30 border border-neutral-700/30 p-3">
-              <div className="text-base">
-                <span className="mr-2">{meaning.emoji}</span>
-                <span className="font-medium">{meaning.title}</span>
-              </div>
-              <div className="text-xs text-neutral-400 mt-1">{meaning.advice}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export const sendNotification = async (
+  title: string,
+  options: CustomNotificationOptions = {}
+): Promise<boolean> => {
+  // Guard: environment support
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    console.warn("Notifications not supported in this environment.");
+    return false;
+  }
 
-// Support both default and named exports
-export default CombinedForecastPanel;
-export { CombinedForecastPanel };
+  // Permission
+  if (!(await canSendNotification())) return false;
 
-// --- END OF FILE components/CombinedForecastPanel.tsx ---
+  // Respect visibility unless forced
+  if (!options.forceWhenVisible && isAppVisible()) {
+    // If we don't want to spam while visible, silently skip.
+    return false;
+  }
+
+  // Prevent message storms (tune as desired, or remove)
+  if (withinCooldown()) {
+    return false;
+  }
+
+  // Derive effective tag: Prefer options.tag; else category; else platform default
+  const categoryId = (options.categoryId && CHANNELS.categories[options.categoryId])
+    ? options.categoryId
+    : CHANNELS.defaultCategory;
+
+  const effectiveTag = options.tag || `sta:${categoryId}`;
+
+  // SW first (better control & works when tab is hidden)
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg?.showNotification) {
+        // Prepare options safely; avoid mutating caller-provided object
+        const opts: NotificationOptions = {
+          ...options,
+          tag: effectiveTag,
+        };
+
+        // Browsers ignore undefined; keep clean
+        delete (opts as any).forceWhenVisible;
+        delete (opts as any).stacking;
+        delete (opts as any).categoryId;
+
+        await reg.showNotification(title, opts);
+        // Example cooldown: 20s; adjust to your taste or wire to category
+        setCooldownMs(20_000);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("Service worker notification failed; falling back to window.Notification:", err);
+  }
+
+  // Fallback: direct Notification
+  try {
+    const n = new Notification(title, { ...options, tag: effectiveTag });
+    // Basic autoclose to avoid clutter
+    setTimeout(() => n.close?.(), 8000);
+    setCooldownMs(20_000);
+    return true;
+  } catch (err) {
+    console.error("Direct Notification failed:", err);
+    return false;
+  }
+};
+
+// ---- Export platform info (optional for UI) --------------------------------
+
+export const getNotificationPlatform = (): Platform => currentPlatform;
+export const getNotificationCategories = (): { id: string; label: string }[] =>
+  Object.entries(CHANNELS.categories).map(([id, label]) => ({ id, label }));
+
+// --- END OF FILE src/utils/notifications.ts ---
