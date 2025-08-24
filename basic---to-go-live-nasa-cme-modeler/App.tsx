@@ -31,7 +31,7 @@ import GlobalBanner from './components/GlobalBanner';
 // Modal Imports
 import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
-import CmeModellerTutorial from './components/CmeModellerTutorial'; // ADDED: Import the new tutorial
+import CmeModellerTutorial from './components/CmeModellerTutorial';
 
 type ViewerMedia =
     | { type: 'image', url: string }
@@ -45,7 +45,7 @@ interface NavigationTarget {
 }
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
-const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1'; // ADDED: Key for the new tutorial
+const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'v0.3beta';
 
 const App: React.FC = () => {
@@ -66,7 +66,7 @@ const App: React.FC = () => {
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
-  const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false); // ADDED: State for the new tutorial
+  const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
@@ -100,16 +100,15 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // ADDED: Effect to check for and trigger the CME tutorial
+  // MODIFIED: This effect now waits for isLoading to be false before showing the tutorial
   useEffect(() => {
-    if (activePage === 'modeler') {
+    if (activePage === 'modeler' && !isLoading) {
       const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
       if (!hasSeenCmeTutorial) {
-        // Use a short timeout to ensure the page elements are rendered
         setTimeout(() => setIsCmeTutorialOpen(true), 200);
       }
     }
-  }, [activePage]);
+  }, [activePage, isLoading]);
 
   useEffect(() => {
     if (navigationTarget) {
@@ -131,7 +130,6 @@ const App: React.FC = () => {
     setHighlightedElementId(null);
   }, []);
 
-  // ADDED: Handler to close the new CME tutorial
   const handleCloseCmeTutorial = useCallback(() => {
     localStorage.setItem(CME_TUTORIAL_KEY, 'true');
     setIsCmeTutorialOpen(false);
@@ -255,10 +253,12 @@ const App: React.FC = () => {
     if (timelineScrubberValue >= 999) {
       setTimelineScrubberValue(0);
       resetClock();
+      canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
     } else {
       if (!timelinePlaying && timelineScrubberValue < 1) {
         resetClock();
+        canvasRef.current?.resetAnimationTimer();
       }
       setTimelinePlaying((prev: boolean) => !prev);
     }
@@ -365,7 +365,6 @@ const App: React.FC = () => {
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
-                {/* ADDED: ID for the tutorial to target */}
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
                     <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
@@ -442,7 +441,6 @@ const App: React.FC = () => {
             onStepChange={handleTutorialStepChange}
         />
 
-        {/* ADDED: Render the new CME tutorial component */}
         <CmeModellerTutorial
             isOpen={isCmeTutorialOpen}
             onClose={handleCloseCmeTutorial}

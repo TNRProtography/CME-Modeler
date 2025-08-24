@@ -8,20 +8,20 @@ interface TutorialStep {
   widthClass?: string;
 }
 
-// Define the steps for the CME Modeler tutorial
+// MODIFIED: Changed placement for the first two steps to 'top'
 const STEPS: TutorialStep[] = [
   { 
     targetId: 'simulation-canvas-main', 
     title: 'Welcome to the CME Visualization', 
     content: 'This is a 3D representation of Coronal Mass Ejections (CMEs) as they leave the Sun. You can use the controls to explore recent events.', 
-    placement: 'bottom', 
+    placement: 'top', 
     widthClass: 'w-80' 
   },
   { 
     targetId: 'simulation-canvas-main', 
     title: 'Important: This is NOT a Forecast', 
     content: "This tool visualizes raw data of a CME's initial speed and direction. It does NOT account for interactions with solar wind or other CMEs, which can significantly alter its path and arrival time.", 
-    placement: 'bottom', 
+    placement: 'top', 
     widthClass: 'w-96' 
   },
   { 
@@ -42,8 +42,6 @@ interface CmeModellerTutorialProps {
 const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClose, onStepChange }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-
-  // --- FIX: The missing line is added here ---
   const currentStep = STEPS[stepIndex];
 
   useEffect(() => {
@@ -70,7 +68,6 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        // Special case for the main canvas area if it has no specific ID
         if (currentStep.targetId === 'simulation-canvas-main') {
             const mainEl = document.querySelector('main');
             if (mainEl) setTargetRect(mainEl.getBoundingClientRect());
@@ -98,6 +95,7 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     }
   };
   
+  // MODIFIED: Added logic to handle 'top' placement for tooltips and arrows
   const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { 
@@ -113,6 +111,10 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     let top = 0, left = 0;
 
     switch (currentStep.placement) {
+      case 'top':
+        top = targetRect.top - tooltipHeight - margin;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+        break;
       case 'bottom':
         top = targetRect.bottom + margin;
         left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
@@ -133,6 +135,9 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     
     let arStyle: React.CSSProperties = {};
     switch (currentStep.placement) {
+        case 'top':
+            arStyle = { top: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
+            break;
         case 'bottom':
             arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
             break;
