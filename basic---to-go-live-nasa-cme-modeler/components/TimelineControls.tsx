@@ -66,7 +66,8 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
 
   return (
-    <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
+    // MODIFIED: Added an ID to the main container for the tutorial to target
+    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
         <PlaybackButton id="timeline-back-step-button" onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
@@ -76,7 +77,6 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
         <PlaybackButton id="timeline-forward-step-button" onClick={() => onStepFrame(1)} title="Next Frame"><NextIcon className="w-4 h-4" /></PlaybackButton>
         
         <div className="relative flex-grow flex items-center h-5">
-            {/* MODIFIED: Increased thumb size for better touch interaction on iOS */}
             <input
             type="range"
             id="timeline-scrubber"
@@ -107,7 +107,6 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
           {getCurrentTimelineDate()}
         </div>
       </div>
-      {/* MODIFIED: Added 10x and 20x speed buttons */}
       <div className="flex items-center space-x-2 justify-center">
         <span className="text-sm">Speed:</span>
         <SpeedButton id="timeline-speed-05x-button" onClick={() => onSetSpeed(0.5)} isActive={playbackSpeed === 0.5}>0.5x</SpeedButton>

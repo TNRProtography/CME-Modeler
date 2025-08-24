@@ -8,18 +8,40 @@ interface TutorialStep {
   widthClass?: string;
 }
 
+// MODIFIED: Expanded tutorial steps to be more comprehensive
 const STEPS: TutorialStep[] = [
   { 
     targetId: 'simulation-canvas-main', 
     title: 'Welcome to the CME Visualization', 
-    content: 'This is a 3D representation of Coronal Mass Ejections (CMEs) as they leave the Sun. You can use the controls to explore recent events.', 
+    content: 'This is a 3D representation of Coronal Mass Ejections. Use your mouse/touch to pan, zoom, and rotate the view.', 
     placement: 'top', 
     widthClass: 'w-80' 
   },
   { 
     targetId: 'simulation-canvas-main', 
     title: 'Important: This is NOT a Forecast', 
-    content: "This tool visualizes raw data of a CME's initial speed and direction. It does NOT account for interactions with solar wind or other CMEs, which can significantly alter its path and arrival time.", 
+    content: "This tool visualizes raw data of a CME's initial speed and direction. It does NOT account for interactions with solar wind, which can significantly alter its path and arrival time.", 
+    placement: 'top', 
+    widthClass: 'w-96' 
+  },
+  { 
+    targetId: 'mobile-controls-button', 
+    title: 'Visualization Settings', 
+    content: 'Use this button to open the settings panel. Here you can change the date range, camera view, and toggle the visibility of planets and labels.', 
+    placement: 'right', 
+    widthClass: 'w-72' 
+  },
+  { 
+    targetId: 'mobile-cme-list-button', 
+    title: 'CME List', 
+    content: 'This button opens a list of all available CMEs for the selected date range. Select any CME from the list to model it individually.', 
+    placement: 'left', 
+    widthClass: 'w-72' 
+  },
+  { 
+    targetId: 'timeline-controls-container', 
+    title: 'Timeline Controls', 
+    content: 'When viewing "Show All", use these controls to play, pause, and scrub through the simulation over time. The red marker indicates the current real-world time.', 
     placement: 'top', 
     widthClass: 'w-96' 
   },
@@ -63,15 +85,23 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     onStepChange(currentStep.targetId);
 
     const updatePosition = () => {
-      const element = document.getElementById(currentStep.targetId);
+      // Use a more robust check for mobile-specific IDs
+      const isMobile = window.innerWidth < 1024;
+      let finalTargetId = currentStep.targetId;
+      if (isMobile) {
+        if (finalTargetId === 'controls-panel-container') finalTargetId = 'mobile-controls-button';
+        if (finalTargetId === 'cme-list-panel-container') finalTargetId = 'mobile-cme-list-button';
+      }
+
+      const element = document.getElementById(finalTargetId);
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        if (currentStep.targetId === 'simulation-canvas-main') {
-            const mainEl = document.querySelector('main');
+        if (finalTargetId === 'simulation-canvas-main') {
+            const mainEl = document.getElementById('simulation-canvas-main');
             if (mainEl) setTargetRect(mainEl.getBoundingClientRect());
         } else {
-            console.warn(`CmeModellerTutorial: Target element "${currentStep.targetId}" not found.`);
+            console.warn(`CmeModellerTutorial: Target element "${finalTargetId}" not found.`);
             setTargetRect(null);
         }
       }
@@ -93,11 +123,17 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
       onClose();
     }
   };
+
+  const handlePrevious = () => {
+    if (stepIndex > 0) {
+      setStepIndex(stepIndex - 1);
+    }
+  };
   
   const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { 
-          tooltipStyle: { opacity: 0, visibility: 'hidden' }, 
+          tooltipStyle: { opacity: 0, visibility: 'hidden', pointerEvents: 'none' }, 
           arrowStyle: {},
           highlightStyle: { display: 'none' } 
         };
@@ -105,34 +141,43 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
 
     const isMobile = window.innerWidth < 768;
     const tooltipWidth = currentStep.widthClass === 'w-96' ? 384 : (currentStep.widthClass === 'w-80' ? 320 : 288);
-    const tooltipHeight = 180;
+    const tooltipHeight = 200; // Adjusted for potentially more content
     const margin = 16;
     let top = 0, left = 0;
     let placement = currentStep.placement;
 
-    // On mobile, override the placement to be smarter
+    // On mobile, force placement to top/bottom and center it
     if (isMobile) {
         placement = targetRect.top < window.innerHeight / 2 ? 'bottom' : 'top';
+        left = window.innerWidth / 2 - tooltipWidth / 2;
+        if (placement === 'top') {
+            top = targetRect.top - tooltipHeight - margin;
+        } else {
+            top = targetRect.bottom + margin;
+        }
+    } else {
+        // Desktop placement logic
+        switch (placement) {
+            case 'top':
+                top = targetRect.top - tooltipHeight - margin;
+                left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+                break;
+            case 'bottom':
+                top = targetRect.bottom + margin;
+                left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+                break;
+            case 'right':
+                top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+                left = targetRect.right + margin;
+                break;
+            case 'left':
+                top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+                left = targetRect.left - tooltipWidth - margin;
+                break;
+        }
     }
 
-    switch (placement) {
-      case 'top':
-        top = targetRect.top - tooltipHeight - margin;
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'bottom':
-        top = targetRect.bottom + margin;
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'right':
-        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
-        left = targetRect.right + margin;
-        break;
-      default: // left
-        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
-        left = targetRect.left - tooltipWidth - margin;
-    }
-
+    // Clamp the position to stay within the viewport
     const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
     const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
     
@@ -187,9 +232,16 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
         
         <div className="flex justify-between items-center">
             <button onClick={onClose} className="px-3 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">Skip</button>
-            <button onClick={handleNext} className="px-4 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-700 transition-colors text-sm font-semibold">
-                {stepIndex === STEPS.length - 1 ? 'Got It!' : 'Next'}
-            </button>
+            <div className="flex items-center gap-4">
+                {stepIndex > 0 && (
+                    <button onClick={handlePrevious} className="px-4 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">
+                        Previous
+                    </button>
+                )}
+                <button onClick={handleNext} className="px-4 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-700 transition-colors text-sm font-semibold">
+                    {stepIndex === STEPS.length - 1 ? 'Got It!' : 'Next'}
+                </button>
+            </div>
         </div>
       </div>
     </>
