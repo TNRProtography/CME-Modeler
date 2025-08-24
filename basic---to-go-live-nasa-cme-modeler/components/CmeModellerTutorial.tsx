@@ -8,7 +8,6 @@ interface TutorialStep {
   widthClass?: string;
 }
 
-// MODIFIED: Changed placement for the first two steps to 'top'
 const STEPS: TutorialStep[] = [
   { 
     targetId: 'simulation-canvas-main', 
@@ -95,7 +94,6 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     }
   };
   
-  // MODIFIED: Added logic to handle 'top' placement for tooltips and arrows
   const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { 
@@ -105,12 +103,19 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
         };
     }
 
+    const isMobile = window.innerWidth < 768;
     const tooltipWidth = currentStep.widthClass === 'w-96' ? 384 : (currentStep.widthClass === 'w-80' ? 320 : 288);
     const tooltipHeight = 180;
     const margin = 16;
     let top = 0, left = 0;
+    let placement = currentStep.placement;
 
-    switch (currentStep.placement) {
+    // On mobile, override the placement to be smarter
+    if (isMobile) {
+        placement = targetRect.top < window.innerHeight / 2 ? 'bottom' : 'top';
+    }
+
+    switch (placement) {
       case 'top':
         top = targetRect.top - tooltipHeight - margin;
         left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
@@ -123,9 +128,9 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
         top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
         left = targetRect.right + margin;
         break;
-      default:
-        top = targetRect.bottom + margin;
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+      default: // left
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+        left = targetRect.left - tooltipWidth - margin;
     }
 
     const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
@@ -134,7 +139,7 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006, opacity: 1, visibility: 'visible' };
     
     let arStyle: React.CSSProperties = {};
-    switch (currentStep.placement) {
+    switch (placement) {
         case 'top':
             arStyle = { top: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
             break;
@@ -144,8 +149,9 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
         case 'right':
             arStyle = { left: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%) rotate(180deg)', borderRight: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
             break;
-        default:
-            arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
+        case 'left':
+            arStyle = { right: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%)', borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
+            break;
     }
     
     const PADDING = 4;
