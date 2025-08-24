@@ -5,6 +5,7 @@ import {
 SubstormActivity,
 SightingReport,
 SubstormForecast, // New type for the richer forecast object
+ActivitySummary, // ADDED: Import the new summary type
 } from '../types';
 
 // --- Type Definitions ---
@@ -89,8 +90,8 @@ function sustainedSouth(bzSeries: number[], minutes = 15) {
 function isBzLockedIn(bzSeries: number[], minutes = 10, threshold = -8) {
     if (bzSeries.length < minutes) return false;
     const sub = bzSeries.slice(-minutes);
-    const avg = sub.reduce((a, b) => a + b, 0) / sub.length;
     const allNegative = sub.every(bz => bz < 0);
+    const avg = sub.reduce((a, b) => a + b, 0) / sub.length;
     return allNegative && avg <= threshold;
 }
 
@@ -163,6 +164,7 @@ const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]
 const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
 const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
 const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
+const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null); // ADDED: State for the summary
 
 const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
@@ -280,6 +282,59 @@ useEffect(() => {
     });
 
 }, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
+
+// ADDED: useMemo hook to calculate the 24-hour summary
+useMemo(() => {
+    if (auroraScoreHistory.length === 0 || allMagneticData.length === 0 || allSpeedData.length === 0) {
+        setActivitySummary(null);
+        return;
+    }
+
+    // 1. Calculate Highest Score
+    const highestScore = auroraScoreHistory.reduce((max, current) => {
+        return current.finalScore > max.finalScore ? current : max;
+    }, { finalScore: -1, timestamp: 0 });
+
+    // 2. Calculate Substorm Events
+    const substormEvents: ActivitySummary['substormEvents'] = [];
+    // This is a simplified historical analysis. A more complex one could re-run the model.
+    // For now, we'll define a "substorm watch" as a period of sustained negative Bz.
+    let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
+
+    allMagneticData.forEach(point => {
+        const isSustainedNegative = point.bz <= -5; // Example threshold for a "watch" condition
+
+        if (isSustainedNegative && !currentEvent) {
+            // Start of a new event
+            currentEvent = {
+                start: point.time,
+                end: point.time,
+                peakProbability: 0, // Placeholder, a real model would calculate this
+                peakStatus: 'Watch'
+            };
+        } else if (isSustainedNegative && currentEvent) {
+            // Continue the current event
+            currentEvent.end = point.time;
+        } else if (!isSustainedNegative && currentEvent) {
+            // End of the current event
+            if (currentEvent.end - currentEvent.start >= 15 * 60 * 1000) { // Only count events longer than 15 mins
+                substormEvents.push(currentEvent);
+            }
+            currentEvent = null;
+        }
+    });
+    // Add the last event if it's still ongoing
+    if (currentEvent && currentEvent.end - currentEvent.start >= 15 * 60 * 1000) {
+        substormEvents.push(currentEvent);
+    }
+
+    setActivitySummary({
+        highestScore,
+        substormEvents
+    });
+
+}, [auroraScoreHistory, allMagneticData, allSpeedData]);
+
 
 const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
@@ -433,6 +488,7 @@ return {
     owmDailyForecast,
     interplanetaryShockData,
     locationBlurb,
+    activitySummary, // ADDED: Return the new summary object
     fetchAllData,
 };
 

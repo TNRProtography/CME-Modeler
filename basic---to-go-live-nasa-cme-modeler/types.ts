@@ -157,6 +157,20 @@ export interface SightingReport {
   isPending?: boolean; // For client-side state
 }
 
+// --- NEW: Type for the 24-hour activity summary ---
+export interface ActivitySummary {
+  highestScore: {
+    finalScore: number;
+    timestamp: number;
+  };
+  substormEvents: {
+    start: number;
+    end: number;
+    peakProbability: number;
+    peakStatus: string;
+  }[];
+}
+
 /**
  * If you truly need a type representing a Vite config shape in this file,
  * use a valid identifier (no dots) like this. Otherwise, feel free to remove it.

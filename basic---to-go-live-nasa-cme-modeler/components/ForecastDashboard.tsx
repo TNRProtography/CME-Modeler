@@ -20,7 +20,7 @@ import {
     ForecastTrendChart,
     ExpandedGraphContent
 } from './ForecastCharts';
-import { SubstormActivity, SubstormForecast } from '../types';
+import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types'; // ADDED: Import ActivitySummary
 import CaretIcon from './icons/CaretIcon';
 
 // --- Type Definitions ---
@@ -123,11 +123,64 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
+// --- NEW: Activity Summary Component ---
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({ summary }) => {
+    if (!summary) {
+        return (
+            <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
+                Calculating 24-hour summary...
+            </div>
+        );
+    }
+
+    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+            <h2 className="text-2xl font-bold text-white text-center">24-Hour Activity Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Highest Score Section */}
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Highest Forecast Score</h3>
+                    <p className="text-5xl font-bold" style={{ color: GAUGE_COLORS[getForecastScoreColorKey(summary.highestScore.finalScore)].solid }}>
+                        {summary.highestScore.finalScore.toFixed(1)}%
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">
+                        at {formatTime(summary.highestScore.timestamp)}
+                    </p>
+                </div>
+
+                {/* Substorm Events Section */}
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-3 text-center">Substorm Watch Periods</h3>
+                    {summary.substormEvents.length > 0 ? (
+                        <ul className="space-y-2 text-sm">
+                            {summary.substormEvents.map((event, index) => (
+                                <li key={index} className="bg-neutral-800/50 p-2 rounded-md text-center">
+                                    <span className="font-semibold text-neutral-300">
+                                        {formatTime(event.start)} - {formatTime(event.end)}
+                                    </span>
+                                    <span className="text-neutral-400 text-xs block">
+                                        (Duration: {Math.round((event.end - event.start) / 60000)} mins)
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-center text-neutral-400 italic mt-4">No significant substorm watch periods were detected.</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, navigationTarget }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormForecast
+        goes18Data, goes19Data, loadingMagnetometer, substormForecast, activitySummary // ADDED: Destructure activitySummary
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -254,6 +307,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         </div>
                         
                         <AuroraSightings isDaylight={isDaylight} />
+
+                        {/* ADDED: Render the new ActivitySummaryDisplay component */}
+                        <ActivitySummaryDisplay summary={activitySummary} />
 
                         <ForecastTrendChart 
                             auroraScoreHistory={auroraScoreHistory}
