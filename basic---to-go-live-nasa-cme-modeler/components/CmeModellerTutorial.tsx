@@ -43,6 +43,9 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
+  // --- FIX: The missing line is added here ---
+  const currentStep = STEPS[stepIndex];
+
   useEffect(() => {
     if (isOpen) {
       setStepIndex(0);
@@ -55,7 +58,6 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
       return;
     }
 
-    const currentStep = STEPS[stepIndex];
     if (!currentStep) {
         onClose();
         return;
@@ -86,7 +88,7 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
       clearTimeout(timer);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [isOpen, stepIndex, onStepChange, onClose]);
+  }, [isOpen, stepIndex, onStepChange, onClose, currentStep]);
 
   const handleNext = () => {
     if (stepIndex < STEPS.length - 1) {
