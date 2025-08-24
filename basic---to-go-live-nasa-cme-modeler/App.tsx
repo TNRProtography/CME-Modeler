@@ -74,7 +74,7 @@ const App: React.FC = () => {
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
-  const [timelineSpeed, setTimelineSpeed] = useState<number>(5);
+  const [timelineSpeed, setTimelineSpeed] = useState<number>(5); // MODIFIED: Default speed is now 5x
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
@@ -227,7 +227,7 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
-  // --- MODIFIED: Updated timeline play/pause logic ---
+  // MODIFIED: Enhanced play/pause logic for better responsiveness
   const handleTimelinePlayPause = useCallback(() => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
@@ -235,11 +235,16 @@ const App: React.FC = () => {
     // If the timeline is at the end, reset it to the beginning before playing.
     if (timelineScrubberValue >= 999) {
       setTimelineScrubberValue(0);
-      setTimelinePlaying(true); // Explicitly set to play
+      resetClock(); // Reset clock on restart for smooth playback
+      setTimelinePlaying(true);
     } else {
+      // If it's paused at the very beginning, reset the clock to ensure a responsive start.
+      if (!timelinePlaying && timelineScrubberValue < 1) {
+        resetClock();
+      }
       setTimelinePlaying((prev: boolean) => !prev); // Otherwise, just toggle
     }
-  }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue]);
+  }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
 
   const handleTimelineScrub = useCallback((value: number) => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;

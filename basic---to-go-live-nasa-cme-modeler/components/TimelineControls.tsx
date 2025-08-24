@@ -107,12 +107,15 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
           {getCurrentTimelineDate()}
         </div>
       </div>
+      {/* MODIFIED: Added 10x and 20x speed buttons */}
       <div className="flex items-center space-x-2 justify-center">
         <span className="text-sm">Speed:</span>
         <SpeedButton id="timeline-speed-05x-button" onClick={() => onSetSpeed(0.5)} isActive={playbackSpeed === 0.5}>0.5x</SpeedButton>
         <SpeedButton id="timeline-speed-1x-button" onClick={() => onSetSpeed(1)} isActive={playbackSpeed === 1}>1x</SpeedButton>
         <SpeedButton id="timeline-speed-2x-button" onClick={() => onSetSpeed(2)} isActive={playbackSpeed === 2}>2x</SpeedButton>
         <SpeedButton id="timeline-speed-5x-button" onClick={() => onSetSpeed(5)} isActive={playbackSpeed === 5}>5x</SpeedButton>
+        <SpeedButton id="timeline-speed-10x-button" onClick={() => onSetSpeed(10)} isActive={playbackSpeed === 10}>10x</SpeedButton>
+        <SpeedButton id="timeline-speed-20x-button" onClick={() => onSetSpeed(20)} isActive={playbackSpeed === 20}>20x</SpeedButton>
       </div>
     </div>
   );
