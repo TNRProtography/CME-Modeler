@@ -1,6 +1,15 @@
 // --- START OF FILE public/sw.js ---
 
-const CACHE_NAME = 'cme-modeler-cache-v38';
+// MODIFIED: Renamed the main cache and added a new dedicated cache for static assets
+const APP_CACHE_NAME = 'cme-modeler-app-cache-v39'; // Incremented version
+const STATIC_ASSETS_CACHE_NAME = 'static-assets-cache-v1';
+
+// MODIFIED: Added a list of static assets to cache on install
+const STATIC_ASSETS_TO_CACHE = [
+  '/background-aurora.jpg',
+  '/background-solar.jpg',
+  'https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg'
+];
 
 /**
  * Fallback endpoints:
@@ -41,20 +50,64 @@ function chooseIcons(tagOrCategory) {
   };
 }
 
+// MODIFIED: The install event now pre-caches the static background images.
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(STATIC_ASSETS_CACHE_NAME).then((cache) => {
+      console.log('Service Worker: Pre-caching static assets.');
+      // Use addAll with a catch to prevent a single failed image from breaking the entire SW install
+      return cache.addAll(STATIC_ASSETS_TO_CACHE).catch(error => {
+        console.error('Service Worker: Failed to cache one or more static assets during install.', error);
+      });
+    }).then(() => {
+      return self.skipWaiting();
+    })
+  );
 });
 
+// MODIFIED: The activate event now correctly manages multiple caches.
 self.addEventListener('activate', (event) => {
+  const allowedCaches = [APP_CACHE_NAME, STATIC_ASSETS_CACHE_NAME];
   event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map(k => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames.map(cacheName => {
+        if (!allowedCaches.includes(cacheName)) {
+          console.log('Service Worker: Deleting old cache:', cacheName);
+          return caches.delete(cacheName);
+        }
+      })
+    );
     await self.clients.claim();
   })());
 });
 
-// Network-only app fetch (unchanged behavior)
+// MODIFIED: The fetch event now uses a cache-first strategy for static images
+// and a network-only strategy for everything else.
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Check if the request is for one of our static, cacheable assets
+  if (STATIC_ASSETS_TO_CACHE.includes(url.pathname) || STATIC_ASSETS_TO_CACHE.includes(url.href)) {
+    event.respondWith(
+      caches.open(STATIC_ASSETS_CACHE_NAME).then(cache => {
+        return cache.match(event.request).then(cachedResponse => {
+          // Return from cache if found
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Otherwise, fetch from network, cache it, and return the response
+          return fetch(event.request).then(networkResponse => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        });
+      })
+    );
+    return; // End execution for this request
+  }
+
+  // For all other requests, use the original network-only strategy
   event.respondWith(
     fetch(event.request).catch(() =>
       new Response('<h1>Network Error</h1><p>Please check your internet connection.</p>', {
@@ -63,6 +116,7 @@ self.addEventListener('fetch', (event) => {
     )
   );
 });
+
 
 self.addEventListener('push', (event) => {
   const show = async (payload) => {
