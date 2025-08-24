@@ -16,6 +16,26 @@ interface SolarActivityDashboardProps {
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 
+// --- NEW: Interface for the 24-hour summary object ---
+interface SolarActivitySummary {
+  highestXray: {
+    flux: number;
+    class: string;
+    timestamp: number;
+  };
+  highestProton: {
+    flux: number;
+    class: string;
+    timestamp: number;
+  };
+  flareCounts: {
+    x: number;
+    m: number;
+    c: number;
+  };
+}
+
+
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
@@ -65,7 +85,7 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
     return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
 };
 
-const formatNZTimestamp = (isoString: string | null) => {
+const formatNZTimestamp = (isoString: string | null | number) => {
     if (!isoString) return 'N/A';
     try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
 };
@@ -143,6 +163,68 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
     </div>
 );
 
+// --- NEW: Solar Activity Summary Component ---
+const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | null }> = ({ summary }) => {
+    if (!summary) {
+        return (
+            <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
+                Calculating 24-hour summary...
+            </div>
+        );
+    }
+
+    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+            <h2 className="text-2xl font-bold text-white text-center">24-Hour Solar Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Highest X-ray Flux */}
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak X-ray Flux</h3>
+                    <p className="text-5xl font-bold" style={{ color: getColorForFlux(summary.highestXray.flux) }}>
+                        {summary.highestXray.class}
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">
+                        at {formatTime(summary.highestXray.timestamp)}
+                    </p>
+                </div>
+
+                {/* Flare Counts */}
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Solar Flares</h3>
+                    <div className="flex justify-center items-center gap-4 text-2xl font-bold">
+                        <div>
+                            <p style={{ color: `rgba(${getCssVar('--solar-flare-x-rgb')})` }}>{summary.flareCounts.x}</p>
+                            <p className="text-sm font-normal">X-Class</p>
+                        </div>
+                        <div>
+                            <p style={{ color: `rgba(${getCssVar('--solar-flare-m-rgb')})` }}>{summary.flareCounts.m}</p>
+                            <p className="text-sm font-normal">M-Class</p>
+                        </div>
+                        <div>
+                            <p style={{ color: `rgba(${getCssVar('--solar-flare-c-rgb')})` }}>{summary.flareCounts.c}</p>
+                            <p className="text-sm font-normal">C-Class</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Highest Proton Flux */}
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak Proton Flux</h3>
+                    <p className="text-5xl font-bold" style={{ color: getColorForProtonFlux(summary.highestProton.flux) }}>
+                        {summary.highestProton.class}
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">
+                        at {formatTime(summary.highestProton.timestamp)}
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey, setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, navigationTarget }) => {
     const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
     const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -169,6 +251,49 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
     const [lastProtonUpdate, setLastProtonUpdate] = useState<string | null>(null);
     const [lastFlaresUpdate, setLastFlaresUpdate] = useState<string | null>(null);
     const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
+    const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null); // ADDED: State for the summary
+
+    // ADDED: useMemo hook to calculate the solar activity summary
+    useMemo(() => {
+        if (allXrayData.length === 0 && allProtonData.length === 0 && solarFlares.length === 0) {
+            setActivitySummary(null);
+            return;
+        }
+
+        // 1. Calculate Highest X-ray Flux
+        const highestXray = allXrayData.reduce((max, current) => {
+            return current.short > max.short ? current : max;
+        }, { short: 0, time: 0 });
+
+        // 2. Calculate Highest Proton Flux
+        const highestProton = allProtonData.reduce((max, current) => {
+            return current.flux > max.flux ? current : max;
+        }, { flux: 0, time: 0 });
+
+        // 3. Calculate Flare Counts
+        const flareCounts = { x: 0, m: 0, c: 0 };
+        solarFlares.forEach(flare => {
+            const type = flare.classType?.[0]?.toUpperCase();
+            if (type === 'X') flareCounts.x++;
+            else if (type === 'M') flareCounts.m++;
+            else if (type === 'C') flareCounts.c++;
+        });
+
+        setActivitySummary({
+            highestXray: {
+                flux: highestXray.short,
+                class: getXrayClass(highestXray.short),
+                timestamp: highestXray.time,
+            },
+            highestProton: {
+                flux: highestProton.flux,
+                class: getProtonClass(highestProton.flux),
+                timestamp: highestProton.time,
+            },
+            flareCounts,
+        });
+
+    }, [allXrayData, allProtonData, solarFlares]);
 
     const tooltipContent = useMemo(() => ({
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
@@ -457,6 +582,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ apiKey,
                                 <p className="text-orange-300 italic">{latestRelevantEvent || 'No significant events recently.'}</p>
                             </div>
                         </div>
+                        
+                        {/* ADDED: Render the new SolarActivitySummaryDisplay component */}
+                        <SolarActivitySummaryDisplay summary={activitySummary} />
+
                         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[550px] flex flex-col">
                             <div className="flex justify-center items-center gap-2">
                                 <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
