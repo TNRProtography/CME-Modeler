@@ -31,6 +31,7 @@ import GlobalBanner from './components/GlobalBanner';
 // Modal Imports
 import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
+import CmeModellerTutorial from './components/CmeModellerTutorial'; // ADDED: Import the new tutorial
 
 type ViewerMedia =
     | { type: 'image', url: string }
@@ -44,6 +45,7 @@ interface NavigationTarget {
 }
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
+const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1'; // ADDED: Key for the new tutorial
 const APP_VERSION = 'v0.3beta';
 
 const App: React.FC = () => {
@@ -64,6 +66,7 @@ const App: React.FC = () => {
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
+  const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false); // ADDED: State for the new tutorial
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
@@ -74,7 +77,7 @@ const App: React.FC = () => {
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
-  const [timelineSpeed, setTimelineSpeed] = useState<number>(5); // MODIFIED: Default speed is now 5x
+  const [timelineSpeed, setTimelineSpeed] = useState<number>(5);
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
@@ -97,6 +100,17 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // ADDED: Effect to check for and trigger the CME tutorial
+  useEffect(() => {
+    if (activePage === 'modeler') {
+      const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
+      if (!hasSeenCmeTutorial) {
+        // Use a short timeout to ensure the page elements are rendered
+        setTimeout(() => setIsCmeTutorialOpen(true), 200);
+      }
+    }
+  }, [activePage]);
+
   useEffect(() => {
     if (navigationTarget) {
       setActivePage(navigationTarget.page);
@@ -114,6 +128,13 @@ const App: React.FC = () => {
   const handleCloseFirstVisitTutorial = useCallback(() => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
     setIsFirstVisitTutorialOpen(false);
+    setHighlightedElementId(null);
+  }, []);
+
+  // ADDED: Handler to close the new CME tutorial
+  const handleCloseCmeTutorial = useCallback(() => {
+    localStorage.setItem(CME_TUTORIAL_KEY, 'true');
+    setIsCmeTutorialOpen(false);
     setHighlightedElementId(null);
   }, []);
 
@@ -227,22 +248,19 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
-  // MODIFIED: Enhanced play/pause logic for better responsiveness
   const handleTimelinePlayPause = useCallback(() => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
-    // If the timeline is at the end, reset it to the beginning before playing.
     if (timelineScrubberValue >= 999) {
       setTimelineScrubberValue(0);
-      resetClock(); // Reset clock on restart for smooth playback
+      resetClock();
       setTimelinePlaying(true);
     } else {
-      // If it's paused at the very beginning, reset the clock to ensure a responsive start.
       if (!timelinePlaying && timelineScrubberValue < 1) {
         resetClock();
       }
-      setTimelinePlaying((prev: boolean) => !prev); // Otherwise, just toggle
+      setTimelinePlaying((prev: boolean) => !prev);
     }
   }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
 
@@ -276,7 +294,6 @@ const App: React.FC = () => {
   const flareClass = useMemo(() => { if (latestXrayFlux === null) return undefined; if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`; if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`; return undefined; }, [latestXrayFlux]);
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
 
-  // --- THIS IS THE CORRECTED BANNER LOGIC ---
   const isSubstormAlert = useMemo(() =>
     substormActivityStatus?.isStretching &&
     !substormActivityStatus?.isErupting &&
@@ -348,7 +365,8 @@ const App: React.FC = () => {
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} />
                 </div>
-                <main className="flex-1 relative min-w-0 h-full">
+                {/* ADDED: ID for the tutorial to target */}
+                <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
                     <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
@@ -366,7 +384,7 @@ const App: React.FC = () => {
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
-                                <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Other CME Forecast Models">
+                                <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className={`p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform ${highlightedElementId === 'forecast-models-button' ? 'tutorial-highlight' : ''}`} title="Other CME Forecast Models">
                                     <GlobeIcon className="w-6 h-6" />
                                 </button>
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Other CME Models</span>
@@ -421,6 +439,13 @@ const App: React.FC = () => {
         <FirstVisitTutorial
             isOpen={isFirstVisitTutorialOpen}
             onClose={handleCloseFirstVisitTutorial}
+            onStepChange={handleTutorialStepChange}
+        />
+
+        {/* ADDED: Render the new CME tutorial component */}
+        <CmeModellerTutorial
+            isOpen={isCmeTutorialOpen}
+            onClose={handleCloseCmeTutorial}
             onStepChange={handleTutorialStepChange}
         />
     </div>
