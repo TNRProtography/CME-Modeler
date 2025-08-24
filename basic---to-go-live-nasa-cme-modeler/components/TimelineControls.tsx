@@ -76,6 +76,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
         <PlaybackButton id="timeline-forward-step-button" onClick={() => onStepFrame(1)} title="Next Frame"><NextIcon className="w-4 h-4" /></PlaybackButton>
         
         <div className="relative flex-grow flex items-center h-5">
+            {/* MODIFIED: Increased thumb size for better touch interaction on iOS */}
             <input
             type="range"
             id="timeline-scrubber"
@@ -83,7 +84,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             max="1000"
             value={scrubberValue}
             onChange={(e) => onScrub(parseInt(e.target.value, 10))}
-            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
+            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
             />
             {nowPositionPercent >= 0 && (
             <>
