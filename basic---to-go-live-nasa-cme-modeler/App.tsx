@@ -100,7 +100,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // MODIFIED: This effect now waits for isLoading to be false before showing the tutorial
   useEffect(() => {
     if (activePage === 'modeler' && !isLoading) {
       const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
@@ -246,21 +245,32 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
+  // MODIFIED: This is the final, correct logic to prevent the play delay.
   const handleTimelinePlayPause = useCallback(() => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
-    if (timelineScrubberValue >= 999) {
+    const isAtEnd = timelineScrubberValue >= 999;
+    const isAtStart = timelineScrubberValue < 1;
+    const isPlaying = timelinePlaying;
+
+    if (isAtEnd) {
+      // If at the end, always reset to the beginning and play.
       setTimelineScrubberValue(0);
       resetClock();
       canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
-    } else {
-      if (!timelinePlaying && timelineScrubberValue < 1) {
+    } else if (!isPlaying) {
+      // If paused (anywhere), reset the clock and timer before playing.
+      // This is the key fix for the delay.
+      if (isAtStart) {
         resetClock();
         canvasRef.current?.resetAnimationTimer();
       }
-      setTimelinePlaying((prev: boolean) => !prev);
+      setTimelinePlaying(true);
+    } else {
+      // If it's currently playing, just pause it.
+      setTimelinePlaying(false);
     }
   }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
 

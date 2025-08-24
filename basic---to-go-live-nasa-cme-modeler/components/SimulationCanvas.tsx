@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react'; // MODIFIED: Added useImperativeHandle
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
   InteractionMode, SimulationCanvasHandle
@@ -856,11 +856,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     moveCamera(activeView, focusTarget);
   }, [activeView, focusTarget, dataVersion, moveCamera]);
 
-  React.useImperativeHandle(ref, () => ({
+  // MODIFIED: useImperativeHandle now exposes both resetView and the new resetAnimationTimer
+  useImperativeHandle(ref, () => ({
     resetView: () => {
       moveCamera(ViewMode.TOP, FocusTarget.EARTH);
+    },
+    resetAnimationTimer: () => {
+      // This synchronizes the canvas's internal timer with the parent's clock
+      lastTimeRef.current = getClockElapsedTime();
     }
-  }), [moveCamera]);
+  }), [moveCamera, getClockElapsedTime]);
 
   // Always MOVE interaction mode (mobile-friendly)
   useEffect(() => {

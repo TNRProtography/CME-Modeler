@@ -133,8 +133,10 @@ export interface SubstormForecast {
   p60: number;          // raw probability for 60 mins
 }
 
+// MODIFIED: Added resetAnimationTimer to the handle
 export interface SimulationCanvasHandle {
   resetView: () => void;
+  resetAnimationTimer: () => void;
 }
 
 // --- MODIFIED: Updated SightingStatus to include new "nothing" categories ---
