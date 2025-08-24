@@ -137,8 +137,15 @@ export interface SimulationCanvasHandle {
   resetView: () => void;
 }
 
-// --- NEW TYPES FOR AURORA SIGHTINGS ---
-export type SightingStatus = 'eye' | 'phone' | 'dslr' | 'cloudy' | 'nothing';
+// --- MODIFIED: Updated SightingStatus to include new "nothing" categories ---
+export type SightingStatus = 
+  | 'eye' 
+  | 'phone' 
+  | 'dslr' 
+  | 'cloudy' 
+  | 'nothing-eye' 
+  | 'nothing-phone' 
+  | 'nothing-dslr';
 
 export interface SightingReport {
   lat: number;
