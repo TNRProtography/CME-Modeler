@@ -248,28 +248,38 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.fillStyle = 'rgba(10, 10, 10, 0.7)';
         ctx.fillRect(0, 0, width, height);
 
+        let currentY = 40;
+
         const logoHeight = 100;
         const logoWidth = 100;
-        ctx.drawImage(logoImage, (width - logoWidth) / 2, 40, logoWidth, logoHeight);
+        ctx.drawImage(logoImage, (width - logoWidth) / 2, currentY, logoWidth, logoHeight);
+        currentY += logoHeight + 40;
 
         ctx.textAlign = 'center';
         ctx.fillStyle = GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid;
         ctx.font = 'bold 140px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 280);
+        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, currentY + 100);
+        currentY += 100;
+        
         ctx.fillStyle = '#E5E5E5';
         ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Spot The Aurora Forecast Score', width / 2, 330);
+        ctx.fillText('Spot The Aurora Forecast Score', width / 2, currentY + 50);
+        currentY += 50;
 
         if (substormForecast.status !== 'QUIET') {
+            currentY += 50;
             ctx.fillStyle = '#FBBF24';
             ctx.font = 'bold 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText('Substorm Watch', width / 2, 420);
+            ctx.fillText('Substorm Watch', width / 2, currentY);
+            currentY += 45;
             ctx.fillStyle = '#E5E5E5';
             ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(`~${substormForecast.likelihood}% chance | ${substormForecast.windowLabel}`, width / 2, 465);
+            ctx.fillText(`~${substormForecast.likelihood}% chance | ${substormForecast.windowLabel}`, width / 2, currentY);
+            currentY += 30;
         }
 
-        const dividerY = 520;
+        currentY += 50;
+        const dividerY = currentY;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -278,8 +288,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.stroke();
 
         const statBlockHeight = 160;
-        const gapSize = 50; // Increased gap size
-        const statsStartY = dividerY + gapSize + 20; // Pushed down further
+        const gapSize = 30;
+        const statsStartY = dividerY + 60;
         const colWidth = width / 3;
 
         const drawStat = (col: number, row: number, emoji: string, value: string, label: string, color: string) => {
