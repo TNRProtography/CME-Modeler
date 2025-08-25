@@ -11,6 +11,7 @@ import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity } from './types';
+import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -311,11 +312,11 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // MODIFIED: This function is completely rewritten for accurate label and watermark placement.
+  // MODIFIED: This function is completely rewritten to use 3D projection for labels.
   const handleDownloadImage = useCallback(() => {
     const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
-    if (!dataUrl || !rendererDomElement) {
-      console.error("Could not capture canvas image or renderer DOM element is missing.");
+    if (!dataUrl || !rendererDomElement || !threeCamera) {
+      console.error("Could not capture canvas image: canvas, renderer, or camera is not ready.");
       return;
     }
 
@@ -330,29 +331,56 @@ const App: React.FC = () => {
       // 1. Draw the main simulation image
       ctx.drawImage(mainImage, 0, 0);
 
-      // 2. Conditionally draw the planet labels
-      if (showLabels) {
-        const canvasRect = rendererDomElement.getBoundingClientRect();
-        const labelElements = document.querySelectorAll('.planet-label-component');
-        labelElements.forEach(labelEl => {
-          const htmlEl = labelEl as HTMLElement;
-          if (htmlEl.style.opacity === '1') {
-            const computedStyle = window.getComputedStyle(htmlEl);
-            const rect = htmlEl.getBoundingClientRect();
-            
-            // Calculate position relative to the canvas, not the viewport
-            const drawX = rect.left - canvasRect.left;
-            const drawY = rect.top - canvasRect.top;
+      // 2. Conditionally draw the planet labels using 3D projection
+      if (showLabels && window.THREE) {
+        const THREE = window.THREE;
+        const cameraPosition = new THREE.Vector3();
+        threeCamera.getWorldPosition(cameraPosition);
 
-            ctx.font = computedStyle.font;
-            ctx.fillStyle = computedStyle.color;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-            ctx.shadowBlur = 6;
-            
-            ctx.fillText(htmlEl.innerText, drawX, drawY);
+        planetLabelInfos.forEach(info => {
+          if (!info.mesh.visible) return;
+
+          const planetWorldPos = new THREE.Vector3();
+          info.mesh.getWorldPosition(planetWorldPos);
+
+          // Visibility checks (same as in PlanetLabel.tsx)
+          const projectionVector = planetWorldPos.clone().project(threeCamera);
+          if (projectionVector.z > 1) return; // Behind camera
+
+          const dist = planetWorldPos.distanceTo(cameraPosition);
+          const minVisibleDist = SCENE_SCALE * 0.2;
+          const maxVisibleDist = SCENE_SCALE * 15;
+          if (dist < minVisibleDist || dist > maxVisibleDist) return;
+
+          // Occlusion check
+          if (sunInfo && info.name !== 'Sun') {
+            const sunWorldPos = new THREE.Vector3();
+            sunInfo.mesh.getWorldPosition(sunWorldPos);
+            const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
+            const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
+            if (distToPlanetSq > distToSunSq) {
+              const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
+              const vecToSun = sunWorldPos.clone().sub(cameraPosition);
+              const angle = vecToPlanet.angleTo(vecToSun);
+              const sunRadius = sunInfo.mesh.geometry.parameters.radius || (0.1 * SCENE_SCALE);
+              const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
+              if (angle < sunAngularRadius) return;
+            }
           }
+
+          // Convert normalized coordinates to canvas pixels
+          const x = (projectionVector.x * 0.5 + 0.5) * canvas.width;
+          const y = (-projectionVector.y * 0.5 + 0.5) * canvas.height;
+          const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
+
+          ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+          ctx.shadowBlur = 6;
+          
+          ctx.fillText(info.name, x + 15, y - 10);
         });
       }
 
@@ -379,18 +407,14 @@ const App: React.FC = () => {
         const iconSize = (fontSize * 2) + textGap;
         const iconPadding = 15;
         
-        // Position the icon on the far right
         const iconX = canvas.width - padding - iconSize;
         const iconY = canvas.height - padding - iconSize;
         
-        // Position the text to the left of the icon
         const textX = iconX - iconPadding;
         
-        // Draw the text
         ctx.fillText(dateString, textX, canvas.height - padding - fontSize - textGap);
         ctx.fillText(watermarkText, textX, canvas.height - padding);
         
-        // Draw the icon
         ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
 
         // 4. Trigger the final download
@@ -402,7 +426,7 @@ const App: React.FC = () => {
       icon.src = '/icons/android-chrome-192x192.png';
     };
     mainImage.src = dataUrl;
-  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement]);
+  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement, threeCamera, planetLabelInfos, sunInfo]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
