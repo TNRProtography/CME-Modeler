@@ -53,12 +53,7 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.015-4.5-4.5-4.5S12 5.765 12 8.25c0-2.485-2.015-4.5-4.5-4.5S3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-    </svg>
-);
-
+// NOTE: The HeartIcon is no longer needed as the BMC widget provides its own styling.
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
@@ -84,6 +79,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
       checkAppInstallationStatus();
+    }
+  }, [isOpen]);
+
+  // MODIFIED: This useEffect hook now manages the Buy Me a Coffee script
+  useEffect(() => {
+    if (isOpen) {
+      const script = document.createElement('script');
+      script.src = "https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js";
+      script.setAttribute("data-name", "bmc-button");
+      script.setAttribute("data-slug", "spottheaurora");
+      script.setAttribute("data-color", "#BD5FFF");
+      script.setAttribute("data-emoji", "🌌");
+      script.setAttribute("data-font", "Poppins");
+      script.setAttribute("data-text", "Support Spot The Aurora");
+      script.setAttribute("data-outline-color", "#000000");
+      script.setAttribute("data-font-color", "#ffffff");
+      script.setAttribute("data-coffee-color", "#FFDD00");
+      script.async = true;
+
+      document.body.appendChild(script);
+
+      // Cleanup function to remove the script and widget when the modal closes
+      return () => {
+        document.body.removeChild(script);
+        const widget = document.getElementById('bmc-wbtn');
+        if (widget) {
+          widget.remove();
+        }
+      };
     }
   }, [isOpen]);
 
@@ -216,9 +240,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
           </button>
         </div>
         
-        {/* MODIFIED: The sections are now reordered */}
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
-          {/* Support the Project Section (Moved to Top) */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
@@ -229,18 +251,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
                 </p>
             </div>
-            <a 
-              href="https://buymeacoffee.com/spottheaurora"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg text-yellow-200 hover:bg-yellow-500/30 hover:border-yellow-300 transition-colors font-semibold"
-            >
-              <HeartIcon className="w-6 h-6 text-yellow-300" />
-              <span>Support on Buy Me a Coffee</span>
-            </a>
+            {/* NOTE: The Buy Me a Coffee script will inject its button, so we don't need a placeholder.
+                The script is added and removed via the useEffect hook. */}
           </section>
 
-          {/* App Installation Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
             {isAppInstalled ? (
@@ -265,7 +279,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* Push Notifications Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Push Notifications</h3>
             {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser or device does not support push notifications.</p>}
@@ -323,7 +336,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* Location Settings Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
@@ -331,7 +343,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* Help & Support Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
             <p className="text-sm text-neutral-400 mb-4">
