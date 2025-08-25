@@ -4,6 +4,13 @@ import React, { useMemo } from 'react';
 import GuideIcon from './icons/GuideIcon';
 import { SubstormForecast } from '../types';
 
+// ADDED: A new DownloadIcon for the screenshot button
+const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
 interface UnifiedForecastPanelProps {
   // Aurora forecast props
   score: number | null;
@@ -15,6 +22,7 @@ interface UnifiedForecastPanelProps {
   getAuroraEmoji: (score: number | null) => string;
   gaugeColors: Record<string, { solid: string }>;
   onOpenModal: (id: string) => void;
+  onDownloadImage: () => void; // ADDED: Prop for the download handler
   
   // Substorm forecast props
   substormForecast: SubstormForecast;
@@ -30,16 +38,15 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   getAuroraEmoji,
   gaugeColors,
   onOpenModal,
+  onDownloadImage, // ADDED
   substormForecast
 }) => {
   const isDaylight = blurb.includes("The sun is currently up");
   const { status, likelihood, windowLabel, action } = substormForecast;
   
-  // Determine if substorm activity is significant
   const isSubstormActive = status !== 'QUIET';
   const isSubstormImminent = status === 'IMMINENT_30' || status === 'ONSET';
   
-  // Determine the overall status message
   const getOverallStatus = () => {
     if (isDaylight) return "Daylight Hours";
     if (status === 'ONSET') return "Substorm Erupting Now!";
@@ -51,7 +58,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     return "Quiet Conditions";
   };
   
-  // Determine status color based on combined conditions
   const getStatusColor = () => {
     if (status === 'ONSET') return 'text-pink-400';
     if (status === 'IMMINENT_30') return 'text-red-400';
@@ -62,22 +68,18 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     return 'text-neutral-400';
   };
   
-  // Combined action recommendation
   const getCombinedAction = () => {
     if (isDaylight) {
       return "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!";
     }
     
-    // If substorm is active, prioritize that message
     if (isSubstormActive) {
       return action;
     }
     
-    // Otherwise use aurora forecast blurb
     return blurb;
   };
   
-  // Likelihood gradient for substorm
   const likelihoodGrad = useMemo(() => {
     if (likelihood >= 80) return "from-emerald-400 to-green-600";
     if (likelihood >= 50) return "from-amber-400 to-orange-500";
@@ -87,7 +89,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
 
   return (
     <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
-      {/* Header with status */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>
@@ -98,16 +99,22 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
           >
             <GuideIcon className="w-6 h-6" />
           </button>
+          {/* ADDED: The new download button */}
+          <button 
+            onClick={onDownloadImage} 
+            className="p-1 text-neutral-400 hover:text-neutral-100" 
+            title="Download Forecast Image"
+          >
+            <DownloadIcon className="w-6 h-6" />
+          </button>
         </div>
         <div className={`text-lg font-semibold ${getStatusColor()}`}>
           {getOverallStatus()}
         </div>
       </div>
 
-      {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Left column: Aurora Score & Gauge */}
         <div className="space-y-4">
           <div className="text-center lg:text-left">
             <div className="text-6xl font-extrabold text-white">
@@ -117,7 +124,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             <div className="text-sm text-neutral-400 mt-1">Aurora Visibility Score</div>
           </div>
           
-          {/* Aurora gauge */}
           <div className="w-full bg-neutral-700 rounded-full h-3">
             <div
               className="h-3 rounded-full transition-all duration-500"
@@ -128,16 +134,13 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             />
           </div>
           
-          {/* Location and update info */}
           <div className="space-y-1">
             <div className="text-sm text-neutral-400">{lastUpdated}</div>
             <div className="text-xs text-neutral-500 italic">{locationBlurb}</div>
           </div>
         </div>
 
-        {/* Right column: Substorm & Action */}
         <div className="space-y-4">
-          {/* Substorm status section - only show if not quiet */}
           {isSubstormActive && (
             <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-700/50">
               <div className="flex justify-between items-start mb-3">
@@ -151,7 +154,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
                 </div>
               </div>
               
-              {/* Substorm likelihood gauge */}
               <div className="h-2 w-full rounded-full bg-neutral-800 overflow-hidden">
                 <div 
                   className={`h-full bg-gradient-to-r ${likelihoodGrad} transition-all duration-500`} 
@@ -159,14 +161,12 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
                 />
               </div>
               
-              {/* Substorm status label */}
               <div className="mt-2 text-xs text-neutral-500">
                 Status: {status.replace("_", " ")}
               </div>
             </div>
           )}
           
-          {/* Combined action/advice box */}
           <div className={`rounded-lg p-4 ${isSubstormImminent ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
             <div className="text-sm text-neutral-300 font-medium mb-1">
               {isSubstormActive ? 'Recommended Action' : 'Current Conditions'}
@@ -178,7 +178,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
         </div>
       </div>
 
-      {/* Bottom status bar for critical alerts */}
       {isSubstormImminent && (
         <div className="mt-4 p-3 bg-gradient-to-r from-red-900/30 to-orange-900/30 border border-red-700/50 rounded-lg">
           <div className="flex items-center justify-center gap-2">
@@ -193,4 +192,4 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     </div>
   );
 };
-// --- END OF FILE src/components/UnifiedForecastPanel.tsx ---
+// --- END OF FILE src/components/UnifiedForecastPanel.tsx ---```

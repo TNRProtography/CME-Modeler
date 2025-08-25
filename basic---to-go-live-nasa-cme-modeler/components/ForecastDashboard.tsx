@@ -20,7 +20,7 @@ import {
     ForecastTrendChart,
     ExpandedGraphContent
 } from './ForecastCharts';
-import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types'; // ADDED: Import ActivitySummary
+import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
 // --- Type Definitions ---
@@ -66,7 +66,7 @@ const GAUGE_COLORS = {
 
 const GAUGE_EMOJIS = {
     gray:   '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red:    '\u{1F604}',
-    purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}' // Updated pink to match 80%+
+    purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}'
 };
 
 const getForecastScoreColorKey = (score: number) => {
@@ -123,7 +123,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
      };
 };
 
-// --- NEW: Activity Summary Component ---
 const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({ summary }) => {
     if (!summary) {
         return (
@@ -139,7 +138,6 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
             <h2 className="text-2xl font-bold text-white text-center">24-Hour Activity Summary</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Highest Score Section */}
                 <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
                     <h3 className="text-lg font-semibold text-neutral-200 mb-2">Highest Forecast Score</h3>
                     <p className="text-5xl font-bold" style={{ color: GAUGE_COLORS[getForecastScoreColorKey(summary.highestScore.finalScore)].solid }}>
@@ -150,7 +148,6 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
                     </p>
                 </div>
 
-                {/* Substorm Events Section */}
                 <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60">
                     <h3 className="text-lg font-semibold text-neutral-200 mb-3 text-center">Substorm Watch Periods</h3>
                     {summary.substormEvents.length > 0 ? (
@@ -180,7 +177,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormForecast, activitySummary // ADDED: Destructure activitySummary
+        goes18Data, goes19Data, loadingMagnetometer, substormForecast, activitySummary
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -220,6 +217,112 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             }
         }
     }, [navigationTarget]);
+
+    // ADDED: The new function to generate and download the forecast image
+    const handleDownloadForecastImage = useCallback(async () => {
+        const canvas = document.createElement('canvas');
+        const width = 900;
+        const height = 1200; // 3:4 aspect ratio
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Load images
+        const bgImage = new Image();
+        bgImage.crossOrigin = 'anonymous';
+        const logoImage = new Image();
+        logoImage.crossOrigin = 'anonymous';
+
+        const bgPromise = new Promise(resolve => { bgImage.onload = resolve; bgImage.src = '/background-aurora.jpg'; });
+        const logoPromise = new Promise(resolve => { logoImage.onload = resolve; logoImage.src = 'https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png'; });
+        
+        await Promise.all([bgPromise, logoPromise]);
+
+        // Draw background and overlay
+        ctx.drawImage(bgImage, 0, 0, width, height);
+        ctx.fillStyle = 'rgba(10, 10, 10, 0.6)';
+        ctx.fillRect(0, 0, width, height);
+
+        // Draw Logo
+        const logoHeight = 80;
+        const logoWidth = (logoImage.width / logoImage.height) * logoHeight;
+        ctx.drawImage(logoImage, (width - logoWidth) / 2, 50, logoWidth, logoHeight);
+
+        // Draw Main Score
+        ctx.textAlign = 'center';
+        ctx.fillStyle = GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid;
+        ctx.font = 'bold 160px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 280);
+        ctx.fillStyle = '#E5E5E5';
+        ctx.font = '40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('Aurora Visibility Score', width / 2, 340);
+
+        // Draw Substorm Forecast (if active)
+        if (substormForecast.status !== 'QUIET') {
+            ctx.fillStyle = '#FBBF24'; // Amber color
+            ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('Substorm Watch', width / 2, 450);
+            ctx.fillStyle = '#E5E5E5';
+            ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(`~${substormForecast.likelihood}% chance between ${substormForecast.windowLabel}`, width / 2, 500);
+        }
+
+        // Draw Divider
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(100, 600);
+        ctx.lineTo(width - 100, 600);
+        ctx.stroke();
+
+        // Draw Solar Wind Stats
+        const statsY = 700;
+        const colWidth = width / 3;
+        const bzValue = parseFloat(gaugeData.bz.value);
+        const speedValue = parseFloat(gaugeData.speed.value);
+        const densityValue = parseFloat(gaugeData.density.value);
+
+        // Bz
+        ctx.fillStyle = getGaugeStyle(bzValue, 'bz').color;
+        ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(gaugeData.bz.value, colWidth / 2 + colWidth * 0, statsY);
+        ctx.fillStyle = '#A3A3A3';
+        ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('Bz (nT)', colWidth / 2 + colWidth * 0, statsY + 50);
+
+        // Speed
+        ctx.fillStyle = getGaugeStyle(speedValue, 'speed').color;
+        ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(gaugeData.speed.value, colWidth / 2 + colWidth * 1, statsY);
+        ctx.fillStyle = '#A3A3A3';
+        ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('Speed (km/s)', colWidth / 2 + colWidth * 1, statsY + 50);
+
+        // Density
+        ctx.fillStyle = getGaugeStyle(densityValue, 'density').color;
+        ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(gaugeData.density.value, colWidth / 2 + colWidth * 2, statsY);
+        ctx.fillStyle = '#A3A3A3';
+        ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('Density (p/cm³)', colWidth / 2 + colWidth * 2, statsY + 50);
+
+        // Draw Footer
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.font = '28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        const now = new Date();
+        const timeString = now.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' });
+        ctx.fillText(timeString, width / 2, height - 100);
+        ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('SpotTheAurora.co.nz', width / 2, height - 50);
+
+        // Trigger Download
+        const link = document.createElement('a');
+        link.download = `spottheaurora-forecast-${now.toISOString()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+    }, [auroraScore, substormForecast, gaugeData]);
 
     const tooltipContent = useMemo(() => ({
         'unified-forecast': `<strong>About the Spot The Aurora Forecast</strong><br>This panel is your primary guide, combining the general aurora visibility potential with a specific, short-term forecast for intense bursts of activity called substorms.<br><br>
@@ -298,6 +401,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           getAuroraEmoji={getAuroraEmoji}
                           gaugeColors={GAUGE_COLORS}
                           onOpenModal={openModal}
+                          onDownloadImage={handleDownloadForecastImage} // ADDED: Pass the handler to the component
                           substormForecast={substormForecast}
                         />
 
@@ -308,7 +412,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         
                         <AuroraSightings isDaylight={isDaylight} />
 
-                        {/* ADDED: Render the new ActivitySummaryDisplay component */}
                         <ActivitySummaryDisplay summary={activitySummary} />
 
                         <ForecastTrendChart 
