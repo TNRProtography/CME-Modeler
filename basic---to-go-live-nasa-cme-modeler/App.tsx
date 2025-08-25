@@ -33,6 +33,13 @@ import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 
+// ADDED: A new DownloadIcon for the screenshot button
+const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
 type ViewerMedia =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
@@ -305,6 +312,54 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
+  // ADDED: Logic for downloading the canvas image with a timestamp
+  const handleDownloadImage = useCallback(() => {
+    const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
+    if (!dataUrl) {
+      console.error("Could not capture canvas image.");
+      return;
+    }
+
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Draw the captured simulation image
+      ctx.drawImage(image, 0, 0);
+
+      // Prepare text styles
+      const padding = 20;
+      const fontSize = Math.max(18, image.width / 80);
+      ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 5;
+
+      // Calculate current simulation time
+      const totalDuration = timelineMaxDate - timelineMinDate;
+      const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
+      const simulationDate = new Date(timelineMinDate + currentTimeOffset);
+      const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'UTC' })} UTC`;
+
+      // Draw the timestamp and watermark
+      ctx.fillText(dateString, canvas.width - padding, canvas.height - padding - (fontSize + 5));
+      ctx.fillText("SpotTheAurora.co.nz", canvas.width - padding, canvas.height - padding);
+
+      // Trigger download
+      const link = document.createElement('a');
+      link.download = `spottheaurora-cme-${simulationDate.toISOString()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+    image.src = dataUrl;
+  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue]);
+
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
     const cmeToModel = cmeData.find(cme => cme.id === cmeId);
@@ -388,11 +443,17 @@ const App: React.FC = () => {
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
-                                {/* MODIFIED: Updated title and label text */}
                                 <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className={`p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform ${highlightedElementId === 'forecast-models-button' ? 'tutorial-highlight' : ''}`} title="Official CME Forecast Models">
                                     <GlobeIcon className="w-6 h-6" />
                                 </button>
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Official CME Models</span>
+                            </div>
+                            {/* ADDED: The new download button and its container */}
+                            <div className="flex flex-col items-center w-14">
+                                <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
+                                    <DownloadIcon className="w-6 h-6" />
+                                </button>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Download Image</span>
                             </div>
                         </div>
                         <div className="flex items-start text-center space-x-2 pointer-events-auto">

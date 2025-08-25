@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react'; // MODIFIED: Added useImperativeHandle
+import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
   InteractionMode, SimulationCanvasHandle
@@ -274,7 +274,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cameraRef.current = camera;
     onCameraReady(camera);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); // MODIFIED: preserveDrawingBuffer is needed for screenshots
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     mountRef.current.appendChild(renderer.domElement);
@@ -300,7 +300,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       milkyWay: withAniso(loader.load(TEX.MILKY_WAY)),
     };
 
-    // ***** KEY FIX: use Milky Way as true background (no mesh) *****
     tex.milkyWay.mapping = THREE.EquirectangularReflectionMapping;
     scene.background = tex.milkyWay;
 
@@ -317,11 +316,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     controls.maxDistance = 55 * SCENE_SCALE;
     controlsRef.current = controls;
 
-    // CME container
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- Stars: two brighter layers ---
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
       for (let i = 0; i < count; i++) {
@@ -349,7 +346,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     starsNearRef.current = starsNear;
     starsFarRef.current = starsFar;
 
-    // --- Sun (your shader) ---
     const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
     const sunMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
@@ -362,7 +358,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(sunMesh);
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
-    // Sun photosphere overlay (additive detail)
     const sunOverlayGeo = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64);
     const sunOverlayMat = new THREE.MeshBasicMaterial({
       map: tex.sunPhoto,
@@ -376,7 +371,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
 
-    // --- Planets orbiting the Sun ---
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
 
@@ -393,7 +387,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (name === 'EARTH') {
         const earthData = data as PlanetData;
 
-        // Photoreal Earth surface with normal + specular
         const earthMat = new THREE.MeshPhongMaterial({
           map: tex.earthDay,
           normalMap: tex.earthNormal,
@@ -403,7 +396,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
         planetMesh.material = earthMat;
 
-        // Clouds layer
         const cloudsGeo = new THREE.SphereGeometry(earthData.size * 1.01, 48, 48);
         const cloudsMat = new THREE.MeshLambertMaterial({
           map: tex.earthClouds,
@@ -415,7 +407,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         clouds.name = 'clouds';
         planetMesh.add(clouds);
 
-        // Atmosphere (yours)
         const atmosphereGeo = new THREE.SphereGeometry(earthData.size * 1.2, 32, 32);
         const atmosphereMat = new THREE.ShaderMaterial({
           vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER,
@@ -430,7 +421,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         atmosphere.name = 'atmosphere';
         planetMesh.add(atmosphere);
 
-        // Aurora (yours)
         const auroraGeo = new THREE.SphereGeometry(earthData.size * 1.25, 64, 64);
         const auroraMat = new THREE.ShaderMaterial({
           vertexShader: AURORA_VERTEX_SHADER,
@@ -450,7 +440,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         planetMesh.add(aurora);
       }
 
-      // Orbit tube (your thicker style)
       const orbitPoints = [];
       const orbitSegments = 128;
       for (let i = 0; i <= orbitSegments; i++) {
@@ -466,7 +455,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       orbitsRef.current[name] = orbitTube;
     });
 
-    // --- Moons (e.g., Moon) ---
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (!data.orbits) return;
       const parentBody = celestialBodiesRef.current[data.orbits];
@@ -484,7 +472,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const existing = (name === 'MOON') ? planetLabelInfos.find(p => p.name === 'Moon') : undefined;
       if (!existing) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
 
-      // Moon orbit tube
       const orbitPoints = [];
       const orbitSegments = 64;
       for (let i = 0; i <= orbitSegments; i++) {
@@ -500,7 +487,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       parentBody.mesh.add(orbitTube);
     });
 
-    // --- POIs (e.g., L1) ---
     Object.entries(POI_DATA_MAP).forEach(([name, data]) => {
       const poiGeometry = new THREE.TetrahedronGeometry(data.size, 0);
       const poiMaterial = new THREE.MeshBasicMaterial({ color: data.color });
@@ -543,11 +529,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
 
-      // Tiny star parallax / life (mobile-safe)
       if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
       if (starsFarRef.current)  starsFarRef.current.rotation.y += 0.00009;
 
-      // Orbits motion
       const ORBIT_SPEED_SCALE = 2000;
       Object.values(celestialBodiesRef.current).forEach(body => {
         const bodyData = body.userData as PlanetData | undefined;
@@ -560,7 +544,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         body.mesh.position.z = bodyData.radius * Math.cos(angle);
       });
 
-      // L1 position relative to Earth
       const l1Body = celestialBodiesRef.current['L1'];
       const earthBody = celestialBodiesRef.current['EARTH'];
       if (l1Body && earthBody) {
@@ -573,14 +556,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         l1Body.mesh.lookAt(earthPos);
       }
 
-      // Sun shader animate + Earth spin
       if (celestialBodiesRef.current.SUN) {
         (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
       }
       if (celestialBodiesRef.current.EARTH) {
         const earthMesh = celestialBodiesRef.current.EARTH.mesh;
-        earthMesh.rotation.y += 0.05 * delta; // Earth spin
-        // Spin clouds subtly
+        earthMesh.rotation.y += 0.05 * delta;
         const clouds = earthMesh.children.find((c:any)=>c.name==='clouds');
         if (clouds) clouds.rotation.y += 0.01 * delta;
 
@@ -591,7 +572,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // Timeline vs live
       if (timelineActive) {
         if (timelinePlaying) {
           const timeRange = timelineMaxDate - timelineMinDate;
@@ -683,12 +663,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [THREE, dataVersion]);
 
-  // -------- Build CMEs: KEEP your original particle cones --------
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
 
-    // Clear old
     while (cmeGroupRef.current.children.length > 0) {
       const child = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(child);
@@ -707,7 +685,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const colors: number[] = [];
 
       const coneHalfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneHeight = 1; // unit height for scaling later
+      const coneHeight = 1;
       const coneRadius = coneHeight * Math.tan(coneHalfAngleRad);
       const bulgeFactor = 0.5;
 
@@ -716,7 +694,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < particleCount; i++) {
-        const y = coneHeight * Math.cbrt(Math.random()); // denser near base
+        const y = coneHeight * Math.cbrt(Math.random());
         const radiusAtY = (y / coneHeight) * coneRadius;
         const theta = Math.random() * 2 * Math.PI;
         const r = coneRadius > 0 ? Math.sqrt(Math.random()) * radiusAtY : 0;
@@ -730,7 +708,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
         positions.push(x, finalY, z);
 
-        // longitudinal gradient color
         const relativePos = y / coneHeight;
         const finalColor = new THREE.Color();
         const wakeEnd = 0.1;
@@ -766,7 +743,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const cmeParticleSystem = new THREE.Points(particlesGeometry, cmeMaterial);
       cmeParticleSystem.userData = cme;
 
-      // Orientation from latitude/longitude (local +Y is axis)
       const direction = new THREE.Vector3();
       direction.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       cmeParticleSystem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
@@ -776,7 +752,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   }, [cmeData, getClockElapsedTime]);
 
-  // Single-CME focus / prediction line
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!cmeGroupRef.current) return;
@@ -821,7 +796,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, [currentlyModeledCMEId, cmeData, getClockElapsedTime]);
 
-  // Camera moves
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE;
     const gsap = (window as any).gsap;
@@ -856,18 +830,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     moveCamera(activeView, focusTarget);
   }, [activeView, focusTarget, dataVersion, moveCamera]);
 
-  // MODIFIED: useImperativeHandle now exposes both resetView and the new resetAnimationTimer
+  // MODIFIED: useImperativeHandle now exposes the new capture function
   useImperativeHandle(ref, () => ({
     resetView: () => {
       moveCamera(ViewMode.TOP, FocusTarget.EARTH);
     },
     resetAnimationTimer: () => {
-      // This synchronizes the canvas's internal timer with the parent's clock
       lastTimeRef.current = getClockElapsedTime();
+    },
+    captureCanvasAsDataURL: () => {
+      if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        // Force a render of the current frame to ensure it's up-to-date
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+        // Return the data URL of the canvas
+        return rendererRef.current.domElement.toDataURL('image/png');
+      }
+      return null;
     }
   }), [moveCamera, getClockElapsedTime]);
 
-  // Always MOVE interaction mode (mobile-friendly)
   useEffect(() => {
     if (controlsRef.current && rendererRef.current?.domElement) {
       controlsRef.current.enabled = true;
@@ -875,7 +856,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, [interactionMode]);
 
-  // Extra planets toggle
   useEffect(() => {
     if (!celestialBodiesRef.current || !orbitsRef.current) return;
     ['MERCURY', 'VENUS', 'MARS'].forEach(name => {
@@ -886,7 +866,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
   }, [showExtraPlanets]);
 
-  // Moon & L1 toggle
   useEffect(() => {
     if (!celestialBodiesRef.current) return;
     const moon = celestialBodiesRef.current['MOON'];
@@ -902,7 +881,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, [showMoonL1]);
 
-  // Impact detection (proxy) — keep your approach
   const checkImpacts = useCallback(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
@@ -919,7 +897,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const tipWorld = cmeObject.position.clone().add(dir.clone().multiplyScalar(cmeObject.scale.y));
       const d = tipWorld.distanceTo(earthPos);
 
-      const impactRadius = PLANET_DATA_MAP.EARTH.size * 2.2; // vicinity threshold
+      const impactRadius = PLANET_DATA_MAP.EARTH.size * 2.2;
       if (d < impactRadius) {
         if (cme.speed > maxImpactSpeed) maxImpactSpeed = cme.speed;
       }
@@ -928,7 +906,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return maxImpactSpeed;
   }, []);
 
-  // Stronger aurora/atmosphere response on impact
   const updateImpactEffects = useCallback((maxImpactSpeed: number, elapsed: number) => {
     const earth = celestialBodiesRef.current.EARTH?.mesh;
     if (!earth) return;
@@ -936,7 +913,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const aurora = earth.children.find((c: any) => c.name === 'aurora');
     const atmosphere = earth.children.find((c: any) => c.name === 'atmosphere');
 
-    // Slightly more sensitive than before
     const hit = clamp(maxImpactSpeed / 1500, 0, 1);
 
     if (aurora?.material?.uniforms) {
