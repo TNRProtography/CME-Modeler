@@ -53,6 +53,14 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+// ADDED: A new heart icon for the support button
+const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.015-4.5-4.5-4.5S12 5.765 12 8.25c0-2.485-2.015-4.5-4.5-4.5S3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    </svg>
+);
+
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -61,7 +69,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-  const [isCopied, setIsCopied] = useState(false); 
+  // DELETED: State for copying bank account number is no longer needed
+  // const [isCopied, setIsCopied] = useState(false); 
 
   useEffect(() => {
     if (isOpen) {
@@ -146,15 +155,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     }
   }, [deferredPrompt]);
   
-  const handleCopy = useCallback(() => {
-    const accountNumber = '12-3168-0005239-53';
-    navigator.clipboard.writeText(accountNumber).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); 
-    }).catch(err => {
-      console.error('Failed to copy text: ', err);
-    });
-  }, []);
+  // DELETED: The handleCopy function is no longer needed.
+  // const handleCopy = useCallback(() => { ... });
 
   const handleTestCategory = useCallback((categoryId: string) => {
     let title = 'Test Notification';
@@ -198,7 +200,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             body = 'Forecast: ~75% chance of activity between 11:30pm and 12:00am. Expected visibility: Faint Eye Visible.';
             break;
     }
-    // Use the generic test notification function, passing our specific title and body
     sendTestNotification(title, body);
   }, []);
 
@@ -313,30 +314,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
           
-          {/* MODIFIED: Updated the development hours */}
+          {/* MODIFIED: This entire section is updated for Buy Me a Coffee */}
           <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <p className="text-sm text-neutral-400 mb-4">
               This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
             </p>
-            <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-lg p-4 space-y-2">
-              <div>
-                <span className="text-xs text-neutral-500">Account Name</span>
-                <p className="font-mono text-neutral-200">D P FRENCH</p>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-500">Account Number</span>
-                <div className="flex items-center justify-between gap-4">
-                  <p className="font-mono text-neutral-200">12-3168-0005239-53</p>
-                  <button 
-                    onClick={handleCopy}
-                    className={`px-3 py-1 text-xs rounded-md transition-colors ${isCopied ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
-                  >
-                    {isCopied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <a 
+              href="https://buymeacoffee.com/spottheaurora"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg text-yellow-200 hover:bg-yellow-500/30 hover:border-yellow-300 transition-colors font-semibold"
+            >
+              <HeartIcon className="w-6 h-6 text-yellow-300" />
+              <span>Support on Buy Me a Coffee</span>
+            </a>
           </section>
 
           {/* Help & Support Section */}
