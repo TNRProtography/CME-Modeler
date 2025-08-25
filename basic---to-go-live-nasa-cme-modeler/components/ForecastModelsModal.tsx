@@ -65,16 +65,14 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
   if (!isOpen) return null;
 
   return (
-    // --- MODIFIED: Increased z-index from z-[100] to z-[3000] ---
     <div 
       className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4"
       onClick={onClose}
     >
       <div 
-        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] text-neutral-300 flex flex-col"
+        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-7xl max-h-[90vh] text-neutral-300 flex flex-col"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
-        {/* MODIFIED: Updated the heading text */}
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
           <h2 className="text-2xl font-bold text-neutral-200">Official CME Forecast Models</h2>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
@@ -82,13 +80,14 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           </button>
         </div>
         
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* MODIFIED: Grid layout changed to 3 columns to accommodate the new model */}
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* HUXT Model Section */}
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">HUXT (University of Reading)</h3>
             <div className="text-sm text-neutral-400 leading-relaxed">
-               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed at the <a href="https://research.reading.ac.uk/met-spate/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading</a>. It simulates the propagation of solar wind and Coronal Mass Ejections (CMEs) through the inner heliosphere (up to Earth and Mars).</p>
-               <p className="mt-2">HUXT utilizes solar observations processed by the UK <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Met Office's Wang-Sheeley-Arge (WSA) model</a> to provide initial inputs for the solar wind speed and magnetic field at the Sun. Its speed and ability to capture forecast uncertainty make it valuable for real-time space weather forecasting.</p>
+               <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model developed at the <a href="https://research.reading.ac.uk/met-spate/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading</a>. It simulates the propagation of solar wind and CMEs through the inner heliosphere.</p>
+               <p className="mt-2">HUXT utilizes solar observations processed by the UK <a href="https://www.metoffice.gov.uk/weather/guides/space-weather" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Met Office's WSA model</a> to provide initial inputs for the solar wind speed and magnetic field at the Sun.</p>
             </div>
             <div className="space-y-4">
                 <div onClick={() => setViewerMedia({ url: 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png', type: 'image' })} className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
@@ -99,7 +98,6 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                     <h4 className="font-semibold text-center mb-2">HUXT Animation</h4>
                     <video src="https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4" autoPlay loop muted playsInline className="rounded w-full">Your browser does not support the video tag.</video>
                 </div>
-                {/* Attribution for HUXT data */}
                 <p className="text-neutral-500 text-xs text-right">Data Source: <a href="https://research.reading.ac.uk/met-spate/huxt-forecast/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading & Met Office</a></p>
             </div>
           </section>
@@ -108,7 +106,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">WSA-ENLIL (NOAA)</h3>
              <div className="text-sm text-neutral-400 leading-relaxed">
-                <p>The Wang-Sheeley-Arge (WSA)-ENLIL model is the primary operational space weather forecasting model used by the <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">U.S. National Oceanic and Atmospheric Administration (NOAA)</a>. It provides a comprehensive, large-scale prediction of solar wind conditions throughout the heliosphere.</p>
+                <p>The Wang-Sheeley-Arge (WSA)-ENLIL model is the primary operational space weather forecasting model used by the <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">U.S. National Oceanic and Atmospheric Administration (NOAA)</a>.</p>
                 <p className="mt-2">This animation shows the model's prediction of solar wind density. Watch for dense clouds (red/yellow) erupting from the Sun (center) and traveling outwards past the planets (colored dots).</p>
             </div>
             <div 
@@ -127,8 +125,24 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                   </>
                 )}
             </div>
-            {/* Attribution for WSA-ENLIL data */}
             <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a></p>
+          </section>
+
+          {/* ADDED: New section for the ELEVO model */}
+          <section className="space-y-4">
+            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">ELEVO (Helio4Cast)</h3>
+             <div className="text-sm text-neutral-400 leading-relaxed">
+                <p>The Ellipse Evolution (ELEvo) model is a drag-based method used to predict the arrival times of CMEs at planets and spacecraft. [3] It is developed and maintained by the <a href="https://helioforecast.space/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Helio4Cast</a> group at GeoSphere Austria. [6]</p>
+                <p className="mt-2">This model assumes an elliptical front shape for the CME's leading edge and uses an ensemble of 50,000 members to predict the arrival time and provide uncertainty estimates. [3]</p>
+            </div>
+            <div 
+              onClick={() => setViewerMedia({ url: 'https://helioforecast.space/static/sync/elevo/elevo.mp4', type: 'video' })}
+              className="bg-neutral-900 p-2 rounded-lg relative min-h-[300px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
+            >
+                <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">ELEVO Animation</h4>
+                <video src="https://helioforecast.space/static/sync/elevo/elevo.mp4" autoPlay loop muted playsInline className="rounded w-full">Your browser does not support the video tag.</video>
+            </div>
+            <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://helioforecast.space/cme" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Helio4Cast</a></p>
           </section>
         </div>
       </div>
