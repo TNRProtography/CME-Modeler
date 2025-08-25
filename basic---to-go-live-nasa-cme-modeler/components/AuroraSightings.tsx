@@ -6,7 +6,7 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
 
-// --- NEW: Local SVG Icon components for the UI ---
+// --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -129,7 +129,8 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                             ))}
                              <li className="flex items-start gap-4">
                                 <span className="text-3xl mt-[-4px]">❌</span>
-                                <div> <strong className="font-semibold text-neutral-200">Nothing (per category)</strong> <p className="text-neutral-400">If your sky is clear but you can't see an aurora, please report it! This is extremely valuable data. On the map, these reports will show as a cross above the category icon.</p> </div>
+                                {/* MODIFIED: Updated text to describe the layered icon */}
+                                <div> <strong className="font-semibold text-neutral-200">Nothing (per category)</strong> <p className="text-neutral-400">If your sky is clear but you can't see an aurora, please report it! This is extremely valuable data. On the map, these reports will show as a cross layered on top of the category icon.</p> </div>
                             </li>
                              <li className="flex items-start gap-4">
                                 <span className="text-3xl mt-[-4px]">☁️</span>
@@ -244,25 +245,32 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
 
     const userMarkerIcon = L.divIcon({ html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`, className: '', iconSize: [20, 20], iconAnchor: [10, 10], });
     
-    // MODIFIED: This function now creates stacked HTML for "nothing" reports
+    // MODIFIED: This function now creates a layered icon for "nothing" reports
     const createSightingIcon = (sighting: SightingReport) => {
         const fullEmojiString = getEmojiForStatus(sighting.status);
         const sendingAnimation = sighting.isPending ? `<div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div><div class="absolute inset-0 bg-black rounded-full opacity-60"></div>` : '';
         
         let iconHtml: string;
-        let iconSize: L.PointTuple = [32, 32];
-        let iconAnchor: L.PointTuple = [16, 16];
 
         if (fullEmojiString.startsWith('❌')) {
             const baseEmoji = fullEmojiString.substring(1);
-            iconHtml = `<div class="relative flex flex-col items-center justify-center">${sendingAnimation}<span style="font-size: 18px; line-height: 0.8;">❌</span><span style="font-size: 24px; line-height: 1;">${baseEmoji}</span></div>`;
-            iconSize = [32, 40]; // Taller icon
-            iconAnchor = [16, 20]; // Adjust anchor to the center
+            iconHtml = `
+                <div class="relative w-full h-full flex items-center justify-center">
+                    ${sendingAnimation}
+                    <span class="absolute text-3xl">${baseEmoji}</span>
+                    <span class="absolute text-3xl" style="text-shadow: 0 0 4px #000, 0 0 6px #000;">❌</span>
+                </div>
+            `;
         } else {
             iconHtml = `<div class="relative">${sendingAnimation}<div>${fullEmojiString}</div></div>`;
         }
 
-        return L.divIcon({ html: iconHtml, className: 'emoji-marker', iconSize, iconAnchor });
+        return L.divIcon({ 
+            html: iconHtml, 
+            className: 'emoji-marker', 
+            iconSize: [32, 32], 
+            iconAnchor: [16, 16] 
+        });
     };
 
     return (
@@ -286,7 +294,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-12 md:col-span-3 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
                 
                 <div className="col-span-12 md:col-span-9 space-y-4">
-                    {/* MODIFIED: Added GreenCheckIcon for clarity */}
                     <div>
                         <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
                             <GreenCheckIcon className="w-5 h-5 text-green-500" />
@@ -301,7 +308,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                             ))}
                         </div>
                     </div>
-                    {/* MODIFIED: Added RedCrossIcon for clarity */}
                     <div>
                         <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
                             <RedCrossIcon className="w-5 h-5 text-red-500" />
