@@ -272,15 +272,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.fillText('Substorm Forecast', width / 2, currentY);
         currentY += 45;
 
-        const getVisibilityText = (score: number | null) => {
+        const getVisibilityTextForImage = (score: number | null): string => {
             if (score === null) return 'N/A';
-            if (score >= 80) return 'Strong Eye Visible';
-            if (score >= 60) return 'Eye Visible';
-            if (score >= 50) return 'Faint Eye Visible';
-            if (score >= 40) return 'Phone Camera';
-            return 'Camera Only';
+            if (score >= 80) return 'High probability of a significant, dynamic display.';
+            if (score >= 50) return 'Good chance of visible color and movement.';
+            if (score >= 40) return 'Faint naked-eye glow possible.';
+            if (score >= 25) return 'Visible in photos, maybe faint to the naked eye.';
+            if (score >= 10) return 'Minimal activity, likely camera-only.';
+            return 'Little to no auroral activity.';
         };
-        const visibilityText = getVisibilityText(auroraScore);
+        const visibilityText = getVisibilityTextForImage(auroraScore);
 
         ctx.fillStyle = '#E5E5E5';
         ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
@@ -290,7 +291,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         currentY += 40;
         ctx.fillText(`Expected Visibility: ${visibilityText}`, width / 2, currentY);
         
-        currentY += 50;
+        currentY += 60; // Increased gap
         const dividerY = currentY;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 2;
@@ -301,7 +302,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const statBlockHeight = 160;
         const gapSize = 20;
-        const statsStartY = dividerY + 50;
+        const statsStartY = dividerY + 70; // Increased gap
         const colWidth = width / 3;
 
         const drawStat = (col: number, row: number, emoji: string, value: string, label: string, color: string) => {
@@ -352,15 +353,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const disclaimerY = footerY - 80;
 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.font = 'italic 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.font = 'italic 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.fillText("This is a forecast for potential activity over the next two hours.", width / 2, disclaimerY);
 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.font = '26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.font = '28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         const now = new Date();
         const timeString = now.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' });
         ctx.fillText(timeString, width / 2, footerY - 40);
-        ctx.font = 'bold 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.fillText('SpotTheAurora.co.nz', width / 2, footerY);
 
         const link = document.createElement('a');
