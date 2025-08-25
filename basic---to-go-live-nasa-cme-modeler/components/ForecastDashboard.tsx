@@ -218,7 +218,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [navigationTarget]);
 
-    // ADDED: The new function to generate and download the forecast image
+    // MODIFIED: This function is completely rewritten for the new layout and stats
     const handleDownloadForecastImage = useCallback(async () => {
         const canvas = document.createElement('canvas');
         const width = 900;
@@ -235,7 +235,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         logoImage.crossOrigin = 'anonymous';
 
         const bgPromise = new Promise(resolve => { bgImage.onload = resolve; bgImage.src = '/background-aurora.jpg'; });
-        const logoPromise = new Promise(resolve => { logoImage.onload = resolve; logoImage.src = 'https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png'; });
+        const logoPromise = new Promise(resolve => { logoImage.onload = resolve; logoImage.src = '/icons/android-chrome-192x192.png'; });
         
         await Promise.all([bgPromise, logoPromise]);
 
@@ -245,67 +245,60 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.fillRect(0, 0, width, height);
 
         // Draw Logo
-        const logoHeight = 80;
-        const logoWidth = (logoImage.width / logoImage.height) * logoHeight;
+        const logoHeight = 120;
+        const logoWidth = 120;
         ctx.drawImage(logoImage, (width - logoWidth) / 2, 50, logoWidth, logoHeight);
 
         // Draw Main Score
         ctx.textAlign = 'center';
         ctx.fillStyle = GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid;
         ctx.font = 'bold 160px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 280);
+        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 320);
         ctx.fillStyle = '#E5E5E5';
         ctx.font = '40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Aurora Visibility Score', width / 2, 340);
+        ctx.fillText('Aurora Visibility Score', width / 2, 380);
 
         // Draw Substorm Forecast (if active)
         if (substormForecast.status !== 'QUIET') {
             ctx.fillStyle = '#FBBF24'; // Amber color
             ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText('Substorm Watch', width / 2, 450);
+            ctx.fillText('Substorm Watch', width / 2, 480);
             ctx.fillStyle = '#E5E5E5';
             ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(`~${substormForecast.likelihood}% chance between ${substormForecast.windowLabel}`, width / 2, 500);
+            ctx.fillText(`~${substormForecast.likelihood}% chance | ${substormForecast.windowLabel}`, width / 2, 530);
         }
 
         // Draw Divider
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(100, 600);
-        ctx.lineTo(width - 100, 600);
+        ctx.moveTo(100, 620);
+        ctx.lineTo(width - 100, 620);
         ctx.stroke();
 
-        // Draw Solar Wind Stats
-        const statsY = 700;
+        // Draw New Stats
+        const statsY = 720;
         const colWidth = width / 3;
-        const bzValue = parseFloat(gaugeData.bz.value);
-        const speedValue = parseFloat(gaugeData.speed.value);
-        const densityValue = parseFloat(gaugeData.density.value);
+        const btValue = parseFloat(gaugeData.bt.value);
+        const powerValue = parseFloat(gaugeData.power.value);
+        const moonValue = gaugeData.moon.percentage;
 
-        // Bz
-        ctx.fillStyle = getGaugeStyle(bzValue, 'bz').color;
-        ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText(gaugeData.bz.value, colWidth / 2 + colWidth * 0, statsY);
-        ctx.fillStyle = '#A3A3A3';
-        ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Bz (nT)', colWidth / 2 + colWidth * 0, statsY + 50);
+        const drawStat = (col: number, emoji: string, value: string, label: string, color: string) => {
+            ctx.font = '64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(emoji, colWidth / 2 + colWidth * col, statsY);
+            
+            ctx.fillStyle = color;
+            ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(value, colWidth / 2 + colWidth * col, statsY + 80);
+            
+            ctx.fillStyle = '#A3A3A3';
+            ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(label, colWidth / 2 + colWidth * col, statsY + 130);
+        };
 
-        // Speed
-        ctx.fillStyle = getGaugeStyle(speedValue, 'speed').color;
-        ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText(gaugeData.speed.value, colWidth / 2 + colWidth * 1, statsY);
-        ctx.fillStyle = '#A3A3A3';
-        ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Speed (km/s)', colWidth / 2 + colWidth * 1, statsY + 50);
-
-        // Density
-        ctx.fillStyle = getGaugeStyle(densityValue, 'density').color;
-        ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText(gaugeData.density.value, colWidth / 2 + colWidth * 2, statsY);
-        ctx.fillStyle = '#A3A3A3';
-        ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Density (p/cm³)', colWidth / 2 + colWidth * 2, statsY + 50);
+        drawStat(0, getGaugeStyle(btValue, 'bt').emoji, gaugeData.bt.value, 'Bt (nT)', getGaugeStyle(btValue, 'bt').color);
+        drawStat(1, getGaugeStyle(powerValue, 'power').emoji, gaugeData.power.value, 'Power (GW)', getGaugeStyle(powerValue, 'power').color);
+        drawStat(2, gaugeData.moon.emoji, `${moonValue.toFixed(0)}%`, 'Moon Illum.', GAUGE_COLORS.gray.solid);
 
         // Draw Footer
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -401,7 +394,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           getAuroraEmoji={getAuroraEmoji}
                           gaugeColors={GAUGE_COLORS}
                           onOpenModal={openModal}
-                          onDownloadImage={handleDownloadForecastImage} // ADDED: Pass the handler to the component
+                          onDownloadImage={handleDownloadForecastImage}
                           substormForecast={substormForecast}
                         />
 
