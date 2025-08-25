@@ -54,16 +54,6 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
 
-// ADDED: Helper function to parse CSS transform values
-const parseTransform = (transformStr: string): { x: number, y: number } => {
-    const match = /translate\(([^,]+)px, ([^,]+)px\)/.exec(transformStr);
-    if (match) {
-        return { x: parseFloat(match[1]), y: parseFloat(match[2]) };
-    }
-    return { x: 0, y: 0 };
-};
-
-
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -321,7 +311,7 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // MODIFIED: This function is now significantly more advanced
+  // MODIFIED: This function is completely rewritten for the new requirements
   const handleDownloadImage = useCallback(() => {
     const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
     if (!dataUrl) {
@@ -347,27 +337,28 @@ const App: React.FC = () => {
           const htmlEl = labelEl as HTMLElement;
           if (htmlEl.style.opacity === '1') {
             const computedStyle = window.getComputedStyle(htmlEl);
-            const { x, y } = parseTransform(htmlEl.style.transform);
+            const rect = htmlEl.getBoundingClientRect();
             
             ctx.font = computedStyle.font;
             ctx.fillStyle = computedStyle.color;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-            ctx.shadowBlur = 5;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+            ctx.shadowBlur = 6;
             
-            ctx.fillText(htmlEl.innerText, x, y);
+            // Use the accurate bounding rect position
+            ctx.fillText(htmlEl.innerText, rect.left, rect.top);
           }
         });
       }
 
-      // 3. Draw the timestamp and watermark
+      // 3. Draw the timestamp, watermark, and icon
       const padding = 25;
-      const fontSize = Math.max(22, mainImage.width / 70);
+      const fontSize = Math.max(24, mainImage.width / 65);
       ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-      ctx.shadowBlur = 5;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 7;
 
       const totalDuration = timelineMaxDate - timelineMinDate;
       const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
@@ -377,21 +368,28 @@ const App: React.FC = () => {
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
       ctx.fillText(dateString, canvas.width - padding, canvas.height - padding - (fontSize + 10));
-      ctx.fillText("SpotTheAurora.co.nz", canvas.width - padding, canvas.height - padding);
+      
+      const watermarkText = "SpotTheAurora.co.nz";
+      const watermarkMetrics = ctx.measureText(watermarkText);
+      const watermarkX = canvas.width - padding;
+      const watermarkY = canvas.height - padding;
+      ctx.fillText(watermarkText, watermarkX, watermarkY);
 
-      // 4. Draw the app icon
       const icon = new Image();
       icon.onload = () => {
-        const iconSize = Math.max(48, canvas.width / 25);
-        ctx.drawImage(icon, padding, canvas.height - iconSize - padding, iconSize, iconSize);
+        const iconSize = fontSize * 1.5;
+        const iconPadding = 10;
+        const iconX = watermarkX - watermarkMetrics.width - iconSize - iconPadding;
+        const iconY = watermarkY - iconSize;
+        ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
 
-        // 5. Trigger the final download
+        // 4. Trigger the final download
         const link = document.createElement('a');
         link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
       };
-      icon.src = '/icons/android-chrome-192x192.png'; // Path to your app icon
+      icon.src = '/icons/android-chrome-192x192.png';
     };
     mainImage.src = dataUrl;
   }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels]);
