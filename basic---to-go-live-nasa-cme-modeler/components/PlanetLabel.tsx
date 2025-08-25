@@ -89,10 +89,11 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
 
   }, [planetMesh, camera, rendererDomElement, label, sunMesh]);
 
+  // MODIFIED: Added a common class name for easy selection during screenshot capture
   return (
     <div
       ref={labelRef}
-      className="absolute top-0 left-0 text-white pointer-events-none transition-opacity duration-300 ease-in-out"
+      className="planet-label-component absolute top-0 left-0 text-white pointer-events-none transition-opacity duration-300 ease-in-out"
       style={{
         opacity: 0,
         textShadow: '0 0 5px #000, 0 0 8px #000',

@@ -33,7 +33,6 @@ import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 
-// ADDED: A new DownloadIcon for the screenshot button
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -54,6 +53,16 @@ interface NavigationTarget {
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
+
+// ADDED: Helper function to parse CSS transform values
+const parseTransform = (transformStr: string): { x: number, y: number } => {
+    const match = /translate\(([^,]+)px, ([^,]+)px\)/.exec(transformStr);
+    if (match) {
+        return { x: parseFloat(match[1]), y: parseFloat(match[2]) };
+    }
+    return { x: 0, y: 0 };
+};
+
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -312,7 +321,7 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // ADDED: Logic for downloading the canvas image with a timestamp
+  // MODIFIED: This function is now significantly more advanced
   const handleDownloadImage = useCallback(() => {
     const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
     if (!dataUrl) {
@@ -320,45 +329,72 @@ const App: React.FC = () => {
       return;
     }
 
-    const image = new Image();
-    image.onload = () => {
+    const mainImage = new Image();
+    mainImage.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
+      canvas.width = mainImage.width;
+      canvas.height = mainImage.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Draw the captured simulation image
-      ctx.drawImage(image, 0, 0);
+      // 1. Draw the main simulation image
+      ctx.drawImage(mainImage, 0, 0);
 
-      // Prepare text styles
-      const padding = 20;
-      const fontSize = Math.max(18, image.width / 80);
+      // 2. Conditionally draw the planet labels
+      if (showLabels) {
+        const labelElements = document.querySelectorAll('.planet-label-component');
+        labelElements.forEach(labelEl => {
+          const htmlEl = labelEl as HTMLElement;
+          if (htmlEl.style.opacity === '1') {
+            const computedStyle = window.getComputedStyle(htmlEl);
+            const { x, y } = parseTransform(htmlEl.style.transform);
+            
+            ctx.font = computedStyle.font;
+            ctx.fillStyle = computedStyle.color;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.shadowBlur = 5;
+            
+            ctx.fillText(htmlEl.innerText, x, y);
+          }
+        });
+      }
+
+      // 3. Draw the timestamp and watermark
+      const padding = 25;
+      const fontSize = Math.max(22, mainImage.width / 70);
       ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
       ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
       ctx.shadowBlur = 5;
 
-      // Calculate current simulation time
       const totalDuration = timelineMaxDate - timelineMinDate;
       const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
       const simulationDate = new Date(timelineMinDate + currentTimeOffset);
-      const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'UTC' })} UTC`;
-
-      // Draw the timestamp and watermark
-      ctx.fillText(dateString, canvas.width - padding, canvas.height - padding - (fontSize + 5));
+      const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
+      
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(dateString, canvas.width - padding, canvas.height - padding - (fontSize + 10));
       ctx.fillText("SpotTheAurora.co.nz", canvas.width - padding, canvas.height - padding);
 
-      // Trigger download
-      const link = document.createElement('a');
-      link.download = `spottheaurora-cme-${simulationDate.toISOString()}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      // 4. Draw the app icon
+      const icon = new Image();
+      icon.onload = () => {
+        const iconSize = Math.max(48, canvas.width / 25);
+        ctx.drawImage(icon, padding, canvas.height - iconSize - padding, iconSize, iconSize);
+
+        // 5. Trigger the final download
+        const link = document.createElement('a');
+        link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      };
+      icon.src = '/icons/android-chrome-192x192.png'; // Path to your app icon
     };
-    image.src = dataUrl;
-  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue]);
+    mainImage.src = dataUrl;
+  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
@@ -448,7 +484,6 @@ const App: React.FC = () => {
                                 </button>
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Official CME Models</span>
                             </div>
-                            {/* ADDED: The new download button and its container */}
                             <div className="flex flex-col items-center w-14">
                                 <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
                                     <DownloadIcon className="w-6 h-6" />
