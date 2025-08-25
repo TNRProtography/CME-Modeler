@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/SettingsModal.tsx ---
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // MODIFIED: Added useRef
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch';
 import { 
@@ -53,8 +53,6 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// NOTE: The HeartIcon is no longer needed as the BMC widget provides its own styling.
-
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -63,6 +61,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
+  const bmcContainerRef = useRef<HTMLDivElement>(null); // MODIFIED: Added a ref for the BMC container
 
   useEffect(() => {
     if (isOpen) {
@@ -82,9 +81,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     }
   }, [isOpen]);
 
-  // MODIFIED: This useEffect hook now manages the Buy Me a Coffee script
+  // MODIFIED: This useEffect now correctly injects the script into our placeholder div
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && bmcContainerRef.current) {
       const script = document.createElement('script');
       script.src = "https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js";
       script.setAttribute("data-name", "bmc-button");
@@ -98,14 +97,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       script.setAttribute("data-coffee-color", "#FFDD00");
       script.async = true;
 
-      document.body.appendChild(script);
+      // Append the script to our specific container, not the document body
+      bmcContainerRef.current.appendChild(script);
 
-      // Cleanup function to remove the script and widget when the modal closes
+      // Cleanup function to remove the script when the modal closes
       return () => {
-        document.body.removeChild(script);
-        const widget = document.getElementById('bmc-wbtn');
-        if (widget) {
-          widget.remove();
+        if (bmcContainerRef.current) {
+          bmcContainerRef.current.innerHTML = ''; // Clear the container
         }
       };
     }
@@ -251,8 +249,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
                 </p>
             </div>
-            {/* NOTE: The Buy Me a Coffee script will inject its button, so we don't need a placeholder.
-                The script is added and removed via the useEffect hook. */}
+            {/* MODIFIED: This div is now the target for the BMC script */}
+            <div ref={bmcContainerRef} className="flex justify-center"></div>
           </section>
 
           <section>
