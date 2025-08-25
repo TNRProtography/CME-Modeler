@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/SettingsModal.tsx ---
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'; // MODIFIED: Added useRef
+import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch';
 import { 
@@ -53,6 +53,13 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+// RE-ADDED: The HeartIcon for the styled link button
+const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.015-4.5-4.5-4.5S12 5.765 12 8.25c0-2.485-2.015-4.5-4.5-4.5S3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    </svg>
+);
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -61,7 +68,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-  const bmcContainerRef = useRef<HTMLDivElement>(null); // MODIFIED: Added a ref for the BMC container
 
   useEffect(() => {
     if (isOpen) {
@@ -81,33 +87,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     }
   }, [isOpen]);
 
-  // MODIFIED: This useEffect now correctly injects the script into our placeholder div
-  useEffect(() => {
-    if (isOpen && bmcContainerRef.current) {
-      const script = document.createElement('script');
-      script.src = "https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js";
-      script.setAttribute("data-name", "bmc-button");
-      script.setAttribute("data-slug", "spottheaurora");
-      script.setAttribute("data-color", "#BD5FFF");
-      script.setAttribute("data-emoji", "🌌");
-      script.setAttribute("data-font", "Poppins");
-      script.setAttribute("data-text", "Support Spot The Aurora");
-      script.setAttribute("data-outline-color", "#000000");
-      script.setAttribute("data-font-color", "#ffffff");
-      script.setAttribute("data-coffee-color", "#FFDD00");
-      script.async = true;
-
-      // Append the script to our specific container, not the document body
-      bmcContainerRef.current.appendChild(script);
-
-      // Cleanup function to remove the script when the modal closes
-      return () => {
-        if (bmcContainerRef.current) {
-          bmcContainerRef.current.innerHTML = ''; // Clear the container
-        }
-      };
-    }
-  }, [isOpen]);
+  // DELETED: The useEffect for the BMC script is removed.
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -249,8 +229,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
                 </p>
             </div>
-            {/* MODIFIED: This div is now the target for the BMC script */}
-            <div ref={bmcContainerRef} className="flex justify-center"></div>
+            {/* REVERTED: Back to the styled link button which is reliable */}
+            <a 
+              href="https://buymeacoffee.com/spottheaurora"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg text-yellow-200 hover:bg-yellow-500/30 hover:border-yellow-300 transition-colors font-semibold"
+            >
+              <HeartIcon className="w-6 h-6 text-yellow-300" />
+              <span>Support on Buy Me a Coffee</span>
+            </a>
           </section>
 
           <section>
