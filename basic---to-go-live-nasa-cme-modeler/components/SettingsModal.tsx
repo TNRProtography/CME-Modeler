@@ -216,7 +216,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
           </button>
         </div>
         
+        {/* MODIFIED: The sections are now reordered */}
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
+          {/* Support the Project Section (Moved to Top) */}
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
+            <div className="text-sm text-neutral-400 mb-4 space-y-3">
+                <p>
+                    This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                </p>
+                <p>
+                    However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
+                </p>
+            </div>
+            <a 
+              href="https://buymeacoffee.com/spottheaurora"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg text-yellow-200 hover:bg-yellow-500/30 hover:border-yellow-300 transition-colors font-semibold"
+            >
+              <HeartIcon className="w-6 h-6 text-yellow-300" />
+              <span>Support on Buy Me a Coffee</span>
+            </a>
+          </section>
+
           {/* App Installation Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
@@ -306,28 +329,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
             <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
-          </section>
-          
-          {/* MODIFIED: This entire section is updated for clarity and impact */}
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
-            <div className="text-sm text-neutral-400 mb-4 space-y-3">
-                <p>
-                    This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
-                </p>
-                <p>
-                    However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
-                </p>
-            </div>
-            <a 
-              href="https://buymeacoffee.com/spottheaurora"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg text-yellow-200 hover:bg-yellow-500/30 hover:border-yellow-300 transition-colors font-semibold"
-            >
-              <HeartIcon className="w-6 h-6 text-yellow-300" />
-              <span>Support on Buy Me a Coffee</span>
-            </a>
           </section>
 
           {/* Help & Support Section */}
