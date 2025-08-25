@@ -313,10 +313,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
           
+          {/* MODIFIED: Updated the development hours */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
             <p className="text-sm text-neutral-400 mb-4">
-              This application is a passion project, built and maintained by one person with over <strong>270 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
+              This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
             </p>
             <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-lg p-4 space-y-2">
               <div>

@@ -46,7 +46,7 @@ interface NavigationTarget {
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'v0.3beta';
+const APP_VERSION = 'V1.0'; // MODIFIED: App version updated
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -245,7 +245,6 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
-  // MODIFIED: This is the final, correct logic to prevent the play delay.
   const handleTimelinePlayPause = useCallback(() => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
@@ -255,21 +254,17 @@ const App: React.FC = () => {
     const isPlaying = timelinePlaying;
 
     if (isAtEnd) {
-      // If at the end, always reset to the beginning and play.
       setTimelineScrubberValue(0);
       resetClock();
       canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
     } else if (!isPlaying) {
-      // If paused (anywhere), reset the clock and timer before playing.
-      // This is the key fix for the delay.
       if (isAtStart) {
         resetClock();
         canvasRef.current?.resetAnimationTimer();
       }
       setTimelinePlaying(true);
     } else {
-      // If it's currently playing, just pause it.
       setTimelinePlaying(false);
     }
   }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
