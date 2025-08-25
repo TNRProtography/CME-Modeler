@@ -23,6 +23,13 @@ import {
 import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
+// ADDED: A new DownloadIcon for the screenshot button
+const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
 // --- Type Definitions ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
@@ -218,7 +225,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [navigationTarget]);
 
-    // MODIFIED: This function is completely rewritten for the new layout and stats
+    // MODIFIED: This function is completely rewritten for the new, comprehensive layout
     const handleDownloadForecastImage = useCallback(async () => {
         const canvas = document.createElement('canvas');
         const width = 900;
@@ -241,64 +248,92 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         // Draw background and overlay
         ctx.drawImage(bgImage, 0, 0, width, height);
-        ctx.fillStyle = 'rgba(10, 10, 10, 0.6)';
+        ctx.fillStyle = 'rgba(10, 10, 10, 0.7)';
         ctx.fillRect(0, 0, width, height);
 
         // Draw Logo
-        const logoHeight = 120;
-        const logoWidth = 120;
-        ctx.drawImage(logoImage, (width - logoWidth) / 2, 50, logoWidth, logoHeight);
+        const logoHeight = 100;
+        const logoWidth = 100;
+        ctx.drawImage(logoImage, (width - logoWidth) / 2, 40, logoWidth, logoHeight);
 
         // Draw Main Score
         ctx.textAlign = 'center';
         ctx.fillStyle = GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid;
-        ctx.font = 'bold 160px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 320);
+        ctx.font = 'bold 140px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 280);
         ctx.fillStyle = '#E5E5E5';
-        ctx.font = '40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Aurora Visibility Score', width / 2, 380);
+        ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('Aurora Visibility Score', width / 2, 330);
 
         // Draw Substorm Forecast (if active)
         if (substormForecast.status !== 'QUIET') {
-            ctx.fillStyle = '#FBBF24'; // Amber color
-            ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText('Substorm Watch', width / 2, 480);
+            ctx.fillStyle = '#FBBF24';
+            ctx.font = 'bold 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('Substorm Watch', width / 2, 420);
             ctx.fillStyle = '#E5E5E5';
-            ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(`~${substormForecast.likelihood}% chance | ${substormForecast.windowLabel}`, width / 2, 530);
+            ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(`~${substormForecast.likelihood}% chance | ${substormForecast.windowLabel}`, width / 2, 465);
         }
 
         // Draw Divider
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(100, 620);
-        ctx.lineTo(width - 100, 620);
+        ctx.moveTo(80, 520);
+        ctx.lineTo(width - 80, 520);
         ctx.stroke();
 
-        // Draw New Stats
-        const statsY = 720;
+        // Draw All Stats in a 2x3 grid
+        const statsStartY = 600;
         const colWidth = width / 3;
+        const rowHeight = 180;
+
+        const drawStat = (col: number, row: number, emoji: string, value: string, label: string, color: string) => {
+            const x = colWidth / 2 + colWidth * col;
+            const y = statsStartY + rowHeight * row;
+            ctx.font = '60px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(emoji, x, y);
+            ctx.fillStyle = color;
+            ctx.font = 'bold 60px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(value, x, y + 75);
+            ctx.fillStyle = '#A3A3A3';
+            ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(label, x, y + 120);
+        };
+        
+        const bzValue = parseFloat(gaugeData.bz.value);
+        const speedValue = parseFloat(gaugeData.speed.value);
+        const densityValue = parseFloat(gaugeData.density.value);
         const btValue = parseFloat(gaugeData.bt.value);
         const powerValue = parseFloat(gaugeData.power.value);
         const moonValue = gaugeData.moon.percentage;
 
-        const drawStat = (col: number, emoji: string, value: string, label: string, color: string) => {
-            ctx.font = '64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(emoji, colWidth / 2 + colWidth * col, statsY);
-            
-            ctx.fillStyle = color;
-            ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(value, colWidth / 2 + colWidth * col, statsY + 80);
-            
-            ctx.fillStyle = '#A3A3A3';
-            ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(label, colWidth / 2 + colWidth * col, statsY + 130);
-        };
+        // Row 1
+        drawStat(0, 0, getGaugeStyle(bzValue, 'bz').emoji, gaugeData.bz.value, 'Bz (nT)', getGaugeStyle(bzValue, 'bz').color);
+        drawStat(1, 0, getGaugeStyle(speedValue, 'speed').emoji, gaugeData.speed.value, 'Speed (km/s)', getGaugeStyle(speedValue, 'speed').color);
+        drawStat(2, 0, getGaugeStyle(densityValue, 'density').emoji, gaugeData.density.value, 'Density (p/cm³)', getGaugeStyle(densityValue, 'density').color);
+        // Row 2
+        drawStat(0, 1, getGaugeStyle(btValue, 'bt').emoji, gaugeData.bt.value, 'Bt (nT)', getGaugeStyle(btValue, 'bt').color);
+        drawStat(1, 1, getGaugeStyle(powerValue, 'power').emoji, gaugeData.power.value, 'Power (GW)', getGaugeStyle(powerValue, 'power').color);
+        
+        // Special handling for Moon stat with rise/set times
+        const moonX = colWidth / 2 + colWidth * 2;
+        const moonY = statsStartY + rowHeight * 1;
+        ctx.font = '60px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(gaugeData.moon.emoji, moonX, moonY);
+        ctx.fillStyle = GAUGE_COLORS.gray.solid;
+        ctx.font = 'bold 60px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(`${moonValue.toFixed(0)}%`, moonX, moonY + 75);
+        ctx.fillStyle = '#A3A3A3';
+        ctx.font = '30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('Moon Illum.', moonX, moonY + 120);
+        
+        const moonRiseSetText = celestialTimes.moon?.rise && celestialTimes.moon?.set 
+            ? `Rise: ${new Date(celestialTimes.moon.rise).toLocaleTimeString('en-NZ', {hour: '2-digit', minute:'2-digit'})} | Set: ${new Date(celestialTimes.moon.set).toLocaleTimeString('en-NZ', {hour: '2-digit', minute:'2-digit'})}`
+            : 'N/A';
+        ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(moonRiseSetText, moonX, moonY + 155);
 
-        drawStat(0, getGaugeStyle(btValue, 'bt').emoji, gaugeData.bt.value, 'Bt (nT)', getGaugeStyle(btValue, 'bt').color);
-        drawStat(1, getGaugeStyle(powerValue, 'power').emoji, gaugeData.power.value, 'Power (GW)', getGaugeStyle(powerValue, 'power').color);
-        drawStat(2, gaugeData.moon.emoji, `${moonValue.toFixed(0)}%`, 'Moon Illum.', GAUGE_COLORS.gray.solid);
 
         // Draw Footer
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -315,7 +350,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         link.href = canvas.toDataURL('image/png');
         link.click();
 
-    }, [auroraScore, substormForecast, gaugeData]);
+    }, [auroraScore, substormForecast, gaugeData, celestialTimes]);
 
     const tooltipContent = useMemo(() => ({
         'unified-forecast': `<strong>About the Spot The Aurora Forecast</strong><br>This panel is your primary guide, combining the general aurora visibility potential with a specific, short-term forecast for intense bursts of activity called substorms.<br><br>
@@ -397,6 +432,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           onDownloadImage={handleDownloadForecastImage}
                           substormForecast={substormForecast}
                         />
+
+                        {/* ADDED: The new download button in its own row */}
+                        <div className="col-span-12">
+                            <button 
+                                onClick={handleDownloadForecastImage}
+                                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-indigo-600/80 border border-indigo-400/50 rounded-lg text-indigo-100 hover:bg-indigo-500/80 hover:border-indigo-300 transition-colors font-semibold"
+                            >
+                                <DownloadIcon className="w-6 h-6" />
+                                <span>Download The Aurora Forecast For The Next Two Hours!</span>
+                            </button>
+                        </div>
 
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <TipsSection />

@@ -4,13 +4,6 @@ import React, { useMemo } from 'react';
 import GuideIcon from './icons/GuideIcon';
 import { SubstormForecast } from '../types';
 
-// ADDED: A new DownloadIcon for the screenshot button
-const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-    </svg>
-);
-
 interface UnifiedForecastPanelProps {
   // Aurora forecast props
   score: number | null;
@@ -22,7 +15,6 @@ interface UnifiedForecastPanelProps {
   getAuroraEmoji: (score: number | null) => string;
   gaugeColors: Record<string, { solid: string }>;
   onOpenModal: (id: string) => void;
-  onDownloadImage: () => void; // ADDED: Prop for the download handler
   
   // Substorm forecast props
   substormForecast: SubstormForecast;
@@ -38,7 +30,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   getAuroraEmoji,
   gaugeColors,
   onOpenModal,
-  onDownloadImage, // ADDED
   substormForecast
 }) => {
   const isDaylight = blurb.includes("The sun is currently up");
@@ -89,6 +80,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
 
   return (
     <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
+      {/* MODIFIED: Removed the download button from this component's header */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>
@@ -98,14 +90,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             title="About this forecast"
           >
             <GuideIcon className="w-6 h-6" />
-          </button>
-          {/* ADDED: The new download button */}
-          <button 
-            onClick={onDownloadImage} 
-            className="p-1 text-neutral-400 hover:text-neutral-100" 
-            title="Download Forecast Image"
-          >
-            <DownloadIcon className="w-6 h-6" />
           </button>
         </div>
         <div className={`text-lg font-semibold ${getStatusColor()}`}>
@@ -192,4 +176,4 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     </div>
   );
 };
-// --- END OF FILE src/components/UnifiedForecastPanel.tsx ---```
+// --- END OF FILE src/components/UnifiedForecastPanel.tsx ---
