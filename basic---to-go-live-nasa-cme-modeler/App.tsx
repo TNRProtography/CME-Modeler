@@ -311,11 +311,11 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // MODIFIED: This function is completely rewritten for the new requirements
+  // MODIFIED: This function is completely rewritten for accurate label and watermark placement.
   const handleDownloadImage = useCallback(() => {
     const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
-    if (!dataUrl) {
-      console.error("Could not capture canvas image.");
+    if (!dataUrl || !rendererDomElement) {
+      console.error("Could not capture canvas image or renderer DOM element is missing.");
       return;
     }
 
@@ -332,6 +332,7 @@ const App: React.FC = () => {
 
       // 2. Conditionally draw the planet labels
       if (showLabels) {
+        const canvasRect = rendererDomElement.getBoundingClientRect();
         const labelElements = document.querySelectorAll('.planet-label-component');
         labelElements.forEach(labelEl => {
           const htmlEl = labelEl as HTMLElement;
@@ -339,6 +340,10 @@ const App: React.FC = () => {
             const computedStyle = window.getComputedStyle(htmlEl);
             const rect = htmlEl.getBoundingClientRect();
             
+            // Calculate position relative to the canvas, not the viewport
+            const drawX = rect.left - canvasRect.left;
+            const drawY = rect.top - canvasRect.top;
+
             ctx.font = computedStyle.font;
             ctx.fillStyle = computedStyle.color;
             ctx.textAlign = 'left';
@@ -346,8 +351,7 @@ const App: React.FC = () => {
             ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
             ctx.shadowBlur = 6;
             
-            // Use the accurate bounding rect position
-            ctx.fillText(htmlEl.innerText, rect.left, rect.top);
+            ctx.fillText(htmlEl.innerText, drawX, drawY);
           }
         });
       }
@@ -355,32 +359,39 @@ const App: React.FC = () => {
       // 3. Draw the timestamp, watermark, and icon
       const padding = 25;
       const fontSize = Math.max(24, mainImage.width / 65);
+      const textGap = 10;
       ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
       ctx.shadowBlur = 7;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
 
       const totalDuration = timelineMaxDate - timelineMinDate;
       const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
       const simulationDate = new Date(timelineMinDate + currentTimeOffset);
       const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
       
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(dateString, canvas.width - padding, canvas.height - padding - (fontSize + 10));
-      
       const watermarkText = "SpotTheAurora.co.nz";
       const watermarkMetrics = ctx.measureText(watermarkText);
-      const watermarkX = canvas.width - padding;
-      const watermarkY = canvas.height - padding;
-      ctx.fillText(watermarkText, watermarkX, watermarkY);
-
+      
       const icon = new Image();
       icon.onload = () => {
-        const iconSize = fontSize * 1.5;
-        const iconPadding = 10;
-        const iconX = watermarkX - watermarkMetrics.width - iconSize - iconPadding;
-        const iconY = watermarkY - iconSize;
+        const iconSize = (fontSize * 2) + textGap; // Make icon height match the two lines of text
+        const iconPadding = 15;
+        
+        // Position the icon on the far right
+        const iconX = canvas.width - padding - iconSize;
+        const iconY = canvas.height - padding - iconSize;
+        
+        // Position the text to the left of the icon
+        const textX = iconX - iconPadding;
+        
+        // Draw the text
+        ctx.fillText(dateString, textX, canvas.height - padding - fontSize - textGap);
+        ctx.fillText(watermarkText, textX, canvas.height - padding);
+        
+        // Draw the icon
         ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
 
         // 4. Trigger the final download
@@ -392,7 +403,7 @@ const App: React.FC = () => {
       icon.src = '/icons/android-chrome-192x192.png';
     };
     mainImage.src = dataUrl;
-  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels]);
+  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
