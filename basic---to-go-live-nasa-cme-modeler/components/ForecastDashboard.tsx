@@ -258,7 +258,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.fillText(`${(auroraScore ?? 0).toFixed(1)}%`, width / 2, 280);
         ctx.fillStyle = '#E5E5E5';
         ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('Aurora Visibility Score', width / 2, 330);
+        ctx.fillText('Spot The Aurora Forecast Score', width / 2, 330);
 
         if (substormForecast.status !== 'QUIET') {
             ctx.fillStyle = '#FBBF24';
@@ -278,8 +278,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.stroke();
 
         const statBlockHeight = 160;
-        const gapSize = 40;
-        const statsStartY = dividerY + gapSize;
+        const gapSize = 50; // Increased gap size
+        const statsStartY = dividerY + gapSize + 20; // Pushed down further
         const colWidth = width / 3;
 
         const drawStat = (col: number, row: number, emoji: string, value: string, label: string, color: string) => {
@@ -326,13 +326,20 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.fillText(moonRiseSetText, moonX, moonY + 140);
 
+        const footerY = height - 40;
+        const disclaimerY = footerY - 80;
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.font = 'italic 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText("This is a forecast for potential activity over the next two hours.", width / 2, disclaimerY);
+
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
         ctx.font = '28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         const now = new Date();
         const timeString = now.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' });
-        ctx.fillText(timeString, width / 2, height - 100);
+        ctx.fillText(timeString, width / 2, footerY - 40);
         ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('SpotTheAurora.co.nz', width / 2, height - 50);
+        ctx.fillText('SpotTheAurora.co.nz', width / 2, footerY);
 
         const link = document.createElement('a');
         link.download = `spottheaurora-forecast-${now.toISOString()}.png`;
