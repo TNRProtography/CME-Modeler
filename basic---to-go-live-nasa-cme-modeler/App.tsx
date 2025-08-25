@@ -312,7 +312,6 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // MODIFIED: This function is completely rewritten to use 3D projection for labels.
   const handleDownloadImage = useCallback(() => {
     const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
     if (!dataUrl || !rendererDomElement || !threeCamera) {
@@ -328,31 +327,30 @@ const App: React.FC = () => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // 1. Draw the main simulation image
       ctx.drawImage(mainImage, 0, 0);
 
-      // 2. Conditionally draw the planet labels using 3D projection
       if (showLabels && window.THREE) {
         const THREE = window.THREE;
         const cameraPosition = new THREE.Vector3();
         threeCamera.getWorldPosition(cameraPosition);
 
         planetLabelInfos.forEach(info => {
-          if (!info.mesh.visible) return;
+          // MODIFIED: This condition now filters out Moon and L1 labels from the screenshot
+          if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) {
+            return;
+          }
 
           const planetWorldPos = new THREE.Vector3();
           info.mesh.getWorldPosition(planetWorldPos);
 
-          // Visibility checks (same as in PlanetLabel.tsx)
           const projectionVector = planetWorldPos.clone().project(threeCamera);
-          if (projectionVector.z > 1) return; // Behind camera
+          if (projectionVector.z > 1) return;
 
           const dist = planetWorldPos.distanceTo(cameraPosition);
           const minVisibleDist = SCENE_SCALE * 0.2;
           const maxVisibleDist = SCENE_SCALE * 15;
           if (dist < minVisibleDist || dist > maxVisibleDist) return;
 
-          // Occlusion check
           if (sunInfo && info.name !== 'Sun') {
             const sunWorldPos = new THREE.Vector3();
             sunInfo.mesh.getWorldPosition(sunWorldPos);
@@ -368,7 +366,6 @@ const App: React.FC = () => {
             }
           }
 
-          // Convert normalized coordinates to canvas pixels
           const x = (projectionVector.x * 0.5 + 0.5) * canvas.width;
           const y = (-projectionVector.y * 0.5 + 0.5) * canvas.height;
           const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
@@ -384,7 +381,6 @@ const App: React.FC = () => {
         });
       }
 
-      // 3. Draw the timestamp, watermark, and icon
       const padding = 25;
       const fontSize = Math.max(24, mainImage.width / 65);
       const textGap = 10;
@@ -417,7 +413,6 @@ const App: React.FC = () => {
         
         ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
 
-        // 4. Trigger the final download
         const link = document.createElement('a');
         link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
         link.href = canvas.toDataURL('image/png');
