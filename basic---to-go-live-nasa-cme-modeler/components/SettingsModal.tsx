@@ -53,7 +53,6 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// ADDED: A new heart icon for the support button
 const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.015-4.5-4.5-4.5S12 5.765 12 8.25c0-2.485-2.015-4.5-4.5-4.5S3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
@@ -69,8 +68,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-  // DELETED: State for copying bank account number is no longer needed
-  // const [isCopied, setIsCopied] = useState(false); 
 
   useEffect(() => {
     if (isOpen) {
@@ -155,9 +152,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     }
   }, [deferredPrompt]);
   
-  // DELETED: The handleCopy function is no longer needed.
-  // const handleCopy = useCallback(() => { ... });
-
   const handleTestCategory = useCallback((categoryId: string) => {
     let title = 'Test Notification';
     let body = 'This is a sample alert for your selected category.';
@@ -314,12 +308,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
           
-          {/* MODIFIED: This entire section is updated for Buy Me a Coffee */}
+          {/* MODIFIED: This entire section is updated for clarity and impact */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
-            <p className="text-sm text-neutral-400 mb-4">
-              This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
-            </p>
+            <div className="text-sm text-neutral-400 mb-4 space-y-3">
+                <p>
+                    This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                </p>
+                <p>
+                    However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
+                </p>
+            </div>
             <a 
               href="https://buymeacoffee.com/spottheaurora"
               target="_blank"
