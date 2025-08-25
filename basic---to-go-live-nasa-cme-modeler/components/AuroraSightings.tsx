@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // Import useRef
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
@@ -6,35 +6,43 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
 
+// --- NEW: Local SVG Icon components for the UI ---
+const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+);
+
+const RedCrossIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+);
+
+
 // --- CONSTANTS & CONFIG ---
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
-const REPORTING_COOLDOWN_MS = 5 * 60 * 1000; // MODIFIED: Cooldown reduced to 5 minutes
+const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
 
-// MODIFIED: Expanded status options with categories for UI grouping
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; category: 'visible' | 'nothing' | 'other' }[] = [
-    // Visible Reports
     { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.', category: 'visible' },
     { status: 'phone', emoji: '📱', label: 'Phone Camera', description: 'Not visible to your eyes, but shows up clearly in a modern smartphone photo (e.g., a 3-second night mode shot).', category: 'visible' },
     { status: 'dslr', emoji: '📷', label: 'DSLR/Mirrorless', description: 'Only visible with a dedicated camera (DSLR/Mirrorless) on a tripod using a long exposure (e.g., >5 seconds).', category: 'visible' },
-    // "Nothing" Reports
     { status: 'nothing-eye', emoji: '👁️', label: 'Naked Eye', description: 'The sky is clear, but no aurora is visible to your eyes. Reporting this is very helpful!', category: 'nothing' },
     { status: 'nothing-phone', emoji: '📱', label: 'Phone Camera', description: 'The sky is clear, but no aurora is visible in a smartphone photo.', category: 'nothing' },
     { status: 'nothing-dslr', emoji: '📷', label: 'DSLR/Mirrorless', description: 'The sky is clear, but no aurora is visible in a long-exposure shot.', category: 'nothing' },
-    // Other Reports
     { status: 'cloudy', emoji: '☁️', label: 'Cloudy', description: 'Your view of the sky is mostly or completely obscured by clouds, preventing any possible sighting.', category: 'other' },
 ];
 
-// MODIFIED: Helper to add a prefix for "nothing" reports in displays
 const getEmojiForStatus = (status: SightingStatus) => {
     const option = STATUS_OPTIONS.find(opt => opt.status === status);
     if (!option) return '❓';
-    // Add a cross prefix for "nothing" reports to distinguish them on the map/table
     if (status.startsWith('nothing-')) {
         return `❌${option.emoji}`;
     }
@@ -95,7 +103,6 @@ const LocationFinder = ({ onLocationSelect }: { onLocationSelect: (latlng: L.Lat
     return null;
 };
 
-// MODIFIED: InfoModal content updated to explain new reporting categories
 const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
     return (
@@ -112,7 +119,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                     </section>
                      <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
-                        <p>Honest reports are crucial for everyone! Please use the following guide to choose the best option for your situation.</p>
+                        <p>Honest reports are crucial for everyone! Use the green check <GreenCheckIcon className="w-4 h-4 inline-block text-green-500" /> for positive sightings and the red cross <RedCrossIcon className="w-4 h-4 inline-block text-red-500" /> for clear skies with no aurora.</p>
                         <ul className="mt-3 space-y-3">
                             {STATUS_OPTIONS.filter(opt => opt.category === 'visible').map(({ emoji, label, description }) => (
                                 <li key={label} className="flex items-start gap-4">
@@ -122,7 +129,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                             ))}
                              <li className="flex items-start gap-4">
                                 <span className="text-3xl mt-[-4px]">❌</span>
-                                <div> <strong className="font-semibold text-neutral-200">Nothing (per category)</strong> <p className="text-neutral-400">If your sky is clear but you can't see an aurora with your eyes or a camera, please report it! Select the "Nothing" option for the corresponding category (e.g., Naked Eye, Phone). This is extremely valuable data.</p> </div>
+                                <div> <strong className="font-semibold text-neutral-200">Nothing (per category)</strong> <p className="text-neutral-400">If your sky is clear but you can't see an aurora, please report it! This is extremely valuable data. On the map, these reports will show as a cross above the category icon.</p> </div>
                             </li>
                              <li className="flex items-start gap-4">
                                 <span className="text-3xl mt-[-4px]">☁️</span>
@@ -219,7 +226,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reportData) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Submission failed.');
-            const newReportInfo = { timestamp: Date.now(), key: result.key }; // Note: result.key may be undefined now, which is fine.
+            const newReportInfo = { timestamp: Date.now(), key: result.key };
             setLastReportInfo(newReportInfo);
             localStorage.setItem(LOCAL_STORAGE_LAST_REPORT_KEY, JSON.stringify(newReportInfo));
             await fetchSightings();
@@ -236,10 +243,26 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     }, []);
 
     const userMarkerIcon = L.divIcon({ html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`, className: '', iconSize: [20, 20], iconAnchor: [10, 10], });
+    
+    // MODIFIED: This function now creates stacked HTML for "nothing" reports
     const createSightingIcon = (sighting: SightingReport) => {
-        const emoji = getEmojiForStatus(sighting.status);
+        const fullEmojiString = getEmojiForStatus(sighting.status);
         const sendingAnimation = sighting.isPending ? `<div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div><div class="absolute inset-0 bg-black rounded-full opacity-60"></div>` : '';
-        return L.divIcon({ html: `<div class="relative">${sendingAnimation}<div>${emoji}</div></div>`, className: 'emoji-marker', iconSize: [32, 32], iconAnchor: [16, 16], });
+        
+        let iconHtml: string;
+        let iconSize: L.PointTuple = [32, 32];
+        let iconAnchor: L.PointTuple = [16, 16];
+
+        if (fullEmojiString.startsWith('❌')) {
+            const baseEmoji = fullEmojiString.substring(1);
+            iconHtml = `<div class="relative flex flex-col items-center justify-center">${sendingAnimation}<span style="font-size: 18px; line-height: 0.8;">❌</span><span style="font-size: 24px; line-height: 1;">${baseEmoji}</span></div>`;
+            iconSize = [32, 40]; // Taller icon
+            iconAnchor = [16, 20]; // Adjust anchor to the center
+        } else {
+            iconHtml = `<div class="relative">${sendingAnimation}<div>${fullEmojiString}</div></div>`;
+        }
+
+        return L.divIcon({ html: iconHtml, className: 'emoji-marker', iconSize, iconAnchor });
     };
 
     return (
@@ -254,7 +277,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
             </div>
 
-            {/* MODIFIED: New reporting UI with grouped categories */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-neutral-900 p-4 rounded-lg relative">
                 {isDaylight && (
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center rounded-lg z-10">
@@ -264,9 +286,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-12 md:col-span-3 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
                 
                 <div className="col-span-12 md:col-span-9 space-y-4">
-                    {/* Visible Section */}
+                    {/* MODIFIED: Added GreenCheckIcon for clarity */}
                     <div>
-                        <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left">I SAW something with my:</p>
+                        <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
+                            <GreenCheckIcon className="w-5 h-5 text-green-500" />
+                            I SAW something with my:
+                        </p>
                         <div className="flex flex-wrap justify-center md:justify-start gap-2">
                             {STATUS_OPTIONS.filter(opt => opt.category === 'visible').map(({ status, emoji, label }) => (
                                 <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={label}>
@@ -276,9 +301,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                             ))}
                         </div>
                     </div>
-                    {/* Nothing Section */}
+                    {/* MODIFIED: Added RedCrossIcon for clarity */}
                     <div>
-                        <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left">The sky is CLEAR, but I SAW NOTHING with my:</p>
+                        <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
+                            <RedCrossIcon className="w-5 h-5 text-red-500" />
+                            The sky is CLEAR, but I SAW NOTHING with my:
+                        </p>
                         <div className="flex flex-wrap justify-center md:justify-start gap-2">
                             {STATUS_OPTIONS.filter(opt => opt.category === 'nothing').map(({ status, emoji, label }) => (
                                 <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={`Report clear sky but no aurora visible to ${label}`}>
@@ -288,7 +316,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                             ))}
                         </div>
                     </div>
-                     {/* Other Section */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-neutral-700/50">
                         <div className="flex-grow">
                             <p className="text-sm font-semibold text-neutral-300 mb-2 text-center sm:text-left">My view is:</p>
