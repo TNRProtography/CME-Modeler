@@ -46,7 +46,7 @@ interface NavigationTarget {
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'V1.0'; // MODIFIED: App version updated
+const APP_VERSION = 'V1.0';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
@@ -388,10 +388,11 @@ const App: React.FC = () => {
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
-                                <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className={`p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform ${highlightedElementId === 'forecast-models-button' ? 'tutorial-highlight' : ''}`} title="Other CME Forecast Models">
+                                {/* MODIFIED: Updated title and label text */}
+                                <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className={`p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform ${highlightedElementId === 'forecast-models-button' ? 'tutorial-highlight' : ''}`} title="Official CME Forecast Models">
                                     <GlobeIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Other CME Models</span>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Official CME Models</span>
                             </div>
                         </div>
                         <div className="flex items-start text-center space-x-2 pointer-events-auto">

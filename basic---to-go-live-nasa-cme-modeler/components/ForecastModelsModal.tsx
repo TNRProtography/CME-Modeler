@@ -74,8 +74,9 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
         className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] text-neutral-300 flex flex-col"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
+        {/* MODIFIED: Updated the heading text */}
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h2 className="text-2xl font-bold text-neutral-200">Other CME Forecast Models</h2>
+          <h2 className="text-2xl font-bold text-neutral-200">Official CME Forecast Models</h2>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
             <CloseIcon className="w-6 h-6" />
           </button>
