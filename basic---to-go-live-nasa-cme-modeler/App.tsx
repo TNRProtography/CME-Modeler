@@ -373,11 +373,10 @@ const App: React.FC = () => {
       const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
       
       const watermarkText = "SpotTheAurora.co.nz";
-      const watermarkMetrics = ctx.measureText(watermarkText);
       
       const icon = new Image();
       icon.onload = () => {
-        const iconSize = (fontSize * 2) + textGap; // Make icon height match the two lines of text
+        const iconSize = (fontSize * 2) + textGap;
         const iconPadding = 15;
         
         // Position the icon on the far right
