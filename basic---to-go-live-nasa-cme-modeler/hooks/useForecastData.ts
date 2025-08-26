@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
 SubstormActivity,
 SightingReport,
-SubstormForecast, // New type for the richer forecast object
-ActivitySummary, // ADDED: Import the new summary type
+SubstormForecast,
+ActivitySummary,
 } from '../types';
 
 // --- Type Definitions ---
@@ -45,7 +45,6 @@ location: string;
 link: string;
 }
 
-// --- NEW: Types for the predictive model ---
 type SWRow = { t: number; by?: number; bz?: number; v?: number; };
 type GOESRow = { t: number; hp?: number; };
 type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
@@ -56,13 +55,23 @@ const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
-const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
+const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json'; // ADDED
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
 
-// --- NEW: Physics and Model Helpers ---
+// --- Physics and Model Helpers ---
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+// ADDED: Helper to calculate solar wind travel time from L1 to Earth
+function calculatePropagationDelay(speed_km_s: number | null | undefined): number {
+    if (!speed_km_s || speed_km_s < 200) {
+        return 60 * 60 * 1000; // Default to 60 minutes if speed is invalid
+    }
+    const L1_DISTANCE_KM = 1.5e6;
+    const travelTime_s = L1_DISTANCE_KM / speed_km_s;
+    return travelTime_s * 1000; // Return delay in milliseconds
+}
 
 function newellCoupling(V: number, By: number, Bz: number) {
   const BT = Math.sqrt((By ?? 0) ** 2 + (Bz ?? 0) ** 2);
@@ -155,7 +164,7 @@ const [allSpeedData, setAllSpeedData] = useState<any[]>([]);
 const [allDensityData, setAllDensityData] = useState<any[]>([]);
 const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
 const [goes18Data, setGoes18Data] = useState<any[]>([]);
-const [goes19Data, setGoes19Data] = useState<any[]>([]);
+const [goes19Data, setGoes19Data] = useState<any[]>([]); // ADDED
 const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
 const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
 const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
@@ -164,7 +173,7 @@ const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]
 const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
 const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
 const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
-const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null); // ADDED: State for the summary
+const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
 
 const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
@@ -195,6 +204,7 @@ const getMoonData = useCallback((illumination: number | null, rise: number | nul
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
 }, []);
 
+// MODIFIED: This hook now uses propagation delay for its analysis
 const recentL1Data = useMemo(() => {
     if (!allMagneticData.length || !allSpeedData.length) return null;
     const mapV = new Map<number, number>();
@@ -207,9 +217,13 @@ const recentL1Data = useMemo(() => {
         joined.push({ t: m.time, By: m.by, Bz: m.bz, V });
       }
     }
+    if (joined.length === 0) return null;
+
+    const lastValidSpeed = joined[joined.length - 1].V;
+    const propagationDelay = calculatePropagationDelay(lastValidSpeed);
+    const nowAtEarth = Date.now() - propagationDelay;
     
-    const cutoff = Date.now() - 120 * 60_000;
-    const win = joined.filter(x => x.t >= cutoff);
+    const win = joined.filter(x => x.t >= nowAtEarth - 120 * 60_000);
     const dPhi = win.map(w => newellCoupling(w.V, w.By, w.Bz));
     const bz = win.map(w => w.Bz);
     
@@ -223,14 +237,24 @@ const recentL1Data = useMemo(() => {
     };
 }, [allMagneticData, allSpeedData]);
 
+// MODIFIED: This hook now checks both GOES-18 and GOES-19
 const goesOnset = useMemo(() => {
-    if (!goes18Data.length) return false;
+    if (!goes18Data.length && !goes19Data.length) return false;
     const cutoff = Date.now() - 15 * 60_000;
-    const series = goes18Data.filter(g => g.time >= cutoff && g.hp)
+
+    const series18 = goes18Data.filter(g => g.time >= cutoff && g.hp)
                          .map(g => ({ t: g.time, v: g.hp }));
-    const slope = slopePerMin(series, 2);
-    return typeof slope === "number" && slope >= 8;
-}, [goes18Data]);
+    const series19 = goes19Data.filter(g => g.time >= cutoff && g.hp)
+                         .map(g => ({ t: g.time, v: g.hp }));
+
+    const slope18 = slopePerMin(series18, 2);
+    const slope19 = slopePerMin(series19, 2);
+
+    const onset18 = typeof slope18 === "number" && slope18 >= 8;
+    const onset19 = typeof slope19 === "number" && slope19 >= 8;
+
+    return onset18 || onset19;
+}, [goes18Data, goes19Data]);
 
 useEffect(() => {
     if (!recentL1Data) return;
@@ -283,47 +307,38 @@ useEffect(() => {
 
 }, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
 
-// ADDED: useMemo hook to calculate the 24-hour summary
 useMemo(() => {
     if (auroraScoreHistory.length === 0 || allMagneticData.length === 0 || allSpeedData.length === 0) {
         setActivitySummary(null);
         return;
     }
 
-    // 1. Calculate Highest Score
     const highestScore = auroraScoreHistory.reduce((max, current) => {
         return current.finalScore > max.finalScore ? current : max;
     }, { finalScore: -1, timestamp: 0 });
 
-    // 2. Calculate Substorm Events
     const substormEvents: ActivitySummary['substormEvents'] = [];
-    // This is a simplified historical analysis. A more complex one could re-run the model.
-    // For now, we'll define a "substorm watch" as a period of sustained negative Bz.
     let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
 
     allMagneticData.forEach(point => {
-        const isSustainedNegative = point.bz <= -5; // Example threshold for a "watch" condition
+        const isSustainedNegative = point.bz <= -5;
 
         if (isSustainedNegative && !currentEvent) {
-            // Start of a new event
             currentEvent = {
                 start: point.time,
                 end: point.time,
-                peakProbability: 0, // Placeholder, a real model would calculate this
+                peakProbability: 0,
                 peakStatus: 'Watch'
             };
         } else if (isSustainedNegative && currentEvent) {
-            // Continue the current event
             currentEvent.end = point.time;
         } else if (!isSustainedNegative && currentEvent) {
-            // End of the current event
-            if (currentEvent.end - currentEvent.start >= 15 * 60 * 1000) { // Only count events longer than 15 mins
+            if (currentEvent.end - currentEvent.start >= 15 * 60 * 1000) {
                 substormEvents.push(currentEvent);
             }
             currentEvent = null;
         }
     });
-    // Add the last event if it's still ongoing
     if (currentEvent && currentEvent.end - currentEvent.start >= 15 * 60 * 1000) {
         substormEvents.push(currentEvent);
     }
@@ -343,7 +358,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
         fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
         fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-        fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+        fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()), // ADDED
         fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
     ]);
     const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
@@ -427,9 +442,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (isInitialLoad) setIsLoading(false);
 }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
 
-// --- MODIFIED: Added a check for `window` to prevent server-side errors ---
 useEffect(() => {
-    // This check ensures this code only runs in a browser environment
     if (typeof window !== 'undefined' && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
@@ -479,7 +492,7 @@ return {
     allDensityData,
     allMagneticData,
     goes18Data,
-    goes19Data,
+    goes19Data, // ADDED
     loadingMagnetometer,
     substormForecast,
     auroraScoreHistory,
@@ -488,7 +501,7 @@ return {
     owmDailyForecast,
     interplanetaryShockData,
     locationBlurb,
-    activitySummary, // ADDED: Return the new summary object
+    activitySummary,
     fetchAllData,
 };
 

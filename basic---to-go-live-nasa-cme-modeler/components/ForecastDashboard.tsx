@@ -291,7 +291,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         currentY += 40;
         ctx.fillText(`Expected Visibility: ${visibilityText}`, width / 2, currentY);
         
-        currentY += 60; // Increased gap
+        currentY += 70; // Increased gap
         const dividerY = currentY;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 2;
@@ -302,7 +302,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const statBlockHeight = 160;
         const gapSize = 20;
-        const statsStartY = dividerY + 70; // Increased gap
+        const statsStartY = dividerY + 80; // Increased gap
         const colWidth = width / 3;
 
         const drawStat = (col: number, row: number, emoji: string, value: string, label: string, color: string) => {
