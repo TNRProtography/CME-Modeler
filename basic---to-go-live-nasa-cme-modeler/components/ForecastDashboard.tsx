@@ -224,7 +224,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [navigationTarget]);
 
-    // MODIFIED: This function is completely rewritten for the new, comprehensive layout
     const handleDownloadForecastImage = useCallback(async () => {
         const canvas = document.createElement('canvas');
         const width = 900;
@@ -291,7 +290,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         currentY += 40;
         ctx.fillText(`Expected Visibility: ${visibilityText}`, width / 2, currentY);
         
-        currentY += 70; // Increased gap
+        currentY += 70;
         const dividerY = currentY;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 2;

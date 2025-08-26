@@ -55,7 +55,7 @@ const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
-const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json'; // ADDED
+const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
@@ -63,14 +63,13 @@ const GREYMOUTH_LATITUDE = -42.45;
 // --- Physics and Model Helpers ---
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
-// ADDED: Helper to calculate solar wind travel time from L1 to Earth
 function calculatePropagationDelay(speed_km_s: number | null | undefined): number {
     if (!speed_km_s || speed_km_s < 200) {
-        return 60 * 60 * 1000; // Default to 60 minutes if speed is invalid
+        return 60 * 60 * 1000;
     }
     const L1_DISTANCE_KM = 1.5e6;
     const travelTime_s = L1_DISTANCE_KM / speed_km_s;
-    return travelTime_s * 1000; // Return delay in milliseconds
+    return travelTime_s * 1000;
 }
 
 function newellCoupling(V: number, By: number, Bz: number) {
@@ -164,7 +163,7 @@ const [allSpeedData, setAllSpeedData] = useState<any[]>([]);
 const [allDensityData, setAllDensityData] = useState<any[]>([]);
 const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
 const [goes18Data, setGoes18Data] = useState<any[]>([]);
-const [goes19Data, setGoes19Data] = useState<any[]>([]); // ADDED
+const [goes19Data, setGoes19Data] = useState<any[]>([]);
 const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
 const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
 const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
@@ -178,7 +177,7 @@ const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(n
 const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
-    windowLabel: '30 – 90 min',
+    windowLabel: 'No window',
     action: 'Low chance for now.',
     p30: 0,
     p60: 0,
@@ -204,7 +203,6 @@ const getMoonData = useCallback((illumination: number | null, rise: number | nul
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
 }, []);
 
-// MODIFIED: This hook now uses propagation delay for its analysis
 const recentL1Data = useMemo(() => {
     if (!allMagneticData.length || !allSpeedData.length) return null;
     const mapV = new Map<number, number>();
@@ -237,7 +235,6 @@ const recentL1Data = useMemo(() => {
     };
 }, [allMagneticData, allSpeedData]);
 
-// MODIFIED: This hook now checks both GOES-18 and GOES-19
 const goesOnset = useMemo(() => {
     if (!goes18Data.length && !goes19Data.length) return false;
     const cutoff = Date.now() - 15 * 60_000;
@@ -256,6 +253,7 @@ const goesOnset = useMemo(() => {
     return onset18 || onset19;
 }, [goes18Data, goes19Data]);
 
+// MODIFIED: This entire hook is rewritten to produce specific time windows
 useEffect(() => {
     if (!recentL1Data) return;
 
@@ -278,11 +276,28 @@ useEffect(() => {
 
     const likelihood = Math.round((0.4 * clamp01(probs.P30) + 0.6 * clamp01(probs.P60)) * 100);
     
-    let windowLabel = '30 – 90 min';
-    if (status === "ONSET") windowLabel = "Now – 10 min";
-    else if (status === "IMMINENT_30") windowLabel = "0 – 30 min";
-    else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
-    else if (status === "WATCH") windowLabel = "20 – 90 min";
+    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const now = Date.now();
+    let windowLabel = 'No forecast window';
+    let predictedStartTime, predictedEndTime;
+
+    if (status === "ONSET") {
+        predictedStartTime = now;
+        predictedEndTime = now + 10 * 60 * 1000;
+        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
+    } else if (status === "IMMINENT_30") {
+        predictedStartTime = now;
+        predictedEndTime = now + 30 * 60 * 1000;
+        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
+    } else if (status === "LIKELY_60") {
+        predictedStartTime = now + 10 * 60 * 1000;
+        predictedEndTime = now + 60 * 60 * 1000;
+        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
+    } else if (status === "WATCH") {
+        predictedStartTime = now + 20 * 60 * 1000;
+        predictedEndTime = now + 90 * 60 * 1000;
+        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
+    }
 
     let action = 'Conditions are calm. Low chance of substorm activity for now.';
     if (status === "ONSET") action = "Look now — activity is underway.";
@@ -299,8 +314,8 @@ useEffect(() => {
         isStretching: status === 'WATCH' || status === 'LIKELY_60' || status === 'IMMINENT_30',
         isErupting: status === 'ONSET',
         probability: likelihood,
-        predictedStartTime: status !== 'QUIET' ? Date.now() : undefined,
-        predictedEndTime: status !== 'QUIET' ? Date.now() + 60 * 60 * 1000 : undefined,
+        predictedStartTime: predictedStartTime,
+        predictedEndTime: predictedEndTime,
         text: action,
         color: ''
     });
@@ -358,7 +373,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
         fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
         fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-        fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()), // ADDED
+        fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
         fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
     ]);
     const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
@@ -492,7 +507,7 @@ return {
     allDensityData,
     allMagneticData,
     goes18Data,
-    goes19Data, // ADDED
+    goes19Data,
     loadingMagnetometer,
     substormForecast,
     auroraScoreHistory,
