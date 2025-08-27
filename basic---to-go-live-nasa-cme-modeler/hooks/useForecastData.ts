@@ -308,18 +308,21 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
                 const density = row.density ? parseFloat(row.density) : null;
                 if (!row.time_tag || speed === null || density === null || speed < 0 || density < 0) return null;
                 return {
-                    time: new Date(row.time_tag).getTime(),
+                    // FIX #1: Ensure timestamp is parsed as UTC by appending 'Z'
+                    time: new Date(row.time_tag + 'Z').getTime(),
                     speed,
                     density
                 };
             })
             .filter((p): p is NonNullable<typeof p> => p !== null);
 
-        setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed })));
-        setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
+        // Sort oldest to newest for charts
+        const sortedForCharts = [...processed].reverse();
+        setAllSpeedData(sortedForCharts.map(p => ({ x: p.time, y: p.speed })));
+        setAllDensityData(sortedForCharts.map(p => ({ x: p.time, y: p.density })));
         
-        // FIX: The new API returns the latest data first, so we take the first element [0], not the last.
-        const latest = processed[0]; 
+        // The API returns newest first, so the first valid item is the latest
+        const latest = processed[0];
         if (latest) {
             setGaugeData((prev) => ({
                 ...prev,
@@ -338,14 +341,18 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
                 const by = row.by_gsm ? parseFloat(row.by_gsm) : null;
                 if (!row.time_tag || bt === null || bz === null || by === null || bt < 0) return null;
                 return {
-                    time: new Date(row.time_tag).getTime(),
+                    // FIX #2: Ensure timestamp is parsed as UTC by appending 'Z'
+                    time: new Date(row.time_tag + 'Z').getTime(),
                     bt,
                     bz,
                     by
                 };
             })
             .filter((p): p is NonNullable<typeof p> => p !== null);
-        setAllMagneticData(processed);
+
+        // Sort oldest to newest for charts
+        const sortedForCharts = [...processed].reverse();
+        setAllMagneticData(sortedForCharts);
     }
 
     let anyGoesDataFound = false;
@@ -369,50 +376,27 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
 const activitySummary: ActivitySummary | null = useMemo(() => {
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-
     const recentHistory = auroraScoreHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
-
-    if (recentHistory.length === 0) {
-        return null;
-    }
-
-    const highestScore = recentHistory.reduce((max, current) => {
-        return current.finalScore > max.finalScore ? current : max;
-    }, { finalScore: -1, timestamp: 0 });
-
+    if (recentHistory.length === 0) { return null; }
+    const highestScore = recentHistory.reduce((max, current) => { return current.finalScore > max.finalScore ? current : max; }, { finalScore: -1, timestamp: 0 });
     const substormEvents: ActivitySummary['substormEvents'] = [];
     let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
     const SUBSTORM_PROXY_THRESHOLD = 30;
-
     recentHistory.forEach((point, index) => {
         const isWatchCondition = point.baseScore >= SUBSTORM_PROXY_THRESHOLD;
-
         if (isWatchCondition && !currentEvent) {
-            currentEvent = {
-                start: point.timestamp,
-                end: point.timestamp,
-                peakProbability: 0,
-                peakStatus: 'WATCH'
-            };
+            currentEvent = { start: point.timestamp, end: point.timestamp, peakProbability: 0, peakStatus: 'WATCH' };
         } else if (isWatchCondition && currentEvent) {
             currentEvent.end = point.timestamp;
         } else if (!isWatchCondition && currentEvent) {
             substormEvents.push(currentEvent);
             currentEvent = null;
         }
-
         if (index === recentHistory.length - 1 && currentEvent) {
             substormEvents.push(currentEvent);
         }
     });
-
-    return {
-        highestScore: {
-            finalScore: highestScore.finalScore,
-            timestamp: highestScore.timestamp,
-        },
-        substormEvents,
-    };
+    return { highestScore: { finalScore: highestScore.finalScore, timestamp: highestScore.timestamp, }, substormEvents, };
 }, [auroraScoreHistory]);
 
 
