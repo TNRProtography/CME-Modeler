@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
 SubstormActivity,
-SubstormForecast, // New type for the richer forecast object
+SubstormForecast,
+ActivitySummary, // Added for the summary calculation
 } from '../types';
 
 // --- Type Definitions ---
@@ -43,14 +44,14 @@ location: string;
 link: string;
 }
 
-// --- Types for the predictive model ---
 type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasmav-1-day.json';
-const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
+// MODIFIED: Updated URLs to the new NOAA JSON endpoints. The old /products/ URLs are deprecated.
+const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/json/solar-wind/plasma.json';
+const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/json/solar-wind/mag.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
@@ -100,7 +101,6 @@ function probabilityModel(dPhiNow: number, dPhiMean15: number, bzMean15: number)
   return { P30, P60 };
 }
 
-// Helper functions
 const calculateLocationAdjustment = (userLat: number): number => {
 const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
 const R = 6371;
@@ -151,7 +151,6 @@ const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]
 const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
 const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
 const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
-
 const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
@@ -189,7 +188,7 @@ const recentL1Data = useMemo(() => {
     const joined: { t: number; By: number; Bz: number; V: number }[] = [];
     for (const m of allMagneticData) {
       const V = mapV.get(m.time);
-      if (V && m.by && m.bz) {
+      if (V && m.by != null && m.bz != null) {
         joined.push({ t: m.time, By: m.by, Bz: m.bz, V });
       }
     }
@@ -212,8 +211,8 @@ const recentL1Data = useMemo(() => {
 const goesOnset = useMemo(() => {
     if (!goes18Data.length) return false;
     const cutoff = Date.now() - 15 * 60_000;
-    const series = goes18Data.filter((g: { time: number, hp: number }) => g.time >= cutoff && g.hp)
-                         .map((g: { time: number, hp: number }) => ({ t: g.time, v: g.hp }));
+    const series = goes18Data.filter((g) => g.time >= cutoff && g.hp)
+                         .map((g) => ({ t: g.time, v: g.hp }));
     const slope = slopePerMin(series, 2);
     return typeof slope === "number" && slope >= 8;
 }, [goes18Data]);
@@ -292,7 +291,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
 
         if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
         if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
-        setGaugeData((prev: typeof gaugeData) => ({ 
+        setGaugeData((prev) => ({ 
             ...prev, 
             bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
             bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
@@ -303,42 +302,52 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a:any, b:any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
 
-    if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
-        const plasmaData = plasmaResult.value; const headers = plasmaData[0]; const speedIdx = headers.indexOf('speed'); const densityIdx = headers.indexOf('density'); const timeIdx = headers.indexOf('time_tag');
-        const processed = plasmaData.slice(1).map((r:any[]) => {
-            if (!r || !r[timeIdx]) return null;
-            return {
-                time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), 
-                speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, 
-                density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null 
-            }
-        }).filter((p): p is NonNullable<typeof p> => !!p);
-        
-        setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed }))); 
+    // MODIFIED: Rewritten parsing logic for new object-based API format.
+    if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value)) {
+        const plasmaData = plasmaResult.value;
+        const processed = plasmaData
+            .map((row: any) => {
+                const speed = row.speed ? parseFloat(row.speed) : null;
+                const density = row.density ? parseFloat(row.density) : null;
+                if (!row.time_tag || speed === null || density === null || speed < 0 || density < 0) return null;
+                return {
+                    time: new Date(row.time_tag).getTime(),
+                    speed,
+                    density
+                };
+            })
+            .filter((p): p is NonNullable<typeof p> => p !== null);
+
+        setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed })));
         setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
-        const latest = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
-        const speedVal = latest ? parseFloat(latest[speedIdx]) : null; 
-        const densityVal = latest ? parseFloat(latest[densityIdx]) : null; 
-        const time = latest?.[timeIdx] ? new Date(latest[timeIdx].replace(' ', 'T') + 'Z').getTime() : Date.now();
-        setGaugeData((prev: typeof gaugeData) => ({ 
-            ...prev, 
-            speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`}, 
-            density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`} 
-        }));
+        
+        const latest = processed.at(-1);
+        if (latest) {
+            setGaugeData((prev) => ({
+                ...prev,
+                speed: { ...prev.speed, value: latest.speed.toFixed(1), ...getGaugeStyle(latest.speed, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latest.time)}` },
+                density: { ...prev.density, value: latest.density.toFixed(1), ...getGaugeStyle(latest.density, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latest.time)}` }
+            }));
+        }
     }
 
-    if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
-        const magData = magResult.value; const headers = magData[0]; const btIdx = headers.indexOf('bt'); const bzIdx = headers.indexOf('bz_gsm'); const timeIdx = headers.indexOf('time_tag');
-        const byIdx = headers.indexOf('by_gsm');
-        const processed = magData.slice(1).map((r: any[]) => {
-            if (!r || !r[timeIdx]) return null;
-            return {
-                time: new Date(r[timeIdx].replace(' ', 'T') + 'Z').getTime(), 
-                bt: parseFloat(r[btIdx]) > -9999 ? parseFloat(r[btIdx]) : null, 
-                bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null, 
-                by: byIdx > -1 && parseFloat(r[byIdx]) > -9999 ? parseFloat(r[byIdx]) : null 
-            }
-        }).filter((p): p is NonNullable<typeof p> => !!p);
+    // MODIFIED: Rewritten parsing logic for new object-based API format.
+    if (magResult.status === 'fulfilled' && Array.isArray(magResult.value)) {
+        const magData = magResult.value;
+        const processed = magData
+            .map((row: any) => {
+                const bt = row.bt ? parseFloat(row.bt) : null;
+                const bz = row.bz_gsm ? parseFloat(row.bz_gsm) : null;
+                const by = row.by_gsm ? parseFloat(row.by_gsm) : null;
+                if (!row.time_tag || bt === null || bz === null || by === null || bt < 0) return null;
+                return {
+                    time: new Date(row.time_tag).getTime(),
+                    bt,
+                    bz,
+                    by
+                };
+            })
+            .filter((p): p is NonNullable<typeof p> => p !== null);
         setAllMagneticData(processed);
     }
 
@@ -360,6 +369,67 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (isInitialLoad) setIsLoading(false);
 }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
 
+// NEW: Added useMemo hook to calculate the 24-hour activity summary.
+const activitySummary: ActivitySummary | null = useMemo(() => {
+    const now = Date.now();
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+
+    const recentHistory = auroraScoreHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
+
+    if (recentHistory.length === 0) {
+        return null;
+    }
+
+    // 1. Find the highest forecast score
+    const highestScore = recentHistory.reduce((max, current) => {
+        return current.finalScore > max.finalScore ? current : max;
+    }, { finalScore: -1, timestamp: 0 });
+
+    // 2. Identify substorm watch periods
+    // This is a simplified logic. It finds continuous blocks where the forecast status was 'WATCH' or higher.
+    const substormEvents: ActivitySummary['substormEvents'] = [];
+    let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
+
+    // This part requires access to historical substorm statuses, which we don't have.
+    // As a proxy, we'll use a high base aurora score as an indicator of "watch-worthy" conditions.
+    const SUBSTORM_PROXY_THRESHOLD = 30; // Base score that might indicate a watch period.
+
+    recentHistory.forEach((point, index) => {
+        const isWatchCondition = point.baseScore >= SUBSTORM_PROXY_THRESHOLD;
+
+        if (isWatchCondition && !currentEvent) {
+            // Start of a new event
+            currentEvent = {
+                start: point.timestamp,
+                end: point.timestamp,
+                peakProbability: 0, // Not available directly, can be proxied
+                peakStatus: 'WATCH'
+            };
+        } else if (isWatchCondition && currentEvent) {
+            // Continuation of an event
+            currentEvent.end = point.timestamp;
+        } else if (!isWatchCondition && currentEvent) {
+            // End of an event
+            substormEvents.push(currentEvent);
+            currentEvent = null;
+        }
+
+        // If it's the last point and an event is still open, close it.
+        if (index === recentHistory.length - 1 && currentEvent) {
+            substormEvents.push(currentEvent);
+        }
+    });
+
+    return {
+        highestScore: {
+            finalScore: highestScore.finalScore,
+            timestamp: highestScore.timestamp,
+        },
+        substormEvents,
+    };
+}, [auroraScoreHistory]);
+
+
 useEffect(() => {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
@@ -370,7 +440,7 @@ useEffect(() => {
                 const distance = Math.abs(adjustment / 3 * 150);
                 setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
             },
-            (_error) => {
+            () => {
                 setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
             },
             { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
@@ -420,6 +490,7 @@ return {
     interplanetaryShockData,
     locationBlurb,
     fetchAllData,
+    activitySummary, // Return the calculated summary object
 };
 
 };
