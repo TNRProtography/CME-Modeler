@@ -1,11 +1,9 @@
 //--- START OF FILE src/hooks/useForecastData.ts ---
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
 SubstormActivity,
-SightingReport,
-SubstormForecast,
-ActivitySummary,
+SubstormForecast, // New type for the richer forecast object
 } from '../types';
 
 // --- Type Definitions ---
@@ -45,32 +43,21 @@ location: string;
 link: string;
 }
 
-type SWRow = { t: number; by?: number; bz?: number; v?: number; };
-type GOESRow = { t: number; hp?: number; };
+// --- Types for the predictive model ---
 type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
+const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasmav-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
-const REFRESH_INTERVAL_MS = 60 * 1000;
 const GREYMOUTH_LATITUDE = -42.45;
 
 // --- Physics and Model Helpers ---
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-
-function calculatePropagationDelay(speed_km_s: number | null | undefined): number {
-    if (!speed_km_s || speed_km_s < 200) {
-        return 60 * 60 * 1000;
-    }
-    const L1_DISTANCE_KM = 1.5e6;
-    const travelTime_s = L1_DISTANCE_KM / speed_km_s;
-    return travelTime_s * 1000;
-}
 
 function newellCoupling(V: number, By: number, Bz: number) {
   const BT = Math.sqrt((By ?? 0) ** 2 + (Bz ?? 0) ** 2);
@@ -93,14 +80,6 @@ function sustainedSouth(bzSeries: number[], minutes = 15) {
   const sub = bzSeries.slice(bzSeries.length - m);
   const fracSouth = sub.filter(bz => bz <= -3).length / sub.length;
   return fracSouth >= 0.8;
-}
-
-function isBzLockedIn(bzSeries: number[], minutes = 10, threshold = -8) {
-    if (bzSeries.length < minutes) return false;
-    const sub = bzSeries.slice(-minutes);
-    const allNegative = sub.every(bz => bz < 0);
-    const avg = sub.reduce((a, b) => a + b, 0) / sub.length;
-    return allNegative && avg <= threshold;
 }
 
 function slopePerMin(series: { t: number; v: number }[], minutes = 2) {
@@ -162,8 +141,8 @@ const [isDaylight, setIsDaylight] = useState(false);
 const [allSpeedData, setAllSpeedData] = useState<any[]>([]);
 const [allDensityData, setAllDensityData] = useState<any[]>([]);
 const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
-const [goes18Data, setGoes18Data] = useState<any[]>([]);
-const [goes19Data, setGoes19Data] = useState<any[]>([]);
+const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
+const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
 const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
 const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
 const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
@@ -172,12 +151,11 @@ const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]
 const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
 const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
 const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
-const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
 
 const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
-    windowLabel: 'No window',
+    windowLabel: '30 – 90 min',
     action: 'Low chance for now.',
     p30: 0,
     p60: 0,
@@ -206,7 +184,7 @@ const getMoonData = useCallback((illumination: number | null, rise: number | nul
 const recentL1Data = useMemo(() => {
     if (!allMagneticData.length || !allSpeedData.length) return null;
     const mapV = new Map<number, number>();
-    allSpeedData.forEach(p => mapV.set(p.x, p.y));
+    allSpeedData.forEach((p: { x: number, y: number }) => mapV.set(p.x, p.y));
     
     const joined: { t: number; By: number; Bz: number; V: number }[] = [];
     for (const m of allMagneticData) {
@@ -215,13 +193,9 @@ const recentL1Data = useMemo(() => {
         joined.push({ t: m.time, By: m.by, Bz: m.bz, V });
       }
     }
-    if (joined.length === 0) return null;
-
-    const lastValidSpeed = joined[joined.length - 1].V;
-    const propagationDelay = calculatePropagationDelay(lastValidSpeed);
-    const nowAtEarth = Date.now() - propagationDelay;
     
-    const win = joined.filter(x => x.t >= nowAtEarth - 120 * 60_000);
+    const cutoff = Date.now() - 120 * 60_000;
+    const win = joined.filter(x => x.t >= cutoff);
     const dPhi = win.map(w => newellCoupling(w.V, w.By, w.Bz));
     const bz = win.map(w => w.Bz);
     
@@ -236,36 +210,23 @@ const recentL1Data = useMemo(() => {
 }, [allMagneticData, allSpeedData]);
 
 const goesOnset = useMemo(() => {
-    if (!goes18Data.length && !goes19Data.length) return false;
+    if (!goes18Data.length) return false;
     const cutoff = Date.now() - 15 * 60_000;
+    const series = goes18Data.filter((g: { time: number, hp: number }) => g.time >= cutoff && g.hp)
+                         .map((g: { time: number, hp: number }) => ({ t: g.time, v: g.hp }));
+    const slope = slopePerMin(series, 2);
+    return typeof slope === "number" && slope >= 8;
+}, [goes18Data]);
 
-    const series18 = goes18Data.filter(g => g.time >= cutoff && g.hp)
-                         .map(g => ({ t: g.time, v: g.hp }));
-    const series19 = goes19Data.filter(g => g.time >= cutoff && g.hp)
-                         .map(g => ({ t: g.time, v: g.hp }));
-
-    const slope18 = slopePerMin(series18, 2);
-    const slope19 = slopePerMin(series19, 2);
-
-    const onset18 = typeof slope18 === "number" && slope18 >= 8;
-    const onset19 = typeof slope19 === "number" && slope19 >= 8;
-
-    return onset18 || onset19;
-}, [goes18Data, goes19Data]);
-
-// MODIFIED: This entire hook is rewritten to produce specific time windows
 useEffect(() => {
     if (!recentL1Data) return;
 
     const probs = probabilityModel(recentL1Data.dPhiNow, recentL1Data.dPhiMean15, recentL1Data.bzMean15);
-    const bzLocked = isBzLockedIn(recentL1Data.bzSeries);
     const P30_ALERT = 0.60, P60_ALERT = 0.60;
     let status: Status = 'QUIET';
 
     if (goesOnset) {
         status = "ONSET";
-    } else if (bzLocked && (auroraScore ?? 0) >= 25) {
-        status = "IMMINENT_30";
     } else if (recentL1Data.sustained && probs.P30 >= P30_ALERT && (auroraScore ?? 0) >= 25) {
         status = "IMMINENT_30";
     } else if (recentL1Data.sustained && probs.P60 >= P60_ALERT && (auroraScore ?? 0) >= 20) {
@@ -276,94 +237,31 @@ useEffect(() => {
 
     const likelihood = Math.round((0.4 * clamp01(probs.P30) + 0.6 * clamp01(probs.P60)) * 100);
     
-    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const now = Date.now();
-    let windowLabel = 'No forecast window';
-    let predictedStartTime, predictedEndTime;
+    let windowLabel = '30 – 90 min';
+    if (status === "ONSET") windowLabel = "Now – 10 min";
+    else if (status === "IMMINENT_30") windowLabel = "0 – 30 min";
+    else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
+    else if (status === "WATCH") windowLabel = "20 – 90 min";
 
-    if (status === "ONSET") {
-        predictedStartTime = now;
-        predictedEndTime = now + 10 * 60 * 1000;
-        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
-    } else if (status === "IMMINENT_30") {
-        predictedStartTime = now;
-        predictedEndTime = now + 30 * 60 * 1000;
-        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
-    } else if (status === "LIKELY_60") {
-        predictedStartTime = now + 10 * 60 * 1000;
-        predictedEndTime = now + 60 * 60 * 1000;
-        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
-    } else if (status === "WATCH") {
-        predictedStartTime = now + 20 * 60 * 1000;
-        predictedEndTime = now + 90 * 60 * 1000;
-        windowLabel = `Between ${formatTime(predictedStartTime)} and ${formatTime(predictedEndTime)}`;
-    }
-
-    let action = 'Conditions are calm. Low chance of substorm activity for now.';
+    let action = 'Low chance for now.';
     if (status === "ONSET") action = "Look now — activity is underway.";
     else if (status === "IMMINENT_30" || likelihood >= 65) action = "Head outside or to a darker spot now.";
     else if (status === "LIKELY_60" || likelihood >= 50) action = "Prepare to go; check the sky within the next hour.";
-    else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. An alert may be issued if conditions escalate.";
-
-    if (status === "IMMINENT_30" && bzLocked) {
-        action = "Bz is strongly negative! A substorm is highly likely very soon. Head outside now.";
-    }
+    else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. The forecast will upgrade to an Alert if an eruption becomes likely.";
 
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
+
     setSubstormActivityStatus({
         isStretching: status === 'WATCH' || status === 'LIKELY_60' || status === 'IMMINENT_30',
         isErupting: status === 'ONSET',
         probability: likelihood,
-        predictedStartTime: predictedStartTime,
-        predictedEndTime: predictedEndTime,
+        predictedStartTime: status !== 'QUIET' ? Date.now() : undefined,
+        predictedEndTime: status !== 'QUIET' ? Date.now() + 60 * 60 * 1000 : undefined,
         text: action,
         color: ''
     });
 
 }, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
-
-useMemo(() => {
-    if (auroraScoreHistory.length === 0 || allMagneticData.length === 0 || allSpeedData.length === 0) {
-        setActivitySummary(null);
-        return;
-    }
-
-    const highestScore = auroraScoreHistory.reduce((max, current) => {
-        return current.finalScore > max.finalScore ? current : max;
-    }, { finalScore: -1, timestamp: 0 });
-
-    const substormEvents: ActivitySummary['substormEvents'] = [];
-    let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
-
-    allMagneticData.forEach(point => {
-        const isSustainedNegative = point.bz <= -5;
-
-        if (isSustainedNegative && !currentEvent) {
-            currentEvent = {
-                start: point.time,
-                end: point.time,
-                peakProbability: 0,
-                peakStatus: 'Watch'
-            };
-        } else if (isSustainedNegative && currentEvent) {
-            currentEvent.end = point.time;
-        } else if (!isSustainedNegative && currentEvent) {
-            if (currentEvent.end - currentEvent.start >= 15 * 60 * 1000) {
-                substormEvents.push(currentEvent);
-            }
-            currentEvent = null;
-        }
-    });
-    if (currentEvent && currentEvent.end - currentEvent.start >= 15 * 60 * 1000) {
-        substormEvents.push(currentEvent);
-    }
-
-    setActivitySummary({
-        highestScore,
-        substormEvents
-    });
-
-}, [auroraScoreHistory, allMagneticData, allSpeedData]);
 
 
 const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
@@ -381,16 +279,20 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
         const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
         setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
+        
         const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
         setBaseAuroraScore(baseScore);
+
         const initialAdjustedScore = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
         setAuroraScore(initialAdjustedScore);
         setCurrentAuroraScore(initialAdjustedScore);
+
         setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
         const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
+
         if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
         if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
-        setGaugeData(prev => ({ 
+        setGaugeData((prev: typeof gaugeData) => ({ 
             ...prev, 
             bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
             bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`},
@@ -410,14 +312,15 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
                 speed: parseFloat(r[speedIdx]) > -9999 ? parseFloat(r[speedIdx]) : null, 
                 density: parseFloat(r[densityIdx]) > -9999 ? parseFloat(r[densityIdx]) : null 
             }
-        }).filter(Boolean);
+        }).filter((p): p is NonNullable<typeof p> => !!p);
+        
         setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed }))); 
         setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
         const latest = plasmaData.slice(1).reverse().find((r: any[]) => parseFloat(r?.[speedIdx]) > -9999);
         const speedVal = latest ? parseFloat(latest[speedIdx]) : null; 
         const densityVal = latest ? parseFloat(latest[densityIdx]) : null; 
         const time = latest?.[timeIdx] ? new Date(latest[timeIdx].replace(' ', 'T') + 'Z').getTime() : Date.now();
-        setGaugeData(prev => ({ 
+        setGaugeData((prev: typeof gaugeData) => ({ 
             ...prev, 
             speed: {...prev.speed, value: speedVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(speedVal, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`}, 
             density: {...prev.density, value: densityVal?.toFixed(1) ?? 'N/A', ...getGaugeStyle(densityVal, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(time)}`} 
@@ -435,7 +338,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
                 bz: parseFloat(r[bzIdx]) > -9999 ? parseFloat(r[bzIdx]) : null, 
                 by: byIdx > -1 && parseFloat(r[byIdx]) > -9999 ? parseFloat(r[byIdx]) : null 
             }
-        }).filter(Boolean);
+        }).filter((p): p is NonNullable<typeof p> => !!p);
         setAllMagneticData(processed);
     }
 
@@ -458,7 +361,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
 }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
 
 useEffect(() => {
-    if (typeof window !== 'undefined' && navigator.geolocation) {
+    if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const adjustment = calculateLocationAdjustment(position.coords.latitude);
@@ -467,7 +370,7 @@ useEffect(() => {
                 const distance = Math.abs(adjustment / 3 * 150);
                 setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
             },
-            (error) => {
+            (_error) => {
                 setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
             },
             { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
@@ -516,7 +419,6 @@ return {
     owmDailyForecast,
     interplanetaryShockData,
     locationBlurb,
-    activitySummary,
     fetchAllData,
 };
 

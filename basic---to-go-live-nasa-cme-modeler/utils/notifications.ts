@@ -9,10 +9,12 @@
  * - Returns subscription id (hash of endpoint) for easier single-device testing
  */
 
-// A single source of truth for all notification categories used in the app.
+// MODIFIED: This list now exactly matches the categories in SettingsModal.tsx
+// This ensures all user preferences are correctly captured and sent to the server.
 const NOTIFICATION_CATEGORIES = [
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
-  'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'substorm-forecast',
+  'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
+  'substorm-forecast',
 ];
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
