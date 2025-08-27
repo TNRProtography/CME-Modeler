@@ -9,8 +9,6 @@
  * - Returns subscription id (hash of endpoint) for easier single-device testing
  */
 
-// MODIFIED: This list now exactly matches the categories in SettingsModal.tsx
-// This ensures all user preferences are correctly captured and sent to the server.
 const NOTIFICATION_CATEGORIES = [
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
@@ -166,7 +164,6 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   return out;
 };
 
-// Compute the same id as the server (b64url(sha256(endpoint))) for debugging/single-device tests.
 async function computeSubscriptionId(endpoint: string): Promise<string> {
   const enc = new TextEncoder().encode(endpoint);
   // @ts-ignore
@@ -177,9 +174,6 @@ async function computeSubscriptionId(endpoint: string): Promise<string> {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/**
- * Subscribe and send preferences + return subscription and id
- */
 export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscription, id: string } | null> => {
   console.log("DIAGNOSTIC: Attempting to subscribe user to push notifications...");
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -253,7 +247,6 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription, pref
       console.error('DIAGNOSTIC: SERVER REJECTED SUBSCRIPTION:', errorText);
       alert(`Error: The server rejected the notification subscription. Please check the console for details. Server message: ${errorText}`);
     } else {
-      // optional: surface id returned by server (if you want)
       try {
         const j = await resp.json().catch(() => null);
         if (j?.id) {
@@ -267,6 +260,33 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription, pref
     console.error('DIAGNOSTIC: FATAL NETWORK ERROR sending push subscription to server:', error);
     alert('Fatal Error: Could not send subscription to the server. Check network connection and console logs.');
   }
+};
+
+// --- NEW FUNCTION TO UPDATE PREFERENCES ON THE SERVER ---
+/**
+ * Gathers current preferences from localStorage and re-sends them to the server
+ * for the existing subscription. This should be called whenever a user changes a setting.
+ */
+export const updatePushSubscriptionPreferences = async () => {
+  const reg = await waitForServiceWorkerReady();
+  if (!reg) {
+    console.error("Cannot update preferences: Service worker not ready.");
+    return;
+  }
+
+  const subscription = await reg.pushManager.getSubscription();
+  if (!subscription) {
+    console.warn("Cannot update preferences: No active push subscription found.");
+    return;
+  }
+
+  const updatedPreferences: Record<string, boolean> = {};
+  NOTIFICATION_CATEGORIES.forEach(id => {
+    updatedPreferences[id] = getNotificationPreference(id);
+  });
+  
+  console.log("DIAGNOSTIC: Preferences changed, sending update to server...", updatedPreferences);
+  await sendPushSubscriptionToServer(subscription, updatedPreferences);
 };
 
 // --- Cooldown management ---
@@ -314,7 +334,6 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 
 // --- Quick test helpers ---
 
-/** Local toast-style test (foreground allowed). */
 export const sendTestNotification = async (title?: string, body?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
@@ -334,8 +353,7 @@ export const sendTestNotification = async (title?: string, body?: string) => {
   });
 };
 
-/** Server→phone self-test: hits the worker without admin secret and pings ONLY this device. */
-export const sendServerSelfTest = async (category: 'general'|'aurora'|'flare'|'substorm' = 'general') => {
+export const sendServerSelfTest = async (category: string) => {
   const reg = await waitForServiceWorkerReady();
   if (!reg) { alert('Service worker not ready'); return; }
   const sub = await reg.pushManager.getSubscription();
@@ -355,7 +373,6 @@ export const sendServerSelfTest = async (category: 'general'|'aurora'|'flare'|'s
   }
 };
 
-// Export id helper if you want to surface it in UI
 export const getLocalSubscriptionId = (): string | null => {
   try { return localStorage.getItem('push_subscription_id'); } catch { return null; }
 };
