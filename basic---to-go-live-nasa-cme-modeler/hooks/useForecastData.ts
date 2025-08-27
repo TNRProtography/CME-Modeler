@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
 SubstormActivity,
 SubstormForecast,
-ActivitySummary, // Added for the summary calculation
+ActivitySummary,
 } from '../types';
 
 // --- Type Definitions ---
@@ -49,7 +49,6 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-// MODIFIED: Updated URLs to the new NOAA JSON endpoints. The old /products/ URLs are deprecated.
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/json/solar-wind/plasma.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/json/solar-wind/mag.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
@@ -262,7 +261,6 @@ useEffect(() => {
 
 }, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
 
-
 const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
     const results = await Promise.allSettled([
@@ -302,7 +300,6 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a:any, b:any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
 
-    // MODIFIED: Rewritten parsing logic for new object-based API format.
     if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value)) {
         const plasmaData = plasmaResult.value;
         const processed = plasmaData
@@ -321,7 +318,8 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         setAllSpeedData(processed.map(p => ({ x: p.time, y: p.speed })));
         setAllDensityData(processed.map(p => ({ x: p.time, y: p.density })));
         
-        const latest = processed.at(-1);
+        // FIX: The new API returns the latest data first, so we take the first element [0], not the last.
+        const latest = processed[0]; 
         if (latest) {
             setGaugeData((prev) => ({
                 ...prev,
@@ -331,7 +329,6 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
         }
     }
 
-    // MODIFIED: Rewritten parsing logic for new object-based API format.
     if (magResult.status === 'fulfilled' && Array.isArray(magResult.value)) {
         const magData = magResult.value;
         const processed = magData
@@ -369,7 +366,6 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
     if (isInitialLoad) setIsLoading(false);
 }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
 
-// NEW: Added useMemo hook to calculate the 24-hour activity summary.
 const activitySummary: ActivitySummary | null = useMemo(() => {
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
@@ -380,41 +376,31 @@ const activitySummary: ActivitySummary | null = useMemo(() => {
         return null;
     }
 
-    // 1. Find the highest forecast score
     const highestScore = recentHistory.reduce((max, current) => {
         return current.finalScore > max.finalScore ? current : max;
     }, { finalScore: -1, timestamp: 0 });
 
-    // 2. Identify substorm watch periods
-    // This is a simplified logic. It finds continuous blocks where the forecast status was 'WATCH' or higher.
     const substormEvents: ActivitySummary['substormEvents'] = [];
     let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
-
-    // This part requires access to historical substorm statuses, which we don't have.
-    // As a proxy, we'll use a high base aurora score as an indicator of "watch-worthy" conditions.
-    const SUBSTORM_PROXY_THRESHOLD = 30; // Base score that might indicate a watch period.
+    const SUBSTORM_PROXY_THRESHOLD = 30;
 
     recentHistory.forEach((point, index) => {
         const isWatchCondition = point.baseScore >= SUBSTORM_PROXY_THRESHOLD;
 
         if (isWatchCondition && !currentEvent) {
-            // Start of a new event
             currentEvent = {
                 start: point.timestamp,
                 end: point.timestamp,
-                peakProbability: 0, // Not available directly, can be proxied
+                peakProbability: 0,
                 peakStatus: 'WATCH'
             };
         } else if (isWatchCondition && currentEvent) {
-            // Continuation of an event
             currentEvent.end = point.timestamp;
         } else if (!isWatchCondition && currentEvent) {
-            // End of an event
             substormEvents.push(currentEvent);
             currentEvent = null;
         }
 
-        // If it's the last point and an event is still open, close it.
         if (index === recentHistory.length - 1 && currentEvent) {
             substormEvents.push(currentEvent);
         }
@@ -490,7 +476,7 @@ return {
     interplanetaryShockData,
     locationBlurb,
     fetchAllData,
-    activitySummary, // Return the calculated summary object
+    activitySummary,
 };
 
 };
