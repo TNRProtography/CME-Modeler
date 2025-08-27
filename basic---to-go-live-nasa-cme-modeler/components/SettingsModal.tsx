@@ -7,8 +7,9 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  sendTestNotification, // This function will be modified to handle specific tests
-  subscribeUserToPush
+  sendTestNotification,
+  subscribeUserToPush,
+  updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
@@ -53,7 +54,6 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// RE-ADDED: The HeartIcon for the styled link button
 const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.015-4.5-4.5-4.5S12 5.765 12 8.25c0-2.485-2.015-4.5-4.5-4.5S3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
@@ -86,8 +86,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       checkAppInstallationStatus();
     }
   }, [isOpen]);
-
-  // DELETED: The useEffect for the BMC script is removed.
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -133,6 +131,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
     setNotificationPreference(id, checked);
+    // THIS IS THE FIX: Call the new function to sync changes with the server.
+    updatePushSubscriptionPreferences();
   }, []);
 
   const handleGpsToggle = useCallback((checked: boolean) => {
@@ -229,7 +229,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
                 </p>
             </div>
-            {/* REVERTED: Back to the styled link button which is reliable */}
             <a 
               href="https://buymeacoffee.com/spottheaurora"
               target="_blank"
