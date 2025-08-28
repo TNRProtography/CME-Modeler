@@ -49,8 +49,9 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
-const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/MAG-1-day.json';
+// THESE ARE THE CORRECT, MODERN NOAA URLs
+const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/json/solar-wind/plasma.json';
+const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/json/solar-wind/mag.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
@@ -308,7 +309,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
                 const density = row.density ? parseFloat(row.density) : null;
                 if (!row.time_tag || speed === null || density === null || speed < 0 || density < 0) return null;
                 return {
-                    // FIX #1: Ensure timestamp is parsed as UTC by appending 'Z'
+                    // FINAL FIX: Ensure timestamp is parsed as UTC by appending 'Z'
                     time: new Date(row.time_tag + 'Z').getTime(),
                     speed,
                     density
@@ -316,13 +317,11 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
             })
             .filter((p): p is NonNullable<typeof p> => p !== null);
 
-        // Sort oldest to newest for charts
-        const sortedForCharts = [...processed].reverse();
+        const sortedForCharts = [...processed].sort((a,b) => a.time - b.time);
         setAllSpeedData(sortedForCharts.map(p => ({ x: p.time, y: p.speed })));
         setAllDensityData(sortedForCharts.map(p => ({ x: p.time, y: p.density })));
         
-        // The API returns newest first, so the first valid item is the latest
-        const latest = processed[0];
+        const latest = processed[0]; // The API returns newest first.
         if (latest) {
             setGaugeData((prev) => ({
                 ...prev,
@@ -341,7 +340,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
                 const by = row.by_gsm ? parseFloat(row.by_gsm) : null;
                 if (!row.time_tag || bt === null || bz === null || by === null || bt < 0) return null;
                 return {
-                    // FIX #2: Ensure timestamp is parsed as UTC by appending 'Z'
+                    // FINAL FIX: Ensure timestamp is parsed as UTC by appending 'Z'
                     time: new Date(row.time_tag + 'Z').getTime(),
                     bt,
                     bz,
@@ -350,8 +349,7 @@ const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Fu
             })
             .filter((p): p is NonNullable<typeof p> => p !== null);
 
-        // Sort oldest to newest for charts
-        const sortedForCharts = [...processed].reverse();
+        const sortedForCharts = [...processed].sort((a,b) => a.time - b.time);
         setAllMagneticData(sortedForCharts);
     }
 
