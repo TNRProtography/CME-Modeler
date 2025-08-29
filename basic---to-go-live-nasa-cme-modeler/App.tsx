@@ -535,7 +535,13 @@ const App: React.FC = () => {
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-                <ForecastModelsModal isOpen={isForecastModelsOpen} onClose={() => setIsForecastModelsOpen(false)} setViewerMedia={setViewerMedia} />
+                {/* --- MODIFIED LINE --- */}
+                <ForecastModelsModal 
+                    isOpen={isForecastModelsOpen} 
+                    onClose={() => setIsForecastModelsOpen(false)} 
+                    setViewerMedia={setViewerMedia} 
+                    shouldPreload={true} 
+                />
             </> )}
             {activePage === 'forecast' && (
                 <ForecastDashboard
