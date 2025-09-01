@@ -97,13 +97,79 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
 
+  // --- NEW: FB/IG in-app browser detection + install suppression ---
+  const [showIabBanner, setShowIabBanner] = useState(false);
+  const [isIOSIab, setIsIOSIab] = useState(false);
+  const [isAndroidIab, setIsAndroidIab] = useState(false);
+  const deferredInstallPromptRef = useRef<any>(null);
+  const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
+
+  useEffect(() => {
+    const ua = navigator.userAgent || '';
+    const isFB = /(FBAN|FBAV|FB_IAB|FBIOS|FBAN\/Messenger)/i.test(ua);
+    const isIG = /Instagram/i.test(ua);
+    const inIAB = isFB || isIG;
+    const isIOS = /iPad|iPhone|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+
+    if (inIAB) {
+      setShowIabBanner(true);
+      setIsIOSIab(isIOS);
+      setIsAndroidIab(isAndroid);
+    }
+
+    const onBip = (e: any) => {
+      // Inside FB/IG IAB there is no real install flow—suppress it.
+      if (inIAB) {
+        e.preventDefault();
+        return;
+      }
+      // Outside IAB: keep for your own install button if you add one later.
+      e.preventDefault();
+      deferredInstallPromptRef.current = e;
+      (window as any).spotTheAuroraCanInstall = true;
+    };
+
+    window.addEventListener('beforeinstallprompt', onBip);
+    return () => window.removeEventListener('beforeinstallprompt', onBip);
+  }, []);
+
+  const handleIabOpenInBrowser = useCallback(() => {
+    const here = new URL(window.location.href);
+    const target =
+      here.origin === CANONICAL_ORIGIN
+        ? here.href
+        : CANONICAL_ORIGIN + here.pathname + here.search + here.hash;
+
+    if (isAndroidIab) {
+      // Try Chrome intent first (many Android devices will honor this)
+      const intent = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
+      window.location.href = intent;
+      // Fallback open
+      setTimeout(() => window.open(target, '_blank', 'noopener,noreferrer'), 400);
+    } else {
+      // iOS/others: new tab so users can choose "Open in Browser"
+      window.open(target, '_blank', 'noopener,noreferrer');
+    }
+  }, [isAndroidIab]);
+
+  const handleIabCopyLink = useCallback(async () => {
+    const url = window.location.href.split('#')[0];
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Link copied. Open it in your browser to install.');
+    } catch {
+      prompt('Copy this URL:', url);
+    }
+  }, []);
+
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
     }
-    if (!clockRef.current && window.THREE) {
-      clockRef.current = new window.THREE.Clock();
+    if (!clockRef.current && (window as any).THREE) {
+      clockRef.current = new (window as any).THREE.Clock();
     }
   }, []);
 
@@ -329,8 +395,8 @@ const App: React.FC = () => {
 
       ctx.drawImage(mainImage, 0, 0);
 
-      if (showLabels && window.THREE) {
-        const THREE = window.THREE;
+      if (showLabels && (window as any).THREE) {
+        const THREE = (window as any).THREE;
         const cameraPosition = new THREE.Vector3();
         threeCamera.getWorldPosition(cameraPosition);
 
@@ -360,7 +426,7 @@ const App: React.FC = () => {
               const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
               const vecToSun = sunWorldPos.clone().sub(cameraPosition);
               const angle = vecToPlanet.angleTo(vecToSun);
-              const sunRadius = sunInfo.mesh.geometry.parameters.radius || (0.1 * SCENE_SCALE);
+              const sunRadius = (sunInfo.mesh.geometry.parameters?.radius) || (0.1 * SCENE_SCALE);
               const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
               if (angle < sunAngularRadius) return;
             }
@@ -581,6 +647,61 @@ const App: React.FC = () => {
             onClose={handleCloseCmeTutorial}
             onStepChange={handleTutorialStepChange}
         />
+
+        {/* --- NEW: In-app browser (FB/IG) guidance banner --- */}
+        {showIabBanner && (
+          <div
+            className="pointer-events-auto"
+            style={{
+              position: 'fixed',
+              left: '1rem',
+              right: '1rem',
+              bottom: '1rem',
+              zIndex: 2147483647,
+              background: '#171717',
+              color: '#fff',
+              border: '1px solid #2a2a2a',
+              borderRadius: 14,
+              boxShadow: '0 10px 30px rgba(0,0,0,.45)',
+              fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+              padding: '0.9rem 1rem 1rem 1rem'
+            }}
+          >
+            <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', marginBottom: '.5rem' }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>SA</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, letterSpacing: '.2px' }}>Install Spot The Aurora</div>
+                <div style={{ opacity: .9, fontSize: '.95rem', marginTop: '.25rem', lineHeight: 1.4 }}>
+                  {isIOSIab
+                    ? <>Facebook/Instagram’s in-app browser can’t install PWAs.<br />Tap <b>•••</b> → <b>Open in Browser</b> (Safari), then Share → <b>Add to Home Screen</b>.</>
+                    : <>Facebook/Instagram’s in-app browser can’t install PWAs.<br />Tap <b>⋮</b> → <b>Open in Chrome</b>, then choose <b>Install app</b>.</>}
+                </div>
+              </div>
+              <button
+                aria-label="Close"
+                onClick={() => setShowIabBanner(false)}
+                style={{ background: 'transparent', border: 0, color: '#bbb', fontSize: 20, lineHeight: 1, cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '.5rem' }}>
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); handleIabOpenInBrowser(); }}
+                style={{ flex: 1, textAlign: 'center', textDecoration: 'none', background: '#fff', color: '#111', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
+              >
+                Open in Browser
+              </a>
+              <button
+                onClick={handleIabCopyLink}
+                style={{ flex: 1, background: '#262626', color: '#fff', border: '1px solid #333', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
+              >
+                Copy Link
+              </button>
+            </div>
+          </div>
+        )}
     </div>
   );
 };
