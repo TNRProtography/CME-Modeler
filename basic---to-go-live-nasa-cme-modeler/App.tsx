@@ -673,8 +673,8 @@ const App: React.FC = () => {
                 <div style={{ fontWeight: 800, letterSpacing: '.2px' }}>Install Spot The Aurora</div>
                 <div style={{ opacity: .9, fontSize: '.95rem', marginTop: '.25rem', lineHeight: 1.4 }}>
                   {isIOSIab
-                    ? <>Facebook/Instagram’s in-app browser can’t install PWAs.<br />Tap <b>•••</b> → <b>Open in Browser</b> (Safari), then Share → <b>Add to Home Screen</b>.</>
-                    : <>Facebook/Instagram’s in-app browser can’t install PWAs.<br />Tap <b>⋮</b> → <b>Open in Chrome</b>, then choose <b>Install app</b>.</>}
+                    ? <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>•••</b> → <b>Open in Browser</b> (Safari), then Share → <b>Add to Home Screen</b>.</>
+                    : <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>⋮</b> → <b>Open in Chrome</b>, then choose <b>Install app</b>.</>}
                 </div>
               </div>
               <button
