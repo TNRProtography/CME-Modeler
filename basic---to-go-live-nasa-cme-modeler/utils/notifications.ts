@@ -229,9 +229,15 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
   }
 };
 
+// MODIFIED: This function now sends the user's timezone to the server.
 const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
   console.log("DIAGNOSTIC: Sending subscription to server...");
-  const body = JSON.stringify({ subscription, preferences });
+  
+  // NEW: Get the user's IANA timezone name from the browser (e.g., "Pacific/Auckland").
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // MODIFIED: Include the timezone in the request body.
+  const body = JSON.stringify({ subscription, preferences, timezone });
   console.log("DIAGNOSTIC: Request Body being sent:", body);
 
   try {
