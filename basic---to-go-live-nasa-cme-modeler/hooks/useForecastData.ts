@@ -1,6 +1,6 @@
 //--- START OF FILE src/hooks/useForecastData.ts ---
 
-// MODIFICATION: Added 'useMemo' to the import list from React.
+// THE FIX IS ON THIS LINE: 'useMemo' has been added to the import list.
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   SubstormActivity,
