@@ -1,5 +1,6 @@
 //--- START OF FILE src/hooks/useForecastData.ts ---
 
+// MODIFICATION: Added 'useMemo' to the import list from React.
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   SubstormActivity,
@@ -48,10 +49,8 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-// --- MODIFIED URLS ---
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
-// --- END MODIFIED URLS ---
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
@@ -120,7 +119,6 @@ const formatNZTimestamp = (timestamp: number | string) => {
   }
 };
 
-// Robust UTC parse for SWPC time strings like "YYYY-MM-DD HH:MM:SS.mmm"
 const parseNOAATime = (s: string): number => {
   if (!s || typeof s !== 'string') return NaN;
   const iso = s.includes('T') ? s : s.replace(' ', 'T');
@@ -310,69 +308,47 @@ export const useForecastData = (
       if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
     
-    // --- MODIFIED PLASMA PARSING for new data format (array of arrays) ---
     if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
       const plasmaData = plasmaResult.value;
       const header = plasmaData[0];
       const dataRows = plasmaData.slice(1);
-
-      // Find column indices from the header row
       const timeIndex = header.indexOf('time_tag');
       const speedIndex = header.indexOf('speed');
       const densityIndex = header.indexOf('density');
-
       if (timeIndex !== -1 && speedIndex !== -1 && densityIndex !== -1) {
           const speedPoints: { time: number; value: number }[] = [];
           const densityPoints: { time: number; value: number }[] = [];
-
           for (const row of dataRows) {
               const t = parseNOAATime(row[timeIndex]);
-              const sRaw = row[speedIndex];
-              const nRaw = row[densityIndex];
-
-              const s = (sRaw === null) ? NaN : Number(sRaw);
-              const n = (nRaw === null) ? NaN : Number(nRaw);
-
+              const s = (row[speedIndex] === null) ? NaN : Number(row[speedIndex]);
+              const n = (row[densityIndex] === null) ? NaN : Number(row[densityIndex]);
               if (Number.isFinite(t)) {
                   if (Number.isFinite(s) && s >= 0) speedPoints.push({ time: t, value: s });
                   if (Number.isFinite(n) && n >= 0) densityPoints.push({ time: t, value: n });
               }
           }
-
           speedPoints.sort((a, b) => a.time - b.time);
           densityPoints.sort((a, b) => a.time - b.time);
-
           setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
           setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
-
           const latestSpeed = speedPoints.at(-1);
           const latestDensity = densityPoints.at(-1);
-
           setGaugeData(prev => ({
               ...prev,
-              speed: latestSpeed
-                  ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}` }
-                  : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A' },
-              density: latestDensity
-                  ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}` }
-                  : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A' }
+              speed: latestSpeed ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}` } : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A' },
+              density: latestDensity ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}` } : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A' }
           }));
       }
     }
-    // --- END MODIFIED PLASMA PARSING ---
 
-    // --- MODIFIED MAG PARSING for new data format (array of arrays) ---
     if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
         const magData = magResult.value;
         const header = magData[0];
         const dataRows = magData.slice(1);
-
-        // Find column indices from the header row
         const timeIndex = header.indexOf('time_tag');
         const btIndex = header.indexOf('bt');
         const bzIndex = header.indexOf('bz_gsm');
         const byIndex = header.indexOf('by_gsm');
-
         if (timeIndex !== -1 && btIndex !== -1 && bzIndex !== -1 && byIndex !== -1) {
             const processed = dataRows
                 .map((row: any) => {
@@ -380,40 +356,24 @@ export const useForecastData = (
                     const bt = row[btIndex] === null ? NaN : Number(row[btIndex]);
                     const bz = row[bzIndex] === null ? NaN : Number(row[bzIndex]);
                     const by = row[byIndex] === null ? NaN : Number(row[byIndex]);
-                    
-                    if (!Number.isFinite(t) || !Number.isFinite(bt) || !Number.isFinite(bz) || !Number.isFinite(by)) return null;
-                    if (bt < 0) return null; // BT should be non-negative
+                    if (!Number.isFinite(t) || !Number.isFinite(bt) || !Number.isFinite(bz) || !Number.isFinite(by) || bt < 0) return null;
                     return { time: t, bt, bz, by };
                 })
                 .filter((p): p is NonNullable<typeof p> => p !== null);
-
             const sortedForCharts = [...processed].sort((a, b) => a.time - b.time);
             setAllMagneticData(sortedForCharts);
         }
     }
-    // --- END MODIFIED MAG PARSING ---
 
     let anyGoesDataFound = false;
     if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
-      const processed = goes18Result.value
-        .filter((d: any) => d.Hp != null && !isNaN(d.Hp))
-        .map((d: any) => {
-          const t = parseNOAATime(d.time_tag);
-          return { time: Number.isFinite(t) ? t : new Date(d.time_tag).getTime(), hp: d.Hp as number };
-        })
-        .sort((a, b) => a.time - b.time);
+      const processed = goes18Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: parseNOAATime(d.time_tag), hp: d.Hp as number })).sort((a, b) => a.time - b.time);
       setGoes18Data(processed);
       if (processed.length > 0) anyGoesDataFound = true;
     }
 
     if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
-      const processed = goes19Result.value
-        .filter((d: any) => d.Hp != null && !isNaN(d.Hp))
-        .map((d: any) => {
-          const t = parseNOAATime(d.time_tag);
-          return { time: Number.isFinite(t) ? t : new Date(d.time_tag).getTime(), hp: d.Hp as number };
-        })
-        .sort((a, b) => a.time - b.time);
+      const processed = goes19Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: parseNOAATime(d.time_tag), hp: d.Hp as number })).sort((a, b) => a.time - b.time);
       setGoes19Data(processed); if (processed.length > 0) anyGoesDataFound = true;
     }
 
@@ -510,6 +470,6 @@ export const useForecastData = (
     fetchAllData,
     activitySummary,
   };
-
 };
+
 //--- END OF FILE src/hooks/useForecastData.ts ---
