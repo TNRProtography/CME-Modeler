@@ -148,6 +148,22 @@ export const TipsSection: React.FC = () => (
     <CollapsibleSection title="Tips for Spotting the Aurora">
         <ul className="list-disc list-inside space-y-3 text-neutral-300 text-sm pl-2">
             <li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li>
+            {/* --- START OF MODIFICATION --- */}
+            <li>
+                <strong>Find a Good Spot:</strong> Can't find a dark location with a clear southern view? Check out this community-curated list of spots.
+                <a 
+                    href="https://maps.app.goo.gl/sNqpq1nGDN4Uso5k7" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 hover:underline ml-2 font-semibold"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 20l-4.95-5.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                    </svg>
+                    <span>View Locations Map</span>
+                </a>
+            </li>
+            {/* --- END OF MODIFICATION --- */}
             <li><strong>Escape Light Pollution:</strong> Get as far away from town and urban area lights as possible. The darker the sky, the more sensitive your eyes become.</li>
             <li><strong>Check the Cloud Cover:</strong> Use the live cloud map on this dashboard to check for clear skies. A clear sky is non-negotiable. Weather changes fast, so check the map before and during your session.</li>
             <li><strong>Let Your Eyes Adapt:</strong> Turn off all lights, including your phone screen (use red light mode if possible), for at least 15-20 minutes. Your night vision is crucial for spotting faint glows.</li>
