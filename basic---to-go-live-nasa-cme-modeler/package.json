@@ -21,6 +21,7 @@
     "react-dom": "^18.2.0",
     "react-leaflet": "^4.2.1",
     "react-leaflet-cluster": "^2.1.0",
+    "react-router-dom": "^6.23.1",
     "three": "^0.160.0"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "@types/leaflet.markercluster": "^1.5.4",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
+    "@types/react-router-dom": "^5.3.3",
     "@types/three": "^0.160.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.17",
