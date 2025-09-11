@@ -272,4 +272,4 @@ export const ActivityAlert: React.FC<ActivityAlertProps> = ({ isDaylight, celest
         </div>
     );
 };
-//--- END OF FILE src/components/ForecastComponents.tsx ---
+//--- END OF FILE src/components/ForecastComponents.tsx --- 

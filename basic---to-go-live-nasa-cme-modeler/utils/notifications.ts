@@ -383,4 +383,4 @@ export const getLocalSubscriptionId = (): string | null => {
   try { return localStorage.getItem('push_subscription_id'); } catch { return null; }
 };
 
-// --- END OF FILE src/utils/notifications.ts ---
+// --- END OF FILE src/utils/notifications.ts --- 
