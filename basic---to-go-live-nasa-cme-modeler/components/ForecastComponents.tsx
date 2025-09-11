@@ -150,7 +150,7 @@ export const TipsSection: React.FC = () => (
             <li><strong>Look South:</strong> The aurora will always appear in the southern sky from New Zealand. Find a location with an unobstructed view to the south, away from mountains or hills.</li>
             {/* --- START OF MODIFICATION --- */}
             <li>
-                <strong>Find a Good Spot:</strong> Can't find a dark location with a clear southern view? Check out this community-curated list of spots.
+                <strong>Find a Good Spot:</strong> Can't find a dark location with a clear southern view? Check out this list of spots curated by TNR Protography specifically for the West Coast.
                 <a 
                     href="https://maps.app.goo.gl/sNqpq1nGDN4Uso5k7" 
                     target="_blank" 
