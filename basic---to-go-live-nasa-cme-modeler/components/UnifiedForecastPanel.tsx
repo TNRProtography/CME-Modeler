@@ -66,6 +66,20 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     return "from-neutral-600 to-neutral-700";
   }, [likelihood]);
 
+  // --- NEW: Logic for score-based "fuss" ---
+  const actionPanelStyle = useMemo(() => {
+    if (!isSubstormImminent || isDaylight || (score ?? 0) <= 0) {
+        return 'bg-neutral-900/50 border border-neutral-700/50';
+    }
+    if (score >= 50) {
+        return 'bg-red-900/30 border-2 border-red-500 animate-pulse';
+    }
+    if (score >= 25) {
+        return 'bg-red-900/20 border border-red-600';
+    }
+    return 'bg-neutral-900/50 border border-neutral-700/50';
+  }, [isSubstormImminent, isDaylight, score]);
+
   return (
     <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
       <div className="flex justify-between items-center mb-4">
@@ -112,7 +126,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
         </div>
 
         <div className="space-y-4">
-          {isSubstormActive && !isDaylight && (
+          {isSubstormActive && !isDaylight && (score ?? 0) > 0 && (
             <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-700/50">
               <div className="flex justify-between items-start mb-3">
                 <div>
@@ -138,7 +152,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             </div>
           )}
           
-          <div className={`rounded-lg p-4 ${isSubstormImminent && !isDaylight ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
+          <div className={`rounded-lg p-4 ${actionPanelStyle}`}>
             <div className="text-sm text-neutral-300 font-medium mb-1">
               Recommended Action
             </div>
@@ -157,11 +171,10 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
                 </p>
             </div>
           )}
-
         </div>
       </div>
 
-      {isSubstormImminent && !isDaylight && (
+      {isSubstormImminent && !isDaylight && (score ?? 0) > 0 && (
         <div className="mt-4 p-3 bg-gradient-to-r from-red-900/30 to-orange-900/30 border border-red-700/50 rounded-lg">
           <div className="flex items-center justify-center gap-2">
             <span className="animate-pulse text-red-400">⚡</span>
