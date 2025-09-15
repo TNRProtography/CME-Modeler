@@ -240,18 +240,11 @@ export const useForecastData = (
       if (!nzMagData.length) return false;
       const data = nzMagData[0]?.data;
       if (!data || data.length < 5) return false;
-
       const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
       const recentData = data.filter((p: any) => p.x >= thirtyMinsAgo);
       if (recentData.length < 5) return false;
-
-      const latestPoint = recentData[recentData.length - 1];
-      const tenMinAgoPoint = recentData.find((p: any) => p.x <= latestPoint.x - 10 * 60 * 1000);
-      
-      if (!tenMinAgoPoint) return false;
-
-      const drop = latestPoint.y - tenMinAgoPoint.y;
-      return drop <= -30;
+      const volatility = recentData.some((p: any) => Math.abs(p.y) > 5);
+      return volatility;
   }, [nzMagData]);
 
   useEffect(() => {
@@ -314,7 +307,6 @@ export const useForecastData = (
         }
     }
 
-
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
 
     setSubstormActivityStatus({
@@ -331,8 +323,7 @@ export const useForecastData = (
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
-    // --- FIX: Corrected GeoNet API URL ---
-    const nzMagUrl = `${GEONET_API_URL}/geomag/EYR/magnetic-field-component/-/60s/H-horizontal-intensity/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
+    const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
     
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
@@ -452,6 +443,8 @@ export const useForecastData = (
         setLoadingNzMag('No NZ magnetometer data available.');
         if(nzMagResult.status === 'rejected') {
           console.error("GeoNet API Error:", nzMagResult.reason);
+        } else if (nzMagResult.status === 'fulfilled' && (!Array.isArray(nzMagResult.value) || nzMagResult.value.length === 0)) {
+            console.warn("GeoNet API returned empty or invalid data:", nzMagResult.value);
         }
     }
 
