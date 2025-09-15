@@ -480,7 +480,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                            <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
                         </ForecastChartPanel>
                         
-                        <ForecastChartPanel title="NZ Magnetometer (West Melton)" currentValue={substormForecast.status === 'ONSET' && nzMagData.length > 0 ? "ONSET DETECTED" : "Monitoring..."} emoji="📡" onOpenModal={() => openModal('nz-mag')}>
+                        <ForecastChartPanel title="Substorm Watch (West Melton)" currentValue={substormForecast.status === 'ONSET' && nzMagData.length > 0 ? "ONSET DETECTED" : "Monitoring..."} emoji="📡" onOpenModal={() => openModal('nz-mag')}>
                            <NzMagnetometerChart data={nzMagData} loadingMessage={loadingNzMag} />
                         </ForecastChartPanel>
 
