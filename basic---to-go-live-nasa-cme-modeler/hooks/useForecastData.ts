@@ -111,10 +111,11 @@ const calculateLocationAdjustment = (userLat: number): number => {
   return isNorthOfGreymouth ? -adjustmentFactor : adjustmentFactor;
 };
 
-const formatNZTimestamp = (timestamp: number | string) => {
+const formatNZTimestamp = (timestamp: number | string, options?: Intl.DateTimeFormatOptions) => {
   try {
     const d = new Date(timestamp);
-    return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' });
+    const defaultOptions: Intl.DateTimeFormatOptions = { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' };
+    return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { ...defaultOptions, ...options });
   } catch {
     return "Invalid Date";
   }
@@ -127,6 +128,17 @@ const parseNOAATime = (s: string): number => {
   const withZ = iso.endsWith('Z') ? iso : iso + 'Z';
   const t = Date.parse(withZ);
   return Number.isFinite(t) ? t : NaN;
+};
+
+// --- NEW HELPER ---
+const getVisibilityBlurb = (score: number | null): string => {
+    if (score === null) return 'Potential visibility is unknown.';
+    if (score >= 80) return 'Potential visibility is high, with a significant display likely.';
+    if (score >= 60) return 'Potential visibility is good for naked-eye viewing.';
+    if (score >= 50) return 'Potential visibility includes faint naked-eye glows.';
+    if (score >= 40) return 'Potential visibility is good for phone cameras.';
+    if (score >= 25) return 'Potential visibility is for cameras only.';
+    return 'Potential visibility is low.';
 };
 
 export const useForecastData = (
@@ -250,12 +262,39 @@ export const useForecastData = (
     else if (status === "IMMINENT_30") windowLabel = "0 – 30 min";
     else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
     else if (status === "WATCH") windowLabel = "20 – 90 min";
+    
+    // --- NEW ACTION LOGIC ---
+    let action = 'Default action message.';
+    const now = Date.now();
+    const sunsetTime = celestialTimes.sun?.set;
+    const isPreSunsetHour = sunsetTime ? (now > (sunsetTime - 60 * 60 * 1000) && now < sunsetTime) : false;
 
-    let action = 'Low chance for now.';
-    if (status === "ONSET") action = "Look now — activity is underway.";
-    else if (status === "IMMINENT_30" || likelihood >= 65) action = "Head outside or to a darker spot now.";
-    else if (status === "LIKELY_60" || likelihood >= 50) action = "Prepare to go; check the sky within the next hour.";
-    else if (status === "WATCH") action = "Energy is building in Earth's magnetic field. The forecast will upgrade to an Alert if an eruption becomes likely.";
+    if (isDaylight) {
+        action = "The sun is up. Aurora viewing is not possible until after dark.";
+    } else if (isPreSunsetHour && (baseAuroraScore ?? 0) >= 50) {
+        const viewingTime = sunsetTime ? sunsetTime + 85 * 60 * 1000 : 0;
+        action = `Activity is high before sunset! There is good potential for an aurora display after dark, from around ${formatNZTimestamp(viewingTime, {timeStyle: 'short'})}.`;
+    } else {
+        const visibility = getVisibilityBlurb(auroraScore);
+        switch (status) {
+            case 'ONSET':
+                action = `An eruption is underway! Look south now! ${visibility}`;
+                break;
+            case 'IMMINENT_30':
+                action = `Get to your viewing site now! An eruption is expected within 30 minutes. ${visibility}`;
+                break;
+            case 'LIKELY_60':
+                action = `Prepare to go out. An eruption is likely within the hour. ${visibility}`;
+                break;
+            case 'WATCH':
+                action = `Energy is building. Wait for this to upgrade to an Alert if your viewing wishes align with the score. ${visibility}`;
+                break;
+            case 'QUIET':
+                action = 'Conditions are quiet. Not worth leaving home for at this moment.';
+                break;
+        }
+    }
+
 
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
 
@@ -269,7 +308,7 @@ export const useForecastData = (
       color: ''
     });
 
-  }, [recentL1Data, goesOnset, auroraScore, setSubstormActivityStatus]);
+  }, [recentL1Data, goesOnset, auroraScore, baseAuroraScore, isDaylight, celestialTimes, setSubstormActivityStatus]);
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);

@@ -60,16 +60,9 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     return 'text-neutral-400';
   };
   
+  // --- MODIFIED: This function now directly uses the smarter 'action' from the hook ---
   const getCombinedAction = () => {
-    if (isDaylight) {
-      return "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!";
-    }
-    
-    if (isSubstormActive) {
-      return action;
-    }
-    
-    return blurb;
+    return action || blurb; // Fallback to the old blurb if action is not available
   };
   
   const likelihoodGrad = useMemo(() => {
@@ -125,7 +118,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
         </div>
 
         <div className="space-y-4">
-          {isSubstormActive && (
+          {isSubstormActive && !isDaylight && (
             <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-700/50">
               <div className="flex justify-between items-start mb-3">
                 <div>
@@ -153,7 +146,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
           
           <div className={`rounded-lg p-4 ${isSubstormImminent ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
             <div className="text-sm text-neutral-300 font-medium mb-1">
-              {isSubstormActive ? 'Recommended Action' : 'Current Conditions'}
+              Recommended Action
             </div>
             <p className="text-neutral-200">
               {getCombinedAction()}
