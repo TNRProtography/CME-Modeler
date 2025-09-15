@@ -284,7 +284,13 @@ export const NzMagnetometerChart: React.FC<{ data: Record<string, any>, events: 
         };
     }, [selectedEvent]);
 
-    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'dH/dt (nT/min)', chartData.datasets, { type: 'nzmag' }, annotations), [timeRange, chartData, annotations]);
+    const chartOptions = useMemo(() => {
+        const options = createDynamicChartOptions(timeRange, 'dH/dt (nT/min)', chartData.datasets, { type: 'nzmag' }, annotations);
+        if (options.plugins) {
+            options.plugins.legend = { display: true, labels: { color: '#a1a1aa' } };
+        }
+        return options;
+    }, [timeRange, chartData, annotations]);
 
     return (
         <div className="h-full flex flex-col">
@@ -480,4 +486,4 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
         </div>
     );
 };
-// --- END OF FILE src/components/ForecastCharts.tsx ---
+// --- END OF FILE src/components/ForecastCharts.tsx ---```

@@ -24,7 +24,7 @@ import {
     SubstormChart,
     MoonArcChart,
     NzMagnetometerChart,
-    AeAoIndexChart, // NEW
+    AeAoIndexChart,
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
@@ -500,30 +500,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             emoji="📡" 
                             onOpenModal={() => openModal('nz-mag')}
                         >
-                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="md:col-span-2">
-                                    <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} selectedEvent={selectedNzMagEvent} loadingMessage={loadingNzMag} />
+                           <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} selectedEvent={selectedNzMagEvent} loadingMessage={loadingNzMag} />
+                           <div className="mt-4">
+                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
+                                <div className="space-y-2 max-h-[150px] overflow-y-auto styled-scrollbar pr-2">
+                                    {nzMagSubstormEvents.length > 0 ? (
+                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                            <div 
+                                                key={index}
+                                                onClick={() => setSelectedNzMagEvent(event)}
+                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                            >
+                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                    )}
                                 </div>
-                                <div className="md:col-span-1">
-                                    <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
-                                    <div className="space-y-2 max-h-[250px] overflow-y-auto styled-scrollbar pr-2">
-                                        {nzMagSubstormEvents.length > 0 ? (
-                                            nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                                <div 
-                                                    key={index}
-                                                    onClick={() => setSelectedNzMagEvent(event)}
-                                                    className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                                >
-                                                    <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                    <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                        )}
-                                    </div>
-                                </div>
-                           </div>
+                            </div>
                         </ForecastChartPanel>
 
                         <ForecastChartPanel title="Local Disturbance Index (AE/AO Proxy)" currentValue={`AE: ${localAeAoData.ae.at(-1)?.y?.toFixed(1) ?? '...'} | AO: ${localAeAoData.ao.at(-1)?.y?.toFixed(1) ?? '...'}`} emoji="📈" onOpenModal={() => openModal('ae-ao')}>
@@ -606,4 +602,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-//--- END OF FILE src/components/ForecastDashboard.tsx ---```
+//--- END OF FILE src/components/ForecastDashboard.tsx ---
