@@ -7,6 +7,7 @@ import { ChartOptions, ScriptableContext } from 'chart.js';
 import CaretIcon from './icons/CaretIcon';
 import ToggleSwitch from './ToggleSwitch';
 import { DailyHistoryEntry, OwmDailyForecastEntry } from '../types';
+import { NzMagEvent } from '../hooks/useForecastData'; // NEW
 
 // --- CONSTANTS & HELPERS (from ForecastDashboard) ---
 const GAUGE_THRESHOLDS = {
@@ -131,12 +132,11 @@ const createDynamicChartOptions = (
             if (high > 100) max = high;
             if (low < -20) min = low;
             break;
-        // --- FIX: Added explicit auto-scaling for NZ Magnetometer ---
         case 'nzmag':
             const dataMax = Math.max(...allYValues);
             const dataMin = Math.min(...allYValues);
             const range = dataMax - dataMin;
-            const padding = range * 0.1 || 1; // Use a default padding if range is 0
+            const padding = range * 0.1 || 1;
             min = Math.floor(dataMin - padding);
             max = Math.ceil(dataMax + padding);
             break;
@@ -238,7 +238,7 @@ export const SubstormChart: React.FC<{ goes18Data: any[], goes19Data: any[], ann
     );
 };
 
-export const NzMagnetometerChart: React.FC<{ data: any[], loadingMessage: string | null }> = ({ data, loadingMessage }) => {
+export const NzMagnetometerChart: React.FC<{ data: any[], events: NzMagEvent[], loadingMessage: string | null }> = ({ data, events, loadingMessage }) => {
     const [timeRange, setTimeRange] = useState(3 * 3600000);
     
     const chartData = useMemo(() => {
@@ -257,13 +257,40 @@ export const NzMagnetometerChart: React.FC<{ data: any[], loadingMessage: string
         };
     }, [data]);
 
-    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'dH/dt (nT/min)', chartData.datasets, { type: 'nzmag' }), [timeRange, chartData]);
+    const annotations = useMemo(() => {
+        const eventAnnotations: any = {};
+        events.forEach((event, index) => {
+            eventAnnotations[`eventBox-${index}`] = {
+                type: 'box',
+                xMin: event.start,
+                xMax: event.end,
+                backgroundColor: 'rgba(255, 69, 0, 0.15)',
+                borderColor: 'rgba(255, 69, 0, 0.4)',
+                borderWidth: 1,
+            };
+            eventAnnotations[`eventLabel-${index}`] = {
+                type: 'label',
+                xValue: event.start + (event.end - event.start) / 2,
+                yValue: '95%',
+                yScaleID: 'y',
+                content: `Max Delta: ${event.maxDelta.toFixed(1)} nT/min`,
+                color: 'rgba(255, 255, 255, 0.8)',
+                font: { size: 10, weight: 'bold' },
+                backgroundColor: 'rgba(255, 69, 0, 0.5)',
+                padding: 2,
+                borderRadius: 2,
+            };
+        });
+        return eventAnnotations;
+    }, [events]);
+
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'dH/dt (nT/min)', chartData.datasets, { type: 'nzmag' }, annotations), [timeRange, chartData, annotations]);
 
     return (
         <div className="h-full flex flex-col">
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
-                {loadingMessage ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMessage}</p> : <Line data={chartData} options={chartOptions} />}
+                {loadingMessage ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMessage}</p> : <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} />}
             </div>
         </div>
     );

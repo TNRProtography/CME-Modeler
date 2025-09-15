@@ -44,6 +44,13 @@ interface InterplanetaryShock {
   link: string;
 }
 
+// --- NEW: Type for detected NZ Mag events ---
+export interface NzMagEvent {
+    start: number;
+    end: number;
+    maxDelta: number;
+}
+
 type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
@@ -179,6 +186,7 @@ export const useForecastData = (
     p30: 0,
     p60: 0,
   });
+  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]); // NEW
 
   const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
     const moonIllumination = Math.max(0, (illumination ?? 0));
@@ -245,6 +253,43 @@ export const useForecastData = (
       if (recentData.length < 5) return false;
       const volatility = recentData.some((p: any) => Math.abs(p.y) > 5);
       return volatility;
+  }, [nzMagData]);
+
+  // --- NEW: Analyze NZ Mag data for past events ---
+  useMemo(() => {
+    if (!nzMagData.length || !nzMagData[0]?.data) {
+        setNzMagSubstormEvents([]);
+        return;
+    }
+    const data = nzMagData[0].data;
+    const events: NzMagEvent[] = [];
+    let currentEvent: NzMagEvent | null = null;
+    const THRESHOLD = 5; // nT/min
+    const COOLDOWN_MINS = 10;
+
+    for (const point of data) {
+        const isVolatile = Math.abs(point.y) >= THRESHOLD;
+
+        if (isVolatile && !currentEvent) {
+            // Start a new event
+            currentEvent = { start: point.x, end: point.x, maxDelta: Math.abs(point.y) };
+        } else if (isVolatile && currentEvent) {
+            // Continue the current event
+            currentEvent.end = point.x;
+            currentEvent.maxDelta = Math.max(currentEvent.maxDelta, Math.abs(point.y));
+        } else if (!isVolatile && currentEvent) {
+            // End the current event if it's been quiet for a while
+            if (point.x - currentEvent.end > COOLDOWN_MINS * 60 * 1000) {
+                events.push(currentEvent);
+                currentEvent = null;
+            }
+        }
+    }
+    // Add the last event if it's still ongoing
+    if (currentEvent) {
+        events.push(currentEvent);
+    }
+    setNzMagSubstormEvents(events);
   }, [nzMagData]);
 
   useEffect(() => {
@@ -533,6 +578,7 @@ export const useForecastData = (
     loadingMagnetometer,
     nzMagData, 
     loadingNzMag, 
+    nzMagSubstormEvents, // NEW
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,
@@ -545,4 +591,4 @@ export const useForecastData = (
   };
 
 };
-//--- END OF FILE src/hooks/useForecastData.ts ---
+//--- END OF FILE src/hooks/useForecastData.ts ---```

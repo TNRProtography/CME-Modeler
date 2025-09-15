@@ -4,9 +4,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
-import { useForecastData } from '../hooks/useForecastData';
+import { useForecastData, NzMagEvent } from '../hooks/useForecastData'; // NEW
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
-import ForecastChartPanel from './ForecastChartPanel'; // Import the new panel component
+import ForecastChartPanel from './ForecastChartPanel';
 
 import {
     TipsSection,
@@ -188,7 +188,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary
+        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary, nzMagSubstormEvents
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -414,6 +414,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return {};
     }, []);
 
+    // --- NEW: Calculate the most recent max delta for display ---
+    const latestMaxDelta = useMemo(() => {
+        if (!nzMagSubstormEvents || nzMagSubstormEvents.length === 0) return null;
+        return nzMagSubstormEvents[nzMagSubstormEvents.length - 1].maxDelta;
+    }, [nzMagSubstormEvents]);
+
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
     }
@@ -480,8 +486,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                            <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
                         </ForecastChartPanel>
                         
-                        <ForecastChartPanel title="NZ Magnetometer (West Melton)" currentValue={substormForecast.status === 'ONSET' && nzMagData.length > 0 ? "ONSET DETECTED" : "Monitoring..."} emoji="📡" onOpenModal={() => openModal('nz-mag')}>
-                           <NzMagnetometerChart data={nzMagData} loadingMessage={loadingNzMag} />
+                        <ForecastChartPanel 
+                            title="NZ Magnetometer (West Melton)" 
+                            currentValue={
+                                substormForecast.status === 'ONSET' && nzMagData.length > 0 
+                                ? `ONSET DETECTED <span class='text-sm block'>Max Delta: ${latestMaxDelta?.toFixed(1)} nT/min</span>` 
+                                : "Monitoring..."
+                            } 
+                            emoji="📡" 
+                            onOpenModal={() => openModal('nz-mag')}
+                        >
+                           <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} loadingMessage={loadingNzMag} />
                         </ForecastChartPanel>
 
                         <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
