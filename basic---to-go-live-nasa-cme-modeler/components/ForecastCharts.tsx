@@ -71,29 +71,81 @@ const createVerticalThresholdGradient = (ctx: ScriptableContext<'line'>, thresho
     return gradient;
 };
 
-const createChartOptions = (rangeMs: number, yLabel: string, showLegend: boolean = false, extraAnnotations?: any, isLog: boolean = false): ChartOptions<'line'> => {
+const baseChartOptions: ChartOptions<'line'> = {
+    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
+    plugins: { legend: { display: false, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } },
+    scales: { 
+        x: { type: 'time', ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+        y: { position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, color: '#a3a3a3' } }
+    }
+};
+
+const createDynamicChartOptions = (
+    rangeMs: number,
+    yLabel: string,
+    datasets: { data: { y: number }[] }[],
+    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' },
+    extraAnnotations?: any,
+): ChartOptions<'line'> => {
     const now = Date.now();
     const startTime = now - rangeMs;
-    const options: ChartOptions<'line'> = {
-        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
-        plugins: { legend: { display: showLegend, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } },
-        scales: { 
-            x: { type: 'time', min: startTime, max: now, ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-            y: { type: isLog ? 'logarithmic' : 'linear', position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, text: yLabel, color: '#a3a3a3' } }
-        }
-    };
+
+    const options: ChartOptions<'line'> = JSON.parse(JSON.stringify(baseChartOptions)); // Deep copy
+    if (!options.scales || !options.scales.x || !options.scales.y) return options; // Type guard
+
+    options.scales.x.min = startTime;
+    options.scales.x.max = now;
+    options.scales.y.title!.text = yLabel;
+    
     if (extraAnnotations) {
         options.plugins = { ...options.plugins, annotation: { annotations: extraAnnotations } };
     }
+
+    const allYValues = datasets.flatMap(dataset => dataset.data.map(p => p.y)).filter(y => y !== null && !isNaN(y));
+    if (allYValues.length === 0) return options;
+
+    let min: number | undefined = undefined;
+    let max: number | undefined = undefined;
+
+    switch (scaleConfig.type) {
+        case 'speed':
+            min = 200;
+            max = Math.ceil(Math.max(800, ...allYValues) / 50) * 50; // Round up to nearest 50
+            break;
+        case 'density':
+            min = 0;
+            max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5; // Round up to nearest 5
+            break;
+        case 'imf':
+            const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5; // Round up to nearest 5
+            min = -maxAbs;
+            max = maxAbs;
+            break;
+        case 'power':
+            min = 0;
+            max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25; // Round up to nearest 25
+            break;
+        case 'substorm':
+            // Use default scale unless values go way out of bounds
+            const high = Math.max(...allYValues);
+            const low = Math.min(...allYValues);
+            if (high > 100) max = high;
+            if (low < -20) min = low;
+            break;
+    }
+    
+    if (min !== undefined) options.scales.y.min = min;
+    if (max !== undefined) options.scales.y.max = max;
+  
     return options;
 };
 
-const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) => void; selected: number }> = ({ onSelect, selected }) => {
+const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '3 Hr', hours: 3 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
         <div className="flex justify-center gap-2 my-2 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000, label)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
                     {label}
                 </button>
             ))}
@@ -103,53 +155,173 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number, label: string) =
 
 // --- CHART COMPONENTS ---
 
-interface ExpandedGraphContentProps {
-    graphId: string;
-    solarWindTimeRange: number; setSolarWindTimeRange: (d: number, l: string) => void; solarWindTimeLabel: string;
-    magneticFieldTimeRange: number; setMagneticFieldTimeRange: (d: number, l: string) => void; magneticFieldTimeLabel: string;
-    hemisphericPowerChartTimeRange: number; setHemisphericPowerChartTimeRange: (d: number, l: string) => void; hemisphericPowerChartTimeLabel: string;
-    magnetometerTimeRange: number; setMagnetometerTimeRange: (d: number, l: string) => void; magnetometerTimeLabel: string;
-    openModal: (id: string) => void;
-    allSpeedData: any[]; allDensityData: any[]; allMagneticData: any[]; hemisphericPowerHistory: any[];
-    goes18Data: any[]; goes19Data: any[]; loadingMagnetometer: string | null; substormBlurb: { text: string; color: string };
-    getMagnetometerAnnotations: (data: any[]) => any;
-}
+export const SolarWindSpeedChart: React.FC<{ data: any[] }> = ({ data }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const chartData = useMemo(() => ({ datasets: [{ label: 'Speed', data: data, yAxisID: 'y', fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false) }] }), [data]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Speed (km/s)', chartData.datasets, { type: 'speed' }), [timeRange, chartData]);
 
-export const ExpandedGraphContent: React.FC<ExpandedGraphContentProps> = React.memo(({
-    graphId,
-    solarWindTimeRange, setSolarWindTimeRange,
-    magneticFieldTimeRange, setMagneticFieldTimeRange,
-    hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange,
-    magnetometerTimeRange, setMagnetometerTimeRange,
-    openModal,
-    allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-    goes18Data, goes19Data, loadingMagnetometer, substormBlurb, getMagnetometerAnnotations
-}) => {
-    const CHART_HEIGHT = 'h-full';
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+            </div>
+        </div>
+    );
+};
 
-    const speedChartData = useMemo(() => ({ datasets: [{ label: 'Speed', data: allSpeedData, yAxisID: 'y', order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false) }] }), [allSpeedData]);
-    const densityChartData = useMemo(() => ({ datasets: [{ label: 'Density', data: allDensityData, yAxisID: 'y', order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false) }] }), [allDensityData]);
-    const magneticFieldChartData = useMemo(() => ({ datasets: [ { label: 'Bt', data: allMagneticData.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false) }, { label: 'Bz', data: allMagneticData.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true) } ] }), [allMagneticData]);
-    const hemisphericPowerChartData = useMemo(() => ({ datasets: [{ label: 'Hemispheric Power', data: hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower })), borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false), fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 }] }), [hemisphericPowerHistory]);
-    const magnetometerChartData = useMemo(() => ({ datasets: [ { label: 'GOES-18 (Primary)', data: goes18Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(56, 189, 248)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false }, { label: 'GOES-19 (Secondary)', data: goes19Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(255, 69, 0)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false } ] }), [goes18Data, goes19Data]);
+export const SolarWindDensityChart: React.FC<{ data: any[] }> = ({ data }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const chartData = useMemo(() => ({ datasets: [{ label: 'Density', data: data, yAxisID: 'y', fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false) }] }), [data]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Density (p/cm³)', chartData.datasets, { type: 'density' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+            </div>
+        </div>
+    );
+};
+
+export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const chartData = useMemo(() => ({ datasets: [ { label: 'Bt', data: data.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false) }, { label: 'Bz', data: data.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true) } ] }), [data]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Magnetic Field (nT)', chartData.datasets, { type: 'imf' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+            </div>
+        </div>
+    );
+};
+
+export const HemisphericPowerChart: React.FC<{ data: any[] }> = ({ data }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const chartData = useMemo(() => ({ datasets: [{ label: 'Hemispheric Power', data: data, borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false), fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true }] }), [data]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Hemispheric Power (GW)', chartData.datasets, { type: 'power' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+            </div>
+        </div>
+    );
+};
+
+export const SubstormChart: React.FC<{ goes18Data: any[], goes19Data: any[], annotations: any, loadingMessage: string | null }> = ({ goes18Data, goes19Data, annotations, loadingMessage }) => {
+    const [timeRange, setTimeRange] = useState(3 * 3600000);
+    const chartData = useMemo(() => ({ datasets: [ { label: 'GOES-18 (Primary)', data: goes18Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(56, 189, 248)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false }, { label: 'GOES-19 (Secondary)', data: goes19Data.map(p => ({ x: p.time, y: p.hp })), borderColor: 'rgb(255, 69, 0)', backgroundColor: 'transparent', pointRadius: 0, tension: 0.1, borderWidth: 1.5, fill: false } ] }), [goes18Data, goes19Data]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Hp (nT)', chartData.datasets, { type: 'substorm' }, annotations), [timeRange, chartData, annotations]);
     
-    const speedChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, 'Speed (km/s)'), [solarWindTimeRange]);
-    const densityChartOptions = useMemo(() => createChartOptions(solarWindTimeRange, 'Density (p/cm³)'), [solarWindTimeRange]);
-    const magneticFieldOptions = useMemo(() => createChartOptions(magneticFieldTimeRange, 'Magnetic Field (nT)'), [magneticFieldTimeRange]);
-    const hemisphericPowerChartOptions = useMemo(() => createChartOptions(hemisphericPowerChartTimeRange, 'Hemispheric Power (GW)'), [hemisphericPowerChartTimeRange]);
-    
-    const magnetometerAnnotations = useMemo(() => getMagnetometerAnnotations(goes18Data), [goes18Data, getMagnetometerAnnotations]);
-    const magnetometerOptions = useMemo(() => createChartOptions(magnetometerTimeRange, 'Hp (nT)', true, magnetometerAnnotations), [magnetometerTimeRange, magnetometerAnnotations]);
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {loadingMessage ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMessage}</p> : <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} />}
+            </div>
+        </div>
+    );
+};
 
-    switch (graphId) {
-        case 'speed-graph-container': return ( <div className="h-full flex flex-col"> <TimeRangeButtons onSelect={setSolarWindTimeRange} selected={solarWindTimeRange} /> <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}> {allSpeedData.length > 0 ? <Line data={speedChartData} options={speedChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>} </div> </div> );
-        case 'density-graph-container': return ( <div className="h-full flex flex-col"> <TimeRangeButtons onSelect={setSolarWindTimeRange} selected={solarWindTimeRange} /> <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}> {allDensityData.length > 0 ? <Line data={densityChartData} options={densityChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>} </div> </div> );
-        case 'imf-graph-container': return ( <div className="h-full flex flex-col"> <TimeRangeButtons onSelect={setMagneticFieldTimeRange} selected={magneticFieldTimeRange} /> <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}> {allMagneticData.length > 0 ? <Line data={magneticFieldChartData} options={magneticFieldOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>} </div> </div> );
-        case 'hemispheric-power-graph-container': return ( <div className="h-full flex flex-col"> <TimeRangeButtons onSelect={setHemisphericPowerChartTimeRange} selected={hemisphericPowerChartTimeRange} /> <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}> {hemisphericPowerHistory.length > 0 ? <Line data={hemisphericPowerChartData} options={hemisphericPowerChartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>} </div> </div> );
-        case 'goes-mag-graph-container': return ( <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full"> <div className="lg:col-span-2 h-full flex flex-col"> <TimeRangeButtons onSelect={setMagnetometerTimeRange} selected={magnetometerTimeRange} /> <div className={`flex-grow relative mt-2 ${CHART_HEIGHT}`}> {loadingMagnetometer ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMagnetometer}</p> : <Line data={magnetometerChartData} options={magnetometerOptions} plugins={[annotationPlugin]} />} </div> </div> <div className="lg:col-span-1 flex flex-col justify-center items-center bg-neutral-900/50 p-4 rounded-lg h-full"> <h3 className="text-lg font-semibold text-neutral-200 mb-2">Magnetic Field Analysis</h3> <p className={`text-center text-lg ${substormBlurb.color}`}>{substormBlurb.text}</p> </div> </div> );
-        default: return null;
-    }
-});
+export const MoonArcChart: React.FC<{ dailyCelestialHistory: DailyHistoryEntry[], owmDailyForecast: OwmDailyForecastEntry[] }> = ({ dailyCelestialHistory, owmDailyForecast }) => {
+    const chartDataAndAnnotations = useMemo(() => {
+        const now = Date.now();
+        const end = now + 24 * 60 * 60 * 1000;
+        const allEvents: { time: number, type: 'rise' | 'set' }[] = [];
+
+        [...dailyCelestialHistory, ...owmDailyForecast].forEach(d => {
+            const moon = 'moon_phase' in d ? { rise: d.moonrise * 1000, set: d.moonset * 1000 } : d.moon;
+            if (moon?.rise) allEvents.push({ time: moon.rise, type: 'rise' });
+            if (moon?.set) allEvents.push({ time: moon.set, type: 'set' });
+        });
+        
+        const uniqueEvents = Array.from(new Map(allEvents.map(e => [e.time, e])).values());
+        uniqueEvents.sort((a, b) => a.time - b.time);
+
+        const lastEventBeforeStart = uniqueEvents.slice().reverse().find(e => e.time <= now);
+        let isUp = lastEventBeforeStart?.type === 'rise';
+
+        const relevantEvents = uniqueEvents.filter(e => e.time >= now && e.time <= end);
+        if (!relevantEvents.length && lastEventBeforeStart) {
+            const nextEvent = uniqueEvents.find(e => e.time > lastEventBeforeStart.time);
+            if (nextEvent) relevantEvents.unshift(nextEvent);
+        }
+        if (lastEventBeforeStart) relevantEvents.unshift(lastEventBeforeStart);
+        
+        const dataPoints = [];
+        const annotations: any = {
+            horizon: { type: 'line', yMin: 0, yMax: 0, borderColor: 'rgba(100, 116, 139, 0.8)', borderWidth: 2 }
+        };
+
+        let lastRise = isUp ? lastEventBeforeStart?.time : uniqueEvents.slice().reverse().find(e => e.type === 'rise' && e.time <= now)?.time;
+        let nextSet = uniqueEvents.find(e => e.type === 'set' && e.time >= now)?.time;
+        
+        for (let t = now; t <= end; t += 15 * 60 * 1000) {
+            const currentEvent = uniqueEvents.slice().reverse().find(e => e.time <= t);
+            if (currentEvent?.type === 'rise') {
+                const riseTime = currentEvent.time;
+                const setTime = uniqueEvents.find(e => e.type === 'set' && e.time > riseTime)?.time;
+                if (setTime && t <= setTime) {
+                    const duration = setTime - riseTime;
+                    const progress = (t - riseTime) / duration;
+                    dataPoints.push({ x: t, y: Math.sin(progress * Math.PI) * 90 });
+                } else {
+                    dataPoints.push({ x: t, y: 0 });
+                }
+            } else { // Moon is down
+                dataPoints.push({ x: t, y: 0 });
+            }
+        }
+        
+        relevantEvents.forEach(event => {
+            if(event.time >= now && event.time <= end) {
+                annotations[event.time] = { type: 'line', xMin: event.time, xMax: event.time, borderColor: 'rgba(203, 213, 225, 0.5)', borderWidth: 1, borderDash: [5,5], label: { content: `${event.type === 'rise' ? 'Rise' : 'Set'} @ ${new Date(event.time).toLocaleTimeString('en-NZ', {hour:'2-digit', minute: '2-digit'})}`, display: true, position: 'start', font: {size: 10}, color: '#e2e8f0' }};
+            }
+        });
+        
+        const datasets = [{
+            label: 'Moon Altitude',
+            data: dataPoints,
+            borderColor: 'rgb(203, 213, 225)',
+            backgroundColor: 'rgba(203, 213, 225, 0.2)',
+            fill: { target: 'origin', above: 'rgba(203, 213, 225, 0.2)'},
+            pointRadius: 0,
+            tension: 0.4
+        }];
+        
+        return { datasets, annotations };
+
+    }, [dailyCelestialHistory, owmDailyForecast]);
+
+    const chartOptions = useMemo((): ChartOptions<'line'> => ({
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false },
+            annotation: { annotations: chartDataAndAnnotations.annotations }
+        },
+        scales: {
+            x: { type: 'time', min: Date.now(), max: Date.now() + 24 * 60 * 60 * 1000, ticks: { color: '#71717a', source: 'auto', stepSize: 3, unit: 'hour' }, grid: { color: '#3f3f46' } },
+            y: { min: 0, max: 100, display: false }
+        }
+    }), [chartDataAndAnnotations.annotations]);
+    
+    return (
+        <div className="h-full flex flex-col min-h-[150px]">
+             <div className="flex-grow relative mt-2">
+                 <Line data={chartDataAndAnnotations} options={chartOptions} plugins={[annotationPlugin]} />
+             </div>
+        </div>
+    );
+};
+
 
 interface ForecastTrendChartProps {
     auroraScoreHistory: { timestamp: number; baseScore: number; finalScore: number; }[];

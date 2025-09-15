@@ -18,12 +18,6 @@ interface ForecastScoreProps {
   onOpenModal: () => void;
 }
 
-interface DataGaugesProps {
-    gaugeData: Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string }>;
-    onOpenModal: (id: string) => void;
-    onExpandGraph: (graphId: string | null) => void;
-}
-
 interface CollapsibleSectionProps {
     title: string;
     children: React.ReactNode;
@@ -88,44 +82,7 @@ export const ForecastScore: React.FC<ForecastScoreProps> = ({
   );
 };
 
-
-export const DataGauges: React.FC<DataGaugesProps> = ({ gaugeData, onOpenModal, onExpandGraph }) => {
-    return (
-        <div className="col-span-12 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-            {Object.entries(gaugeData).map(([key, data]) => {
-                const isGraphable = !['moon'].includes(key);
-                let graphId: string | null = null;
-                if (key === 'bt' || key === 'bz') graphId = 'imf-graph-container';
-                else if (key === 'power') graphId = 'hemispheric-power-graph-container';
-                else if (key === 'speed') graphId = 'speed-graph-container';
-                else if (key === 'density') graphId = 'density-graph-container';
-
-                return (
-                    <div key={key} className="col-span-1 card bg-neutral-950/80 p-1 text-center flex flex-col justify-between">
-                        <button 
-                            onClick={() => isGraphable && onExpandGraph(graphId)} 
-                            className={`flex flex-col justify-between items-center w-full h-full p-2 rounded-lg transition-colors ${isGraphable ? 'hover:bg-neutral-800/50 cursor-pointer' : ''}`} 
-                            disabled={!isGraphable}
-                        >
-                            <div className="flex justify-center items-center">
-                                <h3 className="text-md font-semibold text-white h-10 flex items-center justify-center">{key === 'moon' ? 'Moon' : key.toUpperCase()}</h3>
-                                <button onClick={(e) => { e.stopPropagation(); onOpenModal(key); }} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                            </div>
-                            <div className="font-bold my-2" dangerouslySetInnerHTML={{ __html: data.value }}></div>
-                            <div className="text-3xl my-2">{data.emoji}</div>
-                            <div className="w-full bg-neutral-700 rounded-full h-3 mt-4">
-                                <div className="h-3 rounded-full" style={{ width: `${data.percentage}%`, backgroundColor: data.color }}></div>
-                            </div>
-                            <div className="text-xs text-neutral-500 mt-2 truncate" title={data.lastUpdated}>{data.lastUpdated}</div>
-                            {isGraphable && ( <CaretIcon className={`w-5 h-5 mt-2 text-neutral-400`} /> )}
-                        </button>
-                    </div>
-                );
-            })}
-        </div>
-    );
-};
-
+// --- REMOVED DataGauges component as it is now replaced by ForecastChartPanel ---
 
 export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, children }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -272,4 +229,4 @@ export const ActivityAlert: React.FC<ActivityAlertProps> = ({ isDaylight, celest
         </div>
     );
 };
-//--- END OF FILE src/components/ForecastComponents.tsx --- 
+//--- END OF FILE src/components/ForecastComponents.tsx ---

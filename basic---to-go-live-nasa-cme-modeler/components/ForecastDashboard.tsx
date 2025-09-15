@@ -5,11 +5,10 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
-import GraphModal from './GraphModal'; // Import the new GraphModal
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
+import ForecastChartPanel from './ForecastChartPanel'; // Import the new panel component
 
 import {
-    DataGauges,
     TipsSection,
     CameraSettingsSection,
     InfoModal,
@@ -18,13 +17,18 @@ import {
 
 import {
     ForecastTrendChart,
-    ExpandedGraphContent
+    SolarWindSpeedChart,
+    SolarWindDensityChart,
+    MagneticFieldChart,
+    HemisphericPowerChart,
+    SubstormChart,
+    MoonArcChart,
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
     </svg>
 );
@@ -188,19 +192,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
     const [isFaqOpen, setIsFaqOpen] = useState(false);
-    const [graphModalId, setGraphModalId] = useState<string | null>(null);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    
-    const [solarWindTimeRange, setSolarWindTimeRange] = useState(6 * 3600000);
-    const [solarWindTimeLabel, setSolarWindTimeLabel] = useState('6 Hr');
-    const [magneticFieldTimeRange, setMagneticFieldTimeRange] = useState(6 * 3600000);
-    const [magneticFieldTimeLabel, setMagneticFieldTimeLabel] = useState('6 Hr');
-    const [hemisphericPowerChartTimeRange, setHemisphericPowerChartTimeRange] = useState(6 * 3600000);
-    const [hemisphericPowerChartTimeLabel, setHemisphericPowerChartTimeLabel] = useState('6 Hr');
-    const [magnetometerTimeRange, setMagnetometerTimeRange] = useState(3 * 3600000);
-    const [magnetometerTimeLabel, setMagnetometerTimeLabel] = useState('3 Hr');
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -215,14 +209,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setCameraImageSrc(`${selectedCamera.url}?_=${Date.now()}`);
         }
     }, [lastUpdated, selectedCamera]);
-
-    useEffect(() => {
-        if (navigationTarget?.page === 'forecast' && navigationTarget.expandId) {
-             if (navigationTarget.expandId !== 'goes-mag-graph-container') {
-                 setGraphModalId(navigationTarget.expandId);
-            }
-        }
-    }, [navigationTarget]);
 
     const handleDownloadForecastImage = useCallback(async () => {
         const canvas = document.createElement('canvas');
@@ -398,9 +384,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'bt': `<strong>What it is:</strong> The stream of particles from the Sun has its own magnetic field. 'Bt' measures the total strength of that magnetic field.<br><br><strong>Effect on Aurora:</strong> A high Bt value means the magnetic field is strong and carrying a lot of energy. By itself, it doesn't do much, but if the 'Bz' direction is right, this stored energy can be unleashed to create a powerful display.`,
         'bz': `<strong>What it is:</strong> This is the most important ingredient for an aurora. Earth is protected by a magnetic shield. The 'Bz' value tells us the North-South direction of the Sun's magnetic field.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the 'master switch'. When Bz points **South (a negative number)**, it's like a key turning in a lock. It opens a door in Earth's shield, allowing energy and particles to pour in. When Bz is North (positive), the door is closed. **The more negative the Bz, the better the aurora!**`,
         'epam': `<strong>What it is:</strong> A sensor on a satellite far away that acts as an early-warning system. It counts very fast, high-energy particles that are often pushed ahead of a major solar eruption.<br><br><strong>Effect on Aurora:</strong> A sudden, sharp spike on this chart is a strong clue that a 'shockwave' from a solar eruption (a CME) is about to hit Earth, which can trigger a major aurora storm.`,
-        'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows.`,
+        'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun, and its projected path in the sky for the next 24 hours.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows. The chart helps you plan around when the moon will be below the horizon.`,
         'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
         'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
+        'substorm': 'This chart shows data from the GOES satellite in geostationary orbit. The "Hp" component measures the magnetic field parallel to Earth\'s rotation axis. A slow decrease ("stretching phase") followed by a sharp increase ("dipolarization" or "jump") is a classic signature of a substorm onset, which often corresponds with a bright auroral display.'
     }), []);
     
     const openModal = useCallback((id: string) => {
@@ -410,6 +397,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             if (id === 'unified-forecast') title = 'About The Spot the Aurora Forecast';
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else if (id === 'live-cameras') title = 'About Live Cameras';
+            else if (id === 'substorm') title = 'About GOES Magnetometer (Substorm Watch)';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
             setModalState({ isOpen: true, title: title, content: contentData });
         }
@@ -418,6 +406,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
     const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
+    
+    const getMagnetometerAnnotations = useCallback(() => {
+        // This function can be expanded to draw annotations on the substorm chart if needed.
+        return {};
+    }, []);
 
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
@@ -446,9 +439,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           getScoreColorKey={getForecastScoreColorKey}
                           getAuroraEmoji={getAuroraEmoji}
                           gaugeColors={GAUGE_COLORS}
-                          onOpenModal={openModal}
-                          onDownloadImage={handleDownloadForecastImage}
-                          substormForecast={substormForecast}
+                          onOpenModal={() => openModal('unified-forecast')}
                         />
 
                         <div className="col-span-12">
@@ -460,6 +451,32 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <span>Download The Aurora Forecast For The Next Two Hours!</span>
                             </button>
                         </div>
+
+                        {/* --- NEW CHART PANELS --- */}
+                        <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
+                            <SolarWindSpeedChart data={allSpeedData} />
+                        </ForecastChartPanel>
+
+                        <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
+                            <SolarWindDensityChart data={allDensityData} />
+                        </ForecastChartPanel>
+
+                        <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}>
+                            <MagneticFieldChart data={allMagneticData} />
+                        </ForecastChartPanel>
+
+                        <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}>
+                            <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
+                        </ForecastChartPanel>
+
+                        <ForecastChartPanel title="Substorm Watch (GOES)" currentValue={substormForecast.action} emoji="⚡" onOpenModal={() => openModal('substorm')}>
+                           <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
+                        </ForecastChartPanel>
+
+                        <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
+                            <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
+                        </ForecastChartPanel>
+
 
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <TipsSection />
@@ -475,12 +492,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             dailyCelestialHistory={dailyCelestialHistory}
                             owmDailyForecast={owmDailyForecast}
                             onOpenModal={() => openModal('forecast')}
-                        />
-
-                        <DataGauges
-                            gaugeData={gaugeData}
-                            onOpenModal={openModal}
-                            onExpandGraph={setGraphModalId}
                         />
 
                         <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
@@ -534,20 +545,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     </footer>
                  </div>
             </div>
-
-            <GraphModal 
-                isOpen={!!graphModalId}
-                onClose={() => setGraphModalId(null)}
-                graphId={graphModalId}
-                openModal={openModal}
-                getMagnetometerAnnotations={() => ({})}
-                allSpeedData={allSpeedData} allDensityData={allDensityData} allMagneticData={allMagneticData} hemisphericPowerHistory={hemisphericPowerHistory}
-                goes18Data={goes18Data} goes19Data={goes19Data} loadingMagnetometer={loadingMagnetometer} substormBlurb={{text: substormForecast.action, color: ''}}
-                solarWindTimeRange={solarWindTimeRange} setSolarWindTimeRange={(d, l) => { setSolarWindTimeRange(d); setSolarWindTimeLabel(l); }} solarWindTimeLabel={solarWindTimeLabel}
-                magneticFieldTimeRange={magneticFieldTimeRange} setMagneticFieldTimeRange={(d, l) => { setMagneticFieldTimeRange(d); setMagneticFieldTimeLabel(l); }} magneticFieldTimeLabel={magneticFieldTimeLabel}
-                hemisphericPowerChartTimeRange={hemisphericPowerChartTimeRange} setHemisphericPowerChartTimeRange={(d, l) => { setHemisphericPowerChartTimeRange(d); setHemisphericPowerChartTimeLabel(l); }} hemisphericPowerChartTimeLabel={hemisphericPowerChartTimeLabel}
-                magnetometerTimeRange={magnetometerTimeRange} setMagnetometerTimeRange={(d, l) => { setMagnetometerTimeRange(d); setMagnetometerTimeLabel(l); }} magnetometerTimeLabel={magnetometerTimeLabel}
-            />
 
             {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
             <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
