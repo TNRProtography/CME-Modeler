@@ -138,8 +138,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             </div>
           )}
           
-          {/* --- MODIFIED: Action and Visibility Sections --- */}
-          <div className={`rounded-lg p-4 ${isSubstormImminent ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
+          <div className={`rounded-lg p-4 ${isSubstormImminent && !isDaylight ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
             <div className="text-sm text-neutral-300 font-medium mb-1">
               Recommended Action
             </div>
@@ -158,7 +157,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
                 </p>
             </div>
           )}
-          {/* --- END MODIFICATION --- */}
 
         </div>
       </div>
