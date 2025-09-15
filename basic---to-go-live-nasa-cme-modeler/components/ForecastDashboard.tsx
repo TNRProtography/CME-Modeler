@@ -451,10 +451,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <span>Download The Aurora Forecast For The Next Two Hours!</span>
                             </button>
                         </div>
-                        
+
+                        {/* --- MODIFIED LAYOUT --- */}
+                        <AuroraSightings isDaylight={isDaylight} />
                         <ActivitySummaryDisplay summary={activitySummary} />
 
-                        {/* --- NEW CHART PANEL LAYOUT --- */}
+                        {/* --- CHART PANELS --- */}
                         <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
                             <SolarWindSpeedChart data={allSpeedData} />
                         </ForecastChartPanel>
@@ -479,13 +481,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
                         </ForecastChartPanel>
 
+
                         <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <TipsSection />
                             <CameraSettingsSection settings={cameraSettings} />
                         </div>
                         
-                        <AuroraSightings isDaylight={isDaylight} />
-
                         <ForecastTrendChart 
                             auroraScoreHistory={auroraScoreHistory}
                             dailyCelestialHistory={dailyCelestialHistory}
