@@ -84,7 +84,7 @@ const createDynamicChartOptions = (
     rangeMs: number,
     yLabel: string,
     datasets: { data: { y: number }[] }[],
-    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' },
+    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' }, // Added nzmag
     extraAnnotations?: any,
 ): ChartOptions<'line'> => {
     const now = Date.now();
@@ -110,27 +110,24 @@ const createDynamicChartOptions = (
     switch (scaleConfig.type) {
         case 'speed':
             min = 200;
-            max = Math.ceil(Math.max(800, ...allYValues) / 50) * 50; // Round up to nearest 50
+            max = Math.ceil(Math.max(800, ...allYValues) / 50) * 50;
             break;
         case 'density':
             min = 0;
-            max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5; // Round up to nearest 5
+            max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5;
             break;
         case 'imf':
-            const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5; // Round up to nearest 5
+            const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5;
             min = -maxAbs;
             max = maxAbs;
             break;
         case 'power':
             min = 0;
-            max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25; // Round up to nearest 25
+            max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25;
             break;
         case 'substorm':
-            // Use default scale unless values go way out of bounds
-            const high = Math.max(...allYValues);
-            const low = Math.min(...allYValues);
-            if (high > 100) max = high;
-            if (low < -20) min = low;
+        case 'nzmag': // Use dynamic scaling for nzmag
+            // No fixed min/max, let Chart.js decide based on data unless overridden
             break;
     }
     
@@ -229,6 +226,39 @@ export const SubstormChart: React.FC<{ goes18Data: any[], goes19Data: any[], ann
         </div>
     );
 };
+
+// --- NEW NZ MAGNETOMETER CHART ---
+export const NzMagnetometerChart: React.FC<{ data: any[], loadingMessage: string | null }> = ({ data, loadingMessage }) => {
+    const [timeRange, setTimeRange] = useState(3 * 3600000);
+    
+    const chartData = useMemo(() => {
+        const eyrewellData = data.find(d => d.series?.station === 'EYR')?.data || [];
+        return {
+            datasets: [{
+                label: 'Eyrewell (EYR) H-component',
+                data: eyrewellData,
+                borderColor: 'rgb(34, 197, 94)',
+                backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                fill: false,
+                pointRadius: 0,
+                tension: 0.1,
+                borderWidth: 1.5
+            }]
+        };
+    }, [data]);
+
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'H-component (nT)', chartData.datasets, { type: 'nzmag' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {loadingMessage ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMessage}</p> : <Line data={chartData} options={chartOptions} />}
+            </div>
+        </div>
+    );
+};
+
 
 export const MoonArcChart: React.FC<{ dailyCelestialHistory: DailyHistoryEntry[], owmDailyForecast: OwmDailyForecastEntry[] }> = ({ dailyCelestialHistory, owmDailyForecast }) => {
     const chartDataAndAnnotations = useMemo(() => {

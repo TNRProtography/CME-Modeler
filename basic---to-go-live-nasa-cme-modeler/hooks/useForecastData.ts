@@ -48,13 +48,12 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-// --- MODIFIED URLS ---
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
-// --- END MODIFIED URLS ---
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
+const GEONET_API_URL = 'https://tilde.geonet.org.nz/v4/data';
 const GREYMOUTH_LATITUDE = -42.45;
 
 // --- Physics and Model Helpers ---
@@ -165,6 +164,8 @@ export const useForecastData = (
   const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
   const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
   const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
+  const [nzMagData, setNzMagData] = useState<any[]>([]); // NEW
+  const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...'); // NEW
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
   const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
@@ -195,7 +196,6 @@ export const useForecastData = (
     };
     const riseStr = formatTime(nextRise); const setStr = formatTime(nextSet);
     
-    // --- FIX: Replaced broken SVG string with a valid one ---
     const value = `${moonIllumination.toFixed(0)}% <span class='text-xs block'>Rise: ${riseStr} | Set: ${setStr}</span>`;
 
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
@@ -238,6 +238,25 @@ export const useForecastData = (
     return typeof slope === "number" && slope >= 8;
   }, [goes18Data]);
 
+  // --- NEW: Analysis for NZ Magnetometer ---
+  const nzMagOnset = useMemo(() => {
+      if (!nzMagData.length) return false;
+      const data = nzMagData[0]?.data; // Assuming first series is the one we want
+      if (!data || data.length < 5) return false;
+
+      const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
+      const recentData = data.filter((p: any) => p.x >= thirtyMinsAgo);
+      if (recentData.length < 5) return false;
+
+      const latestPoint = recentData[recentData.length - 1];
+      const tenMinAgoPoint = recentData.find((p: any) => p.x <= latestPoint.x - 10 * 60 * 1000);
+      
+      if (!tenMinAgoPoint) return false;
+
+      const drop = latestPoint.y - tenMinAgoPoint.y;
+      return drop <= -30; // A drop of 30 nT or more in 10 mins is a strong indicator
+  }, [nzMagData]);
+
   useEffect(() => {
     if (!recentL1Data) return;
 
@@ -245,7 +264,10 @@ export const useForecastData = (
     const P30_ALERT = 0.60, P60_ALERT = 0.60;
     let status: Status = 'QUIET';
 
-    if (goesOnset) {
+    // --- MODIFIED: Onset detection now prioritizes local NZ data ---
+    if (nzMagOnset) {
+        status = "ONSET";
+    } else if (goesOnset) {
       status = "ONSET";
     } else if (recentL1Data.sustained && probs.P30 >= P30_ALERT && (auroraScore ?? 0) >= 25) {
       status = "IMMINENT_30";
@@ -263,7 +285,6 @@ export const useForecastData = (
     else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
     else if (status === "WATCH") windowLabel = "20 – 90 min";
     
-    // --- NEW ACTION LOGIC ---
     let action = 'Default action message.';
     const now = Date.now();
     const sunsetTime = celestialTimes.sun?.set;
@@ -278,7 +299,9 @@ export const useForecastData = (
         const visibility = getVisibilityBlurb(auroraScore);
         switch (status) {
             case 'ONSET':
-                action = `An eruption is underway! Look south now! ${visibility}`;
+                action = nzMagOnset 
+                    ? `Substorm onset detected by NZ ground stations! Look south now! ${visibility}`
+                    : `An eruption is underway! Look south now! ${visibility}`;
                 break;
             case 'IMMINENT_30':
                 action = `Get to your viewing site now! An eruption is expected within 30 minutes. ${visibility}`;
@@ -308,7 +331,7 @@ export const useForecastData = (
       color: ''
     });
 
-  }, [recentL1Data, goesOnset, auroraScore, baseAuroraScore, isDaylight, celestialTimes, setSubstormActivityStatus]);
+  }, [recentL1Data, goesOnset, nzMagOnset, auroraScore, baseAuroraScore, isDaylight, celestialTimes, setSubstormActivityStatus]);
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
@@ -318,9 +341,11 @@ export const useForecastData = (
       fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json())
+      fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
+      // --- NEW GeoNet Fetch ---
+      fetch(`${GEONET_API_URL}/geomag/EYR/magnetic-field/-/60s/H-horizontal-intensity/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`).then(res => res.json())
     ]);
-    const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult] = results;
+    const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
@@ -349,69 +374,47 @@ export const useForecastData = (
       if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
     
-    // --- MODIFIED PLASMA PARSING for new data format (array of arrays) ---
     if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
       const plasmaData = plasmaResult.value;
       const header = plasmaData[0];
       const dataRows = plasmaData.slice(1);
-
-      // Find column indices from the header row
       const timeIndex = header.indexOf('time_tag');
       const speedIndex = header.indexOf('speed');
       const densityIndex = header.indexOf('density');
-
       if (timeIndex !== -1 && speedIndex !== -1 && densityIndex !== -1) {
           const speedPoints: { time: number; value: number }[] = [];
           const densityPoints: { time: number; value: number }[] = [];
-
           for (const row of dataRows) {
               const t = parseNOAATime(row[timeIndex]);
-              const sRaw = row[speedIndex];
-              const nRaw = row[densityIndex];
-
-              const s = (sRaw === null) ? NaN : Number(sRaw);
-              const n = (nRaw === null) ? NaN : Number(nRaw);
-
+              const s = (row[speedIndex] === null) ? NaN : Number(row[speedIndex]);
+              const n = (row[densityIndex] === null) ? NaN : Number(row[densityIndex]);
               if (Number.isFinite(t)) {
                   if (Number.isFinite(s) && s >= 0) speedPoints.push({ time: t, value: s });
                   if (Number.isFinite(n) && n >= 0) densityPoints.push({ time: t, value: n });
               }
           }
-
           speedPoints.sort((a, b) => a.time - b.time);
           densityPoints.sort((a, b) => a.time - b.time);
-
           setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
           setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
-
           const latestSpeed = speedPoints.at(-1);
           const latestDensity = densityPoints.at(-1);
-
           setGaugeData(prev => ({
               ...prev,
-              speed: latestSpeed
-                  ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}` }
-                  : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A' },
-              density: latestDensity
-                  ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}` }
-                  : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A' }
+              speed: latestSpeed ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}` } : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A' },
+              density: latestDensity ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}` } : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A' }
           }));
       }
     }
-    // --- END MODIFIED PLASMA PARSING ---
 
-    // --- MODIFIED MAG PARSING for new data format (array of arrays) ---
     if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
         const magData = magResult.value;
         const header = magData[0];
         const dataRows = magData.slice(1);
-
-        // Find column indices from the header row
         const timeIndex = header.indexOf('time_tag');
         const btIndex = header.indexOf('bt');
         const bzIndex = header.indexOf('bz_gsm');
         const byIndex = header.indexOf('by_gsm');
-
         if (timeIndex !== -1 && btIndex !== -1 && bzIndex !== -1 && byIndex !== -1) {
             const processed = dataRows
                 .map((row: any) => {
@@ -419,41 +422,37 @@ export const useForecastData = (
                     const bt = row[btIndex] === null ? NaN : Number(row[btIndex]);
                     const bz = row[bzIndex] === null ? NaN : Number(row[bzIndex]);
                     const by = row[byIndex] === null ? NaN : Number(row[byIndex]);
-                    
-                    if (!Number.isFinite(t) || !Number.isFinite(bt) || !Number.isFinite(bz) || !Number.isFinite(by)) return null;
-                    if (bt < 0) return null; // BT should be non-negative
+                    if (!Number.isFinite(t) || !Number.isFinite(bt) || !Number.isFinite(bz) || !Number.isFinite(by) || bt < 0) return null;
                     return { time: t, bt, bz, by };
                 })
                 .filter((p): p is NonNullable<typeof p> => p !== null);
-
             const sortedForCharts = [...processed].sort((a, b) => a.time - b.time);
             setAllMagneticData(sortedForCharts);
         }
     }
-    // --- END MODIFIED MAG PARSING ---
 
     let anyGoesDataFound = false;
     if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
-      const processed = goes18Result.value
-        .filter((d: any) => d.Hp != null && !isNaN(d.Hp))
-        .map((d: any) => {
-          const t = parseNOAATime(d.time_tag);
-          return { time: Number.isFinite(t) ? t : new Date(d.time_tag).getTime(), hp: d.Hp as number };
-        })
-        .sort((a, b) => a.time - b.time);
+      const processed = goes18Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: parseNOAATime(d.time_tag), hp: d.Hp as number })).sort((a, b) => a.time - b.time);
       setGoes18Data(processed);
       if (processed.length > 0) anyGoesDataFound = true;
     }
 
     if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
-      const processed = goes19Result.value
-        .filter((d: any) => d.Hp != null && !isNaN(d.Hp))
-        .map((d: any) => {
-          const t = parseNOAATime(d.time_tag);
-          return { time: Number.isFinite(t) ? t : new Date(d.time_tag).getTime(), hp: d.Hp as number };
-        })
-        .sort((a, b) => a.time - b.time);
+      const processed = goes19Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: parseNOAATime(d.time_tag), hp: d.Hp as number })).sort((a, b) => a.time - b.time);
       setGoes19Data(processed); if (processed.length > 0) anyGoesDataFound = true;
+    }
+    
+    // --- NEW: Process NZ Magnetometer Data ---
+    if (nzMagResult.status === 'fulfilled' && Array.isArray(nzMagResult.value)) {
+        const processed = nzMagResult.value.map((series: any) => ({
+            ...series,
+            data: series.data.map((d: any) => ({ x: new Date(d.ts).getTime(), y: d.val }))
+        }));
+        setNzMagData(processed);
+        setLoadingNzMag(null);
+    } else {
+        setLoadingNzMag('No NZ magnetometer data available.');
     }
 
     if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
@@ -539,6 +538,8 @@ export const useForecastData = (
     goes18Data,
     goes19Data,
     loadingMagnetometer,
+    nzMagData, // NEW
+    loadingNzMag, // NEW
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,

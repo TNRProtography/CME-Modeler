@@ -23,6 +23,7 @@ import {
     HemisphericPowerChart,
     SubstormChart,
     MoonArcChart,
+    NzMagnetometerChart, // NEW
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
@@ -187,7 +188,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormForecast, activitySummary
+        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -387,7 +388,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun, and its projected path in the sky for the next 24 hours.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows. The chart helps you plan around when the moon will be below the horizon.`,
         'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
         'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
-        'substorm': 'This chart shows data from the GOES satellite in geostationary orbit. The "Hp" component measures the magnetic field parallel to Earth\'s rotation axis. A slow decrease ("stretching phase") followed by a sharp increase ("dipolarization" or "jump") is a classic signature of a substorm onset, which often corresponds with a bright auroral display.'
+        'substorm': 'This chart shows data from the GOES satellite in geostationary orbit. The "Hp" component measures the magnetic field parallel to Earth\'s rotation axis. A slow decrease ("stretching phase") followed by a sharp increase ("dipolarization" or "jump") is a classic signature of a substorm onset, which often corresponds with a bright auroral display.',
+        'nz-mag': '<strong>What it is:</strong> This chart displays real-time data from a ground-based magnetometer located at Eyrewell, New Zealand. It measures the horizontal component (H) of Earth\'s magnetic field.<br><br><strong>Effect on Aurora:</strong> During a substorm, the reconfiguration of the magnetic field causes a distinct, sharp drop in the H-component. This is the most definitive, localized proof that an auroral event is happening directly over our region. It serves as a high-confidence confirmation of the forecasts from satellite data.'
     }), []);
     
     const openModal = useCallback((id: string) => {
@@ -398,6 +400,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             else if (id === 'ips') title = 'About Interplanetary Shocks';
             else if (id === 'live-cameras') title = 'About Live Cameras';
             else if (id === 'substorm') title = 'About GOES Magnetometer (Substorm Watch)';
+            else if (id === 'nz-mag') title = 'About the NZ Magnetometer';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
             setModalState({ isOpen: true, title: title, content: contentData });
         }
@@ -452,8 +455,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </button>
                         </div>
 
-                        {/* --- MODIFIED LAYOUT --- */}
-                        <AuroraSightings isDaylight={isDaylight} />
                         <ActivitySummaryDisplay summary={activitySummary} />
 
                         {/* --- CHART PANELS --- */}
@@ -476,6 +477,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <ForecastChartPanel title="Substorm Watch (GOES)" currentValue={substormForecast.action} emoji="⚡" onOpenModal={() => openModal('substorm')}>
                            <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
                         </ForecastChartPanel>
+                        
+                        {/* --- NEW NZ MAG CHART PANEL --- */}
+                        <ForecastChartPanel title="NZ Magnetometer (Eyrewell)" currentValue={substormForecast.status === 'ONSET' && nzMagData.length > 0 ? "ONSET DETECTED" : "Monitoring..."} emoji="📡" onOpenModal={() => openModal('nz-mag')}>
+                           <NzMagnetometerChart data={nzMagData} loadingMessage={loadingNzMag} />
+                        </ForecastChartPanel>
 
                         <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
                             <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
@@ -487,6 +493,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <CameraSettingsSection settings={cameraSettings} />
                         </div>
                         
+                        <AuroraSightings isDaylight={isDaylight} />
+
                         <ForecastTrendChart 
                             auroraScoreHistory={auroraScoreHistory}
                             dailyCelestialHistory={dailyCelestialHistory}
