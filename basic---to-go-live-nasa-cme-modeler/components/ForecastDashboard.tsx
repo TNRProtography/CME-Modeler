@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
-import { useForecastData, NzMagEvent } from '../hooks/useForecastData'; // NEW
+import { useForecastData, NzMagEvent } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
 
@@ -196,6 +196,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
+    const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null); // NEW
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -414,7 +415,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return {};
     }, []);
 
-    // --- NEW: Calculate the most recent max delta for display ---
     const latestMaxDelta = useMemo(() => {
         if (!nzMagSubstormEvents || nzMagSubstormEvents.length === 0) return null;
         return nzMagSubstormEvents[nzMagSubstormEvents.length - 1].maxDelta;
@@ -496,7 +496,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             emoji="📡" 
                             onOpenModal={() => openModal('nz-mag')}
                         >
-                           <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} loadingMessage={loadingNzMag} />
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="md:col-span-2">
+                                    <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} selectedEvent={selectedNzMagEvent} loadingMessage={loadingNzMag} />
+                                </div>
+                                <div className="md:col-span-1">
+                                    <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
+                                    <div className="space-y-2 max-h-[250px] overflow-y-auto styled-scrollbar pr-2">
+                                        {nzMagSubstormEvents.length > 0 ? (
+                                            nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                <div 
+                                                    key={index}
+                                                    onClick={() => setSelectedNzMagEvent(event)}
+                                                    className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                >
+                                                    <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                    <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                        )}
+                                    </div>
+                                </div>
+                           </div>
                         </ForecastChartPanel>
 
                         <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
