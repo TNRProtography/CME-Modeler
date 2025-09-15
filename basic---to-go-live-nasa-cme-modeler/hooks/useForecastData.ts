@@ -120,7 +120,6 @@ const formatNZTimestamp = (timestamp: number | string, options?: Intl.DateTimeFo
   }
 };
 
-// Robust UTC parse for SWPC time strings like "YYYY-MM-DD HH:MM:SS.mmm"
 const parseNOAATime = (s: string): number => {
   if (!s || typeof s !== 'string') return NaN;
   const iso = s.includes('T') ? s : s.replace(' ', 'T');
@@ -129,7 +128,6 @@ const parseNOAATime = (s: string): number => {
   return Number.isFinite(t) ? t : NaN;
 };
 
-// --- NEW HELPER ---
 const getVisibilityBlurb = (score: number | null): string => {
     if (score === null) return 'Potential visibility is unknown.';
     if (score >= 80) return 'Potential visibility is high, with a significant display likely.';
@@ -164,8 +162,8 @@ export const useForecastData = (
   const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
   const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
   const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
-  const [nzMagData, setNzMagData] = useState<any[]>([]); // NEW
-  const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...'); // NEW
+  const [nzMagData, setNzMagData] = useState<any[]>([]);
+  const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...');
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
   const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
@@ -238,10 +236,9 @@ export const useForecastData = (
     return typeof slope === "number" && slope >= 8;
   }, [goes18Data]);
 
-  // --- NEW: Analysis for NZ Magnetometer ---
   const nzMagOnset = useMemo(() => {
       if (!nzMagData.length) return false;
-      const data = nzMagData[0]?.data; // Assuming first series is the one we want
+      const data = nzMagData[0]?.data;
       if (!data || data.length < 5) return false;
 
       const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
@@ -254,7 +251,7 @@ export const useForecastData = (
       if (!tenMinAgoPoint) return false;
 
       const drop = latestPoint.y - tenMinAgoPoint.y;
-      return drop <= -30; // A drop of 30 nT or more in 10 mins is a strong indicator
+      return drop <= -30;
   }, [nzMagData]);
 
   useEffect(() => {
@@ -264,7 +261,6 @@ export const useForecastData = (
     const P30_ALERT = 0.60, P60_ALERT = 0.60;
     let status: Status = 'QUIET';
 
-    // --- MODIFIED: Onset detection now prioritizes local NZ data ---
     if (nzMagOnset) {
         status = "ONSET";
     } else if (goesOnset) {
@@ -335,6 +331,9 @@ export const useForecastData = (
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
+    // --- FIX: Corrected GeoNet API URL ---
+    const nzMagUrl = `${GEONET_API_URL}/geomag/EYR/magnetic-field-component/-/60s/H-horizontal-intensity/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
+    
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
@@ -342,8 +341,7 @@ export const useForecastData = (
       fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
-      // --- NEW GeoNet Fetch ---
-      fetch(`${GEONET_API_URL}/geomag/EYR/magnetic-field/-/60s/H-horizontal-intensity/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`).then(res => res.json())
+      fetch(nzMagUrl).then(res => res.json())
     ]);
     const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 
@@ -443,8 +441,7 @@ export const useForecastData = (
       setGoes19Data(processed); if (processed.length > 0) anyGoesDataFound = true;
     }
     
-    // --- NEW: Process NZ Magnetometer Data ---
-    if (nzMagResult.status === 'fulfilled' && Array.isArray(nzMagResult.value)) {
+    if (nzMagResult.status === 'fulfilled' && Array.isArray(nzMagResult.value) && nzMagResult.value.length > 0) {
         const processed = nzMagResult.value.map((series: any) => ({
             ...series,
             data: series.data.map((d: any) => ({ x: new Date(d.ts).getTime(), y: d.val }))
@@ -453,6 +450,9 @@ export const useForecastData = (
         setLoadingNzMag(null);
     } else {
         setLoadingNzMag('No NZ magnetometer data available.');
+        if(nzMagResult.status === 'rejected') {
+          console.error("GeoNet API Error:", nzMagResult.reason);
+        }
     }
 
     if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
@@ -538,8 +538,8 @@ export const useForecastData = (
     goes18Data,
     goes19Data,
     loadingMagnetometer,
-    nzMagData, // NEW
-    loadingNzMag, // NEW
+    nzMagData, 
+    loadingNzMag, 
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,

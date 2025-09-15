@@ -23,7 +23,7 @@ import {
     HemisphericPowerChart,
     SubstormChart,
     MoonArcChart,
-    NzMagnetometerChart, // NEW
+    NzMagnetometerChart,
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
@@ -411,7 +411,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
     
     const getMagnetometerAnnotations = useCallback(() => {
-        // This function can be expanded to draw annotations on the substorm chart if needed.
         return {};
     }, []);
 
@@ -454,10 +453,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <span>Download The Aurora Forecast For The Next Two Hours!</span>
                             </button>
                         </div>
-
+                        
                         <ActivitySummaryDisplay summary={activitySummary} />
 
-                        {/* --- CHART PANELS --- */}
+                        {/* --- NEW CHART PANEL LAYOUT --- */}
                         <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
                             <SolarWindSpeedChart data={allSpeedData} />
                         </ForecastChartPanel>
@@ -478,7 +477,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                            <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
                         </ForecastChartPanel>
                         
-                        {/* --- NEW NZ MAG CHART PANEL --- */}
                         <ForecastChartPanel title="NZ Magnetometer (Eyrewell)" currentValue={substormForecast.status === 'ONSET' && nzMagData.length > 0 ? "ONSET DETECTED" : "Monitoring..."} emoji="📡" onOpenModal={() => openModal('nz-mag')}>
                            <NzMagnetometerChart data={nzMagData} loadingMessage={loadingNzMag} />
                         </ForecastChartPanel>

@@ -33,7 +33,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   substormForecast
 }) => {
   const isDaylight = blurb.includes("The sun is currently up");
-  // --- FIX: Provide a default object for destructuring to prevent crashes on initial render ---
   const { status, likelihood, windowLabel, action } = substormForecast || { status: 'QUIET', likelihood: 0, windowLabel: '', action: '' };
   
   const isSubstormActive = status !== 'QUIET';
@@ -58,11 +57,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     if ((score ?? 0) >= 50) return 'text-purple-400';
     if ((score ?? 0) >= 25) return 'text-green-400';
     return 'text-neutral-400';
-  };
-  
-  // --- MODIFIED: This function now directly uses the smarter 'action' from the hook ---
-  const getCombinedAction = () => {
-    return action || blurb; // Fallback to the old blurb if action is not available
   };
   
   const likelihoodGrad = useMemo(() => {
@@ -144,18 +138,32 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             </div>
           )}
           
+          {/* --- MODIFIED: Action and Visibility Sections --- */}
           <div className={`rounded-lg p-4 ${isSubstormImminent ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
             <div className="text-sm text-neutral-300 font-medium mb-1">
               Recommended Action
             </div>
             <p className="text-neutral-200">
-              {getCombinedAction()}
+              {action}
             </p>
           </div>
+
+          {!isDaylight && (
+            <div className="rounded-lg p-4 bg-neutral-900/50 border border-neutral-700/50">
+                <div className="text-sm text-neutral-300 font-medium mb-1">
+                Visibility
+                </div>
+                <p className="text-neutral-200">
+                {blurb}
+                </p>
+            </div>
+          )}
+          {/* --- END MODIFICATION --- */}
+
         </div>
       </div>
 
-      {isSubstormImminent && (
+      {isSubstormImminent && !isDaylight && (
         <div className="mt-4 p-3 bg-gradient-to-r from-red-900/30 to-orange-900/30 border border-red-700/50 rounded-lg">
           <div className="flex items-center justify-center gap-2">
             <span className="animate-pulse text-red-400">⚡</span>
