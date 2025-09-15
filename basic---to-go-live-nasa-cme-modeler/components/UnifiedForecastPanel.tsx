@@ -33,7 +33,8 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   substormForecast
 }) => {
   const isDaylight = blurb.includes("The sun is currently up");
-  const { status, likelihood, windowLabel, action } = substormForecast;
+  // --- FIX: Provide a default object for destructuring to prevent crashes on initial render ---
+  const { status, likelihood, windowLabel, action } = substormForecast || { status: 'QUIET', likelihood: 0, windowLabel: '', action: '' };
   
   const isSubstormActive = status !== 'QUIET';
   const isSubstormImminent = status === 'IMMINENT_30' || status === 'ONSET';
@@ -80,7 +81,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
 
   return (
     <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
-      {/* MODIFIED: Removed the download button from this component's header */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>

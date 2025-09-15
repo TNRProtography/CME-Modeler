@@ -182,10 +182,10 @@ export const useForecastData = (
       return `${dayLabel} ${d.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
     };
     const riseStr = formatTime(nextRise); const setStr = formatTime(nextSet);
-    const caretPath = `M19.5 8.25l-7.5 7.5-7.5-7.5`;
-    const upSVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle" style="transform: rotate(180deg);"><path stroke-linecap="round" stroke-linejoin="round" d="${caretPath}" /></svg>`;
-    const downSVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="w-3 h-3 inline-block align-middle"><path stroke-linecap="round" stroke-linejoin="round" d="${caretPath}" /></svg>`;
-    const value = `<span class="text-xl">${moonIllumination.toFixed(0)}%</span><br/><span class='text-xs'>${upSVG} ${riseStr}   ${downSVG} ${setStr}</span>`;
+    
+    // --- FIX: Replaced broken SVG string with a valid one ---
+    const value = `${moonIllumination.toFixed(0)}% <span class='text-xs block'>Rise: ${riseStr} | Set: ${setStr}</span>`;
+
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
   }, []);
 
