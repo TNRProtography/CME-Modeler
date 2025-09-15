@@ -454,9 +454,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </button>
                         </div>
                         
+                        <AuroraSightings isDaylight={isDaylight} />
+                        
                         <ActivitySummaryDisplay summary={activitySummary} />
 
-                        {/* --- NEW CHART PANEL LAYOUT --- */}
+                        {/* --- CHART PANELS --- */}
                         <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
                             <SolarWindSpeedChart data={allSpeedData} />
                         </ForecastChartPanel>
@@ -473,7 +475,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
                         </ForecastChartPanel>
 
-                        <ForecastChartPanel title="Substorm Watch (GOES)" currentValue={substormForecast.action} emoji="⚡" onOpenModal={() => openModal('substorm')}>
+                        <ForecastChartPanel title="Substorm Watch (GOES)" currentValue={substormForecast.status.replace('_', ' ')} emoji="⚡" onOpenModal={() => openModal('substorm')}>
                            <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
                         </ForecastChartPanel>
                         
@@ -491,8 +493,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <CameraSettingsSection settings={cameraSettings} />
                         </div>
                         
-                        <AuroraSightings isDaylight={isDaylight} />
-
                         <ForecastTrendChart 
                             auroraScoreHistory={auroraScoreHistory}
                             dailyCelestialHistory={dailyCelestialHistory}
