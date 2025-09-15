@@ -84,7 +84,7 @@ const createDynamicChartOptions = (
     rangeMs: number,
     yLabel: string,
     datasets: { data: { y: number }[] }[],
-    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' }, // Added nzmag
+    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' },
     extraAnnotations?: any,
 ): ChartOptions<'line'> => {
     const now = Date.now();
@@ -126,8 +126,19 @@ const createDynamicChartOptions = (
             max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25;
             break;
         case 'substorm':
-        case 'nzmag': // Use dynamic scaling for nzmag
-            // No fixed min/max, let Chart.js decide based on data unless overridden
+            const high = Math.max(...allYValues);
+            const low = Math.min(...allYValues);
+            if (high > 100) max = high;
+            if (low < -20) min = low;
+            break;
+        // --- FIX: Added explicit auto-scaling for NZ Magnetometer ---
+        case 'nzmag':
+            const dataMax = Math.max(...allYValues);
+            const dataMin = Math.min(...allYValues);
+            const range = dataMax - dataMin;
+            const padding = range * 0.1 || 1; // Use a default padding if range is 0
+            min = Math.floor(dataMin - padding);
+            max = Math.ceil(dataMax + padding);
             break;
     }
     
@@ -227,15 +238,14 @@ export const SubstormChart: React.FC<{ goes18Data: any[], goes19Data: any[], ann
     );
 };
 
-// --- NEW NZ MAGNETOMETER CHART ---
 export const NzMagnetometerChart: React.FC<{ data: any[], loadingMessage: string | null }> = ({ data, loadingMessage }) => {
     const [timeRange, setTimeRange] = useState(3 * 3600000);
     
     const chartData = useMemo(() => {
-        const eyrewellData = data.find(d => d.series?.station === 'EYR')?.data || [];
+        const eyrewellData = data.find(d => d.series?.station === 'EY2M')?.data || [];
         return {
             datasets: [{
-                label: 'Eyrewell (EYR) H-component',
+                label: 'West Melton dH/dt',
                 data: eyrewellData,
                 borderColor: 'rgb(34, 197, 94)',
                 backgroundColor: 'rgba(34, 197, 94, 0.2)',
@@ -247,7 +257,7 @@ export const NzMagnetometerChart: React.FC<{ data: any[], loadingMessage: string
         };
     }, [data]);
 
-    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'H-component (nT)', chartData.datasets, { type: 'nzmag' }), [timeRange, chartData]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'dH/dt (nT/min)', chartData.datasets, { type: 'nzmag' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">

@@ -389,7 +389,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
         'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
         'substorm': 'This chart shows data from the GOES satellite in geostationary orbit. The "Hp" component measures the magnetic field parallel to Earth\'s rotation axis. A slow decrease ("stretching phase") followed by a sharp increase ("dipolarization" or "jump") is a classic signature of a substorm onset, which often corresponds with a bright auroral display.',
-        'nz-mag': '<strong>What it is:</strong> This chart displays real-time data from a ground-based magnetometer located at West Melton, New Zealand. It measures the rate of change of the horizontal component (dH/dt) of Earth\'s magnetic field.<br><br><strong>Effect on Aurora:</strong> During a substorm, the reconfiguration of the magnetic field causes rapid fluctuations, seen as high volatility (large spikes) on this chart. This is the most definitive, localized proof that an auroral event is happening directly over our region.'
+        'nz-mag': '<strong>What it is:</strong> This chart displays real-time data from a ground-based magnetometer located at West Melton, New Zealand. It measures the rate of change of the horizontal component (dH/dt) of Earth\'s magnetic field.<br><br><strong>Effect on Aurora:</strong> During a substorm, the reconfiguration of the magnetic field causes rapid fluctuations, seen as high volatility (large spikes) on this chart. This is the most definitive, localized proof that an auroral event is happening directly over our region. It serves as a high-confidence confirmation of the forecasts from satellite data.'
     }), []);
     
     const openModal = useCallback((id: string) => {
@@ -442,6 +442,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           getAuroraEmoji={getAuroraEmoji}
                           gaugeColors={GAUGE_COLORS}
                           onOpenModal={() => openModal('unified-forecast')}
+                          substormForecast={substormForecast}
                         />
 
                         <div className="col-span-12">
@@ -453,6 +454,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <span>Download The Aurora Forecast For The Next Two Hours!</span>
                             </button>
                         </div>
+                        
+                        <AuroraSightings isDaylight={isDaylight} />
                         
                         <ActivitySummaryDisplay summary={activitySummary} />
 
@@ -491,8 +494,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <CameraSettingsSection settings={cameraSettings} />
                         </div>
                         
-                        <AuroraSightings isDaylight={isDaylight} />
-
                         <ForecastTrendChart 
                             auroraScoreHistory={auroraScoreHistory}
                             dailyCelestialHistory={dailyCelestialHistory}
@@ -559,4 +560,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-//--- END OF FILE src/components/ForecastDashboard.tsx ---```
+//--- END OF FILE src/components/ForecastDashboard.tsx ---
