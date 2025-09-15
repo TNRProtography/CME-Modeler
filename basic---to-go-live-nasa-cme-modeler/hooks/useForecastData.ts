@@ -61,7 +61,7 @@ const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const GEONET_API_URL = 'https://tilde.geonet.org.nz/v4/data';
 const GREYMOUTH_LATITUDE = -42.45;
-const NZ_MAG_STATIONS = ['EY2M', 'EYWM', 'AHAM', 'APIM']; // NEW
+const NZ_MAG_STATIONS = ['EY2M', 'EYWM', 'AHAM', 'APIM'];
 
 // --- Physics and Model Helpers ---
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -169,10 +169,10 @@ export const useForecastData = (
   const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
   const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
   const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
-  const [nzMagData, setNzMagData] = useState<Record<string, any>>({}); // MODIFIED
+  const [nzMagData, setNzMagData] = useState<Record<string, any>>({});
   const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...');
-  const [localAeAoData, setLocalAeAoData] = useState<{ae: any[], ao: any[]}>({ae: [], ao: []}); // NEW
-  const [loadingAeAo, setLoadingAeAo] = useState<string | null>('Calculating...'); // NEW
+  const [localAeAoData, setLocalAeAoData] = useState<{ae: any[], ao: any[]}>({ae: [], ao: []});
+  const [loadingAeAo, setLoadingAeAo] = useState<string | null>('Calculating...');
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
   const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
@@ -415,12 +415,11 @@ export const useForecastData = (
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
     
-    const nzMagPromises = NZ_MAG_STATIONS.map(station => 
-        fetch(`${GEONET_API_URL}/geomag/${station}/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`)
-            .then(res => res.json())
-            .then(data => ({ station, data }))
-    );
-
+    const nzMagPromises = NZ_MAG_STATIONS.map(station => {
+        const url = `${GEONET_API_URL}/geomag/${station}/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
+        return fetch(url).then(res => res.json()).then(data => ({ station, data }));
+    });
+    
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
@@ -633,8 +632,8 @@ export const useForecastData = (
     nzMagData, 
     loadingNzMag, 
     nzMagSubstormEvents,
-    localAeAoData, // NEW
-    loadingAeAo, // NEW
+    localAeAoData,
+    loadingAeAo,
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,
