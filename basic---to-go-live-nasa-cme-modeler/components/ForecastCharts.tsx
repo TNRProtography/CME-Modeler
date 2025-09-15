@@ -74,7 +74,7 @@ const createVerticalThresholdGradient = (ctx: ScriptableContext<'line'>, thresho
 
 const baseChartOptions: ChartOptions<'line'> = {
     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
-    plugins: { legend: { display: false, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } },
+    plugins: { legend: { display: true, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } },
     scales: { 
         x: { type: 'time', ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
         y: { position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, color: '#a3a3a3' } }
@@ -85,7 +85,7 @@ const createDynamicChartOptions = (
     rangeMs: number,
     yLabel: string,
     datasets: { data: { y: number }[] }[],
-    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' },
+    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' | 'aeao' },
     extraAnnotations?: any,
 ): ChartOptions<'line'> => {
     const now = Date.now();
@@ -127,6 +127,7 @@ const createDynamicChartOptions = (
             max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25;
             break;
         case 'substorm':
+        case 'aeao':
             const high = Math.max(...allYValues);
             const low = Math.min(...allYValues);
             if (high > 100) max = high;
@@ -242,7 +243,7 @@ export const NzMagnetometerChart: React.FC<{ data: any[], events: NzMagEvent[], 
     const [timeRange, setTimeRange] = useState(3 * 3600000);
     
     const chartData = useMemo(() => {
-        const eyrewellData = data.find(d => d.series?.station === 'EY2M')?.data || [];
+        const eyrewellData = data['EY2M']?.data || [];
         return {
             datasets: [{
                 label: 'West Melton dH/dt',
@@ -290,6 +291,47 @@ export const NzMagnetometerChart: React.FC<{ data: any[], events: NzMagEvent[], 
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
                 {loadingMessage ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMessage}</p> : <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} />}
+            </div>
+        </div>
+    );
+};
+
+// --- NEW AE/AO CHART ---
+export const AeAoIndexChart: React.FC<{ data: { ae: any[], ao: any[] }, loadingMessage: string | null }> = ({ data, loadingMessage }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+
+    const chartData = useMemo(() => ({
+        datasets: [
+            {
+                label: 'AE Index (Local)',
+                data: data.ae,
+                borderColor: 'rgb(255, 165, 0)',
+                backgroundColor: 'rgba(255, 165, 0, 0.2)',
+                fill: false,
+                pointRadius: 0,
+                tension: 0.1,
+                borderWidth: 2
+            },
+            {
+                label: 'AO Index (Local)',
+                data: data.ao,
+                borderColor: 'rgb(56, 189, 248)',
+                backgroundColor: 'rgba(56, 189, 248, 0.2)',
+                fill: false,
+                pointRadius: 0,
+                tension: 0.1,
+                borderWidth: 1.5
+            }
+        ]
+    }), [data]);
+
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Disturbance (nT)', chartData.datasets, { type: 'aeao' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {loadingMessage ? <p className="text-center pt-10 text-neutral-400 italic">{loadingMessage}</p> : <Line data={chartData} options={chartOptions} />}
             </div>
         </div>
     );
@@ -439,4 +481,4 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
         </div>
     );
 };
-// --- END OF FILE src/components/ForecastCharts.tsx ---```
+// --- END OF FILE src/components/ForecastCharts.tsx ---
