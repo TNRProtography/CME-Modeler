@@ -127,12 +127,12 @@ const createDynamicChartOptions = (
             max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25;
             break;
         case 'substorm':
-        case 'aeao':
             const high = Math.max(...allYValues);
             const low = Math.min(...allYValues);
             if (high > 100) max = high;
             if (low < -20) min = low;
             break;
+        case 'aeao':
         case 'nzmag':
             const dataMax = Math.max(...allYValues);
             const dataMin = Math.min(...allYValues);
@@ -239,7 +239,7 @@ export const SubstormChart: React.FC<{ goes18Data: any[], goes19Data: any[], ann
     );
 };
 
-export const NzMagnetometerChart: React.FC<{ data: any[], events: NzMagEvent[], selectedEvent: NzMagEvent | null, loadingMessage: string | null }> = ({ data, events, selectedEvent, loadingMessage }) => {
+export const NzMagnetometerChart: React.FC<{ data: Record<string, any>, events: NzMagEvent[], selectedEvent: NzMagEvent | null, loadingMessage: string | null }> = ({ data, events, selectedEvent, loadingMessage }) => {
     const [timeRange, setTimeRange] = useState(3 * 3600000);
     
     const chartData = useMemo(() => {
@@ -296,7 +296,6 @@ export const NzMagnetometerChart: React.FC<{ data: any[], events: NzMagEvent[], 
     );
 };
 
-// --- NEW AE/AO CHART ---
 export const AeAoIndexChart: React.FC<{ data: { ae: any[], ao: any[] }, loadingMessage: string | null }> = ({ data, loadingMessage }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
 
