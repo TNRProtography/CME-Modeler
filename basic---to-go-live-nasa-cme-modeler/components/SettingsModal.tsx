@@ -9,7 +9,7 @@ import {
   requestNotificationPermission,
   sendTestNotification,
   subscribeUserToPush,
-  updatePushSubscriptionPreferences
+  updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
@@ -31,8 +31,6 @@ const NOTIFICATION_CATEGORIES = [
   { id: 'flare-X10', label: 'Solar Flare ≥ X10-Class (Historic)' },
   { id: 'flare-peak', label: 'Solar Flare Peak & Decline Alerts' },
   { id: 'substorm-forecast', label: 'Substorm Forecast Issued' },
-  // --- NEW: Added Interplanetary Shock notification category ---
-  { id: 'ips-shock', label: 'Interplanetary Shock Arrival' },
 ];
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
@@ -133,6 +131,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
     setNotificationPreference(id, checked);
+    // THIS IS THE FIX: Call the new function to sync changes with the server.
     updatePushSubscriptionPreferences();
   }, []);
 
@@ -195,11 +194,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
         case 'substorm-forecast':
             title = 'Substorm Forecast Issued';
             body = 'Forecast: ~75% chance of activity between 11:30pm and 12:00am. Expected visibility: Faint Eye Visible.';
-            break;
-        // --- NEW: Test case for IPS ---
-        case 'ips-shock':
-            title = '💥 Interplanetary Shock Arrived!';
-            body = 'A shockwave was detected. Solar wind conditions may change rapidly. High aurora potential!';
             break;
     }
     sendTestNotification(title, body);

@@ -5,9 +5,7 @@ import {
   SubstormActivity,
   SubstormForecast,
   ActivitySummary,
-  InterplanetaryShock, // Import the type
 } from '../types';
-import { fetchIPSData } from '../services/nasaService'; // Import the new fetch function
 
 // --- Type Definitions ---
 interface CelestialTimeData {
@@ -37,6 +35,16 @@ interface RawHistoryRecord {
   hemisphericPower: number;
 }
 
+interface InterplanetaryShock {
+  activityID: string;
+  catalog: string;
+  eventTime: string;
+  instruments: { displayName: string }[];
+  location: string;
+  link: string;
+}
+
+// --- NEW: Type for detected NZ Mag events ---
 export interface NzMagEvent {
     start: number;
     end: number;
@@ -51,10 +59,11 @@ const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plas
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
+const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const GEONET_API_URL = 'https://tilde.geonet.org.nz/v4/data';
 const GREYMOUTH_LATITUDE = -42.45;
 
-// --- Physics and Model Helpers (Unchanged) ---
+// --- Physics and Model Helpers ---
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 function newellCoupling(V: number, By: number, Bz: number) {
@@ -166,10 +175,7 @@ export const useForecastData = (
   const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
   const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
-  
-  // --- NEW: State for Interplanetary Shock Data ---
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
-
   const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
   const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
   const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
@@ -180,7 +186,7 @@ export const useForecastData = (
     p30: 0,
     p60: 0,
   });
-  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]);
+  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]); // NEW
 
   const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
     const moonIllumination = Math.max(0, (illumination ?? 0));
@@ -195,7 +201,9 @@ export const useForecastData = (
       return `${dayLabel} ${d.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
     };
     const riseStr = formatTime(nextRise); const setStr = formatTime(nextSet);
+    
     const value = `${moonIllumination.toFixed(0)}% <span class='text-xs block'>Rise: ${riseStr} | Set: ${setStr}</span>`;
+
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
   }, []);
 
@@ -203,6 +211,7 @@ export const useForecastData = (
     if (!allMagneticData.length || !allSpeedData.length) return null;
     const mapV = new Map<number, number>();
     allSpeedData.forEach((p: { x: number, y: number }) => mapV.set(p.x, p.y));
+
     const joined: { t: number; By: number; Bz: number; V: number }[] = [];
     for (const m of allMagneticData) {
       const V = mapV.get(m.time);
@@ -210,10 +219,12 @@ export const useForecastData = (
         joined.push({ t: m.time, By: m.by, Bz: m.bz, V });
       }
     }
+
     const cutoff = Date.now() - 120 * 60_000;
     const win = joined.filter(x => x.t >= cutoff);
     const dPhi = win.map(w => newellCoupling(w.V, w.By, w.Bz));
     const bz = win.map(w => w.Bz);
+
     return {
       dPhiSeries: dPhi,
       bzSeries: bz,
@@ -244,6 +255,7 @@ export const useForecastData = (
       return volatility;
   }, [nzMagData]);
 
+  // --- NEW: Analyze NZ Mag data for past events ---
   useMemo(() => {
     if (!nzMagData.length || !nzMagData[0]?.data) {
         setNzMagSubstormEvents([]);
@@ -252,22 +264,28 @@ export const useForecastData = (
     const data = nzMagData[0].data;
     const events: NzMagEvent[] = [];
     let currentEvent: NzMagEvent | null = null;
-    const THRESHOLD = 5;
+    const THRESHOLD = 5; // nT/min
     const COOLDOWN_MINS = 10;
+
     for (const point of data) {
         const isVolatile = Math.abs(point.y) >= THRESHOLD;
+
         if (isVolatile && !currentEvent) {
+            // Start a new event
             currentEvent = { start: point.x, end: point.x, maxDelta: Math.abs(point.y) };
         } else if (isVolatile && currentEvent) {
+            // Continue the current event
             currentEvent.end = point.x;
             currentEvent.maxDelta = Math.max(currentEvent.maxDelta, Math.abs(point.y));
         } else if (!isVolatile && currentEvent) {
+            // End the current event if it's been quiet for a while
             if (point.x - currentEvent.end > COOLDOWN_MINS * 60 * 1000) {
                 events.push(currentEvent);
                 currentEvent = null;
             }
         }
     }
+    // Add the last event if it's still ongoing
     if (currentEvent) {
         events.push(currentEvent);
     }
@@ -276,9 +294,11 @@ export const useForecastData = (
 
   useEffect(() => {
     if (!recentL1Data) return;
+
     const probs = probabilityModel(recentL1Data.dPhiNow, recentL1Data.dPhiMean15, recentL1Data.bzMean15);
     const P30_ALERT = 0.60, P60_ALERT = 0.60;
     let status: Status = 'QUIET';
+
     if (nzMagOnset) {
         status = "ONSET";
     } else if (goesOnset) {
@@ -290,16 +310,20 @@ export const useForecastData = (
     } else if (recentL1Data.sustained && recentL1Data.dPhiNow >= (movingAvg(recentL1Data.dPhiSeries, 60) ?? 0) && (auroraScore ?? 0) >= 15) {
       status = "WATCH";
     }
+
     const likelihood = Math.round((0.4 * clamp01(probs.P30) + 0.6 * clamp01(probs.P60)) * 100);
+
     let windowLabel = '30 – 90 min';
     if (status === "ONSET") windowLabel = "Now – 10 min";
     else if (status === "IMMINENT_30") windowLabel = "0 – 30 min";
     else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
     else if (status === "WATCH") windowLabel = "20 – 90 min";
+    
     let action = 'Default action message.';
     const now = Date.now();
     const sunsetTime = celestialTimes.sun?.set;
     const isPreSunsetHour = sunsetTime ? (now > (sunsetTime - 60 * 60 * 1000) && now < sunsetTime) : false;
+
     if (isDaylight) {
         action = "The sun is up. Aurora viewing is not possible until after dark.";
     } else if (isPreSunsetHour && (baseAuroraScore ?? 0) >= 50) {
@@ -327,7 +351,9 @@ export const useForecastData = (
                 break;
         }
     }
+
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
+
     setSubstormActivityStatus({
       isStretching: status === 'WATCH' || status === 'LIKELY_60' || status === 'IMMINENT_30',
       isErupting: status === 'ONSET',
@@ -337,42 +363,38 @@ export const useForecastData = (
       text: action,
       color: ''
     });
+
   }, [recentL1Data, goesOnset, nzMagOnset, auroraScore, baseAuroraScore, isDaylight, celestialTimes, setSubstormActivityStatus]);
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
     const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
     
-    // --- MODIFICATION: Added fetchIPSData to the promise chain ---
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetchIPSData(), // NEW: Fetch IPS data
+      fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(nzMagUrl).then(res => res.json())
     ]);
     const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
-    
-    // ... (rest of the data processing is mostly unchanged)
-    if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) {
-        setInterplanetaryShockData(ipsResult.value);
-    } else {
-        setInterplanetaryShockData([]);
-    }
-    
-    // (The rest of the `fetchAllData` function remains the same as your previous version)
+
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
       setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
+
       const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
       setBaseAuroraScore(baseScore);
+
       const initialAdjustedScore = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
       setAuroraScore(initialAdjustedScore);
       setCurrentAuroraScore(initialAdjustedScore);
+
       setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
       const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
+
       if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
       if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
       setGaugeData((prev) => ({
@@ -385,6 +407,7 @@ export const useForecastData = (
       if (Array.isArray(historicalData)) setAuroraScoreHistory(historicalData.filter((d: any) => d.timestamp != null && d.baseScore != null).sort((a, b) => a.timestamp - b.timestamp)); else setAuroraScoreHistory([]);
       if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
+    
     if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
       const plasmaData = plasmaResult.value;
       const header = plasmaData[0];
@@ -417,6 +440,7 @@ export const useForecastData = (
           }));
       }
     }
+
     if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
         const magData = magResult.value;
         const header = magData[0];
@@ -440,83 +464,72 @@ export const useForecastData = (
             setAllMagneticData(sortedForCharts);
         }
     }
+
     let anyGoesDataFound = false;
     if (goes18Result.status === 'fulfilled' && Array.isArray(goes18Result.value)) {
       const processed = goes18Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: parseNOAATime(d.time_tag), hp: d.Hp as number })).sort((a, b) => a.time - b.time);
       setGoes18Data(processed);
       if (processed.length > 0) anyGoesDataFound = true;
     }
+
     if (goes19Result.status === 'fulfilled' && Array.isArray(goes19Result.value)) {
       const processed = goes19Result.value.filter((d: any) => d.Hp != null && !isNaN(d.Hp)).map((d: any) => ({ time: parseNOAATime(d.time_tag), hp: d.Hp as number })).sort((a, b) => a.time - b.time);
       setGoes19Data(processed); if (processed.length > 0) anyGoesDataFound = true;
     }
+    
     if (nzMagResult.status === 'fulfilled' && Array.isArray(nzMagResult.value) && nzMagResult.value.length > 0) {
-        const processed = nzMagResult.value.map((series: any) => ({ ...series, data: series.data.map((d: any) => ({ x: new Date(d.ts).getTime(), y: d.val })) }));
+        const processed = nzMagResult.value.map((series: any) => ({
+            ...series,
+            data: series.data.map((d: any) => ({ x: new Date(d.ts).getTime(), y: d.val }))
+        }));
         setNzMagData(processed);
         setLoadingNzMag(null);
     } else {
         setLoadingNzMag('No NZ magnetometer data available.');
-        if(nzMagResult.status === 'rejected') console.error("GeoNet API Error:", nzMagResult.reason);
-        else if (nzMagResult.status === 'fulfilled' && (!Array.isArray(nzMagResult.value) || nzMagResult.value.length === 0)) console.warn("GeoNet API returned empty or invalid data:", nzMagResult.value);
+        if(nzMagResult.status === 'rejected') {
+          console.error("GeoNet API Error:", nzMagResult.reason);
+        } else if (nzMagResult.status === 'fulfilled' && (!Array.isArray(nzMagResult.value) || nzMagResult.value.length === 0)) {
+            console.warn("GeoNet API returned empty or invalid data:", nzMagResult.value);
+        }
     }
+
     if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
+    if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
+
     if (isInitialLoad) setIsLoading(false);
   }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
-  
-  // --- MODIFICATION: Updated ActivitySummary to include the latest shock ---
+
   const activitySummary: ActivitySummary | null = useMemo(() => {
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentHistory = auroraScoreHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
-    if (recentHistory.length === 0) { return null; }
-    const highestScore = recentHistory.reduce((max, current) => { return current.finalScore > max.finalScore ? current : max; }, { finalScore: -1, timestamp: 0 });
     
-    const recentShocks = interplanetaryShockData
-        .filter(s => new Date(s.eventTime).getTime() >= twentyFourHoursAgo)
-        .sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime());
-
-    return { 
-        highestScore: { finalScore: highestScore.finalScore, timestamp: highestScore.timestamp }, 
-        substormEvents: nzMagSubstormEvents,
-        latestShock: recentShocks.length > 0 ? recentShocks[0] : null,
-    };
-  }, [auroraScoreHistory, nzMagSubstormEvents, interplanetaryShockData]);
-
-  // --- NEW: Function to generate chart annotations for IPS ---
-  const getIPSAnnotations = useCallback((timeRangeMs: number) => {
-    const now = Date.now();
-    const startTime = now - timeRangeMs;
-    const annotations: any = {};
-    const recentShocks = interplanetaryShockData.filter(s => {
-        const shockTime = new Date(s.eventTime).getTime();
-        return shockTime >= startTime && shockTime <= now;
-    });
-
-    if (recentShocks.length > 0) {
-        recentShocks.forEach(shock => {
-            const shockTime = new Date(shock.eventTime).getTime();
-            annotations[`shock-${shock.activityID}`] = {
-                type: 'line',
-                xMin: shockTime,
-                xMax: shockTime,
-                borderColor: 'rgba(255, 69, 0, 0.8)',
-                borderWidth: 2,
-                borderDash: [10, 5],
-                label: {
-                    content: `Shock Arrival`,
-                    display: true,
-                    position: 'start',
-                    backgroundColor: 'rgba(255, 69, 0, 0.7)',
-                    color: 'white',
-                    font: { weight: 'bold', size: 10 },
-                    yAdjust: -15,
-                }
-            };
-        });
+    if (recentHistory.length === 0) {
+      return null;
     }
-    return annotations;
-  }, [interplanetaryShockData]);
-  
+    
+    const highestScore = recentHistory.reduce((max, current) => {
+        return current.finalScore > max.finalScore ? current : max;
+    }, { finalScore: -1, timestamp: 0 });
+
+    // --- MODIFICATION: Use nzMagSubstormEvents for the summary ---
+    const substormEvents = nzMagSubstormEvents.map(event => ({
+        start: event.start,
+        end: event.end,
+        peakProbability: 0, // Placeholder as this is historical data
+        peakStatus: 'Detected' // Placeholder
+    }));
+    // --- END MODIFICATION ---
+
+    return {
+        highestScore: {
+            finalScore: highestScore.finalScore,
+            timestamp: highestScore.timestamp,
+        },
+        substormEvents,
+    };
+  }, [auroraScoreHistory, nzMagSubstormEvents]); // --- MODIFICATION: Added nzMagSubstormEvents dependency ---
+
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -570,7 +583,7 @@ export const useForecastData = (
     loadingMagnetometer,
     nzMagData, 
     loadingNzMag, 
-    nzMagSubstormEvents,
+    nzMagSubstormEvents, // NEW
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,
@@ -580,7 +593,6 @@ export const useForecastData = (
     locationBlurb,
     fetchAllData,
     activitySummary,
-    getIPSAnnotations, // Expose the new function
   };
 
 };

@@ -9,7 +9,7 @@ import ToggleSwitch from './ToggleSwitch';
 import { DailyHistoryEntry, OwmDailyForecastEntry } from '../types';
 import { NzMagEvent } from '../hooks/useForecastData';
 
-// --- CONSTANTS & HELPERS (Unchanged) ---
+// --- CONSTANTS & HELPERS (from ForecastDashboard) ---
 const GAUGE_THRESHOLDS = {
   speed:   { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
   density: { gray: 5,   yellow: 10,  orange: 15,  red: 20,  purple: 50,  pink: Infinity, maxExpected: 70 },
@@ -90,8 +90,10 @@ const createDynamicChartOptions = (
 ): ChartOptions<'line'> => {
     const now = Date.now();
     const startTime = now - rangeMs;
-    const options: ChartOptions<'line'> = JSON.parse(JSON.stringify(baseChartOptions));
-    if (!options.scales || !options.scales.x || !options.scales.y) return options;
+
+    const options: ChartOptions<'line'> = JSON.parse(JSON.stringify(baseChartOptions)); // Deep copy
+    if (!options.scales || !options.scales.x || !options.scales.y) return options; // Type guard
+
     options.scales.x.min = startTime;
     options.scales.x.max = now;
     options.scales.y.title!.text = yLabel;
@@ -107,12 +109,37 @@ const createDynamicChartOptions = (
     let max: number | undefined = undefined;
 
     switch (scaleConfig.type) {
-        case 'speed': min = 200; max = Math.ceil(Math.max(800, ...allYValues) / 50) * 50; break;
-        case 'density': min = 0; max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5; break;
-        case 'imf': const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5; min = -maxAbs; max = maxAbs; break;
-        case 'power': min = 0; max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25; break;
-        case 'substorm': const high = Math.max(...allYValues); const low = Math.min(...allYValues); if (high > 100) max = high; if (low < -20) min = low; break;
-        case 'nzmag': const dataMax = Math.max(...allYValues); const dataMin = Math.min(...allYValues); const range = dataMax - dataMin; const padding = range * 0.1 || 1; min = Math.floor(dataMin - padding); max = Math.ceil(dataMax + padding); break;
+        case 'speed':
+            min = 200;
+            max = Math.ceil(Math.max(800, ...allYValues) / 50) * 50;
+            break;
+        case 'density':
+            min = 0;
+            max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5;
+            break;
+        case 'imf':
+            const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5;
+            min = -maxAbs;
+            max = maxAbs;
+            break;
+        case 'power':
+            min = 0;
+            max = Math.ceil(Math.max(100, ...allYValues) / 25) * 25;
+            break;
+        case 'substorm':
+            const high = Math.max(...allYValues);
+            const low = Math.min(...allYValues);
+            if (high > 100) max = high;
+            if (low < -20) min = low;
+            break;
+        case 'nzmag':
+            const dataMax = Math.max(...allYValues);
+            const dataMin = Math.min(...allYValues);
+            const range = dataMax - dataMin;
+            const padding = range * 0.1 || 1;
+            min = Math.floor(dataMin - padding);
+            max = Math.ceil(dataMax + padding);
+            break;
     }
     
     if (min !== undefined) options.scales.y.min = min;
@@ -136,63 +163,51 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
 
 // --- CHART COMPONENTS ---
 
-// --- MODIFICATION: Added getAnnotations prop ---
-export const SolarWindSpeedChart: React.FC<{ data: any[], getAnnotations: (timeRangeMs: number) => any }> = ({ data, getAnnotations }) => {
+export const SolarWindSpeedChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const chartData = useMemo(() => ({ datasets: [{ label: 'Speed', data: data, yAxisID: 'y', fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false) }] }), [data]);
-    const chartOptions = useMemo(() => {
-        const annotations = getAnnotations(timeRange);
-        return createDynamicChartOptions(timeRange, 'Speed (km/s)', chartData.datasets, { type: 'speed' }, annotations);
-    }, [timeRange, chartData, getAnnotations]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Speed (km/s)', chartData.datasets, { type: 'speed' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
-                {data.length > 0 ? <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
             </div>
         </div>
     );
 };
 
-export const SolarWindDensityChart: React.FC<{ data: any[], getAnnotations: (timeRangeMs: number) => any }> = ({ data, getAnnotations }) => {
+export const SolarWindDensityChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const chartData = useMemo(() => ({ datasets: [{ label: 'Density', data: data, yAxisID: 'y', fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false) }] }), [data]);
-    const chartOptions = useMemo(() => {
-        const annotations = getAnnotations(timeRange);
-        return createDynamicChartOptions(timeRange, 'Density (p/cm³)', chartData.datasets, { type: 'density' }, annotations);
-    }, [timeRange, chartData, getAnnotations]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Density (p/cm³)', chartData.datasets, { type: 'density' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
-                {data.length > 0 ? <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
             </div>
         </div>
     );
 };
 
-export const MagneticFieldChart: React.FC<{ data: any[], getAnnotations: (timeRangeMs: number) => any }> = ({ data, getAnnotations }) => {
+export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const chartData = useMemo(() => ({ datasets: [ { label: 'Bt', data: data.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false) }, { label: 'Bz', data: data.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getBzScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz)].solid }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true) } ] }), [data]);
-    const chartOptions = useMemo(() => {
-        const annotations = getAnnotations(timeRange);
-        return createDynamicChartOptions(timeRange, 'Magnetic Field (nT)', chartData.datasets, { type: 'imf' }, annotations);
-    }, [timeRange, chartData, getAnnotations]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Magnetic Field (nT)', chartData.datasets, { type: 'imf' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
-                {data.length > 0 ? <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
             </div>
         </div>
     );
 };
-// --- END MODIFICATION ---
 
-// (The rest of the chart components in this file are unchanged)
 export const HemisphericPowerChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const chartData = useMemo(() => ({ datasets: [{ label: 'Hemispheric Power', data: data, borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getPositiveScaleColorKey(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power)].solid, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false), fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true }] }), [data]);
@@ -280,6 +295,7 @@ export const NzMagnetometerChart: React.FC<{ data: any[], events: NzMagEvent[], 
     );
 };
 
+
 export const MoonArcChart: React.FC<{ dailyCelestialHistory: DailyHistoryEntry[], owmDailyForecast: OwmDailyForecastEntry[] }> = ({ dailyCelestialHistory, owmDailyForecast }) => {
     const chartDataAndAnnotations = useMemo(() => {
         const now = Date.now();
@@ -325,7 +341,7 @@ export const MoonArcChart: React.FC<{ dailyCelestialHistory: DailyHistoryEntry[]
                 } else {
                     dataPoints.push({ x: t, y: 0 });
                 }
-            } else {
+            } else { // Moon is down
                 dataPoints.push({ x: t, y: 0 });
             }
         }
@@ -414,13 +430,13 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
                 <button onClick={onOpenModal} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
             </div>
             <div className="flex justify-between items-center mb-2">
-                <TimeRangeButtons onSelect={(d) => { setTimeRange(d); setTimeLabel(`${d / 3600000} Hr`); }} selected={timeRange} />
+                <TimeRangeButtons onSelect={(d, l) => { setTimeRange(d); setTimeLabel(l); }} selected={timeRange} />
                 <ToggleSwitch label="Moon/Sun Data" checked={showAnnotations} onChange={setShowAnnotations} />
             </div>
             <div className="flex-grow relative mt-2">
-                {auroraScoreHistory.length > 0 ? <Line data={chartData} options={chartOptions} plugins={[annotationPlugin]} /> : <p className="text-center pt-10 text-neutral-400 italic">No historical data.</p>}
+                {auroraScoreHistory.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">No historical data.</p>}
             </div>
         </div>
     );
 };
-// --- END OF FILE src/components/ForecastCharts.tsx ---
+// --- END OF FILE src/components/ForecastCharts.tsx ---```

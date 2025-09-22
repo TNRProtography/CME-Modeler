@@ -13,8 +13,6 @@ const NOTIFICATION_CATEGORIES = [
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
   'substorm-forecast',
-  // --- NEW: Added Interplanetary Shock category ---
-  'ips-shock',
 ];
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
@@ -231,11 +229,17 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
   }
 };
 
+// MODIFIED: This function now sends the user's timezone to the server.
 const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
   console.log("DIAGNOSTIC: Sending subscription to server...");
+  
+  // NEW: Get the user's IANA timezone name from the browser (e.g., "Pacific/Auckland").
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // MODIFIED: Include the timezone in the request body.
   const body = JSON.stringify({ subscription, preferences, timezone });
   console.log("DIAGNOSTIC: Request Body being sent:", body);
+
   try {
     const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/save-subscription', {
       method: 'POST',
@@ -264,6 +268,11 @@ const sendPushSubscriptionToServer = async (subscription: PushSubscription, pref
   }
 };
 
+// --- NEW FUNCTION TO UPDATE PREFERENCES ON THE SERVER ---
+/**
+ * Gathers current preferences from localStorage and re-sends them to the server
+ * for the existing subscription. This should be called whenever a user changes a setting.
+ */
 export const updatePushSubscriptionPreferences = async () => {
   const reg = await waitForServiceWorkerReady();
   if (!reg) {
@@ -286,6 +295,7 @@ export const updatePushSubscriptionPreferences = async () => {
   await sendPushSubscriptionToServer(subscription, updatedPreferences);
 };
 
+// --- Cooldown management ---
 const notificationCooldowns: Map<string, number> = new Map();
 const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
 export const canSendNotification = (tag: string, cooldownMs: number = DEFAULT_NOTIFICATION_COOLDOWN_MS, reserve: boolean = true): boolean => {
@@ -309,6 +319,7 @@ export const sendNotificationWithCooldown = async (tag: string, cooldownMs: numb
   return shown;
 };
 
+// --- Preferences ---
 const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
@@ -326,6 +337,8 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
     console.error(`Error saving notification preference for ${categoryId}:`, e);
   }
 };
+
+// --- Quick test helpers ---
 
 export const sendTestNotification = async (title?: string, body?: string) => {
   if (!('Notification' in window)) {
@@ -369,4 +382,5 @@ export const sendServerSelfTest = async (category: string) => {
 export const getLocalSubscriptionId = (): string | null => {
   try { return localStorage.getItem('push_subscription_id'); } catch { return null; }
 };
-// --- END OF FILE src/utils/notifications.ts ---
+
+// --- END OF FILE src/utils/notifications.ts --- 

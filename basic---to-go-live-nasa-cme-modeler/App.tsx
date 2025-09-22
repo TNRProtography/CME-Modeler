@@ -97,6 +97,7 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
 
+  // --- NEW: FB/IG in-app browser detection + install suppression ---
   const [showIabBanner, setShowIabBanner] = useState(false);
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
@@ -118,10 +119,12 @@ const App: React.FC = () => {
     }
 
     const onBip = (e: any) => {
+      // Inside FB/IG IAB there is no real install flow—suppress it.
       if (inIAB) {
         e.preventDefault();
         return;
       }
+      // Outside IAB: keep for your own install button if you add one later.
       e.preventDefault();
       deferredInstallPromptRef.current = e;
       (window as any).spotTheAuroraCanInstall = true;
@@ -139,10 +142,13 @@ const App: React.FC = () => {
         : CANONICAL_ORIGIN + here.pathname + here.search + here.hash;
 
     if (isAndroidIab) {
+      // Try Chrome intent first (many Android devices will honor this)
       const intent = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
       window.location.href = intent;
+      // Fallback open
       setTimeout(() => window.open(target, '_blank', 'noopener,noreferrer'), 400);
     } else {
+      // iOS/others: new tab so users can choose "Open in Browser"
       window.open(target, '_blank', 'noopener,noreferrer');
     }
   }, [isAndroidIab]);
@@ -395,15 +401,22 @@ const App: React.FC = () => {
         threeCamera.getWorldPosition(cameraPosition);
 
         planetLabelInfos.forEach(info => {
-          if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) return;
+          // MODIFIED: This condition now filters out Moon and L1 labels from the screenshot
+          if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) {
+            return;
+          }
+
           const planetWorldPos = new THREE.Vector3();
           info.mesh.getWorldPosition(planetWorldPos);
+
           const projectionVector = planetWorldPos.clone().project(threeCamera);
           if (projectionVector.z > 1) return;
+
           const dist = planetWorldPos.distanceTo(cameraPosition);
           const minVisibleDist = SCENE_SCALE * 0.2;
           const maxVisibleDist = SCENE_SCALE * 15;
           if (dist < minVisibleDist || dist > maxVisibleDist) return;
+
           if (sunInfo && info.name !== 'Sun') {
             const sunWorldPos = new THREE.Vector3();
             sunInfo.mesh.getWorldPosition(sunWorldPos);
@@ -418,15 +431,18 @@ const App: React.FC = () => {
               if (angle < sunAngularRadius) return;
             }
           }
+
           const x = (projectionVector.x * 0.5 + 0.5) * canvas.width;
           const y = (-projectionVector.y * 0.5 + 0.5) * canvas.height;
           const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
+
           ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
           ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'top';
           ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
           ctx.shadowBlur = 6;
+          
           ctx.fillText(info.name, x + 15, y - 10);
         });
       }
@@ -445,18 +461,24 @@ const App: React.FC = () => {
       const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
       const simulationDate = new Date(timelineMinDate + currentTimeOffset);
       const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
+      
       const watermarkText = "SpotTheAurora.co.nz";
       
       const icon = new Image();
       icon.onload = () => {
         const iconSize = (fontSize * 2) + textGap;
         const iconPadding = 15;
+        
         const iconX = canvas.width - padding - iconSize;
         const iconY = canvas.height - padding - iconSize;
+        
         const textX = iconX - iconPadding;
+        
         ctx.fillText(dateString, textX, canvas.height - padding - fontSize - textGap);
         ctx.fillText(watermarkText, textX, canvas.height - padding);
+        
         ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
+
         const link = document.createElement('a');
         link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
         link.href = canvas.toDataURL('image/png');
@@ -485,7 +507,10 @@ const App: React.FC = () => {
   }, []);
 
   const handleSubstormAlertClick = useCallback(() => {
-    setNavigationTarget({ page: 'forecast', elementId: 'unified-forecast-section' });
+    setNavigationTarget({
+      page: 'forecast',
+      elementId: 'unified-forecast-section',
+    });
   }, []);
 
   return (
@@ -592,7 +617,6 @@ const App: React.FC = () => {
                 />
             )}
             {activePage === 'solar-activity' && (
-                // --- MODIFICATION: apiKey prop is no longer passed ---
                 <SolarActivityDashboard
                     setViewerMedia={setViewerMedia}
                     setLatestXrayFlux={setLatestXrayFlux}
