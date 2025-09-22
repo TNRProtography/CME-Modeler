@@ -10,7 +10,7 @@ import TutorialModal from './components/TutorialModal'; // This is the general t
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
 
 // Icon Imports
@@ -49,6 +49,16 @@ interface NavigationTarget {
   page: 'forecast' | 'solar-activity';
   elementId: string;
   expandId?: string;
+}
+
+// --- MODIFICATION: Added type for IPS Alert Data ---
+interface IpsAlertData {
+    shock: InterplanetaryShock;
+    solarWind: {
+        speed: string;
+        bt: string;
+        bz: string;
+    };
 }
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
@@ -96,8 +106,10 @@ const App: React.FC = () => {
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
+  
+  // --- NEW: State for IPS alert data ---
+  const [ipsAlertData, setIpsAlertData] = useState<IpsAlertData | null>(null);
 
-  // --- NEW: FB/IG in-app browser detection + install suppression ---
   const [showIabBanner, setShowIabBanner] = useState(false);
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
@@ -119,12 +131,10 @@ const App: React.FC = () => {
     }
 
     const onBip = (e: any) => {
-      // Inside FB/IG IAB there is no real install flow—suppress it.
       if (inIAB) {
         e.preventDefault();
         return;
       }
-      // Outside IAB: keep for your own install button if you add one later.
       e.preventDefault();
       deferredInstallPromptRef.current = e;
       (window as any).spotTheAuroraCanInstall = true;
@@ -142,13 +152,10 @@ const App: React.FC = () => {
         : CANONICAL_ORIGIN + here.pathname + here.search + here.hash;
 
     if (isAndroidIab) {
-      // Try Chrome intent first (many Android devices will honor this)
       const intent = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
       window.location.href = intent;
-      // Fallback open
       setTimeout(() => window.open(target, '_blank', 'noopener,noreferrer'), 400);
     } else {
-      // iOS/others: new tab so users can choose "Open in Browser"
       window.open(target, '_blank', 'noopener,noreferrer');
     }
   }, [isAndroidIab]);
@@ -401,7 +408,6 @@ const App: React.FC = () => {
         threeCamera.getWorldPosition(cameraPosition);
 
         planetLabelInfos.forEach(info => {
-          // MODIFIED: This condition now filters out Moon and L1 labels from the screenshot
           if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) {
             return;
           }
@@ -513,6 +519,14 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // --- NEW: Handler for IPS Alert Clicks ---
+  const handleIpsAlertClick = useCallback(() => {
+    setNavigationTarget({
+        page: 'solar-activity',
+        elementId: 'ips-shocks-section'
+    });
+  }, []);
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`.tutorial-highlight { position: relative; z-index: 2003 !important; box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7); border-color: #3b82f6 !important; }`}</style>
@@ -524,9 +538,12 @@ const App: React.FC = () => {
             auroraScore={currentAuroraScore ?? undefined}
             isSubstormAlert={isSubstormAlert}
             substormActivity={substormActivityStatus ?? undefined}
+            isIpsAlert={!!ipsAlertData}
+            ipsAlertData={ipsAlertData}
             onFlareAlertClick={handleFlareAlertClick}
             onAuroraAlertClick={handleAuroraAlertClick}
             onSubstormAlertClick={handleSubstormAlertClick}
+            onIpsAlertClick={handleIpsAlertClick}
         />
 
         <header className="flex-shrink-0 p-2 md:p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
@@ -613,6 +630,7 @@ const App: React.FC = () => {
                     setViewerMedia={setViewerMedia}
                     setCurrentAuroraScore={setCurrentAuroraScore}
                     setSubstormActivityStatus={setSubstormActivityStatus}
+                    setIpsAlertData={setIpsAlertData}
                     navigationTarget={navigationTarget}
                 />
             )}

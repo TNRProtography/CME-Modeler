@@ -26,7 +26,7 @@ import {
     MoonArcChart,
     NzMagnetometerChart,
 } from './ForecastCharts';
-import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
+import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -40,6 +40,7 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: SubstormActivity | null) => void;
+  setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 
@@ -185,11 +186,11 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, navigationTarget }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary, nzMagSubstormEvents
+        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary, nzMagSubstormEvents, interplanetaryShockData
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -207,6 +208,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
       return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const latestShock = interplanetaryShockData?.[0];
+        if (latestShock && (Date.now() - new Date(latestShock.eventTime).getTime()) < 3 * 3600 * 1000) {
+            setIpsAlertData({
+                shock: latestShock,
+                solarWind: {
+                    speed: gaugeData.speed.value,
+                    bt: gaugeData.bt.value,
+                    bz: gaugeData.bz.value,
+                }
+            });
+        } else {
+            setIpsAlertData(null);
+        }
+    }, [interplanetaryShockData, gaugeData, setIpsAlertData]);
 
     useEffect(() => {
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
