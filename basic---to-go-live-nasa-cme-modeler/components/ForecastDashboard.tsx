@@ -197,8 +197,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
     const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
-    // --- NEW: State for toggling the magnetometer view ---
-    const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('goes');
+    // --- MODIFICATION: Set default view to 'nz' ---
+    const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -486,70 +486,74 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         
                         {/* --- MODIFICATION: Combined Magnetometer Panel --- */}
                         <ForecastChartPanel 
-                            title={activeMagnetometer === 'goes' ? "Substorm Watch (GOES)" : "NZ Magnetometer (West Melton)"}
+                            title="Substorm Activity"
                             currentValue={
-                                activeMagnetometer === 'goes' 
-                                ? substormForecast.status.replace('_', ' ')
-                                : (substormForecast.status === 'ONSET' && nzMagData.length > 0 
-                                    ? `ONSET DETECTED <span class='text-sm block'>Max Delta: ${latestMaxDelta?.toFixed(1)} nT/min</span>` 
-                                    : "Monitoring...")
+                                substormForecast.status === 'ONSET' 
+                                    ? `ONSET DETECTED` 
+                                    : substormForecast.status.replace('_', ' ')
                             } 
-                            emoji={activeMagnetometer === 'goes' ? "⚡" : "📡"}
+                            emoji="⚡" 
                             onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
                         >
                            <div className="flex justify-center items-center gap-4 mb-2">
-                                <button
-                                    onClick={() => setActiveMagnetometer('goes')}
-                                    className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    Satellite Data (GOES)
-                                </button>
                                 <button
                                     onClick={() => setActiveMagnetometer('nz')}
                                     className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                                 >
                                     Ground Confirmation (NZ)
                                 </button>
+                                <button
+                                    onClick={() => setActiveMagnetometer('goes')}
+                                    className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                >
+                                    Satellite Forecast (GOES)
+                                </button>
                            </div>
-
-                           {activeMagnetometer === 'goes' ? (
-                                <SubstormChart 
-                                    goes18Data={goes18Data} 
-                                    goes19Data={goes19Data} 
-                                    annotations={getMagnetometerAnnotations()} 
-                                    loadingMessage={loadingMagnetometer} 
-                                />
-                           ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="md:col-span-2">
-                                        <NzMagnetometerChart 
-                                            data={nzMagData} 
-                                            events={nzMagSubstormEvents} 
-                                            selectedEvent={selectedNzMagEvent} 
-                                            loadingMessage={loadingNzMag} 
-                                        />
-                                    </div>
-                                    <div className="md:col-span-1">
-                                        <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
-                                        <div className="space-y-2 max-h-[250px] overflow-y-auto styled-scrollbar pr-2">
-                                            {nzMagSubstormEvents.length > 0 ? (
-                                                nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                                    <div 
-                                                        key={index}
-                                                        onClick={() => setSelectedNzMagEvent(event)}
-                                                        className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                                    >
-                                                        <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                        <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                            )}
+                           
+                           <div className="h-[350px]">
+                                {activeMagnetometer === 'goes' ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
+                                        <div className="md:col-span-3 h-full">
+                                            <SubstormChart 
+                                                goes18Data={goes18Data} 
+                                                goes19Data={goes19Data} 
+                                                annotations={getMagnetometerAnnotations()} 
+                                                loadingMessage={loadingMagnetometer} 
+                                            />
                                         </div>
                                     </div>
-                               </div>
-                           )}
+                                ) : (
+                                    <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
+                                        <div className="md:col-span-2 h-full">
+                                            <NzMagnetometerChart 
+                                                data={nzMagData} 
+                                                events={nzMagSubstormEvents} 
+                                                selectedEvent={selectedNzMagEvent} 
+                                                loadingMessage={loadingNzMag} 
+                                            />
+                                        </div>
+                                        <div className="md:col-span-1 h-full flex flex-col">
+                                            <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
+                                            <div className="space-y-2 flex-grow overflow-y-auto styled-scrollbar pr-2">
+                                                {nzMagSubstormEvents.length > 0 ? (
+                                                    nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                        <div 
+                                                            key={index}
+                                                            onClick={() => setSelectedNzMagEvent(event)}
+                                                            className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                        >
+                                                            <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                            <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                   </div>
+                               )}
+                           </div>
                         </ForecastChartPanel>
                         {/* --- END MODIFICATION --- */}
 
