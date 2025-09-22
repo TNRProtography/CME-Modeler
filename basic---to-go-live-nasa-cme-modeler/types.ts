@@ -1,4 +1,4 @@
-//--- START OF FILE types.ts ---
+//--- START OF FILE src/types.ts ---
 
 // Assuming global THREE is available from CDN
 // import * as THREE from 'three';
@@ -156,6 +156,7 @@ export interface SightingReport {
   isPending?: boolean;
 }
 
+// --- MODIFICATION: Added latestShock to the ActivitySummary ---
 export interface ActivitySummary {
   highestScore: {
     finalScore: number;
@@ -167,9 +168,8 @@ export interface ActivitySummary {
     peakProbability: number;
     peakStatus: string;
   }[];
+  latestShock: InterplanetaryShock | null;
 }
-
-// --- NEWLY ADDED TYPES ---
 
 export interface SolarFlare {
   flrID: string;
@@ -181,7 +181,6 @@ export interface SolarFlare {
   activeRegionNum: number;
   link: string;
   linkedEvents?: { activityID: string }[];
-  // This property is added client-side after processing
   hasCME?: boolean; 
 }
 
@@ -210,4 +209,4 @@ export interface WSAEnlilSimulation {
     simulationID: string;
 }
 
-//--- END OF FILE types.ts ---```
+//--- END OF FILE types.ts ---
