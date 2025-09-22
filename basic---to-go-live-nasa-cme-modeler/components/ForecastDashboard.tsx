@@ -16,6 +16,7 @@ import {
 } from './ForecastComponents';
 
 import {
+    SimpleTrendChart,
     ForecastTrendChart,
     SolarWindSpeedChart,
     SolarWindDensityChart,
@@ -197,8 +198,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
     const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
-    // --- MODIFICATION: Set default view to 'nz' ---
     const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
+    const [viewMode, setViewMode] = useState<'simple' | 'advanced'>('simple');
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -422,6 +423,29 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return nzMagSubstormEvents[nzMagSubstormEvents.length - 1].maxDelta;
     }, [nzMagSubstormEvents]);
 
+    const simpleViewStatus = useMemo(() => {
+        const score = auroraScore ?? 0;
+        if (score >= 80) return { text: 'Huge Aurora Visible', emoji: '🤩' };
+        if (score >= 50) return { text: 'Eye Visibility Possible', emoji: '👁️' };
+        if (score >= 35) return { text: 'Phone Visibility Possible', emoji: '📱' };
+        if (score >= 20) return { text: 'Camera Visibility Possible', emoji: '📷' };
+        if (score >= 10) return { text: 'Minimal Activity', emoji: '😐' };
+        return { text: 'No Aurora Expected', emoji: '😞' };
+    }, [auroraScore]);
+
+    const actionOneLiner = useMemo(() => {
+        if (isDaylight) return "It's daytime. Check back after sunset for the nighttime forecast.";
+        if (substormForecast.status === 'ONSET') return "GO NOW! An aurora eruption is detected. Look south immediately!";
+        if (substormForecast.status === 'IMMINENT_30') return "GET READY! An eruption is highly likely within 30 minutes. Head to your spot.";
+        
+        const score = auroraScore ?? 0;
+        if (score >= 50) return "CONDITIONS ARE GOOD. A visible aurora is possible. Find a dark spot and be patient.";
+        if (score >= 35) return "WORTH A LOOK. A modern phone might capture an aurora. Find a very dark location.";
+        if (score >= 20) return "CAMERA ONLY. A DSLR/Mirrorless with a long exposure may pick up a faint glow.";
+        
+        return "STAY INDOORS. Conditions are very quiet, an aurora is unlikely tonight.";
+    }, [auroraScore, substormForecast.status, isDaylight]);
+
     if (isLoading) {
         return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
     }
@@ -433,183 +457,249 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             <div className="absolute inset-0 bg-black/50 z-0"></div>
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
-                    <header className="text-center mb-8">
+                    <header className="text-center mb-4">
                         <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
-                    <main className="grid grid-cols-12 gap-6">
-                        <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                        
-                        <UnifiedForecastPanel
-                          score={auroraScore}
-                          blurb={auroraBlurb}
-                          lastUpdated={lastUpdated}
-                          locationBlurb={locationBlurb}
-                          getGaugeStyle={getGaugeStyle}
-                          getScoreColorKey={getForecastScoreColorKey}
-                          getAuroraEmoji={getAuroraEmoji}
-                          gaugeColors={GAUGE_COLORS}
-                          onOpenModal={() => openModal('unified-forecast')}
-                          substormForecast={substormForecast}
-                        />
+                     <div className="flex justify-center items-center gap-4 mb-6">
+                        <button onClick={() => setViewMode('simple')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'simple' ? 'bg-sky-500/30 border border-sky-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
+                            Simple View
+                        </button>
+                        <button onClick={() => setViewMode('advanced')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'advanced' ? 'bg-purple-500/30 border border-purple-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
+                            Advanced View
+                        </button>
+                    </div>
 
-                        <div className="col-span-12">
-                            <button 
-                                onClick={handleDownloadForecastImage}
-                                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"
-                            >
-                                <DownloadIcon className="w-6 h-6" />
-                                <span>Download The Aurora Forecast For The Next Two Hours!</span>
-                            </button>
-                        </div>
-                        
-                        <AuroraSightings isDaylight={isDaylight} />
-                        
-                        <ActivitySummaryDisplay summary={activitySummary} />
-
-                        {/* --- CHART PANELS --- */}
-                        <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
-                            <SolarWindSpeedChart data={allSpeedData} />
-                        </ForecastChartPanel>
-
-                        <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
-                            <SolarWindDensityChart data={allDensityData} />
-                        </ForecastChartPanel>
-
-                        <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}>
-                            <MagneticFieldChart data={allMagneticData} />
-                        </ForecastChartPanel>
-
-                        <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}>
-                            <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
-                        </ForecastChartPanel>
-                        
-                        {/* --- MODIFICATION: Combined Magnetometer Panel --- */}
-                        <ForecastChartPanel 
-                            title="Substorm Activity"
-                            currentValue={
-                                substormForecast.status === 'ONSET' 
-                                    ? `ONSET DETECTED` 
-                                    : substormForecast.status.replace('_', ' ')
-                            } 
-                            emoji="⚡" 
-                            onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
-                        >
-                           <div className="flex justify-center items-center gap-4 mb-2">
-                                <button
-                                    onClick={() => setActiveMagnetometer('nz')}
-                                    className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    Ground Confirmation (NZ)
-                                </button>
-                                <button
-                                    onClick={() => setActiveMagnetometer('goes')}
-                                    className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                >
-                                    Satellite Forecast (GOES)
-                                </button>
-                           </div>
-                           
-                           <div className="h-[350px]">
-                                {activeMagnetometer === 'goes' ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
-                                        <div className="md:col-span-3 h-full">
-                                            <SubstormChart 
-                                                goes18Data={goes18Data} 
-                                                goes19Data={goes19Data} 
-                                                annotations={getMagnetometerAnnotations()} 
-                                                loadingMessage={loadingMagnetometer} 
-                                            />
-                                        </div>
+                    {viewMode === 'simple' ? (
+                        <main className="grid grid-cols-12 gap-6">
+                            <div className="col-span-12 card bg-neutral-950/80 p-6 text-center">
+                                <div className="text-7xl font-extrabold" style={{color: GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid}}>
+                                    {(auroraScore ?? 0).toFixed(1)}%
+                                </div>
+                                <div className="text-2xl mt-2 font-semibold">
+                                    {simpleViewStatus.emoji} {simpleViewStatus.text}
+                                </div>
+                                
+                                <div className="mt-6">
+                                    <div className="text-sm font-semibold text-neutral-300 mb-1">Confidence</div>
+                                    <div className="w-full bg-neutral-700 rounded-full h-2.5 max-w-sm mx-auto">
+                                        <div className="bg-sky-500 h-2.5 rounded-full" style={{width: `${substormForecast.likelihood}%`}}></div>
                                     </div>
-                                ) : (
-                                    <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
-                                        <div className="md:col-span-2 h-full">
-                                            <NzMagnetometerChart 
-                                                data={nzMagData} 
-                                                events={nzMagSubstormEvents} 
-                                                selectedEvent={selectedNzMagEvent} 
-                                                loadingMessage={loadingNzMag} 
-                                            />
-                                        </div>
-                                        <div className="md:col-span-1 h-full flex flex-col">
-                                            <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
-                                            <div className="space-y-2 flex-grow overflow-y-auto styled-scrollbar pr-2">
-                                                {nzMagSubstormEvents.length > 0 ? (
-                                                    nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                                        <div 
-                                                            key={index}
-                                                            onClick={() => setSelectedNzMagEvent(event)}
-                                                            className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                                        >
-                                                            <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                            <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                                )}
+                                    <div className="text-xs text-neutral-400 mt-1">{substormForecast.likelihood}% chance of substorm activity</div>
+                                </div>
+
+                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto">
+                                    <p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p>
+                                </div>
+                            </div>
+                            
+                            <ActivitySummaryDisplay summary={activitySummary} />
+
+                            <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
+
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                                <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
+                                <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
+                            </div>
+
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                                <div className="flex justify-center items-center mb-4">
+                                    <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
+                                </div>
+                                <div className="flex justify-center gap-2 my-2 flex-wrap">
+                                    {CAMERAS.map((camera) => (
+                                        <button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                                            {camera.name}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="mt-4">
+                                    <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
+                                        {selectedCamera.type === 'iframe' ? (
+                                            <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
+                                        ) : (
+                                            <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
+                                        )}
+                                    </div>
+                                    <div className="text-center text-xs text-neutral-500 mt-2">
+                                        Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                    ) : (
+                        <main className="grid grid-cols-12 gap-6">
+                            <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
+                            
+                            <UnifiedForecastPanel
+                              score={auroraScore}
+                              blurb={auroraBlurb}
+                              lastUpdated={lastUpdated}
+                              locationBlurb={locationBlurb}
+                              getGaugeStyle={getGaugeStyle}
+                              getScoreColorKey={getForecastScoreColorKey}
+                              getAuroraEmoji={getAuroraEmoji}
+                              gaugeColors={GAUGE_COLORS}
+                              onOpenModal={() => openModal('unified-forecast')}
+                              substormForecast={substormForecast}
+                            />
+
+                            <div className="col-span-12">
+                                <button 
+                                    onClick={handleDownloadForecastImage}
+                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"
+                                >
+                                    <DownloadIcon className="w-6 h-6" />
+                                    <span>Download The Aurora Forecast For The Next Two Hours!</span>
+                                </button>
+                            </div>
+                            
+                            <AuroraSightings isDaylight={isDaylight} />
+                            
+                            <ActivitySummaryDisplay summary={activitySummary} />
+
+                            {/* --- CHART PANELS --- */}
+                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
+                                <SolarWindSpeedChart data={allSpeedData} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
+                                <SolarWindDensityChart data={allDensityData} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}>
+                                <MagneticFieldChart data={allMagneticData} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}>
+                                <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
+                            </ForecastChartPanel>
+                            
+                            <ForecastChartPanel 
+                                title="Substorm Activity"
+                                currentValue={
+                                    substormForecast.status === 'ONSET' 
+                                        ? `ONSET DETECTED` 
+                                        : substormForecast.status.replace('_', ' ')
+                                } 
+                                emoji="⚡" 
+                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
+                            >
+                               <div className="flex justify-center items-center gap-4 mb-2">
+                                    <button
+                                        onClick={() => setActiveMagnetometer('nz')}
+                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    >
+                                        Ground Confirmation (NZ)
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveMagnetometer('goes')}
+                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    >
+                                        Satellite Forecast (GOES)
+                                    </button>
+                               </div>
+                               
+                               <div className="h-[350px]">
+                                    {activeMagnetometer === 'goes' ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
+                                            <div className="md:col-span-3 h-full">
+                                                <SubstormChart 
+                                                    goes18Data={goes18Data} 
+                                                    goes19Data={goes19Data} 
+                                                    annotations={getMagnetometerAnnotations()} 
+                                                    loadingMessage={loadingMagnetometer} 
+                                                />
                                             </div>
                                         </div>
-                                   </div>
-                               )}
-                           </div>
-                        </ForecastChartPanel>
-                        {/* --- END MODIFICATION --- */}
-
-                        <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
-                            <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
-                        </ForecastChartPanel>
-
-
-                        <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <TipsSection />
-                            <CameraSettingsSection settings={cameraSettings} />
-                        </div>
-                        
-                        <ForecastTrendChart 
-                            auroraScoreHistory={auroraScoreHistory}
-                            dailyCelestialHistory={dailyCelestialHistory}
-                            owmDailyForecast={owmDailyForecast}
-                            onOpenModal={() => openModal('forecast')}
-                        />
-
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
-                            <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
-                        </div>
-                        
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <div className="flex justify-center items-center mb-4">
-                                <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
-                                <button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
-                            </div>
-                            <div className="flex justify-center gap-2 my-2 flex-wrap">
-                                {CAMERAS.map((camera) => (
-                                    <button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
-                                        {camera.name}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="mt-4">
-                                <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
-                                    {selectedCamera.type === 'iframe' ? (
-                                        <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
                                     ) : (
-                                        <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
-                                    )}
+                                        <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
+                                            <div className="md:col-span-2 h-full">
+                                                <NzMagnetometerChart 
+                                                    data={nzMagData} 
+                                                    events={nzMagSubstormEvents} 
+                                                    selectedEvent={selectedNzMagEvent} 
+                                                    loadingMessage={loadingNzMag} 
+                                                />
+                                            </div>
+                                            <div className="md:col-span-1 h-full flex flex-col">
+                                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
+                                                <div className="space-y-2 flex-grow overflow-y-auto styled-scrollbar pr-2">
+                                                    {nzMagSubstormEvents.length > 0 ? (
+                                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                            <div 
+                                                                key={index}
+                                                                onClick={() => setSelectedNzMagEvent(event)}
+                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                            >
+                                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                       </div>
+                                   )}
+                               </div>
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
+                                <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
+                            </ForecastChartPanel>
+
+
+                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <TipsSection />
+                                <CameraSettingsSection settings={cameraSettings} />
+                            </div>
+                            
+                            <ForecastTrendChart 
+                                auroraScoreHistory={auroraScoreHistory}
+                                dailyCelestialHistory={dailyCelestialHistory}
+                                owmDailyForecast={owmDailyForecast}
+                                onOpenModal={() => openModal('forecast')}
+                            />
+
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                                <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
+                                <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
+                            </div>
+                            
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                                <div className="flex justify-center items-center mb-4">
+                                    <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
+                                    <button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
                                 </div>
-                                <div className="text-center text-xs text-neutral-500 mt-2">
-                                    Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
+                                <div className="flex justify-center gap-2 my-2 flex-wrap">
+                                    {CAMERAS.map((camera) => (
+                                        <button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                                            {camera.name}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="mt-4">
+                                    <div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>
+                                        {selectedCamera.type === 'iframe' ? (
+                                            <iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />
+                                        ) : (
+                                            <img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />
+                                        )}
+                                    </div>
+                                    <div className="text-center text-xs text-neutral-500 mt-2">
+                                        Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                            <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
-                             <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
-                        </div>
-                    </main>
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                                <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
+                                 <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
+                            </div>
+                        </main>
+                    )}
 
                     <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>

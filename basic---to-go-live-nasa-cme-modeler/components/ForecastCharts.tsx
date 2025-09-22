@@ -18,7 +18,7 @@ const GAUGE_THRESHOLDS = {
   bz:      { gray: -5,  yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }
 };
 
-const GAUGE_COLORS = {
+export const GAUGE_COLORS = {
     gray:   { solid: '#808080', semi: 'rgba(128, 128, 128, 0.2)', trans: 'rgba(128, 128, 128, 0)' },
     yellow: { solid: '#FFD700', semi: 'rgba(255, 215, 0, 0.2)', trans: 'rgba(255, 215, 0, 0)' },
     orange: { solid: '#FFA500', semi: 'rgba(255, 165, 0, 0.2)', trans: 'rgba(255, 165, 0, 0)' },
@@ -39,7 +39,7 @@ const getBzScaleColorKey = (value: number, thresholds: { [key: string]: number }
     return 'gray';
 };
 
-const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
+export const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
     if (score >= 80) return 'pink'; if (score >= 50) return 'purple'; if (score >= 40) return 'red';
     if (score >= 25) return 'orange'; if (score >= 10) return 'yellow';
     return 'gray';
@@ -388,6 +388,80 @@ export const MoonArcChart: React.FC<{ dailyCelestialHistory: DailyHistoryEntry[]
     );
 };
 
+// --- NEW SimpleTrendChart component ---
+export const SimpleTrendChart: React.FC<{ auroraScoreHistory: { timestamp: number; finalScore: number }[] }> = ({ auroraScoreHistory }) => {
+    const timeRange = 3 * 3600 * 1000; // Fixed 3 hours
+
+    const chartData = useMemo(() => {
+        if (auroraScoreHistory.length === 0) return { datasets: [] };
+        
+        const getForecastGradient = (ctx: ScriptableContext<'line'>) => {
+            const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined;
+            const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+            const colorKey0 = getForecastScoreColorKey(ctx.p0?.parsed?.y ?? 0); const colorKey1 = getForecastScoreColorKey(ctx.p1?.parsed?.y ?? 0);
+            gradient.addColorStop(0, GAUGE_COLORS[colorKey0].semi); gradient.addColorStop(1, GAUGE_COLORS[colorKey1].semi); return gradient;
+        };
+
+        return {
+            datasets: [{
+                label: 'Spot The Aurora Forecast',
+                data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
+                borderColor: (ctx: ScriptableContext<'line'>) => GAUGE_COLORS[getForecastScoreColorKey(ctx.p1?.parsed?.y ?? 0)].solid,
+                backgroundColor: getForecastGradient,
+                fill: 'origin',
+                tension: 0.2,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                spanGaps: true,
+            }]
+        };
+    }, [auroraScoreHistory]);
+
+    const chartOptions = useMemo((): ChartOptions<'line'> => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false, axis: 'x' },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    title: (ctx) => ctx.length > 0 ? `Time: ${new Date(ctx[0].parsed.x).toLocaleTimeString('en-NZ')}` : '',
+                    label: (ctx) => `${ctx.dataset.label || ''}: ${ctx.parsed.y.toFixed(1)}%`
+                }
+            },
+        },
+        scales: {
+            x: {
+                type: 'time',
+                min: Date.now() - timeRange,
+                max: Date.now(),
+                ticks: { color: '#71717a', source: 'auto' },
+                grid: { color: '#3f3f46' }
+            },
+            y: {
+                type: 'linear',
+                min: 0,
+                max: 100,
+                ticks: { color: '#71717a', callback: (v: any) => `${v}%` },
+                grid: { color: '#3f3f46' },
+            }
+        }
+    }), [timeRange]);
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-4 h-[300px] flex flex-col">
+            <h2 className="text-xl font-semibold text-white text-center mb-4">Forecast Trend (Last 3 Hours)</h2>
+            <div className="flex-grow relative">
+                {auroraScoreHistory.length > 0 ? (
+                    <Line data={chartData} options={chartOptions} />
+                ) : (
+                    <p className="text-center pt-10 text-neutral-400 italic">No historical data.</p>
+                )}
+            </div>
+        </div>
+    );
+};
+
 
 interface ForecastTrendChartProps {
     auroraScoreHistory: { timestamp: number; baseScore: number; finalScore: number; }[];
@@ -439,4 +513,4 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
         </div>
     );
 };
-// --- END OF FILE src/components/ForecastCharts.tsx ---```
+// --- END OF FILE src/components/ForecastCharts.tsx ---
