@@ -1,6 +1,10 @@
+// --- START OF FILE src/components/ForecastModelsModal.tsx ---
+
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
-import LoadingSpinner from './icons/LoadingSpinner';
+import LoadingSpinner from './icons-and-loaders/LoadingSpinner'; // Assuming you have this component
+// --- MODIFICATION: Import the new service function and type ---
+import { fetchWSAEnlilSimulations, WSAEnlilSimulation } from '../services/nasaService';
 
 // Define the media object type to ensure type safety when calling setViewerMedia
 type MediaObject = 
@@ -12,7 +16,6 @@ interface ForecastModelsModalProps {
   isOpen: boolean;
   onClose: () => void;
   setViewerMedia: (media: MediaObject | null) => void;
-  // ADDED: New prop to trigger preloading from the parent component
   shouldPreload?: boolean; 
 }
 
@@ -20,52 +23,58 @@ interface ForecastModelsModalProps {
 const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
 const MAX_FRAMES_TO_CHECK = 400;
 const HUXT_ANIMATION_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4';
-// ADDED: URL for the new static HUXT image
 const HUXT_FORECAST_IMAGE_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png';
 const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo.mp4';
 const EUHFORIA_ANIMATION_URL = 'https://swe.ssa.esa.int/DOCS/portal_images/uk_ral_euhforia_earth.mp4';
+
+// --- NEW HELPER ---
+const formatNZTimestamp = (isoString: string | null | number) => {
+    if (!isoString) return 'N/A';
+    try { 
+        const d = new Date(isoString); 
+        return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { 
+            timeZone: 'Pacific/Auckland', 
+            dateStyle: 'medium', 
+            timeStyle: 'short' 
+        }); 
+    } catch { return "Invalid Date"; }
+};
 
 
 const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia, shouldPreload = false }) => {
   const [enlilImageUrls, setEnlilImageUrls] = useState<string[]>([]);
   const [isLoadingEnlil, setIsLoadingEnlil] = useState(true);
   const [enlilError, setEnlilError] = useState<string | null>(null);
+  
+  // --- NEW: State for NASA WSA-ENLIL Simulations ---
+  const [nasaEnlilSimulations, setNasaEnlilSimulations] = useState<WSAEnlilSimulation[]>([]);
+  const [isLoadingNasaEnlil, setIsLoadingNasaEnlil] = useState(true);
+  const [nasaEnlilError, setNasaEnlilError] = useState<string | null>(null);
 
-  // Use a ref to prevent fetching data multiple times
   const hasTriggeredFetch = useRef(false);
 
   useEffect(() => {
-    // Condition to start fetching: either the modal is open or the parent wants to preload
     const shouldStartFetching = isOpen || shouldPreload;
-
-    // Exit if we shouldn't fetch yet or if the fetch has already been started
     if (!shouldStartFetching || hasTriggeredFetch.current) {
       return;
     }
-
-    // Mark that we are starting the fetch process
     hasTriggeredFetch.current = true;
 
-    // --- Preload the static HUXT image ---
+    // Preload static images
     const huxtImage = new Image();
     huxtImage.src = HUXT_FORECAST_IMAGE_URL;
 
-    // --- Fetch the ENLIL animation frames ---
-    const fetchEnlilImages = async () => {
+    // --- Fetch NOAA ENLIL animation frames ---
+    const fetchNoaaEnlilImages = async () => {
       setIsLoadingEnlil(true);
       setEnlilError(null);
-      
       const potentialUrls = Array.from({ length: MAX_FRAMES_TO_CHECK }, (_, i) => `${ENLIL_BASE_URL}${i + 1}`);
-      
       const results = await Promise.allSettled(
-        potentialUrls.map(url => 
-          fetch(url).then(res => {
+        potentialUrls.map(url => fetch(url).then(res => {
             if (!res.ok) throw new Error(`Frame load failed: ${res.status}`);
             return res.blob();
-          })
-        )
+        }))
       );
-
       const successfulUrls = results
         .map(r => r.status === 'fulfilled' ? URL.createObjectURL(r.value) : null)
         .filter((url): url is string => url !== null);
@@ -73,18 +82,30 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
       if (successfulUrls.length > 0) {
         setEnlilImageUrls(successfulUrls);
       } else {
-        setEnlilError('No ENLIL images could be loaded from the proxy.');
+        setEnlilError('No NOAA ENLIL images could be loaded from the proxy.');
       }
       setIsLoadingEnlil(false);
     };
 
-    fetchEnlilImages();
+    // --- NEW: Fetch NASA WSA-ENLIL simulations ---
+    const fetchNasaEnlil = async () => {
+        setIsLoadingNasaEnlil(true);
+        setNasaEnlilError(null);
+        try {
+            const data = await fetchWSAEnlilSimulations();
+            setNasaEnlilSimulations(data);
+        } catch (error) {
+            setNasaEnlilError(error instanceof Error ? error.message : "An unknown error occurred.");
+        }
+        setIsLoadingNasaEnlil(false);
+    };
 
-    // Cleanup: revoke object URLs when component unmounts
+    fetchNoaaEnlilImages();
+    fetchNasaEnlil(); // Fetch the new data
+
     return () => {
       enlilImageUrls.forEach(url => URL.revokeObjectURL(url));
     };
-    // Depend on both isOpen and shouldPreload to trigger the effect
   }, [isOpen, shouldPreload]);
 
   if (!isOpen) return null;
@@ -106,42 +127,39 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
         </div>
         
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* HUXT Model Section */}
+          {/* HUXT Model Section (Unchanged) */}
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">HUXT (University of Reading)</h3>
             <div className="text-sm text-neutral-400 leading-relaxed">
                <p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model from the <a href="https://research.reading.ac.uk/met-spate/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading</a> that simulates the propagation of solar wind and CMEs through the inner heliosphere.</p>
             </div>
-            {/* MODIFIED: Container for HUXT visualizations */}
             <div className="space-y-4">
                 <div onClick={() => setViewerMedia({ url: HUXT_ANIMATION_URL, type: 'video' })} className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
                     <h4 className="font-semibold text-center mb-2">HUXT Animation</h4>
                     <video src={HUXT_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full">Your browser does not support the video tag.</video>
                 </div>
-
-                {/* --- ADDED: New HUXT Forecast Image --- */}
                 <div onClick={() => setViewerMedia({ url: HUXT_FORECAST_IMAGE_URL, type: 'image' })} className="block bg-neutral-900 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
                     <h4 className="font-semibold text-center mb-2">HUXT Forecast</h4>
                     <img src={HUXT_FORECAST_IMAGE_URL} alt="HUXT Forecast" className="rounded w-full" />
                 </div>
-                {/* --- END ADDED SECTION --- */}
-
                 <p className="text-neutral-500 text-xs text-right">Data Source: <a href="https://research.reading.ac.uk/met-spate/huxt-forecast/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">University of Reading & Met Office</a></p>
             </div>
           </section>
 
-          {/* WSA-ENLIL Model Section */}
+          {/* WSA-ENLIL Section (MODIFIED to include both NASA and NOAA) */}
           <section className="space-y-4">
-            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">WSA-ENLIL (NOAA)</h3>
-             <div className="text-sm text-neutral-400 leading-relaxed">
-                <p>The WSA-ENLIL model is the primary operational forecasting model used by the <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">U.S. National Oceanic and Atmospheric Administration (NOAA)</a> to predict solar wind conditions.</p>
+            <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">WSA-ENLIL Model</h3>
+            <div className="text-sm text-neutral-400 leading-relaxed">
+                <p>The WSA-ENLIL model is the primary operational forecasting model used by both <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA</a> and <a href="https://ccmc.gsfc.nasa.gov/models/modelinfo.php?model=ENLIL" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> to predict solar wind conditions and CME arrivals.</p>
             </div>
+            
+            {/* NOAA WSA-ENLIL */}
             <div 
               onClick={() => enlilImageUrls.length > 0 && setViewerMedia({ urls: enlilImageUrls, type: 'animation' })}
               className="bg-neutral-900 p-2 rounded-lg relative min-h-[300px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
             >
-                <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">WSA-ENLIL Animation</h4>
-                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching & processing forecast...</p></div>}
+                <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">WSA-ENLIL Animation (NOAA)</h4>
+                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching NOAA forecast...</p></div>}
                 {enlilError && <p className="text-red-400 text-center">{enlilError}</p>}
                 {!isLoadingEnlil && enlilImageUrls.length > 0 && (
                   <>
@@ -152,10 +170,34 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                   </>
                 )}
             </div>
-            <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a></p>
+             <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://www.swpc.noaa.gov/models/wsa-enlil" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a></p>
+
+
+            {/* NASA WSA-ENLIL */}
+            <div className="bg-neutral-900 p-2 rounded-lg min-h-[300px] flex flex-col">
+                 <h4 className="font-semibold text-center mb-2">WSA-ENLIL Simulations (NASA)</h4>
+                {isLoadingNasaEnlil && <div className="flex-grow flex items-center justify-center"><LoadingSpinner message="Fetching NASA simulations..." /></div>}
+                {nasaEnlilError && <p className="text-red-400 text-center flex-grow flex items-center justify-center">{nasaEnlilError}</p>}
+                {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
+                   <div className="space-y-3 overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                       {nasaEnlilSimulations.slice(0, 5).map(sim => (
+                           <div key={sim.simulationID} className="bg-neutral-800/60 p-3 rounded-md text-xs">
+                               <div className="flex justify-between items-center mb-2">
+                                   <p className="font-bold text-neutral-200">Model Time: {formatNZTimestamp(sim.modelCompletionTime)}</p>
+                                   <a href={sim.link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-sky-600 text-white rounded text-xs hover:bg-sky-500">View Model</a>
+                               </div>
+                               <p className="text-neutral-300"><strong>Associated CMEs:</strong> {sim.cmeIDs.join(', ')}</p>
+                               <p className="text-neutral-300"><strong>Estimated Shock Arrival:</strong> <span className="text-amber-300">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span></p>
+                           </div>
+                       ))}
+                   </div>
+                )}
+                 {!isLoadingNasaEnlil && nasaEnlilSimulations.length === 0 && <p className="text-neutral-400 italic text-center flex-grow flex items-center justify-center">No recent NASA ENLIL simulations found.</p>}
+            </div>
+            <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://ccmc.gsfc.nasa.gov/tools/DONKI/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA CCMC</a></p>
           </section>
 
-          {/* ELEVO Model Section */}
+          {/* ELEVO Model Section (Unchanged) */}
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">ELEVO (Helio4Cast)</h3>
              <div className="text-sm text-neutral-400 leading-relaxed">
@@ -171,7 +213,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
             <p className="text-neutral-500 text-xs text-right mt-2">Data Source: <a href="https://helioforecast.space/cme" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Helio4Cast</a></p>
           </section>
 
-          {/* EUHFORIA Model Section */}
+          {/* EUHFORIA Model Section (Unchanged) */}
           <section className="space-y-4">
             <h3 className="text-xl font-semibold text-neutral-300 border-b border-neutral-600 pb-2">EUHFORIA (ESA)</h3>
              <div className="text-sm text-neutral-400 leading-relaxed">
@@ -193,3 +235,4 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 };
 
 export default ForecastModelsModal;
+// --- END OF FILE src/components/ForecastModelsModal.tsx ---

@@ -112,35 +112,31 @@ export interface PlanetLabelInfo {
   mesh: any; // THREE.Object3D
 }
 
-// --- NEW/MODIFIED TYPE FOR SUBSTORM ACTIVITY ---
 export interface SubstormActivity {
-  text: string;              // The original text blurb for display inside the dashboard
-  color: string;             // The color for the text inside the dashboard
-  isStretching: boolean;     // True if the field is stretching (the condition for the banner alert)
-  isErupting: boolean;       // True if a substorm signature (jump) is detected
-  probability?: number;      // The calculated probability percentage
-  predictedStartTime?: number; // The predicted start timestamp of the eruption window
-  predictedEndTime?: number;   // The predicted end timestamp of the eruption window
+  text: string;
+  color: string;
+  isStretching: boolean;
+  isErupting: boolean;
+  probability?: number;
+  predictedStartTime?: number;
+  predictedEndTime?: number;
 }
 
-// --- NEW TYPE FOR THE PREDICTIVE FORECAST ---
 export interface SubstormForecast {
   status: 'QUIET' | 'WATCH' | 'LIKELY_60' | 'IMMINENT_30' | 'ONSET';
-  likelihood: number;   // 0-100
-  windowLabel: string;  // e.g., "10 – 60 min"
-  action: string;       // e.g., "Prepare to go..."
-  p30: number;          // raw probability for 30 mins
-  p60: number;          // raw probability for 60 mins
+  likelihood: number;
+  windowLabel: string;
+  action: string;
+  p30: number;
+  p60: number;
 }
 
-// MODIFIED: Added the new capture function to the handle
 export interface SimulationCanvasHandle {
   resetView: () => void;
   resetAnimationTimer: () => void;
   captureCanvasAsDataURL: () => string | null;
 }
 
-// --- MODIFIED: Updated SightingStatus to include new "nothing" categories ---
 export type SightingStatus = 
   | 'eye' 
   | 'phone' 
@@ -156,11 +152,10 @@ export interface SightingReport {
   status: SightingStatus;
   name: string;
   timestamp: number;
-  key?: string;        // a unique key from the KV store
-  isPending?: boolean; // For client-side state
+  key?: string;
+  isPending?: boolean;
 }
 
-// --- NEW: Type for the 24-hour activity summary ---
 export interface ActivitySummary {
   highestScore: {
     finalScore: number;
@@ -174,12 +169,45 @@ export interface ActivitySummary {
   }[];
 }
 
-/**
- * If you truly need a type representing a Vite config shape in this file,
- * use a valid identifier (no dots) like this. Otherwise, feel free to remove it.
- */
-export interface ViteConfig {
-  plugins: any[];
+// --- NEWLY ADDED TYPES ---
+
+export interface SolarFlare {
+  flrID: string;
+  startTime: string;
+  peakTime: string;
+  endTime: string | null;
+  classType: string;
+  sourceLocation: string;
+  activeRegionNum: number;
+  link: string;
+  linkedEvents?: { activityID: string }[];
+  // This property is added client-side after processing
+  hasCME?: boolean; 
 }
 
-//--- END OF FILE types.ts ---
+export interface InterplanetaryShock {
+  activityID: string;
+  catalog: string;
+  eventTime: string;
+  instruments: { displayName: string }[];
+  location: string;
+  link: string;
+}
+
+export interface WSAEnlilSimulation {
+    modelCompletionTime: string;
+    au: number;
+    link: string;
+    estimatedShockArrivalTime: string | null;
+    estimatedDuration: number | null;
+    rmin_re: number | null;
+    kp_18: number | null;
+    kp_90: number | null;
+    kp_135: number | null;
+    kp_180: number | null;
+    isEarthGB: boolean;
+    cmeIDs: string[];
+    simulationID: string;
+}
+
+//--- END OF FILE types.ts ---```

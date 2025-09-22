@@ -601,7 +601,6 @@ const App: React.FC = () => {
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-                {/* --- MODIFIED LINE --- */}
                 <ForecastModelsModal 
                     isOpen={isForecastModelsOpen} 
                     onClose={() => setIsForecastModelsOpen(false)} 
@@ -620,7 +619,6 @@ const App: React.FC = () => {
             {activePage === 'solar-activity' && (
                 <SolarActivityDashboard
                     setViewerMedia={setViewerMedia}
-                    apiKey={apiKey}
                     setLatestXrayFlux={setLatestXrayFlux}
                     onViewCMEInVisualization={handleViewCMEInVisualization}
                     navigationTarget={navigationTarget}
@@ -648,7 +646,6 @@ const App: React.FC = () => {
             onStepChange={handleTutorialStepChange}
         />
 
-        {/* --- NEW: In-app browser (FB/IG) guidance banner --- */}
         {showIabBanner && (
           <div
             className="pointer-events-auto"
