@@ -24,7 +24,6 @@ import {
     SubstormChart,
     MoonArcChart,
     NzMagnetometerChart,
-    AeAoIndexChart,
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary } from '../types';
 import CaretIcon from './icons/CaretIcon';
@@ -189,8 +188,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary, nzMagSubstormEvents,
-        localAeAoData, loadingAeAo
+        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary, nzMagSubstormEvents
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -198,7 +196,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
+    const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null); // NEW
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -392,8 +390,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
         'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
         'substorm': 'This chart shows data from the GOES satellite in geostationary orbit. The "Hp" component measures the magnetic field parallel to Earth\'s rotation axis. A slow decrease ("stretching phase") followed by a sharp increase ("dipolarization" or "jump") is a classic signature of a substorm onset, which often corresponds with a bright auroral display.',
-        'nz-mag': '<strong>What it is:</strong> This chart displays real-time data from a ground-based magnetometer located at West Melton, New Zealand. It measures the rate of change of the horizontal component (dH/dt) of Earth\'s magnetic field.<br><br><strong>Effect on Aurora:</strong> During a substorm, the reconfiguration of the magnetic field causes rapid fluctuations, seen as high volatility (large spikes) on this chart. This is the most definitive, localized proof that an auroral event is happening directly over our region. It serves as a high-confidence confirmation of the forecasts from satellite data.',
-        'ae-ao': '<strong>What it is:</strong> This is a local proxy for the Auroral Electrojet (AE) and Auroral Oval (AO) indices, calculated from the four NZ magnetometer stations. <br><br><strong>AE Index (Orange):</strong> Represents the total intensity range of geomagnetic activity over New Zealand. Higher values indicate a stronger, more widespread substorm. <br><strong>AO Index (Blue):</strong> Represents the center of the auroral activity. A strong negative value suggests the activity is centered further south.'
+        'nz-mag': '<strong>What it is:</strong> This chart displays real-time data from a ground-based magnetometer located at West Melton, New Zealand. It measures the rate of change of the horizontal component (dH/dt) of Earth\'s magnetic field.<br><br><strong>Effect on Aurora:</strong> During a substorm, the reconfiguration of the magnetic field causes rapid fluctuations, seen as high volatility (large spikes) on this chart. This is the most definitive, localized proof that an auroral event is happening directly over our region. It serves as a high-confidence confirmation of the forecasts from satellite data.'
     }), []);
     
     const openModal = useCallback((id: string) => {
@@ -405,7 +402,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             else if (id === 'live-cameras') title = 'About Live Cameras';
             else if (id === 'substorm') title = 'About GOES Magnetometer (Substorm Watch)';
             else if (id === 'nz-mag') title = 'About the NZ Magnetometer';
-            else if (id === 'ae-ao') title = 'About the Local Disturbance Index';
             else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
             setModalState({ isOpen: true, title: title, content: contentData });
         }
@@ -493,37 +489,37 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <ForecastChartPanel 
                             title="NZ Magnetometer (West Melton)" 
                             currentValue={
-                                substormForecast.status === 'ONSET' && nzMagData['EY2M']
+                                substormForecast.status === 'ONSET' && nzMagData.length > 0 
                                 ? `ONSET DETECTED <span class='text-sm block'>Max Delta: ${latestMaxDelta?.toFixed(1)} nT/min</span>` 
                                 : "Monitoring..."
                             } 
                             emoji="📡" 
                             onOpenModal={() => openModal('nz-mag')}
                         >
-                           <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} selectedEvent={selectedNzMagEvent} loadingMessage={loadingNzMag} />
-                           <div className="mt-4">
-                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
-                                <div className="space-y-2 max-h-[150px] overflow-y-auto styled-scrollbar pr-2">
-                                    {nzMagSubstormEvents.length > 0 ? (
-                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                            <div 
-                                                key={index}
-                                                onClick={() => setSelectedNzMagEvent(event)}
-                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                            >
-                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                    )}
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="md:col-span-2">
+                                    <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} selectedEvent={selectedNzMagEvent} loadingMessage={loadingNzMag} />
                                 </div>
-                            </div>
-                        </ForecastChartPanel>
-
-                        <ForecastChartPanel title="Local Disturbance Index (AE/AO Proxy)" currentValue={`AE: ${localAeAoData.ae.at(-1)?.y?.toFixed(1) ?? '...'} | AO: ${localAeAoData.ao.at(-1)?.y?.toFixed(1) ?? '...'}`} emoji="📈" onOpenModal={() => openModal('ae-ao')}>
-                           <AeAoIndexChart data={localAeAoData} loadingMessage={loadingAeAo} />
+                                <div className="md:col-span-1">
+                                    <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
+                                    <div className="space-y-2 max-h-[250px] overflow-y-auto styled-scrollbar pr-2">
+                                        {nzMagSubstormEvents.length > 0 ? (
+                                            nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                <div 
+                                                    key={index}
+                                                    onClick={() => setSelectedNzMagEvent(event)}
+                                                    className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                >
+                                                    <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                    <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                        )}
+                                    </div>
+                                </div>
+                           </div>
                         </ForecastChartPanel>
 
                         <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>

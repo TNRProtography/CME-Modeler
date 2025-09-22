@@ -44,6 +44,7 @@ interface InterplanetaryShock {
   link: string;
 }
 
+// --- NEW: Type for detected NZ Mag events ---
 export interface NzMagEvent {
     start: number;
     end: number;
@@ -61,7 +62,6 @@ const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
 const GEONET_API_URL = 'https://tilde.geonet.org.nz/v4/data';
 const GREYMOUTH_LATITUDE = -42.45;
-const NZ_MAG_STATIONS = ['EY2M', 'EYWM', 'AHAM', 'APIM'];
 
 // --- Physics and Model Helpers ---
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -169,10 +169,8 @@ export const useForecastData = (
   const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
   const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
   const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
-  const [nzMagData, setNzMagData] = useState<Record<string, any>>({});
+  const [nzMagData, setNzMagData] = useState<any[]>([]);
   const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...');
-  const [localAeAoData, setLocalAeAoData] = useState<{ae: any[], ao: any[]}>({ae: [], ao: []});
-  const [loadingAeAo, setLoadingAeAo] = useState<string | null>('Calculating...');
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
   const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
@@ -188,7 +186,7 @@ export const useForecastData = (
     p30: 0,
     p60: 0,
   });
-  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]);
+  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]); // NEW
 
   const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
     const moonIllumination = Math.max(0, (illumination ?? 0));
@@ -247,8 +245,8 @@ export const useForecastData = (
   }, [goes18Data]);
 
   const nzMagOnset = useMemo(() => {
-      if (Object.keys(nzMagData).length === 0) return false;
-      const data = nzMagData['EY2M']?.data;
+      if (!nzMagData.length) return false;
+      const data = nzMagData[0]?.data;
       if (!data || data.length < 5) return false;
       const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
       const recentData = data.filter((p: any) => p.x >= thirtyMinsAgo);
@@ -257,61 +255,13 @@ export const useForecastData = (
       return volatility;
   }, [nzMagData]);
 
+  // --- NEW: Analyze NZ Mag data for past events ---
   useMemo(() => {
-    if (Object.keys(nzMagData).length < NZ_MAG_STATIONS.length) {
-        setLocalAeAoData({ ae: [], ao: [] });
-        setLoadingAeAo('Waiting for all station data...');
-        return;
-    }
-
-    setLoadingAeAo('Calculating indices...');
-    const allTimestamps = new Set<number>();
-    const stationDataMaps = new Map<string, Map<number, number>>();
-
-    for (const station of NZ_MAG_STATIONS) {
-        const stationData = nzMagData[station]?.data;
-        if (stationData) {
-            const dataMap = new Map<number, number>();
-            for (const point of stationData) {
-                allTimestamps.add(point.x);
-                dataMap.set(point.x, point.y);
-            }
-            stationDataMaps.set(station, dataMap);
-        }
-    }
-
-    const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b);
-    const ae: any[] = [];
-    const ao: any[] = [];
-
-    for (const ts of sortedTimestamps) {
-        const values: number[] = [];
-        for (const station of NZ_MAG_STATIONS) {
-            const val = stationDataMaps.get(station)?.get(ts);
-            if (val !== undefined) {
-                values.push(val);
-            }
-        }
-
-        if (values.length > 0) {
-            const maxVal = Math.max(...values);
-            const minVal = Math.min(...values);
-            ae.push({ x: ts, y: maxVal - minVal });
-            ao.push({ x: ts, y: (maxVal + minVal) / 2 });
-        }
-    }
-    
-    setLocalAeAoData({ ae, ao });
-    setLoadingAeAo(null);
-
-  }, [nzMagData]);
-
-  useMemo(() => {
-    if (!nzMagData['EY2M']?.data) {
+    if (!nzMagData.length || !nzMagData[0]?.data) {
         setNzMagSubstormEvents([]);
         return;
     }
-    const data = nzMagData['EY2M'].data;
+    const data = nzMagData[0].data;
     const events: NzMagEvent[] = [];
     let currentEvent: NzMagEvent | null = null;
     const THRESHOLD = 5; // nT/min
@@ -321,17 +271,21 @@ export const useForecastData = (
         const isVolatile = Math.abs(point.y) >= THRESHOLD;
 
         if (isVolatile && !currentEvent) {
+            // Start a new event
             currentEvent = { start: point.x, end: point.x, maxDelta: Math.abs(point.y) };
         } else if (isVolatile && currentEvent) {
+            // Continue the current event
             currentEvent.end = point.x;
             currentEvent.maxDelta = Math.max(currentEvent.maxDelta, Math.abs(point.y));
         } else if (!isVolatile && currentEvent) {
+            // End the current event if it's been quiet for a while
             if (point.x - currentEvent.end > COOLDOWN_MINS * 60 * 1000) {
                 events.push(currentEvent);
                 currentEvent = null;
             }
         }
     }
+    // Add the last event if it's still ongoing
     if (currentEvent) {
         events.push(currentEvent);
     }
@@ -414,11 +368,7 @@ export const useForecastData = (
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
-    
-    const nzMagPromises = NZ_MAG_STATIONS.map(station => {
-        const url = `${GEONET_API_URL}/geomag/${station}/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
-        return fetch(url).then(res => res.json()).then(data => ({ station, data }));
-    });
+    const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
     
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
@@ -427,10 +377,9 @@ export const useForecastData = (
       fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
-      ...nzMagPromises
+      fetch(nzMagUrl).then(res => res.json())
     ]);
-    
-    const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult, ...nzMagResults] = results;
+    const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
@@ -528,23 +477,21 @@ export const useForecastData = (
       setGoes19Data(processed); if (processed.length > 0) anyGoesDataFound = true;
     }
     
-    const newNzMagData: Record<string, any> = {};
-    let allNzMagLoaded = true;
-    nzMagResults.forEach(result => {
-        if (result.status === 'fulfilled' && result.value && Array.isArray(result.value.data) && result.value.data.length > 0) {
-            const { station, data } = result.value;
-            newNzMagData[station] = {
-                ...result.value,
-                data: data.map((d: any) => ({ x: new Date(d.ts).getTime(), y: d.val }))
-            };
-        } else {
-            allNzMagLoaded = false;
-            const station = (result as any).value?.station || 'Unknown';
-            console.error(`Failed to load data for NZ Mag station ${station}:`, (result as any).reason || 'Empty data');
+    if (nzMagResult.status === 'fulfilled' && Array.isArray(nzMagResult.value) && nzMagResult.value.length > 0) {
+        const processed = nzMagResult.value.map((series: any) => ({
+            ...series,
+            data: series.data.map((d: any) => ({ x: new Date(d.ts).getTime(), y: d.val }))
+        }));
+        setNzMagData(processed);
+        setLoadingNzMag(null);
+    } else {
+        setLoadingNzMag('No NZ magnetometer data available.');
+        if(nzMagResult.status === 'rejected') {
+          console.error("GeoNet API Error:", nzMagResult.reason);
+        } else if (nzMagResult.status === 'fulfilled' && (!Array.isArray(nzMagResult.value) || nzMagResult.value.length === 0)) {
+            console.warn("GeoNet API returned empty or invalid data:", nzMagResult.value);
         }
-    });
-    setNzMagData(newNzMagData);
-    setLoadingNzMag(allNzMagLoaded ? null : 'Loading NZ magnetometer data...');
+    }
 
     if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
     if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
@@ -631,9 +578,7 @@ export const useForecastData = (
     loadingMagnetometer,
     nzMagData, 
     loadingNzMag, 
-    nzMagSubstormEvents,
-    localAeAoData,
-    loadingAeAo,
+    nzMagSubstormEvents, // NEW
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,
@@ -646,4 +591,4 @@ export const useForecastData = (
   };
 
 };
-//--- END OF FILE src/hooks/useForecastData.ts ---
+//--- END OF FILE src/hooks/useForecastData.ts ---```
