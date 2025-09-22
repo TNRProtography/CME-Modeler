@@ -480,19 +480,23 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     {simpleViewStatus.emoji} {simpleViewStatus.text}
                                 </div>
                                 
-                                <div className="mt-6">
-                                    <div className="text-sm font-semibold text-neutral-300 mb-1">Confidence</div>
-                                    <div className="w-full bg-neutral-700 rounded-full h-2.5 max-w-sm mx-auto">
-                                        <div className="bg-sky-500 h-2.5 rounded-full" style={{width: `${substormForecast.likelihood}%`}}></div>
+                                {auroraScore !== null && auroraScore >= 10 && (
+                                    <div className="mt-6">
+                                        <div className="text-sm font-semibold text-neutral-300 mb-1">Confidence</div>
+                                        <div className="w-full bg-neutral-700 rounded-full h-2.5 max-w-sm mx-auto">
+                                            <div className="bg-sky-500 h-2.5 rounded-full" style={{width: `${substormForecast.likelihood}%`}}></div>
+                                        </div>
+                                        <div className="text-xs text-neutral-400 mt-1">{substormForecast.likelihood}% chance of substorm activity</div>
                                     </div>
-                                    <div className="text-xs text-neutral-400 mt-1">{substormForecast.likelihood}% chance of substorm activity</div>
-                                </div>
+                                )}
 
                                 <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto">
                                     <p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p>
                                 </div>
                             </div>
                             
+                            <AuroraSightings isDaylight={isDaylight} />
+
                             <ActivitySummaryDisplay summary={activitySummary} />
 
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
