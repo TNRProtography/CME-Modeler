@@ -503,27 +503,32 @@ export const useForecastData = (
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentHistory = auroraScoreHistory.filter(h => h.timestamp >= twentyFourHoursAgo);
-    if (recentHistory.length === 0) { return null; }
-    const highestScore = recentHistory.reduce((max, current) => { return current.finalScore > max.finalScore ? current : max; }, { finalScore: -1, timestamp: 0 });
-    const substormEvents: ActivitySummary['substormEvents'] = [];
-    let currentEvent: ActivitySummary['substormEvents'][0] | null = null;
-    const SUBSTORM_PROXY_THRESHOLD = 30;
-    recentHistory.forEach((point, index) => {
-      const isWatchCondition = point.baseScore >= SUBSTORM_PROXY_THRESHOLD;
-      if (isWatchCondition && !currentEvent) {
-        currentEvent = { start: point.timestamp, end: point.timestamp, peakProbability: 0, peakStatus: 'WATCH' };
-      } else if (isWatchCondition && currentEvent) {
-        currentEvent.end = point.timestamp;
-      } else if (!isWatchCondition && currentEvent) {
-        substormEvents.push(currentEvent);
-        currentEvent = null;
-      }
-      if (index === recentHistory.length - 1 && currentEvent) {
-        substormEvents.push(currentEvent);
-      }
-    });
-    return { highestScore: { finalScore: highestScore.finalScore, timestamp: highestScore.timestamp, }, substormEvents, };
-  }, [auroraScoreHistory]);
+    
+    if (recentHistory.length === 0) {
+      return null;
+    }
+    
+    const highestScore = recentHistory.reduce((max, current) => {
+        return current.finalScore > max.finalScore ? current : max;
+    }, { finalScore: -1, timestamp: 0 });
+
+    // --- MODIFICATION: Use nzMagSubstormEvents for the summary ---
+    const substormEvents = nzMagSubstormEvents.map(event => ({
+        start: event.start,
+        end: event.end,
+        peakProbability: 0, // Placeholder as this is historical data
+        peakStatus: 'Detected' // Placeholder
+    }));
+    // --- END MODIFICATION ---
+
+    return {
+        highestScore: {
+            finalScore: highestScore.finalScore,
+            timestamp: highestScore.timestamp,
+        },
+        substormEvents,
+    };
+  }, [auroraScoreHistory, nzMagSubstormEvents]); // --- MODIFICATION: Added nzMagSubstormEvents dependency ---
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -591,4 +596,4 @@ export const useForecastData = (
   };
 
 };
-//--- END OF FILE src/hooks/useForecastData.ts ---```
+//--- END OF FILE src/hooks/useForecastData.ts ---

@@ -196,7 +196,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null); // NEW
+    const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
+    // --- NEW: State for toggling the magnetometer view ---
+    const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('goes');
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -481,46 +483,75 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}>
                             <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
                         </ForecastChartPanel>
-
-                        <ForecastChartPanel title="Substorm Watch (GOES)" currentValue={substormForecast.status.replace('_', ' ')} emoji="⚡" onOpenModal={() => openModal('substorm')}>
-                           <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
-                        </ForecastChartPanel>
                         
+                        {/* --- MODIFICATION: Combined Magnetometer Panel --- */}
                         <ForecastChartPanel 
-                            title="NZ Magnetometer (West Melton)" 
+                            title={activeMagnetometer === 'goes' ? "Substorm Watch (GOES)" : "NZ Magnetometer (West Melton)"}
                             currentValue={
-                                substormForecast.status === 'ONSET' && nzMagData.length > 0 
-                                ? `ONSET DETECTED <span class='text-sm block'>Max Delta: ${latestMaxDelta?.toFixed(1)} nT/min</span>` 
-                                : "Monitoring..."
+                                activeMagnetometer === 'goes' 
+                                ? substormForecast.status.replace('_', ' ')
+                                : (substormForecast.status === 'ONSET' && nzMagData.length > 0 
+                                    ? `ONSET DETECTED <span class='text-sm block'>Max Delta: ${latestMaxDelta?.toFixed(1)} nT/min</span>` 
+                                    : "Monitoring...")
                             } 
-                            emoji="📡" 
-                            onOpenModal={() => openModal('nz-mag')}
+                            emoji={activeMagnetometer === 'goes' ? "⚡" : "📡"}
+                            onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
                         >
-                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="md:col-span-2">
-                                    <NzMagnetometerChart data={nzMagData} events={nzMagSubstormEvents} selectedEvent={selectedNzMagEvent} loadingMessage={loadingNzMag} />
-                                </div>
-                                <div className="md:col-span-1">
-                                    <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
-                                    <div className="space-y-2 max-h-[250px] overflow-y-auto styled-scrollbar pr-2">
-                                        {nzMagSubstormEvents.length > 0 ? (
-                                            nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                                <div 
-                                                    key={index}
-                                                    onClick={() => setSelectedNzMagEvent(event)}
-                                                    className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                                >
-                                                    <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                    <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                        )}
-                                    </div>
-                                </div>
+                           <div className="flex justify-center items-center gap-4 mb-2">
+                                <button
+                                    onClick={() => setActiveMagnetometer('goes')}
+                                    className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                >
+                                    Satellite Data (GOES)
+                                </button>
+                                <button
+                                    onClick={() => setActiveMagnetometer('nz')}
+                                    className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                >
+                                    Ground Confirmation (NZ)
+                                </button>
                            </div>
+
+                           {activeMagnetometer === 'goes' ? (
+                                <SubstormChart 
+                                    goes18Data={goes18Data} 
+                                    goes19Data={goes19Data} 
+                                    annotations={getMagnetometerAnnotations()} 
+                                    loadingMessage={loadingMagnetometer} 
+                                />
+                           ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="md:col-span-2">
+                                        <NzMagnetometerChart 
+                                            data={nzMagData} 
+                                            events={nzMagSubstormEvents} 
+                                            selectedEvent={selectedNzMagEvent} 
+                                            loadingMessage={loadingNzMag} 
+                                        />
+                                    </div>
+                                    <div className="md:col-span-1">
+                                        <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center">Past 24h Events</h4>
+                                        <div className="space-y-2 max-h-[250px] overflow-y-auto styled-scrollbar pr-2">
+                                            {nzMagSubstormEvents.length > 0 ? (
+                                                nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                    <div 
+                                                        key={index}
+                                                        onClick={() => setSelectedNzMagEvent(event)}
+                                                        className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                    >
+                                                        <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                        <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                            )}
+                                        </div>
+                                    </div>
+                               </div>
+                           )}
                         </ForecastChartPanel>
+                        {/* --- END MODIFICATION --- */}
 
                         <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
                             <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
