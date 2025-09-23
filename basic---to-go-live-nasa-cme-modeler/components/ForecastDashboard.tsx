@@ -451,11 +451,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, [auroraScore]);
 
     const actionOneLiner = useMemo(() => {
+        const score = auroraScore ?? 0;
+
         if (isDaylight) return "It's daytime. Check back after sunset for the nighttime forecast.";
-        if (substormForecast.status === 'ONSET') return "GO NOW! An aurora eruption is detected. Look south immediately!";
+        
+        if (substormForecast.status === 'ONSET') {
+            if (score < 20) return "An eruption is underway, but needs more power. Currently not worth heading out for.";
+            if (score < 30) return "An eruption has started and is heading in the right direction, but needs a little more power.";
+            if (score < 50) return "An eruption is underway! Cameras should start to pick up good activity. Find a dark spot.";
+            return "GO NOW! An aurora eruption is detected with good power. Look south immediately!";
+        }
+
         if (substormForecast.status === 'IMMINENT_30') return "GET READY! An eruption is highly likely within 30 minutes. Head to your spot.";
         
-        const score = auroraScore ?? 0;
         if (score >= 50) return "CONDITIONS ARE GOOD. A visible aurora is possible. Find a dark spot and be patient.";
         if (score >= 35) return "WORTH A LOOK. A modern phone might capture an aurora. Find a very dark location.";
         if (score >= 20) return "CAMERA ONLY. A DSLR/Mirrorless with a long exposure may pick up a faint glow.";
@@ -621,21 +629,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </button>
                                </div>
                                
-                               <div className="h-[350px]">
+                               <div className="min-h-[350px]">
                                     {activeMagnetometer === 'goes' ? (
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
-                                            <div className="md:col-span-3 h-full">
-                                                <SubstormChart 
-                                                    goes18Data={goes18Data} 
-                                                    goes19Data={goes19Data} 
-                                                    annotations={getMagnetometerAnnotations()} 
-                                                    loadingMessage={loadingMagnetometer} 
-                                                />
-                                            </div>
+                                        <div className="h-full">
+                                            <SubstormChart 
+                                                goes18Data={goes18Data} 
+                                                goes19Data={goes19Data} 
+                                                annotations={getMagnetometerAnnotations()} 
+                                                loadingMessage={loadingMagnetometer} 
+                                            />
                                         </div>
                                     ) : (
-                                        <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
-                                            <div className="md:col-span-2 h-full">
+                                        <div className={`flex flex-col md:flex-row gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
+                                            <div className="w-full md:w-2/3 h-full">
                                                 <NzMagnetometerChart 
                                                     data={nzMagData} 
                                                     events={nzMagSubstormEvents} 
@@ -643,15 +649,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                                     loadingMessage={loadingNzMag} 
                                                 />
                                             </div>
-                                            <div className="md:col-span-1 h-full flex flex-col">
+                                            <div className="w-full md:w-1/3 h-full flex flex-col mt-4 md:mt-0 bg-neutral-900/50 p-3 rounded-lg">
                                                 <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
-                                                <div className="space-y-2 flex-grow overflow-y-auto styled-scrollbar pr-2">
+                                                <div className="flex-grow overflow-y-auto styled-scrollbar pr-2 min-h-[100px]">
                                                     {nzMagSubstormEvents.length > 0 ? (
                                                         nzMagSubstormEvents.slice().reverse().map((event, index) => (
                                                             <div 
                                                                 key={index}
                                                                 onClick={() => setSelectedNzMagEvent(event)}
-                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors mb-2 ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
                                                             >
                                                                 <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                                                                 <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
@@ -744,4 +750,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-//--- END OF FILE src/components/ForecastDashboard.tsx ---
+//--- END OF FI
