@@ -185,6 +185,39 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
     );
 };
 
+// --- START OF MODIFICATION: New component for the IPS Panel ---
+interface InterplanetaryShockPanelProps {
+    shocks: InterplanetaryShock[];
+    onSelectShock: (shock: InterplanetaryShock) => void;
+    onOpenModal: () => void;
+}
+
+const InterplanetaryShockPanel: React.FC<InterplanetaryShockPanelProps> = ({ shocks, onSelectShock, onOpenModal }) => {
+    return (
+        <div id="ips-shocks-section" className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+            <div className="flex justify-center items-center gap-2">
+                <h2 className="text-2xl font-bold text-white text-center">Recent Interplanetary Shocks</h2>
+                <button onClick={onOpenModal} className="p-1 rounded-full text-neutral-400 hover:text-neutral-100" title="About Interplanetary Shocks">
+                    <GuideIcon className="w-6 h-6" />
+                </button>
+            </div>
+            <div className="overflow-y-auto max-h-96 styled-scrollbar pr-2">
+                <ul className="space-y-3">
+                    {shocks.map((shock) => (
+                        <li key={shock.activityID} onClick={() => onSelectShock(shock)} className="bg-neutral-900/80 p-3 rounded-lg border border-neutral-700/60 cursor-pointer transition-all hover:bg-neutral-800/80 hover:border-sky-500/70">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="font-semibold text-sky-300">{shock.location}</span>
+                                <span className="text-xs text-neutral-400">{formatNZTimestamp(shock.eventTime)}</span>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+};
+// --- END OF MODIFICATION ---
+
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget }) => {
     const {
@@ -201,6 +234,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
     const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
     const [viewMode, setViewMode] = useState<'simple' | 'advanced'>('simple');
+    // --- START OF MODIFICATION: Added state for selected IPS ---
+    const [selectedIps, setSelectedIps] = useState<InterplanetaryShock | null>(null);
+    // --- END OF MODIFICATION ---
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -587,6 +623,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             
                             <ActivitySummaryDisplay summary={activitySummary} />
 
+                            {/* --- START OF MODIFICATION: Conditionally render IPS Panel --- */}
+                            {interplanetaryShockData && interplanetaryShockData.length > 0 && (
+                                <InterplanetaryShockPanel
+                                    shocks={interplanetaryShockData}
+                                    onSelectShock={(shock) => setSelectedIps(shock)}
+                                    onOpenModal={() => openModal('ips')}
+                                />
+                            )}
+                            {/* --- END OF MODIFICATION --- */}
+
                             {/* --- CHART PANELS --- */}
                             <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
                                 <SolarWindSpeedChart data={allSpeedData} />
@@ -745,9 +791,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
             {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
             <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
+            
+            {/* --- START OF MODIFICATION: Added modal for IPS details --- */}
+            <InfoModal 
+                isOpen={!!selectedIps} 
+                onClose={() => setSelectedIps(null)} 
+                title={`Interplanetary Shock Details`} 
+                content={ selectedIps && ( 
+                    <div className="space-y-2"> 
+                        <p><strong>Activity ID:</strong> {selectedIps.activityID}</p> 
+                        <p><strong>Event Time (NZT):</strong> {formatNZTimestamp(selectedIps.eventTime)}</p> 
+                        <p><strong>Location:</strong> {selectedIps.location}</p> 
+                        <p><strong>Instruments:</strong> {selectedIps.instruments.map(i => i.displayName).join(', ')}</p> 
+                        <p><a href={selectedIps.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> 
+                    </div> 
+                )} 
+            />
+            {/* --- END OF MODIFICATION --- */}
         </div>
     );
 };
 
 export default ForecastDashboard;
-//--- END OF FI
+//--- END OF FILE src/components/ForecastDashboard.tsx ---

@@ -5,7 +5,7 @@ import {
   SubstormActivity,
   SubstormForecast,
   ActivitySummary,
-  InterplanetaryShock,
+  InterplanetaryShock, // --- MODIFICATION: Added InterplanetaryShock import ---
 } from '../types';
 
 // --- Type Definitions ---
@@ -51,7 +51,8 @@ const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plas
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
+// --- MODIFICATION: Added NASA_IPS_URL ---
+const NASA_IPS_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/GST';
 const GEONET_API_URL = 'https://tilde.geonet.org.nz/v4/data';
 const GREYMOUTH_LATITUDE = -42.45;
 
@@ -167,6 +168,7 @@ export const useForecastData = (
   const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
   const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
+  // --- MODIFICATION: Added state for interplanetaryShockData ---
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
   const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
   const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
@@ -362,6 +364,7 @@ export const useForecastData = (
     if (isInitialLoad) setIsLoading(true);
     const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
     
+    // --- MODIFICATION: Added NASA_IPS_URL to the fetch list ---
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
@@ -486,7 +489,13 @@ export const useForecastData = (
     }
 
     if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
-    if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
+    
+    // --- MODIFICATION: Set state with IPS data ---
+    if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) {
+        setInterplanetaryShockData(ipsResult.value);
+    } else {
+        setInterplanetaryShockData([]);
+    }
 
     if (isInitialLoad) setIsLoading(false);
   }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
@@ -504,14 +513,12 @@ export const useForecastData = (
         return current.finalScore > max.finalScore ? current : max;
     }, { finalScore: -1, timestamp: 0 });
 
-    // --- MODIFICATION: Use nzMagSubstormEvents for the summary ---
     const substormEvents = nzMagSubstormEvents.map(event => ({
         start: event.start,
         end: event.end,
         peakProbability: 0, // Placeholder as this is historical data
         peakStatus: 'Detected' // Placeholder
     }));
-    // --- END MODIFICATION ---
 
     return {
         highestScore: {
@@ -520,7 +527,7 @@ export const useForecastData = (
         },
         substormEvents,
     };
-  }, [auroraScoreHistory, nzMagSubstormEvents]); // --- MODIFICATION: Added nzMagSubstormEvents dependency ---
+  }, [auroraScoreHistory, nzMagSubstormEvents]);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -575,13 +582,13 @@ export const useForecastData = (
     loadingMagnetometer,
     nzMagData, 
     loadingNzMag, 
-    nzMagSubstormEvents, // NEW
+    nzMagSubstormEvents,
     substormForecast,
     auroraScoreHistory,
     hemisphericPowerHistory,
     dailyCelestialHistory,
     owmDailyForecast,
-    interplanetaryShockData,
+    interplanetaryShockData, // --- MODIFICATION: Export the shock data ---
     locationBlurb,
     fetchAllData,
     activitySummary,
