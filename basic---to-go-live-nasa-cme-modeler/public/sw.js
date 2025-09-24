@@ -218,7 +218,7 @@ async function checkXrayFlux(env, thresholds) {
         if (th && th.value > prevState.lastNotifiedThreshold) {
           if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
             const body = th.body.replace('{CLASS}', getXrayClass(newState.peakFlux));
-            await notifyTopic(th.topic, th.title, body, env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
+            await notifyTopic(th.topic, th.title, body, env, { url: '/?page=solar-activity&section=solar-flares-section' });
             newState.lastNotifiedThreshold = th.value;
           }
         }

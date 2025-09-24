@@ -5,6 +5,7 @@ import {
   SubstormActivity,
   SubstormForecast,
   ActivitySummary,
+  InterplanetaryShock,
 } from '../types';
 
 // --- Type Definitions ---
@@ -33,15 +34,6 @@ interface RawHistoryRecord {
   baseScore: number;
   finalScore: number;
   hemisphericPower: number;
-}
-
-interface InterplanetaryShock {
-  activityID: string;
-  catalog: string;
-  eventTime: string;
-  instruments: { displayName: string }[];
-  location: string;
-  link: string;
 }
 
 // --- NEW: Type for detected NZ Mag events ---
