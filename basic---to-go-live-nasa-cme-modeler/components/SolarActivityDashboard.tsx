@@ -397,7 +397,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             }
             const processedData = data.map((flare: SolarFlare) => ({
                 ...flare,
-                hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false,
+                hasCME: flare.linkedEvents?.some((e: any) => e.activityID && e.activityID.includes('CME')) ?? false,
             }));
             setSolarFlares(processedData);
             setLoadingFlares(null);
@@ -423,6 +423,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ'));
         }
     }, []);
+
+    // --- START OF MODIFICATION ---
+    const handleViewCMEInVisualizationClick = useCallback(() => {
+        if (!selectedFlare || !selectedFlare.linkedEvents) {
+            console.error("Attempted to view CME without a selected flare or linked events.");
+            return;
+        }
+        const cmeEvent = selectedFlare.linkedEvents.find(e => e.activityID && e.activityID.includes('CME'));
+        if (cmeEvent && cmeEvent.activityID) {
+            onViewCMEInVisualization(cmeEvent.activityID);
+            setSelectedFlare(null); // Close the modal after clicking
+        } else {
+            console.warn("No CME event found in the linkedEvents for this flare.", selectedFlare);
+        }
+    }, [selectedFlare, onViewCMEInVisualization]);
+    // --- END OF MODIFICATION ---
 
 
     useEffect(() => {
@@ -699,7 +715,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                  </div>
             </div>
             {/* Flare Modal */}
-            <InfoModal isOpen={!!selectedFlare} onClose={() => setSelectedFlare(null)} title={`Flare Details: ${selectedFlare?.flrID || ''}`} content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> {selectedFlare.hasCME && (<button onClick={() => { onViewCMEInVisualization(selectedFlare.linkedEvents.find((e: any) => e.activityID.includes('CME'))?.activityID); setSelectedFlare(null); }} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors">View in CME Visualization</button>)}</div> )} />
+            <InfoModal 
+                isOpen={!!selectedFlare} 
+                onClose={() => setSelectedFlare(null)} 
+                title={`Flare Details: ${selectedFlare?.flrID || ''}`} 
+                content={ selectedFlare && ( 
+                    <div className="space-y-2"> 
+                        <p><strong>Class:</strong> {selectedFlare.classType}</p> 
+                        <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> 
+                        <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> 
+                        <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> 
+                        <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> 
+                        <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> 
+                        <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> 
+                        <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> 
+                        {/* --- START OF MODIFICATION --- */}
+                        {selectedFlare.hasCME && (
+                            <button 
+                                onClick={handleViewCMEInVisualizationClick} 
+                                className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors"
+                            >
+                                View in CME Visualization
+                            </button>
+                        )}
+                        {/* --- END OF MODIFICATION --- */}
+                    </div> 
+                )} 
+            />
             {/* IPS Modal */}
             <InfoModal isOpen={!!selectedIps} onClose={() => setSelectedIps(null)} title={`Interplanetary Shock Details`} content={ selectedIps && ( <div className="space-y-2"> <p><strong>Activity ID:</strong> {selectedIps.activityID}</p> <p><strong>Event Time (NZT):</strong> {formatNZTimestamp(selectedIps.eventTime)}</p> <p><strong>Location:</strong> {selectedIps.location}</p> <p><strong>Instruments:</strong> {selectedIps.instruments.map(i => i.displayName).join(', ')}</p> <p><a href={selectedIps.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )} />
 
