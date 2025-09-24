@@ -34,6 +34,56 @@ import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 
+// --- START OF MODIFICATION: Custom hook for Service Worker updates ---
+const useServiceWorker = () => {
+    const [updateAvailable, setUpdateAvailable] = useState(false);
+    const serviceWorkerRegistration = useRef<ServiceWorkerRegistration | null>(null);
+
+    useEffect(() => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then(registration => {
+                console.log('Service Worker registered with scope:', registration.scope);
+                serviceWorkerRegistration.current = registration;
+
+                // This event fires when a new service worker is found and installed, but is waiting to activate.
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // A new version of the app is ready!
+                                console.log('New content is available and will be used when all tabs for this page are closed.');
+                                setUpdateAvailable(true);
+                            }
+                        });
+                    }
+                });
+            }).catch(error => {
+                console.error('Service Worker registration failed:', error);
+            });
+        }
+    }, []);
+
+    const updateAssets = () => {
+        const worker = serviceWorkerRegistration.current?.waiting;
+        if (worker) {
+            worker.postMessage({ type: 'SKIP_WAITING' });
+            worker.addEventListener('statechange', (e) => {
+                // Asserting the type of e.target to access the state property
+                const target = e.target as ServiceWorker;
+                if (target.state === 'activated') {
+                    // The new service worker has taken control, reload the page to use the new assets.
+                    window.location.reload();
+                }
+            });
+        }
+    };
+
+    return { updateAvailable, updateAssets };
+};
+// --- END OF MODIFICATION ---
+
+
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -51,7 +101,6 @@ interface NavigationTarget {
   expandId?: string;
 }
 
-// --- MODIFICATION: Added type for IPS Alert Data ---
 interface IpsAlertData {
     shock: InterplanetaryShock;
     solarWind: {
@@ -66,6 +115,10 @@ const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
 
 const App: React.FC = () => {
+  // --- START OF MODIFICATION: Integrate the service worker hook ---
+  const { updateAvailable, updateAssets } = useServiceWorker();
+  // --- END OF MODIFICATION ---
+
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -107,7 +160,6 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
   
-  // --- NEW: State for IPS alert data ---
   const [ipsAlertData, setIpsAlertData] = useState<IpsAlertData | null>(null);
 
   const [showIabBanner, setShowIabBanner] = useState(false);
@@ -519,7 +571,6 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // --- NEW: Handler for IPS Alert Clicks ---
   const handleIpsAlertClick = useCallback(() => {
     setNavigationTarget({
         page: 'solar-activity',
@@ -530,6 +581,20 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`.tutorial-highlight { position: relative; z-index: 2003 !important; box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7); border-color: #3b82f6 !important; }`}</style>
+        
+        {/* --- START OF MODIFICATION: Added the Update Banner --- */}
+        {updateAvailable && (
+            <div className="bg-gradient-to-r from-sky-500 to-indigo-600 text-white text-sm font-semibold p-3 text-center relative z-[5000] flex items-center justify-center gap-4">
+                <span>A new version of the app is available.</span>
+                <button 
+                    onClick={updateAssets}
+                    className="px-4 py-1 bg-white/20 rounded-full hover:bg-white/30 transition-colors"
+                >
+                    Update Now
+                </button>
+            </div>
+        )}
+        {/* --- END OF MODIFICATION --- */}
         
         <GlobalBanner
             isFlareAlert={isFlareAlert}
