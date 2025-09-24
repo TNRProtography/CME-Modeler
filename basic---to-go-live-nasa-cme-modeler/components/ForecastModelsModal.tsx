@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
-// --- MODIFICATION: Corrected the import path for the spinner ---
 import LoadingSpinner from './icons/LoadingSpinner'; 
 import { fetchWSAEnlilSimulations, WSAEnlilSimulation } from '../services/nasaService';
 
@@ -177,7 +176,11 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                                    <p className="font-bold text-neutral-200">Model Time: {formatNZTimestamp(sim.modelCompletionTime)}</p>
                                    <a href={sim.link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-sky-600 text-white rounded text-xs hover:bg-sky-500">View Model</a>
                                </div>
-                               <p className="text-neutral-300"><strong>Associated CMEs:</strong> {sim.cmeIDs.join(', ')}</p>
+                               {/* --- START OF MODIFICATION --- */}
+                               <p className="text-neutral-300">
+                                   <strong>Associated CMEs:</strong> {sim.cmeIDs && Array.isArray(sim.cmeIDs) ? sim.cmeIDs.join(', ') : 'N/A'}
+                               </p>
+                               {/* --- END OF MODIFICATION --- */}
                                <p className="text-neutral-300"><strong>Estimated Shock Arrival:</strong> <span className="text-amber-300">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span></p>
                            </div>
                        ))}
