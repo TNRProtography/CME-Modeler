@@ -55,7 +55,7 @@ const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const SDO_AIA_193_2048_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-2048`;
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
-// --- HELPERS (Unchanged) ---
+// --- HELPERS ---
 const getCssVar = (name: string): string => {
   try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { return ''; }
 };
@@ -91,10 +91,22 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
     return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
 };
 
+// --- START OF MODIFICATION ---
 const formatNZTimestamp = (isoString: string | null | number) => {
     if (!isoString) return 'N/A';
-    try { const d = new Date(isoString); return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); } catch { return "Invalid Date"; }
+    try { 
+        const d = new Date(isoString); 
+        // Check if the date is valid before formatting
+        return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { 
+            timeZone: 'Pacific/Auckland', 
+            dateStyle: 'short', 
+            timeStyle: 'short' 
+        }); 
+    } catch { 
+        return "Invalid Date"; 
+    }
 };
+// --- END OF MODIFICATION ---
 
 const getXrayClass = (value: number | null): string => {
     if (value === null) return 'N/A';
@@ -424,7 +436,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         }
     }, []);
 
-    // --- START OF MODIFICATION ---
     const handleViewCMEInVisualizationClick = useCallback(() => {
         if (!selectedFlare || !selectedFlare.linkedEvents) {
             console.error("Attempted to view CME without a selected flare or linked events.");
@@ -438,7 +449,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             console.warn("No CME event found in the linkedEvents for this flare.", selectedFlare);
         }
     }, [selectedFlare, onViewCMEInVisualization]);
-    // --- END OF MODIFICATION ---
 
 
     useEffect(() => {
@@ -729,7 +739,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> 
                         <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> 
                         <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> 
-                        {/* --- START OF MODIFICATION --- */}
                         {selectedFlare.hasCME && (
                             <button 
                                 onClick={handleViewCMEInVisualizationClick} 
@@ -738,7 +747,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                 View in CME Visualization
                             </button>
                         )}
-                        {/* --- END OF MODIFICATION --- */}
                     </div> 
                 )} 
             />

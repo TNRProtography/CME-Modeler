@@ -114,29 +114,31 @@ export const fetchWSAEnlilSimulations = async (): Promise<WSAEnlilSimulation[]> 
 
 
 // --- DATA PROCESSING (UNCHANGED) ---
-
 // --- START OF MODIFICATION ---
 const getPredictedArrivalTime = (cme: CMEData): Date | null => {
   // This crucial check prevents the crash if linkedEvents is null or not an array.
   if (!cme.linkedEvents || !Array.isArray(cme.linkedEvents)) {
-    return null;
+      return null;
   }
-  
+
   // Safely find the shock event, checking that e and e.activityID exist first.
   const shockEvent = cme.linkedEvents.find(
-    (e) => e && typeof e.activityID === 'string' && e.activityID.includes("-GST")
+      (e) => e && typeof e.activityID === 'string' && e.activityID.includes("-GST")
   );
 
   if (shockEvent) {
-    try {
-      // The worker now sends a standard ISO string, so direct parsing is safe.
-      const parsedDate = new Date(shockEvent.activityID);
-      if (isNaN(parsedDate.getTime())) return null;
-      return parsedDate;
-    } catch (e) {
-      console.warn(`Could not parse predicted arrival time from: ${shockEvent.activityID}`, e);
-      return null;
-    }
+      try {
+          // The activityID from the raw API is complex, extract the date part for parsing
+          const dateTimeString = shockEvent.activityID.substring(0, 13);
+          const parsedDate = new Date(
+              `${dateTimeString.substring(0,4)}-${dateTimeString.substring(4,6)}-${dateTimeString.substring(6,8)}T${dateTimeString.substring(9,11)}:${dateTimeString.substring(11,13)}:00Z`
+          );
+          if (isNaN(parsedDate.getTime())) return null;
+          return parsedDate;
+      } catch (e) {
+          console.warn(`Could not parse predicted arrival time from: ${shockEvent.activityID}`, e);
+          return null;
+      }
   }
   return null;
 };
@@ -145,22 +147,18 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
 const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
-    // --- START OF MODIFICATION ---
     // Safety check for cmeAnalyses to prevent crashes on malformed data
     if (cme.cmeAnalyses && Array.isArray(cme.cmeAnalyses) && cme.cmeAnalyses.length > 0) {
-    // --- END OF MODIFICATION ---
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
       if (analysis.speed != null && analysis.longitude != null && analysis.latitude != null) {
         const isEarthDirected = Math.abs(analysis.longitude) < 45;
         
-        // --- START OF MODIFICATION ---
         // Create a Date object from the startTime string, which the worker now guarantees is in ISO format.
         const startTimeDate = new Date(cme.startTime);
         if (isNaN(startTimeDate.getTime())) {
           console.warn(`Skipping CME with invalid startTime: ${cme.startTime}`);
           return; // Continue to the next CME if the date is invalid
         }
-        // --- END OF MODIFICATION ---
 
         modelableCMEs.push({
           id: cme.activityID,

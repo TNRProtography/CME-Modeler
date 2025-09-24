@@ -14,9 +14,10 @@
 // --- API Endpoints ---
 const NOAA_XRAY_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const DONKI_GST_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/GST';
-// --- NEW: Added NOAA plasma and mag URLs ---
+// --- START OF MODIFICATION: Added URLs for live solar wind data ---
 const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
+// --- END OF MODIFICATION ---
 
 
 // --- Constants ---
@@ -88,7 +89,7 @@ async function runScheduledTasks(env) {
   console.log("Scheduled tasks completed successfully.");
 }
 
-// --- MODIFIED: Function to check for new Interplanetary Shocks and include solar wind data ---
+// --- START OF MODIFICATION: Updated IPS checker to include live solar wind data ---
 async function checkIPS(env, ipsThresholds) {
     if (!ipsThresholds) {
         console.warn("IPS notification thresholds are not configured. Skipping check.");
@@ -115,6 +116,7 @@ async function checkIPS(env, ipsThresholds) {
                 const title = "💥 Interplanetary Shock Arrived!";
                 let solarWindInfo = '';
 
+                // Fetch live solar wind data to enrich the notification
                 try {
                     const [plasmaRes, magRes] = await Promise.all([
                         fetchWithRetry(NOAA_PLASMA_URL),
@@ -152,6 +154,7 @@ async function checkIPS(env, ipsThresholds) {
         reportError(e, env, { handler: 'checkIPS' });
     }
 }
+// --- END OF MODIFICATION ---
 
 
 async function checkAuroraAndSubstorm(env, thresholds, forecastData) {
@@ -183,6 +186,7 @@ async function checkAuroraForecast(env, forecastData, auroraThresholds) {
 }
 
 
+// --- START OF MODIFICATION: Updated X-ray Flux checker to include live solar wind data ---
 async function checkXrayFlux(env, thresholds) {
   const M1_THRESHOLD = 1e-5;
   const FIVE_MINUTES_MS = 5 * 60 * 1000;
@@ -194,11 +198,29 @@ async function checkXrayFlux(env, thresholds) {
   if (xraySeries.length < 5) return;
   const currentState = xraySeries[xraySeries.length - 1];
   const prevState = await kv(env).get('STATE_xray', 'json') || { status: 'inactive', peakFlux: 0, peakTime: 0, lastNotifiedThreshold: 0, declineStartTimestamp: null };
+
+  const getSolarWindContext = async () => {
+      try {
+          const [plasmaRes, magRes] = await Promise.all([fetchWithRetry(NOAA_PLASMA_URL), fetchWithRetry(NOAA_MAG_URL)]);
+          if (plasmaRes && magRes) {
+              const plasmaData = await plasmaRes.json();
+              const magData = await magRes.json();
+              const speed = Number(plasmaData[plasmaData.length - 1][plasmaData[0].indexOf('speed')]).toFixed(0);
+              const bz = Number(magData[magData.length - 1][magData[0].indexOf('bz_gsm')]).toFixed(1);
+              if (!isNaN(speed) && !isNaN(bz)) {
+                  return `\nSolar wind: ${speed} km/s, Bz ${bz} nT.`;
+              }
+          }
+      } catch (e) { console.error("checkXrayFlux: Failed to get solar wind context.", e); }
+      return '';
+  };
+
   if (prevState.status === 'inactive') {
     if (currentState.flux >= M1_THRESHOLD) {
       const th = [...thresholds.xray].reverse().find(t => currentState.flux >= t.value);
       if (th && await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
-        const body = th.body.replace('{CLASS}', getXrayClass(currentState.flux));
+        const solarWindContext = await getSolarWindContext();
+        const body = `${th.body.replace('{CLASS}', getXrayClass(currentState.flux))}${solarWindContext}`;
         await notifyTopic(th.topic, th.title, body, env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
       }
       const newState = { status: 'rising', peakFlux: currentState.flux, peakTime: currentState.t, lastNotifiedThreshold: th ? th.value : 0, declineStartTimestamp: null };
@@ -217,8 +239,9 @@ async function checkXrayFlux(env, thresholds) {
         const th = [...thresholds.xray].reverse().find(t => newState.peakFlux >= t.value);
         if (th && th.value > prevState.lastNotifiedThreshold) {
           if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
-            const body = th.body.replace('{CLASS}', getXrayClass(newState.peakFlux));
-            await notifyTopic(th.topic, th.title, body, env, { url: '/?page=solar-activity&section=solar-flares-section' });
+            const solarWindContext = await getSolarWindContext();
+            const body = `${th.body.replace('{CLASS}', getXrayClass(newState.peakFlux))}${solarWindContext}`;
+            await notifyTopic(th.topic, th.title, body, env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
             newState.lastNotifiedThreshold = th.value;
           }
         }
@@ -241,6 +264,7 @@ async function checkXrayFlux(env, thresholds) {
     }
   }
 }
+// --- END OF MODIFICATION ---
 
 async function checkSubstormActivity(env, forecastData, substormThresholds) {
   try {
@@ -271,6 +295,7 @@ async function checkSubstormActivity(env, forecastData, substormThresholds) {
   }
 }
 
+// --- Endpoints (Unchanged) ---
 async function handleSaveSubscription(request, env) {
   if (!kv(env)) return new Response('KV namespace missing.', { status: 500 });
   try {
@@ -330,6 +355,7 @@ function buildTestPayloadByType(type, url, snapshot) {
   return { ...base, title: '🚀 Server Test Notification', body: `${snapshot}\n\nThis is a generic test push from the server.`, tag: 'test', topic: 'test' };
 }
 
+// ... (All other functions like handleTriggerTestPush, doBroadcastBatch, etc., remain unchanged) ...
 async function handleTriggerTestPush(request, env) {
   try {
     const url = new URL(request.url);
