@@ -113,22 +113,19 @@ export const fetchWSAEnlilSimulations = async (): Promise<WSAEnlilSimulation[]> 
 };
 
 
-// --- DATA PROCESSING (UNCHANGED) ---
-// --- START OF MODIFICATION ---
+// --- DATA PROCESSING ---
+
 const getPredictedArrivalTime = (cme: CMEData): Date | null => {
-  // This crucial check prevents the crash if linkedEvents is null or not an array.
   if (!cme.linkedEvents || !Array.isArray(cme.linkedEvents)) {
       return null;
   }
 
-  // Safely find the shock event, checking that e and e.activityID exist first.
   const shockEvent = cme.linkedEvents.find(
       (e) => e && typeof e.activityID === 'string' && e.activityID.includes("-GST")
   );
 
   if (shockEvent) {
       try {
-          // The activityID from the raw API is complex, extract the date part for parsing
           const dateTimeString = shockEvent.activityID.substring(0, 13);
           const parsedDate = new Date(
               `${dateTimeString.substring(0,4)}-${dateTimeString.substring(4,6)}-${dateTimeString.substring(6,8)}T${dateTimeString.substring(9,11)}:${dateTimeString.substring(11,13)}:00Z`
@@ -142,27 +139,31 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
   }
   return null;
 };
-// --- END OF MODIFICATION ---
 
 const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
-    // Safety check for cmeAnalyses to prevent crashes on malformed data
     if (cme.cmeAnalyses && Array.isArray(cme.cmeAnalyses) && cme.cmeAnalyses.length > 0) {
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
       if (analysis.speed != null && analysis.longitude != null && analysis.latitude != null) {
         const isEarthDirected = Math.abs(analysis.longitude) < 45;
         
-        // Create a Date object from the startTime string, which the worker now guarantees is in ISO format.
         const startTimeDate = new Date(cme.startTime);
         if (isNaN(startTimeDate.getTime())) {
           console.warn(`Skipping CME with invalid startTime: ${cme.startTime}`);
-          return; // Continue to the next CME if the date is invalid
+          return; 
         }
+
+        // --- START OF MODIFICATION ---
+        // Safely check if cme.instruments is an array before calling .map on it.
+        const instrumentsString = (cme.instruments && Array.isArray(cme.instruments))
+          ? cme.instruments.map(inst => inst.displayName).join(', ')
+          : 'N/A';
+        // --- END OF MODIFICATION ---
 
         modelableCMEs.push({
           id: cme.activityID,
-          startTime: startTimeDate, // Use the valid Date object
+          startTime: startTimeDate,
           speed: analysis.speed,
           longitude: analysis.longitude,
           latitude: analysis.latitude,
@@ -170,7 +171,7 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
           note: cme.note || 'No additional details.',
           predictedArrivalTime: getPredictedArrivalTime(cme),
           link: cme.link,
-          instruments: cme.instruments?.map(inst => inst.displayName).join(', ') || 'N/A',
+          instruments: instrumentsString, // Use the safely created string
           sourceLocation: cme.sourceLocation || 'N/A',
           halfAngle: analysis.halfAngle || 30
         });
