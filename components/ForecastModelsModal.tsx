@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
+// --- MODIFICATION: Corrected the import path for the spinner ---
 import LoadingSpinner from './icons/LoadingSpinner'; 
 import { fetchWSAEnlilSimulations, WSAEnlilSimulation } from '../services/nasaService';
 
@@ -26,6 +27,7 @@ const HUXT_FORECAST_IMAGE_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/
 const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo.mp4';
 const EUHFORIA_ANIMATION_URL = 'https://swe.ssa.esa.int/DOCS/portal_images/uk_ral_euhforia_earth.mp4';
 
+// --- NEW HELPER ---
 const formatNZTimestamp = (isoString: string | null | number) => {
     if (!isoString) return 'N/A';
     try { 
@@ -40,10 +42,7 @@ const formatNZTimestamp = (isoString: string | null | number) => {
 
 
 const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia, shouldPreload = false }) => {
-  // --- START OF MODIFICATION: State now stores the preview and the list of URLs separately ---
-  const [enlilPreviewUrl, setEnlilPreviewUrl] = useState<string | null>(null);
-  const [enlilAllUrls, setEnlilAllUrls] = useState<string[]>([]);
-  // --- END OF MODIFICATION ---
+  const [enlilImageUrls, setEnlilImageUrls] = useState<string[]>([]);
   const [isLoadingEnlil, setIsLoadingEnlil] = useState(true);
   const [enlilError, setEnlilError] = useState<string | null>(null);
   
@@ -63,41 +62,27 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     const huxtImage = new Image();
     huxtImage.src = HUXT_FORECAST_IMAGE_URL;
 
-    // --- START OF MODIFICATION: More efficient and memory-safe image fetching logic ---
     const fetchNoaaEnlilImages = async () => {
       setIsLoadingEnlil(true);
       setEnlilError(null);
       const potentialUrls = Array.from({ length: MAX_FRAMES_TO_CHECK }, (_, i) => `${ENLIL_BASE_URL}${i + 1}`);
-      const validUrls: string[] = [];
-      let previewUrlSet = false;
+      const results = await Promise.allSettled(
+        potentialUrls.map(url => fetch(url).then(res => {
+            if (!res.ok) throw new Error(`Frame load failed: ${res.status}`);
+            return res.blob();
+        }))
+      );
+      const successfulUrls = results
+        .map(r => r.status === 'fulfilled' ? URL.createObjectURL(r.value) : null)
+        .filter((url): url is string => url !== null);
 
-      // Check each URL sequentially to find valid frames
-      for (const url of potentialUrls) {
-          try {
-              const response = await fetch(url, { method: 'HEAD' }); // Use HEAD to check existence without downloading the body
-              if (response.ok && response.headers.get('content-type')?.startsWith('image')) {
-                  validUrls.push(url);
-                  // If we haven't set a preview yet, fetch the full image for the first valid frame
-                  if (!previewUrlSet) {
-                      const imgResponse = await fetch(url);
-                      const blob = await imgResponse.blob();
-                      setEnlilPreviewUrl(URL.createObjectURL(blob));
-                      previewUrlSet = true;
-                  }
-              }
-          } catch (error) {
-              // This can happen if the proxy worker fails or for network errors. We can ignore it and continue.
-          }
-      }
-
-      if (validUrls.length > 0) {
-        setEnlilAllUrls(validUrls);
+      if (successfulUrls.length > 0) {
+        setEnlilImageUrls(successfulUrls);
       } else {
         setEnlilError('No NOAA ENLIL images could be loaded from the proxy.');
       }
       setIsLoadingEnlil(false);
     };
-    // --- END OF MODIFICATION ---
 
     const fetchNasaEnlil = async () => {
         setIsLoadingNasaEnlil(true);
@@ -115,9 +100,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     fetchNasaEnlil();
 
     return () => {
-      if (enlilPreviewUrl) {
-        URL.revokeObjectURL(enlilPreviewUrl);
-      }
+      enlilImageUrls.forEach(url => URL.revokeObjectURL(url));
     };
   }, [isOpen, shouldPreload]);
 
@@ -165,17 +148,17 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
             </div>
             
             <div 
-              onClick={() => enlilAllUrls.length > 0 && setViewerMedia({ urls: enlilAllUrls, type: 'animation' })}
+              onClick={() => enlilImageUrls.length > 0 && setViewerMedia({ urls: enlilImageUrls, type: 'animation' })}
               className="bg-neutral-900 p-2 rounded-lg relative min-h-[300px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
             >
                 <h4 className="font-semibold text-center mb-2 absolute top-2 left-0 right-0">WSA-ENLIL Animation (NOAA)</h4>
-                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Finding latest NOAA forecast frames...</p></div>}
+                {isLoadingEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching NOAA forecast...</p></div>}
                 {enlilError && <p className="text-red-400 text-center">{enlilError}</p>}
-                {!isLoadingEnlil && enlilPreviewUrl && (
+                {!isLoadingEnlil && enlilImageUrls.length > 0 && (
                   <>
-                    <img src={enlilPreviewUrl} alt="ENLIL Forecast Preview" className="rounded w-full" />
+                    <img src={enlilImageUrls[0]} alt="ENLIL Forecast Preview" className="rounded w-full" />
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                      <p className="text-white text-lg font-bold">Click to Play Animation ({enlilAllUrls.length} frames)</p>
+                      <p className="text-white text-lg font-bold">Click to Play Animation</p>
                     </div>
                   </>
                 )}
@@ -194,9 +177,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                                    <p className="font-bold text-neutral-200">Model Time: {formatNZTimestamp(sim.modelCompletionTime)}</p>
                                    <a href={sim.link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-sky-600 text-white rounded text-xs hover:bg-sky-500">View Model</a>
                                </div>
-                               <p className="text-neutral-300">
-                                   <strong>Associated CMEs:</strong> {sim.cmeIDs && Array.isArray(sim.cmeIDs) ? sim.cmeIDs.join(', ') : 'N/A'}
-                               </p>
+                               <p className="text-neutral-300"><strong>Associated CMEs:</strong> {sim.cmeIDs.join(', ')}</p>
                                <p className="text-neutral-300"><strong>Estimated Shock Arrival:</strong> <span className="text-amber-300">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span></p>
                            </div>
                        ))}
