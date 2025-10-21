@@ -1,38 +1,35 @@
 // --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import SimulationCanvas from './SimulationCanvas';
-import ControlsPanel from './ControlsPanel';
-import CMEListPanel from './CMEListPanel';
-import TimelineControls from './TimelineControls';
-import PlanetLabel from './PlanetLabel';
-import TutorialModal from './TutorialModal'; // This is the general tutorial modal
-import LoadingOverlay from './LoadingOverlay';
-import MediaViewerModal from './MediaViewerModal';
-import { fetchCMEData } from './nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
-import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
+import SimulationCanvas from '@/SimulationCanvas';
+import ControlsPanel from '@/ControlsPanel';
+import CMEListPanel from '@/CMEListPanel';
+import TimelineControls from '@/TimelineControls';
+import PlanetLabel from '@/PlanetLabel';
+import TutorialModal from '@/TutorialModal'; // This is the general tutorial modal
+import LoadingOverlay from '@/LoadingOverlay';
+import MediaViewerModal from '@/MediaViewerModal';
+import { fetchCMEData } from '@/nasaService';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from '@/types';
+import { SCENE_SCALE } from '@/constants'; // Import SCENE_SCALE for occlusion check
 
-// Icon Imports
+// Icon Imports - Assuming these paths are correct as they were not in the error log.
 import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
+import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
 import SunIcon from './components/icons/SunIcon';
 import CmeIcon from './components/icons/CmeIcon';
-import ForecastModelsModal from './ForecastModelsModal';
 
-// Dashboard and Banner Imports
-import ForecastDashboard from './ForecastDashboard';
-import SolarActivityDashboard from './SolarActivityDashboard';
-import GlobalBanner from './GlobalBanner';
-
-// Modal Imports
-import SettingsModal from './SettingsModal';
-import FirstVisitTutorial from './FirstVisitTutorial';
-import CmeModellerTutorial from './CmeModellerTutorial';
+import ForecastModelsModal from '@/ForecastModelsModal';
+import ForecastDashboard from '@/ForecastDashboard';
+import SolarActivityDashboard from '@/SolarActivityDashboard';
+import GlobalBanner from '@/GlobalBanner';
+import SettingsModal from '@/SettingsModal';
+import FirstVisitTutorial from '@/FirstVisitTutorial';
+import CmeModellerTutorial from '@/CmeModellerTutorial';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
