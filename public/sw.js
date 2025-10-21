@@ -300,34 +300,42 @@ async function handleGetStatus(request, env) {
 
 function buildTestPayloadByType(type, url, snapshot) {
   const base = { ts: Date.now(), data: { url: '/' } };
+  let icon = '/icons/android-chrome-192x192.png';
+  let payload;
 
   if (type === 'ips') {
     const topic = 'ips-shock';
-    return { ...base, title: 'Test: Interplanetary Shock', body: `Simulated shock arrival.\n\n${snapshot}`, tag: topic, topic };
-  }
-  if (type === 'flare') {
-    const level = (url.searchParams.get('level') || 'M1').toUpperCase();
-    const valid = new Set(['M1', 'M5', 'X1', 'X5', 'X10']);
-    const chosen = valid.has(level) ? level : 'M1';
-    const topic = `flare-${chosen}`;
-    return { ...base, title: `Test: Solar Flare (${chosen})`, body: `Simulated ${chosen} flare.\n\n${snapshot}`, tag: topic, topic };
-  }
-  if (type === 'peak') {
+    icon = '/icons/flare_icon192.png';
+    payload = { ...base, title: 'Test: Interplanetary Shock', body: `Simulated shock arrival.\n\n${snapshot}`, tag: topic, topic };
+  } else if (type === 'flare' || type === 'peak') {
+    icon = '/icons/flare_icon192.png';
+    if (type === 'peak') {
       const topic = 'flare-peak';
-      return { ...base, title: `Test: Solar Flare Peaked`, body: `Simulated flare peak notification.\n\n${snapshot}`, tag: topic, topic };
+      payload = { ...base, title: `Test: Solar Flare Peaked`, body: `Simulated flare peak notification.\n\n${snapshot}`, tag: topic, topic };
+    } else {
+      const level = (url.searchParams.get('level') || 'M1').toUpperCase();
+      const valid = new Set(['M1', 'M5', 'X1', 'X5', 'X10']);
+      const chosen = valid.has(level) ? level : 'M1';
+      const topic = `flare-${chosen}`;
+      payload = { ...base, title: `Test: Solar Flare (${chosen})`, body: `Simulated ${chosen} flare.\n\n${snapshot}`, tag: topic, topic };
+    }
+  } else if (type === 'aurora' || type === 'substorm') {
+    icon = '/icons/aurora_icon192.png';
+    if (type === 'aurora') {
+      const pct = parseInt(url.searchParams.get('pct') || '60', 10);
+      const allowed = [40, 50, 60, 80];
+      const chosen = allowed.includes(pct) ? pct : 60;
+      const topic = `aurora-${chosen}percent`;
+      payload = { ...base, title: `Test: Aurora Alert (${chosen}%)`, body: `Simulated forecast hit ${chosen}%.\n\n${snapshot}`, tag: topic, topic, data: { ...base.data, baseScore: chosen } };
+    } else { // substorm
+      const topic = 'substorm-forecast';
+      payload = { ...base, title: `Test: Aurora Substorm Expected`, body: `Simulated substorm forecast window.\n\n${snapshot}`, tag: topic, topic };
+    }
+  } else { // generic test
+    payload = { ...base, title: '🚀 Server Test Notification', body: `${snapshot}\n\nThis is a generic test push from the server.`, tag: 'test', topic: 'test' };
   }
-  if (type === 'aurora') {
-    const pct = parseInt(url.searchParams.get('pct') || '60', 10);
-    const allowed = [40, 50, 60, 80];
-    const chosen = allowed.includes(pct) ? pct : 60;
-    const topic = `aurora-${chosen}percent`;
-    return { ...base, title: `Test: Aurora Alert (${chosen}%)`, body: `Simulated forecast hit ${chosen}%.\n\n${snapshot}`, tag: topic, topic, data: { ...base.data, baseScore: chosen } };
-  }
-  if (type === 'substorm') {
-    const topic = 'substorm-forecast';
-    return { ...base, title: `Test: Aurora Substorm Expected`, body: `Simulated substorm forecast window.\n\n${snapshot}`, tag: topic, topic };
-  }
-  return { ...base, title: '🚀 Server Test Notification', body: `${snapshot}\n\nThis is a generic test push from the server.`, tag: 'test', topic: 'test' };
+
+  return { ...payload, icon };
 }
 
 async function handleTriggerTestPush(request, env) {
@@ -349,7 +357,21 @@ async function handleTriggerSelfTest(request, env) {
   try {
     const { subscription, category } = await request.json();
     if (!subscription || !subscription.endpoint) { return json({ error: 'Invalid subscription object provided.' }, 400); }
-    const payload = { title: `Spot The Aurora: Test`, body: `This is a test notification for the '${category || 'general'}' category.`, tag: `test-${category}-${Date.now()}`, data: { url: '/', category: category || 'general' } };
+
+    let icon = '/icons/android-chrome-192x192.png';
+    if (category?.startsWith('flare-')) {
+        icon = '/icons/flare_icon192.png';
+    } else if (category?.startsWith('aurora-') || category?.startsWith('substorm-')) {
+        icon = '/icons/aurora_icon192.png';
+    }
+    
+    const payload = { 
+        title: `Spot The Aurora: Test`, 
+        body: `This is a test notification for the '${category || 'general'}' category.`, 
+        tag: `test-${category}-${Date.now()}`, 
+        data: { url: '/', category: category || 'general' },
+        icon: icon
+    };
     const response = await sendPushWithPayload(subscription, payload, env);
     if (response.ok) { return json({ success: true, message: 'Test push sent successfully.' }); }
     else { const errorBody = await response.text(); console.error(`Failed to send self-test push: ${response.status}`, errorBody); return json({ success: false, message: `Push service responded with status ${response.status}.` }, 500); }
@@ -367,11 +389,20 @@ async function handleBroadcastBatch(request, env) {
   }
   return json(res);
 }
+
 async function notifyTopic(topic, title, body, env, data = { url: '/' }) {
-  const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now() };
+  let icon = '/icons/android-chrome-192x192.png';
+  if (topic.startsWith('flare-') || topic.startsWith('ips-')) {
+    icon = '/icons/flare_icon192.png';
+  } else if (topic.startsWith('aurora-') || topic.startsWith('substorm-')) {
+    icon = '/icons/aurora_icon192.png';
+  }
+
+  const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now(), icon };
   await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 3600 });
   await startBroadcast({ mode: 'topic', topic, overridePayload: payload }, env);
 }
+
 async function startBroadcast(options, env) {
   const res = await doBroadcastBatch({ ...options, cursor: undefined }, env);
   if (!res.list_complete && res.next_cursor && env.SELF_URL) {
