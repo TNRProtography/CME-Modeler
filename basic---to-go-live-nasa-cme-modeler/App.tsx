@@ -622,7 +622,7 @@ const App: React.FC = () => {
                     isOpen={isForecastModelsOpen} 
                     onClose={() => setIsForecastModelsOpen(false)} 
                     setViewerMedia={setViewerMedia} 
-                    shouldPreload={true} 
+                    shouldPreload={false} 
                 />
             </> )}
             {activePage === 'forecast' && (
