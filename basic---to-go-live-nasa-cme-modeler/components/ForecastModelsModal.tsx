@@ -25,7 +25,7 @@ const HUXT_FORECAST_IMAGE_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/
 const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo.mp4';
 const EUHFORIA_ANIMATION_URL = 'https://swe.ssa.esa.int/DOCS/portal_images/uk_ral_euhforia_earth.mp4';
 
-// --- HELPER ---
+// --- HELPERS ---
 const formatNZTimestamp = (isoString: string | null | number) => {
     if (!isoString) return 'N/A';
     try { 
@@ -37,6 +37,29 @@ const formatNZTimestamp = (isoString: string | null | number) => {
         }); 
     } catch { return "Invalid Date"; }
 };
+
+const generateEnlilGifUrl = (simulation: WSAEnlilSimulation): string | null => {
+  if (!simulation.modelCompletionTime || !simulation.simulationID) {
+    return null;
+  }
+  try {
+    const date = new Date(simulation.modelCompletionTime);
+    const year = date.getUTCFullYear();
+    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = date.getUTCDate().toString().padStart(2, '0');
+    const hours = date.getUTCHours().toString().padStart(2, '0');
+    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+    const seconds = date.getUTCSeconds().toString().padStart(2, '0');
+    const dateTimeString = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+    const versionMatch = simulation.simulationID.match(/(\d+\.\d+)$/);
+    const version = versionMatch?.[1] || '2.0'; // Default to 2.0 if parsing fails
+    return `https://iswa.gsfc.nasa.gov/downloads/${dateTimeString}_${version}_anim.tim-den.gif`;
+  } catch (error) {
+    console.error("Error generating ENLIL GIF URL:", error);
+    return null;
+  }
+};
+
 
 const ModelCard: React.FC<{ title: string; source: string; sourceUrl: string; children: React.ReactNode; description: React.ReactNode; }> = ({ title, source, sourceUrl, children, description }) => (
     <section className="bg-neutral-900/70 border border-neutral-700/60 rounded-lg p-4 flex flex-col">
@@ -71,11 +94,9 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     }
     hasTriggeredFetch.current = true;
 
-    // Preload HUXT image for better UX
     const huxtImage = new Image();
     huxtImage.src = HUXT_FORECAST_IMAGE_URL;
 
-    // Fetch NOAA ENLIL Images
     const fetchNoaaEnlilImages = async () => {
       setIsLoadingNoaaEnlil(true);
       setNoaaEnlilError(null);
@@ -103,13 +124,17 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
       }
     };
 
-    // Fetch NASA ENLIL Simulation List
     const fetchNasaEnlilList = async () => {
         setIsLoadingNasaEnlil(true);
         setNasaEnlilError(null);
         try {
             const data = await fetchWSAEnlilSimulations();
-            setNasaEnlilSimulations(data);
+            const sortedData = data.sort((a, b) => {
+                if (a.isEarthGB && !b.isEarthGB) return -1;
+                if (!a.isEarthGB && b.isEarthGB) return 1;
+                return new Date(b.modelCompletionTime).getTime() - new Date(a.modelCompletionTime).getTime();
+            });
+            setNasaEnlilSimulations(sortedData);
         } catch (error) {
             setNasaEnlilError(error instanceof Error ? error.message : "An unknown error occurred.");
         }
@@ -195,18 +220,42 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                 {isLoadingNasaEnlil && <div className="flex-grow flex items-center justify-center"><div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching simulations...</p></div></div>}
                 {nasaEnlilError && <p className="text-red-400 text-center text-sm p-4 flex-grow flex items-center justify-center">{nasaEnlilError}</p>}
                 {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
-                   <div className="space-y-3 overflow-y-auto max-h-[500px] styled-scrollbar pr-2">
-                       {nasaEnlilSimulations.slice(0, 5).map(sim => (
-                           <div key={sim.simulationID} className="bg-neutral-900/60 p-3 rounded-md text-xs">
-                               <div className="flex justify-between items-center mb-2">
-                                   <p className="font-bold text-neutral-200">Model Time: {formatNZTimestamp(sim.modelCompletionTime)}</p>
-                                   <a href={sim.link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-sky-600 text-white rounded text-xs hover:bg-sky-500">View</a>
-                               </div>
-                               {/* FIX: Check if cmeIDs exists before trying to join it */}
-                               <p className="text-neutral-300"><strong>CMEs:</strong> {sim.cmeIDs?.join(', ') || 'N/A'}</p>
-                               {sim.estimatedShockArrivalTime && <p className="text-neutral-300"><strong>Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span></p>}
-                           </div>
-                       ))}
+                   <div className="space-y-2 overflow-y-auto max-h-[500px] styled-scrollbar pr-2">
+                       {nasaEnlilSimulations.slice(0, 10).map(sim => {
+                            const gifUrl = generateEnlilGifUrl(sim);
+                            return (
+                               <button
+                                 key={sim.simulationID}
+                                 onClick={() => gifUrl && setViewerMedia({ url: gifUrl, type: 'image' })}
+                                 disabled={!gifUrl}
+                                 className="w-full text-left bg-neutral-900/60 p-3 rounded-md text-xs transition-colors hover:bg-neutral-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                               >
+                                 <div className="flex justify-between items-start mb-2">
+                                   <div>
+                                     <p className="font-bold text-neutral-200">Model Time:</p>
+                                     <p>{formatNZTimestamp(sim.modelCompletionTime)}</p>
+                                   </div>
+                                   {sim.isEarthGB ? (
+                                     <span className="px-2 py-1 rounded bg-green-500/20 text-green-300 font-bold text-xs border border-green-500/50">
+                                       Earth Directed
+                                     </span>
+                                   ) : (
+                                     <span className="px-2 py-1 rounded bg-red-500/20 text-red-300 font-bold text-xs border border-red-500/50">
+                                       Not Earth Directed
+                                     </span>
+                                   )}
+                                 </div>
+                                 <p className="text-neutral-300">
+                                   <strong>CMEs:</strong> {sim.cmeIDs?.join(', ') || 'N/A'}
+                                 </p>
+                                 {sim.estimatedShockArrivalTime && (
+                                   <p className="text-neutral-300">
+                                     <strong>Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
+                                   </p>
+                                 )}
+                               </button>
+                            )
+                       })}
                    </div>
                 )}
                  {!isLoadingNasaEnlil && nasaEnlilSimulations.length === 0 && <p className="text-neutral-400 italic text-center flex-grow flex items-center justify-center">No recent NASA simulations found.</p>}
