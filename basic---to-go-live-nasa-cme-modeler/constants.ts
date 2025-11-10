@@ -208,7 +208,6 @@ void main() {
 
 // --- NEW: Shaders for the Flux Rope ---
 export const FLUX_ROPE_VERTEX_SHADER = `
-uniform float uConeAngle;
 varying vec2 vUv;
 varying float vFresnel;
 
