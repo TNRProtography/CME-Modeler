@@ -228,19 +228,23 @@ const App: React.FC = () => {
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
-  const loadCMEData = useCallback(async (days: TimeRange) => {
-    setIsLoading(true);
-    setFetchError(null);
-    setCurrentlyModeledCMEId(null);
-    setSelectedCMEForInfo(null);
-    setTimelineActive(false);
-    setTimelinePlaying(false);
-    setTimelineScrubberValue(0);
-    resetClock();
-    setDataVersion((v: number) => v + 1);
+  const loadCMEData = useCallback(async (days: TimeRange, isBackgroundRefresh: boolean = false) => {
+    if (!isBackgroundRefresh) {
+      setIsLoading(true);
+      setFetchError(null);
+      setCurrentlyModeledCMEId(null);
+      setSelectedCMEForInfo(null);
+      setTimelineActive(false);
+      setTimelinePlaying(false);
+      setTimelineScrubberValue(0);
+      resetClock();
+      setDataVersion((v: number) => v + 1);
+    }
+    
     try {
       const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
+
       if (data.length > 0) {
         const endDate = new Date();
         const futureDate = new Date();
@@ -254,6 +258,10 @@ const App: React.FC = () => {
         setTimelineMinDate(0);
         setTimelineMaxDate(0);
       }
+      if (isBackgroundRefresh) {
+        setFetchError(null);
+      }
+
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -261,13 +269,26 @@ const App: React.FC = () => {
       } else {
         setFetchError((err as Error).message || "Unknown error fetching data.");
       }
-      setCmeData([]);
+      if (!isBackgroundRefresh) {
+          setCmeData([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isBackgroundRefresh) {
+        setIsLoading(false);
+      }
     }
   }, [resetClock, apiKey]);
 
-  useEffect(() => { loadCMEData(activeTimeRange); }, [activeTimeRange, loadCMEData]);
+  useEffect(() => {
+    loadCMEData(activeTimeRange, false);
+    const refreshInterval = 5 * 60 * 1000; // 5 minutes
+    const intervalId = setInterval(() => {
+      loadCMEData(activeTimeRange, true);
+    }, refreshInterval);
+
+    return () => clearInterval(intervalId);
+  }, [activeTimeRange, loadCMEData]);
+
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
   const cmesToRender = useMemo(() => {
