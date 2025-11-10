@@ -32,6 +32,7 @@ import GlobalBanner from './components/GlobalBanner';
 import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
+import ForecastModelsModal from './components/ForecastModelsModal';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -82,6 +83,7 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
+  const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
@@ -587,6 +589,12 @@ const App: React.FC = () => {
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
+                                <button id="forecast-models-button" onClick={() => setIsForecastModelsModalOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME Forecast Models">
+                                    <GlobeIcon className="w-6 h-6" />
+                                </button>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Forecast Models</span>
+                            </div>
+                            <div className="flex flex-col items-center w-14">
                                 <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
                                     <DownloadIcon className="w-6 h-6" />
                                 </button>
@@ -648,6 +656,12 @@ const App: React.FC = () => {
             isOpen={isCmeTutorialOpen}
             onClose={handleCloseCmeTutorial}
             onStepChange={handleTutorialStepChange}
+        />
+
+        <ForecastModelsModal
+            isOpen={isForecastModelsModalOpen}
+            onClose={() => setIsForecastModelsModalOpen(false)}
+            setViewerMedia={setViewerMedia}
         />
 
         {showIabBanner && (
