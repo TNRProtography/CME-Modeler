@@ -262,24 +262,56 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- NEW: Create Teardrop Flux Rope ---
-    const fluxRopeGeometry = new THREE.SphereGeometry(1, 32, 32);
-    const fluxRopeMaterial = new THREE.ShaderMaterial({
+    // --- NEW: Create Helical Flux Rope ---
+    class HelixCurve extends THREE.Curve {
+        constructor(radius = 1, turns = 5, length = 1) {
+            super();
+            this.radius = radius;
+            this.turns = turns;
+            this.length = length;
+        }
+        getPoint(t) {
+            const angle = 2 * Math.PI * this.turns * t;
+            const x = this.radius * Math.cos(angle);
+            const y = this.radius * Math.sin(angle);
+            const z = this.length * t;
+            return new THREE.Vector3(x, y, z);
+        }
+    }
+    HelixCurve.prototype.isHelixCurve = true;
+
+    const helixPath = new HelixCurve(1, 5, 1);
+    const tubeGeometry = new THREE.TubeGeometry(helixPath, 200, 0.1, 8, false);
+    const tubeMaterial = new THREE.ShaderMaterial({
         vertexShader: FLUX_ROPE_VERTEX_SHADER,
         fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
         uniforms: {
             uTime: { value: 0 },
             uColor: { value: new THREE.Color(0xffa500) },
-            uStretch: { value: 1.5 }, // Controls how long the teardrop is
         },
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-        side: THREE.DoubleSide,
     });
-    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.visible = false;
-    scene.add(fluxRopeRef.current);
+    const tubeMesh = new THREE.Mesh(tubeGeometry, tubeMaterial);
+
+    const axialArrow = new THREE.ArrowHelper(
+        new THREE.Vector3(0, 0, 1), // direction
+        new THREE.Vector3(0, 0, 0), // origin
+        1, // length
+        0xffffff, // color
+        0.1, // headLength
+        0.08 // headWidth
+    );
+
+    const fluxRopeGroup = new THREE.Group();
+    fluxRopeGroup.add(tubeMesh);
+    fluxRopeGroup.add(axialArrow);
+    fluxRopeGroup.rotation.x = -Math.PI / 2; // Align Z-axis of helix with parent Y-axis
+    fluxRopeGroup.visible = false;
+    scene.add(fluxRopeGroup);
+    fluxRopeRef.current = fluxRopeGroup;
+
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -396,21 +428,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                   const cme: ProcessedCME = cmeObject.userData;
                   const coneLength = cmeObject.scale.y;
                   const coneRadius = coneLength * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-                  
-                  // Position and orient the teardrop to match the CME
-                  fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
-                  const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-                  const tipPosition = cmeObject.position.clone().add(direction.clone().multiplyScalar(coneLength));
-                  fluxRopeRef.current.position.copy(tipPosition);
-                  
-                  // Scale the teardrop to match the CME dimensions
-                  // Y-scale controls length, X/Z scales control width
-                  fluxRopeRef.current.scale.set(coneRadius, coneLength / 2, coneRadius);
 
-                  const material = fluxRopeRef.current.material;
-                  if (material.isShaderMaterial) {
-                      material.uniforms.uTime.value = elapsedTime;
-                      material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
+                  // Position and orient the group to match the CME
+                  fluxRopeRef.current.position.copy(cmeObject.position);
+                  fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
+                  
+                  // Scale the entire group to match the CME cone
+                  fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneLength);
+
+                  const tube = fluxRopeRef.current.children[0];
+                  if (tube && tube.isMesh) {
+                      tube.material.uniforms.uTime.value = elapsedTime;
+                      tube.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
                   }
               }
           }

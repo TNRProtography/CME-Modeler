@@ -206,28 +206,27 @@ void main() {
 }
 `;
 
-// --- NEW: Shaders for the Teardrop Flux Rope ---
+// --- NEW: Shaders for the Helical Flux Rope ---
 export const FLUX_ROPE_VERTEX_SHADER = `
-uniform float uStretch;
 varying vec2 vUv;
 varying float vFresnel;
 
 void main() {
     vUv = uv;
 
-    // Deform a sphere into a teardrop shape.
-    // The sphere is created with its pole along the Y axis.
-    // We stretch vertices with a positive Y value.
-    float stretchFactor = pow(max(0.0, position.y), 2.0) * uStretch;
-    
+    // Deform the straight tube into a cone shape.
+    // The geometry is created along the Z axis (after rotation).
+    // 'uv.x' gives the progress along the tube (0.0 at sun, 1.0 at front).
+    // This scales the radius of the helix from 0 to its full size.
+    float coneRadiusScale = uv.x;
     vec3 deformedPosition = position;
-    deformedPosition.y += stretchFactor;
-    
+    deformedPosition.xy *= coneRadiusScale;
+
     // Calculate fresnel for a nice glow effect on the edges.
     vec4 mvPosition = modelViewMatrix * vec4(deformedPosition, 1.0);
     vec3 normal = normalize(normalMatrix * normal);
     vec3 viewVector = normalize(-mvPosition.xyz);
-    vFresnel = pow(1.0 - abs(dot(normal, viewVector)), 4.0);
+    vFresnel = pow(1.0 - abs(dot(normal, viewVector)), 3.0);
 
     gl_Position = projectionMatrix * mvPosition;
 }`;
@@ -238,22 +237,42 @@ uniform vec3 uColor;
 varying vec2 vUv;
 varying float vFresnel;
 
+float arrow(vec2 uv, float thickness, float headSize) {
+    // Shaft
+    float shaft = smoothstep(thickness, 0.0, abs(uv.x - 0.5));
+    // Head
+    float head = smoothstep(headSize, 0.0, abs(uv.y - 0.8) - uv.x) 
+               * smoothstep(headSize, 0.0, abs(uv.y - 0.8) - (1.0 - uv.x));
+    return max(shaft, head) * step(0.0, uv.y);
+}
+
 void main() {
-    // Animate flow from the tip (vUv.y = 1) to the base (vUv.y = 0)
-    float flow = fract(vUv.y * 5.0 - uTime * 0.8);
-    float pulse = smoothstep(0.4, 0.5, flow) - smoothstep(0.5, 0.6, flow);
+    float numArrows = 20.0;
+    float arrowSpeed = -2.0;
 
-    // Create longitude lines for the arrows
-    float numArrows = 16.0;
-    float arrowLine = smoothstep(0.02, 0.0, abs(fract(vUv.x * numArrows) - 0.5));
+    // Local UV for one repeating arrow segment
+    vec2 localUv = vec2(fract(vUv.x * numArrows + uTime * arrowSpeed), vUv.y);
 
-    // Combine the pulse and lines
-    float finalAlpha = (pulse * 0.8 + vFresnel * 0.5) * arrowLine;
+    // Draw up arrows on top, down arrows on bottom
+    float upArrow = arrow(localUv, 0.05, 0.2);
+    float downArrow = arrow(vec2(localUv.x, 1.0 - localUv.y), 0.05, 0.2);
+    
+    float arrowMask = 0.0;
+    if (vUv.y > 0.5) {
+        arrowMask = upArrow;
+    } else {
+        arrowMask = downArrow;
+    }
+    
+    // Coils of the rope
+    float coil = sin(vUv.y * 30.0 + vUv.x * 10.0) * 0.3 + 0.7;
 
+    float finalAlpha = (vFresnel * 0.7) + (coil * 0.3) + (arrowMask * 1.0);
+    
     if (finalAlpha < 0.1) {
         discard;
     }
-
+    
     gl_FragColor = vec4(uColor, finalAlpha);
 }`;
 
