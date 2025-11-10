@@ -19,7 +19,7 @@ interface ForecastModelsModalProps {
 
 // --- CONSTANTS for the models ---
 const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
-const MAX_FRAMES_TO_CHECK = 400; // As per old file
+const MAX_FRAMES_TO_CHECK = 400;
 const HUXT_ANIMATION_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4';
 const HUXT_FORECAST_IMAGE_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png';
 const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo.mp4';
@@ -71,11 +71,11 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     }
     hasTriggeredFetch.current = true;
 
-    // --- Preload HUXT image ---
+    // Preload HUXT image for better UX
     const huxtImage = new Image();
     huxtImage.src = HUXT_FORECAST_IMAGE_URL;
 
-    // --- Fetch NOAA ENLIL Images ---
+    // Fetch NOAA ENLIL Images
     const fetchNoaaEnlilImages = async () => {
       setIsLoadingNoaaEnlil(true);
       setNoaaEnlilError(null);
@@ -94,7 +94,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
         if (successfulUrls.length > 0) {
           setNoaaEnlilUrls(successfulUrls);
         } else {
-          setNoaaEnlilError('No NOAA ENLIL images could be loaded from the proxy.');
+          setNoaaEnlilError('No NOAA ENLIL images could be loaded. The proxy may be down or has no new data.');
         }
       } catch (error) {
           setNoaaEnlilError(error instanceof Error ? error.message : "An unknown error occurred.");
@@ -103,7 +103,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
       }
     };
 
-    // --- Fetch NASA ENLIL Simulation List ---
+    // Fetch NASA ENLIL Simulation List
     const fetchNasaEnlilList = async () => {
         setIsLoadingNasaEnlil(true);
         setNasaEnlilError(null);
@@ -120,7 +120,6 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     fetchNasaEnlilList();
 
     return () => {
-      // Cleanup Object URLs on component unmount
       noaaEnlilUrls.forEach(url => URL.revokeObjectURL(url));
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,76 +143,105 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           </button>
         </div>
         
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
           
           <ModelCard 
-            title="HUXT (University of Reading)" 
-            source="University of Reading & Met Office" 
+            title="HUXT" 
+            source="University of Reading" 
             sourceUrl="https://research.reading.ac.uk/met-spate/huxt-forecast/"
-            description={<p>The Heliospheric Upwind Extrapolation (HUXT) model is a fast solar wind model that simulates the propagation of CMEs through the inner heliosphere.</p>}
+            description={<p>A fast solar wind model that simulates CME propagation through the inner heliosphere.</p>}
           >
             <div onClick={() => setViewerMedia({ url: HUXT_ANIMATION_URL, type: 'video' })} className="block bg-neutral-800/50 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
                 <h4 className="font-semibold text-center mb-2 text-neutral-300">HUXT Animation</h4>
-                <video src={HUXT_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full aspect-square object-cover">Your browser does not support the video tag.</video>
+                <video src={HUXT_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full aspect-square object-cover bg-black">Your browser does not support the video tag.</video>
             </div>
             <div onClick={() => setViewerMedia({ url: HUXT_FORECAST_IMAGE_URL, type: 'image' })} className="block bg-neutral-800/50 p-2 rounded-lg hover:ring-2 ring-sky-400 transition-shadow cursor-pointer">
                 <h4 className="font-semibold text-center mb-2 text-neutral-300">HUXT Forecast Timeline</h4>
-                <img src={HUXT_FORECAST_IMAGE_URL} alt="HUXT Forecast" className="rounded w-full" />
+                <img src={HUXT_FORECAST_IMAGE_URL} alt="HUXT Forecast" className="rounded w-full bg-black" />
+            </div>
+          </ModelCard>
+
+          <ModelCard 
+            title="WSA-ENLIL (NOAA)" 
+            source="NOAA SWPC" 
+            sourceUrl="https://www.swpc.noaa.gov/models/wsa-enlil"
+            description={<p>The primary operational model used by NOAA to predict solar wind conditions and CME arrivals.</p>}
+          >
+            <div 
+              onClick={() => noaaEnlilUrls.length > 0 && setViewerMedia({ urls: noaaEnlilUrls, type: 'animation' })}
+              className="bg-neutral-800/50 p-2 rounded-lg relative min-h-[250px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
+            >
+                {isLoadingNoaaEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching NOAA forecast...</p></div>}
+                {noaaEnlilError && <p className="text-red-400 text-center text-sm p-4">{noaaEnlilError}</p>}
+                {!isLoadingNoaaEnlil && noaaEnlilUrls.length > 0 && (
+                  <>
+                    <img src={noaaEnlilUrls[0]} alt="ENLIL Forecast Preview" className="rounded w-full aspect-square object-cover bg-black" />
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                      <p className="text-white text-lg font-bold">Click to Play Animation</p>
+                    </div>
+                  </>
+                )}
+                {!isLoadingNoaaEnlil && noaaEnlilUrls.length === 0 && !noaaEnlilError && <p className="text-neutral-400 italic">No forecast animation available.</p>}
+            </div>
+          </ModelCard>
+
+          <ModelCard 
+            title="WSA-ENLIL (NASA)" 
+            source="NASA CCMC" 
+            sourceUrl="https://ccmc.gsfc.nasa.gov/tools/DONKI/"
+            description={<p>A list of recent, detailed simulations run by NASA, with analysis of potential Earth impacts.</p>}
+          >
+            <div className="bg-neutral-800/50 p-2 rounded-lg min-h-[250px] flex flex-col h-full">
+                {isLoadingNasaEnlil && <div className="flex-grow flex items-center justify-center"><div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching simulations...</p></div></div>}
+                {nasaEnlilError && <p className="text-red-400 text-center text-sm p-4 flex-grow flex items-center justify-center">{nasaEnlilError}</p>}
+                {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
+                   <div className="space-y-3 overflow-y-auto max-h-[500px] styled-scrollbar pr-2">
+                       {nasaEnlilSimulations.slice(0, 5).map(sim => (
+                           <div key={sim.simulationID} className="bg-neutral-900/60 p-3 rounded-md text-xs">
+                               <div className="flex justify-between items-center mb-2">
+                                   <p className="font-bold text-neutral-200">Model Time: {formatNZTimestamp(sim.modelCompletionTime)}</p>
+                                   <a href={sim.link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-sky-600 text-white rounded text-xs hover:bg-sky-500">View</a>
+                               </div>
+                               {/* FIX: Check if cmeIDs exists before trying to join it */}
+                               <p className="text-neutral-300"><strong>CMEs:</strong> {sim.cmeIDs?.join(', ') || 'N/A'}</p>
+                               {sim.estimatedShockArrivalTime && <p className="text-neutral-300"><strong>Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span></p>}
+                           </div>
+                       ))}
+                   </div>
+                )}
+                 {!isLoadingNasaEnlil && nasaEnlilSimulations.length === 0 && <p className="text-neutral-400 italic text-center flex-grow flex items-center justify-center">No recent NASA simulations found.</p>}
             </div>
           </ModelCard>
 
           <div className="flex flex-col gap-6">
-            <ModelCard 
-              title="WSA-ENLIL (NOAA)" 
-              source="NOAA SWPC" 
-              sourceUrl="https://www.swpc.noaa.gov/models/wsa-enlil"
-              description={<p>The primary operational forecasting model used by NOAA to predict solar wind conditions and CME arrivals.</p>}
-            >
-              <div 
-                onClick={() => noaaEnlilUrls.length > 0 && setViewerMedia({ urls: noaaEnlilUrls, type: 'animation' })}
-                className="bg-neutral-800/50 p-2 rounded-lg relative min-h-[250px] flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
+              <ModelCard 
+                title="ELEVO (Helio4Cast)" 
+                source="Helio4Cast" 
+                sourceUrl="https://helioforecast.space/cme"
+                description={<p>An Ellipse Evolution (ELEvo) drag-based model used to predict CME arrival times.</p>}
               >
-                  {isLoadingNoaaEnlil && <div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching NOAA forecast...</p></div>}
-                  {noaaEnlilError && <p className="text-red-400 text-center">{noaaEnlilError}</p>}
-                  {!isLoadingNoaaEnlil && noaaEnlilUrls.length > 0 && (
-                    <>
-                      <img src={noaaEnlilUrls[0]} alt="ENLIL Forecast Preview" className="rounded w-full aspect-square object-cover" />
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <p className="text-white text-lg font-bold">Click to Play Animation</p>
-                      </div>
-                    </>
-                  )}
-                  {!isLoadingNoaaEnlil && noaaEnlilUrls.length === 0 && !noaaEnlilError && <p className="text-neutral-400 italic">No forecast animation available.</p>}
-              </div>
-            </ModelCard>
+                <div 
+                  onClick={() => setViewerMedia({ url: ELEVO_ANIMATION_URL, type: 'video' })}
+                  className="bg-neutral-800/50 p-2 rounded-lg relative flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
+                >
+                    <video src={ELEVO_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full aspect-square object-cover bg-black">Your browser does not support the video tag.</video>
+                </div>
+              </ModelCard>
 
-            <ModelCard 
-              title="WSA-ENLIL Simulations (NASA)" 
-              source="NASA CCMC" 
-              sourceUrl="https://ccmc.gsfc.nasa.gov/tools/DONKI/"
-              description={<p>A list of recent, detailed simulations run by NASA, often including analysis of potential Earth impacts.</p>}
-            >
-              <div className="bg-neutral-800/50 p-2 rounded-lg min-h-[250px] flex flex-col">
-                  {isLoadingNasaEnlil && <div className="flex-grow flex items-center justify-center"><div className="flex flex-col items-center gap-4"><LoadingSpinner /><p className="text-neutral-400 italic">Fetching NASA simulations...</p></div></div>}
-                  {nasaEnlilError && <p className="text-red-400 text-center flex-grow flex items-center justify-center">{nasaEnlilError}</p>}
-                  {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
-                     <div className="space-y-3 overflow-y-auto max-h-80 styled-scrollbar pr-2">
-                         {nasaEnlilSimulations.slice(0, 5).map(sim => (
-                             <div key={sim.simulationID} className="bg-neutral-900/60 p-3 rounded-md text-xs">
-                                 <div className="flex justify-between items-center mb-2">
-                                     <p className="font-bold text-neutral-200">Model Time: {formatNZTimestamp(sim.modelCompletionTime)}</p>
-                                     <a href={sim.link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-sky-600 text-white rounded text-xs hover:bg-sky-500">View Model</a>
-                                 </div>
-                                 <p className="text-neutral-300"><strong>Associated CMEs:</strong> {sim.cmeIDs.join(', ')}</p>
-                                 {sim.estimatedShockArrivalTime && <p className="text-neutral-300"><strong>Estimated Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span></p>}
-                             </div>
-                         ))}
-                     </div>
-                  )}
-                   {!isLoadingNasaEnlil && nasaEnlilSimulations.length === 0 && <p className="text-neutral-400 italic text-center flex-grow flex items-center justify-center">No recent NASA ENLIL simulations found.</p>}
-              </div>
-            </ModelCard>
-          </div>
+              <ModelCard 
+                title="EUHFORIA (ESA)" 
+                source="ESA Space Weather" 
+                sourceUrl="https://swe.ssa.esa.int/heliospheric-weather"
+                description={<p>A 3D magnetohydrodynamic model from the European Space Agency for operational forecasting.</p>}
+              >
+                <div 
+                  onClick={() => setViewerMedia({ url: EUHFORIA_ANIMATION_URL, type: 'video' })}
+                  className="bg-neutral-800/50 p-2 rounded-lg relative flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
+                >
+                    <video src={EUHFORIA_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full aspect-square object-cover bg-black">Your browser does not support the video tag.</video>
+                </div>
+              </ModelCard>
+            </div>
 
         </div>
       </div>
@@ -222,5 +250,4 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 };
 
 export default ForecastModelsModal;
-
 // --- END OF FILE src/components/ForecastModelsModal.tsx ---
