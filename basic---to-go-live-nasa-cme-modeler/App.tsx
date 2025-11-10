@@ -267,7 +267,7 @@ const App: React.FC = () => {
     }
   }, [resetClock, apiKey]);
 
-  useEffect(() => { if (activePage === 'modeler') { loadCMEData(activeTimeRange); } }, [activeTimeRange, loadCMEData, activePage]);
+  useEffect(() => { loadCMEData(activeTimeRange); }, [activeTimeRange, loadCMEData]);
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
   const cmesToRender = useMemo(() => {
@@ -568,7 +568,7 @@ const App: React.FC = () => {
         </header>
 
         <div className="flex flex-grow min-h-0">
-            {activePage === 'modeler' && ( <>
+            <div className={`w-full h-full flex flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
@@ -619,8 +619,8 @@ const App: React.FC = () => {
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-            </> )}
-            {activePage === 'forecast' && (
+            </div>
+            <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
                 <ForecastDashboard
                     setViewerMedia={setViewerMedia}
                     setCurrentAuroraScore={setCurrentAuroraScore}
@@ -628,15 +628,15 @@ const App: React.FC = () => {
                     setIpsAlertData={setIpsAlertData}
                     navigationTarget={navigationTarget}
                 />
-            )}
-            {activePage === 'solar-activity' && (
+            </div>
+            <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
                 <SolarActivityDashboard
                     setViewerMedia={setViewerMedia}
                     setLatestXrayFlux={setLatestXrayFlux}
                     onViewCMEInVisualization={handleViewCMEInVisualization}
                     navigationTarget={navigationTarget}
                 />
-            )}
+            </div>
         </div>
         
         <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
