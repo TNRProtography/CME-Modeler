@@ -54,6 +54,40 @@ const createParticleTexture = (THREE: any) => {
   return particleTextureCache;
 };
 
+// --- NEW: Function to create the arrow texture for the flux rope ---
+let arrowTextureCache: any = null;
+const createArrowTexture = (THREE: any) => {
+  if (arrowTextureCache) return arrowTextureCache;
+  if (!THREE || typeof document === 'undefined') return null;
+  
+  const canvas = document.createElement('canvas');
+  const size = 256;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+  const arrowWidth = size / 6;
+  const arrowHeight = size / 4;
+  const spacing = size / 3;
+
+  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, size * 0.5);
+      ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
+      ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
+      ctx.closePath();
+      ctx.fill();
+  }
+  
+  arrowTextureCache = new THREE.CanvasTexture(canvas);
+  arrowTextureCache.wrapS = THREE.RepeatWrapping;
+  arrowTextureCache.wrapT = THREE.RepeatWrapping;
+  return arrowTextureCache;
+};
+
+
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
@@ -262,55 +296,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- NEW: Create Helical Flux Rope ---
-    class HelixCurve extends THREE.Curve {
-        constructor(radius = 1, turns = 5, length = 1) {
-            super();
-            this.radius = radius;
-            this.turns = turns;
-            this.length = length;
-        }
-        getPoint(t) {
-            const angle = 2 * Math.PI * this.turns * t;
-            const x = this.radius * Math.cos(angle);
-            const y = this.radius * Math.sin(angle);
-            const z = this.length * t;
-            return new THREE.Vector3(x, y, z);
-        }
-    }
-    HelixCurve.prototype.isHelixCurve = true;
-
-    const helixPath = new HelixCurve(1, 5, 1);
-    const tubeGeometry = new THREE.TubeGeometry(helixPath, 200, 0.1, 8, false);
-    const tubeMaterial = new THREE.ShaderMaterial({
+    // --- NEW: Create Flux Rope with ShaderMaterial ---
+    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    const fluxRopeMaterial = new THREE.ShaderMaterial({
         vertexShader: FLUX_ROPE_VERTEX_SHADER,
         fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
         uniforms: {
             uTime: { value: 0 },
-            uColor: { value: new THREE.Color(0xffa500) },
+            uTexture: { value: createArrowTexture(THREE) },
+            uColor: { value: new THREE.Color(0xffffff) },
         },
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        side: THREE.DoubleSide,
     });
-    const tubeMesh = new THREE.Mesh(tubeGeometry, tubeMaterial);
-
-    const axialArrow = new THREE.ArrowHelper(
-        new THREE.Vector3(0, 0, 1), // direction
-        new THREE.Vector3(0, 0, 0), // origin
-        1, // length
-        0xffffff, // color
-        0.1, // headLength
-        0.08 // headWidth
-    );
-
-    const fluxRopeGroup = new THREE.Group();
-    fluxRopeGroup.add(tubeMesh);
-    fluxRopeGroup.add(axialArrow);
-    fluxRopeGroup.rotation.x = -Math.PI / 2; // Align Z-axis of helix with parent Y-axis
-    fluxRopeGroup.visible = false;
-    scene.add(fluxRopeGroup);
-    fluxRopeRef.current = fluxRopeGroup;
+    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
+    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    fluxRopeRef.current.visible = false;
+    scene.add(fluxRopeRef.current);
 
 
     const makeStars = (count: number, spread: number, size: number) => {
@@ -418,40 +422,31 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
       if (celestialBodiesRef.current.EARTH) { const e = celestialBodiesRef.current.EARTH.mesh; e.rotation.y += 0.05 * delta; const c = e.children.find((c:any)=>c.name==='clouds'); if(c) c.rotation.y += 0.01 * delta; e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; }); }
       if (timelineActive) { if (timelinePlaying) { const r = timelineMaxDate - timelineMinDate; if (r > 0 && timelineValueRef.current < 1000) { const v = timelineValueRef.current + (delta * (3 * timelineSpeed * 3600 * 1000) / r) * 1000; if (v >= 1000) { timelineValueRef.current = 1000; onTimelineEnd(); } else { timelineValueRef.current = v; } onScrubberChangeByAnim(timelineValueRef.current); } } const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000); cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistance(c.userData, s, false)); }); } else { cmeGroupRef.current.children.forEach((c: any) => { let d = 0; if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) { const t = elapsedTime - (c.userData.simulationStartTime ?? elapsedTime); d = calculateDistance(c.userData, t < 0 ? 0 : t, true); } else if (!currentlyModeledCMEId) { const t = (Date.now() - c.userData.startTime.getTime()) / 1000; d = calculateDistance(c.userData, t < 0 ? 0 : t, false); } else { updateCMEShape(c, -1); return; } updateCMEShape(c, d); }); }
-      
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
           fluxRopeRef.current.visible = shouldShowFluxRope;
           if (shouldShowFluxRope) {
               const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
               if (cmeObject) {
-                  const cme: ProcessedCME = cmeObject.userData;
-                  const coneLength = cmeObject.scale.y;
-                  const coneRadius = coneLength * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-
-                  // Position and orient the group to match the CME
                   fluxRopeRef.current.position.copy(cmeObject.position);
                   fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
-                  
-                  // Scale the entire group to match the CME cone
-                  fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneLength);
-
-                  const tube = fluxRopeRef.current.children[0];
-                  if (tube && tube.isMesh) {
-                      tube.material.uniforms.uTime.value = elapsedTime;
-                      tube.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
-                  }
+                  const cme: ProcessedCME = cmeObject.userData;
+                  const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+                  fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
+                  const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+                  fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+                  fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
               }
           }
+          fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
-
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
       controlsRef.current.update();
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     };
     animate();
-    return () => { window.removeEventListener('resize', handleResize); if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement); if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; } try { rendererRef.current?.dispose(); } catch {} cancelAnimationFrame(animationFrameId); sceneRef.current?.traverse((o:any) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach((m:any) => m.dispose()); else o.material.dispose(); } }); rendererRef.current = null; };
+    return () => { window.removeEventListener('resize', handleResize); if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement); if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; } if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; } try { rendererRef.current?.dispose(); } catch {} cancelAnimationFrame(animationFrameId); sceneRef.current?.traverse((o:any) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach((m:any) => m.dispose()); else o.material.dispose(); } }); rendererRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [THREE, dataVersion]);
 

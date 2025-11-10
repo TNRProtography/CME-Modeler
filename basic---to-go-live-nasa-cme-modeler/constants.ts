@@ -206,80 +206,46 @@ void main() {
 }
 `;
 
-// --- NEW: Shaders for the Helical Flux Rope ---
+// --- NEW: Shaders for the Flux Rope ---
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
-varying float vFresnel;
-
 void main() {
     vUv = uv;
-
-    // Deform the straight tube into a cone shape.
-    // The geometry is created along the Z axis (after rotation).
-    // 'uv.x' gives the progress along the tube (0.0 at sun, 1.0 at front).
-    // This scales the radius of the helix from 0 to its full size.
-    float coneRadiusScale = uv.x;
-    vec3 deformedPosition = position;
-    deformedPosition.xy *= coneRadiusScale;
-
-    // Calculate fresnel for a nice glow effect on the edges.
-    vec4 mvPosition = modelViewMatrix * vec4(deformedPosition, 1.0);
-    vec3 normal = normalize(normalMatrix * normal);
-    vec3 viewVector = normalize(-mvPosition.xyz);
-    vFresnel = pow(1.0 - abs(dot(normal, viewVector)), 3.0);
-
-    gl_Position = projectionMatrix * mvPosition;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
 export const FLUX_ROPE_FRAGMENT_SHADER = `
+uniform sampler2D uTexture;
 uniform float uTime;
 uniform vec3 uColor;
 varying vec2 vUv;
-varying float vFresnel;
-
-// Function to draw an arrow shape in a 0-1 UV space
-float arrow(vec2 uv, float thickness, float headSize) {
-    // Shaft (a vertical line)
-    float shaft = smoothstep(thickness, 0.0, abs(uv.x - 0.5));
-    
-    // Head (a triangle pointing up)
-    float head = smoothstep(headSize, 0.0, abs(uv.y - 0.8) - uv.x) 
-               * smoothstep(headSize, 0.0, abs(uv.y - 0.8) - (1.0 - uv.x));
-               
-    return max(shaft, head) * step(0.0, uv.y);
-}
 
 void main() {
-    float numArrows = 20.0;
-    float arrowSpeed = -2.0;
-
-    // Create a local coordinate system for each arrow that repeats along the tube
-    vec2 localUv = vec2(fract(vUv.x * numArrows + uTime * arrowSpeed), vUv.y);
-
-    // Draw up-pointing arrows on the top half of the tube (vUv.y > 0.5)
-    float upArrow = arrow(localUv, 0.05, 0.2);
+    float speed = 0.5;
+    float pulseWidth = 0.1;
     
-    // Draw down-pointing arrows on the bottom half by flipping the y-coordinate
-    float downArrow = arrow(vec2(localUv.x, 1.0 - localUv.y), 0.05, 0.2);
+    // Create a repeating wave position from 0.0 to 1.0
+    float wavePos = fract(uTime * speed);
     
-    float arrowMask = 0.0;
-    if (vUv.y > 0.5) {
-        arrowMask = upArrow;
-    } else {
-        arrowMask = downArrow;
-    }
+    // Calculate distance from the current fragment's UV to the wave position,
+    // accounting for the texture wrapping around the torus.
+    float dist = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
     
-    // Create subtle glowing coils for the main body of the rope
-    float coil = sin(vUv.y * 30.0 + vUv.x * 10.0) * 0.3 + 0.7;
-
-    // Combine the glowing edge (fresnel), the coils, and the bright arrows
-    float finalAlpha = (vFresnel * 0.7) + (coil * 0.3) + (arrowMask * 1.0);
+    // Create a smooth pulse band using smoothstep. This is 1.0 at the center
+    // of the wave and fades to 0.0 at the edges of the pulseWidth.
+    float pulse = smoothstep(pulseWidth, 0.0, dist);
     
-    if (finalAlpha < 0.1) {
+    // Sample the arrow texture. We only care about its alpha channel.
+    vec4 texColor = texture2D(uTexture, vUv);
+    
+    // If the texture has no alpha, or the pulse is invisible, discard the fragment.
+    if (texColor.a < 0.1 || pulse < 0.01) {
         discard;
     }
     
-    gl_FragColor = vec4(uColor, finalAlpha);
+    // The final color is the uniform color, and the alpha is the arrow shape
+    // multiplied by the pulse intensity, creating the shockwave effect.
+    gl_FragColor = vec4(uColor, texColor.a * pulse);
 }`;
 
 
