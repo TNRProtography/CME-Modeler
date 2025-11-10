@@ -4,28 +4,30 @@ import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
 
-// Re-defining ToggleSwitch to accept an ID. You should update your actual ToggleSwitch.tsx
+// Re-defining ToggleSwitch to accept an ID and disabled state.
 interface ToggleSwitchProps {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
-  id?: string; // Added id prop
+  id?: string;
+  disabled?: boolean;
 }
 
-const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, checked, onChange, id }) => (
-  <label htmlFor={id} className="flex items-center cursor-pointer">
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, checked, onChange, id, disabled = false }) => (
+  <label htmlFor={id} className={`flex items-center ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
     <div className="relative">
       <input
         type="checkbox"
-        id={id} // Apply id here
+        id={id}
         className="sr-only"
         checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
+        onChange={(e) => !disabled && onChange(e.target.checked)}
+        disabled={disabled}
       />
-      <div className="block bg-neutral-600 w-10 h-6 rounded-full"></div>
+      <div className={`block w-10 h-6 rounded-full transition-colors ${checked ? 'bg-indigo-600' : 'bg-neutral-600'}`}></div>
       <div
-        className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${
-          checked ? 'translate-x-full bg-indigo-500' : ''
+        className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${
+          checked ? 'translate-x-full' : ''
         }`}
       ></div>
     </div>
@@ -50,14 +52,15 @@ interface ControlsPanelProps {
   onShowExtraPlanetsChange: (show: boolean) => void;
   showMoonL1: boolean;
   onShowMoonL1Change: (show: boolean) => void;
+  showFluxRope: boolean; // --- NEW: Prop for Flux Rope ---
+  onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
 
-// Updated to accept an 'id' prop
 const Button: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode, className?: string, id?: string }> = ({ onClick, isActive, children, className, id }) => (
   <button
-    id={id} // Added id prop
+    id={id}
     onClick={onClick}
     className={`flex-grow border text-sm transition-all duration-200 ease-in-out px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-neutral-950 focus:ring-neutral-400 ${className} ${
       isActive
@@ -94,6 +97,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowExtraPlanetsChange,
   showMoonL1,
   onShowMoonL1Change,
+  showFluxRope,
+  onShowFluxRopeChange,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -102,7 +107,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
       
       <div className="absolute top-4 right-4 flex items-center space-x-1 z-10">
         <button
-          id="controls-panel-guide-button" // Added ID for guide button
+          id="controls-panel-guide-button"
           onClick={onOpenGuide}
           className="p-1 text-neutral-400 hover:text-neutral-100 hover:bg-white/10 rounded-full transition-colors"
           title="Show App Guide"
@@ -129,7 +134,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         </h1>
       </div>
 
-      <div className="flex-grow overflow-y-auto pr-2 space-y-5 pt-5">
+      <div className="flex-grow overflow-y-auto pr-2 space-y-5 pt-5 styled-scrollbar">
         <div>
           <label className="block text-sm font-medium text-neutral-400 mb-1.5">Date Range:</label>
           <div className="flex space-x-2">
@@ -161,6 +166,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <ToggleSwitch id="show-labels-toggle" label="Show Labels" checked={showLabels} onChange={onShowLabelsChange} />
             <ToggleSwitch id="show-extra-planets-toggle" label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
             <ToggleSwitch id="show-moon-l1-toggle" label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
+            <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
           </div>
         </div>
 

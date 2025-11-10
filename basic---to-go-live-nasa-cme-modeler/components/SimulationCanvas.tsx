@@ -129,6 +129,7 @@ interface SimulationCanvasProps {
   onTimelineEnd: () => void;
   showExtraPlanets: boolean;
   showMoonL1: boolean;
+  showFluxRope: boolean; // --- NEW: Prop for Flux Rope ---
   dataVersion: number;
   interactionMode: InteractionMode;
 }
@@ -155,6 +156,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     onTimelineEnd,
     showExtraPlanets,
     showMoonL1,
+    showFluxRope, // --- NEW: Destructure Flux Rope prop ---
     dataVersion,
     interactionMode,
   } = props;
@@ -168,6 +170,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
+  const fluxRopeRef = useRef<any>(null); // --- NEW: Ref for Flux Rope mesh ---
 
   // Visual refs
   const starsNearRef = useRef<any>(null);
@@ -185,6 +188,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineSpeed,
     timelineMinDate,
     timelineMaxDate,
+    showFluxRope, // --- NEW: Add to animPropsRef for access in animation loop ---
   });
 
   useEffect(() => {
@@ -197,6 +201,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       timelineSpeed,
       timelineMinDate,
       timelineMaxDate,
+      showFluxRope, // --- NEW: Update in useEffect ---
     };
   }, [
     onScrubberChangeByAnim,
@@ -207,6 +212,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineSpeed,
     timelineMinDate,
     timelineMaxDate,
+    showFluxRope, // --- NEW: Dependency for update ---
   ]);
 
   const THREE = (window as any).THREE;
@@ -318,6 +324,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
+
+    // --- NEW: Create Flux Rope geometry and material ---
+    const fluxRopeGeometry = new THREE.TorusGeometry(0.95, 0.05, 16, 100);
+    const fluxRopeMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+    });
+    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
+    fluxRopeRef.current.rotation.x = Math.PI / 2; // Align with the cone's base
+    fluxRopeRef.current.visible = false;
+    scene.add(fluxRopeRef.current);
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -523,6 +543,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         timelineMaxDate,
         onScrubberChangeByAnim,
         onTimelineEnd,
+        showFluxRope,
       } = animPropsRef.current;
 
       const elapsedTime = getClockElapsedTime();
@@ -627,6 +648,31 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
           updateCMEShape(cmeObject, currentDistSceneUnits);
         });
+      }
+
+      // --- NEW: Flux Rope animation logic ---
+      const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
+      if (fluxRopeRef.current) {
+        fluxRopeRef.current.visible = shouldShowFluxRope;
+        if (shouldShowFluxRope) {
+          const modeledCMEObject = cmeGroupRef.current.children.find(
+            (c: any) => c.userData.id === currentlyModeledCMEId
+          );
+          if (modeledCMEObject) {
+            fluxRopeRef.current.position.copy(modeledCMEObject.position);
+            fluxRopeRef.current.quaternion.copy(modeledCMEObject.quaternion);
+
+            const cme: ProcessedCME = modeledCMEObject.userData;
+            const coneHalfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
+            const coneRadiusAtTip = modeledCMEObject.scale.y * Math.tan(coneHalfAngleRad);
+            fluxRopeRef.current.scale.set(coneRadiusAtTip, coneRadiusAtTip, coneRadiusAtTip);
+            
+            // Move the rope to the front of the particle cone
+            const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(modeledCMEObject.quaternion);
+            const offset = direction.clone().multiplyScalar(modeledCMEObject.scale.y);
+            fluxRopeRef.current.position.add(offset);
+          }
+        }
       }
 
       const maxImpactSpeed = checkImpacts();
