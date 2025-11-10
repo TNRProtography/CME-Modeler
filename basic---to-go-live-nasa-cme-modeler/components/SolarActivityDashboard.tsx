@@ -20,7 +20,7 @@ interface SolarActivityDashboardProps {
 interface SolarActivitySummary {
   highestXray: { flux: number; class: string; timestamp: number; };
   highestProton: { flux: number; class: string; timestamp: number; };
-  flareCounts: { x: number; m: number; c: number; };
+  flareCounts: { x: number; m: number; potentialCMEs: number; };
 }
 
 // --- CONSTANTS ---
@@ -116,6 +116,27 @@ const getOverallActivityStatus = (xrayClass: string, protonClass: string): 'Quie
   return activityLevel;
 };
 
+// Parse source location like "N12W15", "S18E05" to a signed longitude in degrees (E negative, W positive)
+const parseLongitude = (loc?: string | null): number | null => {
+  if (!loc) return null;
+  const m = String(loc).match(/^[NS]\d{1,2}(E|W)(\d{1,3})$/i);
+  if (!m) return null;
+  const hemi = m[1].toUpperCase();
+  const deg = parseInt(m[2], 10);
+  if (isNaN(deg)) return null;
+  // Define East as negative, West as positive relative to Earth view (central meridian at 0)
+  return hemi === 'W' ? +deg : -deg;
+};
+
+// Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
+const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
+  // @ts-ignore - we compute hasCME when processing flares
+  if (!flare.hasCME) return false;
+  const lon = parseLongitude(flare.sourceLocation);
+  if (lon === null) return false;
+  return Math.abs(lon) <= 30; // tweak if you want stricter/looser
+};
+
 // --- REUSABLE COMPONENTS ---
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
   const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '4 Hr', hours: 4 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
@@ -187,7 +208,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 
         <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
           <h3 className="text-lg font-semibold text-neutral-200 mb-2">Solar Flares</h3>
-          <div className="flex justify-center items-center gap-4 text-2xl font-bold">
+          <div className="flex justify-center items-center gap-6 text-2xl font-bold">
             <div>
               <p style={{ color: `rgba(${getCssVar('--solar-flare-x-rgb')})` }}>{summary.flareCounts.x}</p>
               <p className="text-sm font-normal">X-Class</p>
@@ -197,8 +218,8 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
               <p className="text-sm font-normal">M-Class</p>
             </div>
             <div>
-              <p style={{ color: `rgba(${getCssVar('--solar-flare-c-rgb')})` }}>{summary.flareCounts.c}</p>
-              <p className="text-sm font-normal">C-Class</p>
+              <p className="text-sky-300">{summary.flareCounts.potentialCMEs}</p>
+              <p className="text-sm font-normal">Potential Earth-Directed CMEs</p>
             </div>
           </div>
         </div>
@@ -253,10 +274,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   // Tooltips
   const tooltipContent = useMemo(() => ({
-    'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
-    'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
-    'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> Hot, flaring corona regions. <em>Best for:</em> Monitoring flares & active regions.',
-    'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> Cooler, denser plasma; prominences/filaments.',
+    'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense.',
+    'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater.',
+    'suvi-131': '<strong>SUVI 131Å:</strong> Hot, flaring corona regions.',
+    'suvi-304': '<strong>SUVI 304Å:</strong> Cooler, denser plasma; prominences/filaments.',
     'sdo-hmibc-1024': '<strong>SDO HMI Continuum (1024px):</strong> Sunspots & granulation.',
     'sdo-hmiif-1024': '<strong>SDO HMI Intensitygram (1024px):</strong> Magnetic field concentrations.',
     'sdo-aia193-2048': '<strong>SDO AIA 193Å (2048px):</strong> Coronal holes & large-scale corona.',
@@ -384,12 +405,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       }
       const processedData = data.map((flare: SolarFlare) => ({
         ...flare,
+        // add derived property for convenience
         hasCME: flare.linkedEvents?.some((e: any) => e.activityID.includes('CME')) ?? false,
-      }));
+      })) as (SolarFlare & { hasCME: boolean })[];
       setSolarFlares(processedData);
       setLoadingFlares(null);
       setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
-      // Optional headline for the banner
       const firstStrong = processedData.find(f => f.classType?.startsWith('M') || f.classType?.startsWith('X'));
       if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatNZTimestamp(firstStrong.peakTime)}`);
     } catch (error) {
@@ -522,7 +543,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const xray24 = allXrayData.filter(d => d.time >= dayAgo && d.time <= now);
     const proton24 = allProtonData.filter(d => d.time >= dayAgo && d.time <= now);
 
-    const flares24 = solarFlares.filter(flare => {
+    const flares24 = (solarFlares as (SolarFlare & { hasCME?: boolean })[]).filter(flare => {
       const t = flare.peakTime ?? flare.beginTime ?? flare.endTime;
       const ts = t ? new Date(t).getTime() : NaN;
       return !isNaN(ts) && ts >= dayAgo && ts <= now;
@@ -543,12 +564,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       { flux: 0, time: 0 }
     );
 
-    const flareCounts = { x: 0, m: 0, c: 0 };
+    const flareCounts = { x: 0, m: 0, potentialCMEs: 0 };
     flares24.forEach(flare => {
       const type = flare.classType?.[0]?.toUpperCase();
       if (type === 'X') flareCounts.x++;
       else if (type === 'M') flareCounts.m++;
-      else if (type === 'C') flareCounts.c++;
+      if (isPotentialEarthDirected(flare as any)) flareCounts.potentialCMEs++;
     });
 
     setActivitySummary({
@@ -695,7 +716,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <LoadingSpinner message={loadingFlares} />
                 ) : solarFlares.length > 0 ? (
                   <ul className="space-y-2">
-                    {solarFlares.map((flare) => {
+                    {solarFlares.map((flare: any) => {
                       const { background, text } = getColorForFlareClass(flare.classType);
                       const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
                       return (
@@ -779,12 +800,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p>
               <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p>
               <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p>
-              <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p>
+              <p><strong>CME Associated:</strong> {(selectedFlare as any).hasCME ? 'Yes' : 'No'}</p>
               <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p>
-              {selectedFlare.hasCME && (
+              {(selectedFlare as any).hasCME && selectedFlare.linkedEvents?.find((e: any) => e.activityID.includes('CME')) && (
                 <button
                   onClick={() => {
-                    onViewCMEInVisualization(selectedFlare.linkedEvents.find((e: any) => e.activityID.includes('CME'))?.activityID);
+                    const id = selectedFlare.linkedEvents!.find((e: any) => e.activityID.includes('CME'))!.activityID;
+                    onViewCMEInVisualization(id);
                     setSelectedFlare(null);
                   }}
                   className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors"
