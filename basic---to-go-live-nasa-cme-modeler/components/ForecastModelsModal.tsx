@@ -107,8 +107,10 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
         try {
             const data = await fetchWSAEnlilSimulations();
             const sortedData = data.sort((a, b) => {
-                if (a.isEarthGB && !b.isEarthGB) return -1;
-                if (!a.isEarthGB && b.isEarthGB) return 1;
+                const aHasShock = !!a.estimatedShockArrivalTime;
+                const bHasShock = !!b.estimatedShockArrivalTime;
+                if (aHasShock && !bHasShock) return -1;
+                if (!aHasShock && bHasShock) return 1;
                 return new Date(b.modelCompletionTime).getTime() - new Date(a.modelCompletionTime).getTime();
             });
             setNasaEnlilSimulations(sortedData);
@@ -211,7 +213,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                                  <p className="font-bold text-neutral-200">Model Time:</p>
                                  <p>{formatNZTimestamp(sim.modelCompletionTime)}</p>
                                </div>
-                               {sim.isEarthGB ? (
+                               {sim.estimatedShockArrivalTime ? (
                                  <span className="px-2 py-1 rounded bg-green-500/20 text-green-300 font-bold text-xs border border-green-500/50">
                                    Earth Directed
                                  </span>
@@ -226,7 +228,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                              </p>
                              {sim.estimatedShockArrivalTime && (
                                <p className="text-neutral-300">
-                                 <strong>Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
+                                 <strong>Predicted Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
                                </p>
                              )}
                            </a>
@@ -274,4 +276,4 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 };
 
 export default ForecastModelsModal;
-// --- END OF FILE src/components/ForecastModelsModal.tsx --- 
+// --- END OF FILE src/components/ForecastModelsModal.tsx ---
