@@ -12,13 +12,11 @@ export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day
 
 export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 1.2, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
-  VENUS: { name: 'Venus', radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 3.5, labelElementId: 'venus-label', orbitalPeriodDays: 225 },
-  
-  EARTH: { name: 'Earth', radius: 1.0 * SCENE_SCALE, size: 0.02 * SCENE_SCALE, color: 0x2a6a9c, angle: 0, labelElementId: 'earth-label', orbitalPeriodDays: 365.25 },
-  
-  MOON: { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
-  MARS: { name: 'Mars', radius: 1.52 * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 5.1, labelElementId: 'mars-label', orbitalPeriodDays: 687 },
-  SUN: { name: 'Sun', radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' } // Sun data for consistency
+  VENUS:   { name: 'Venus',   radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 3.5, labelElementId: 'venus-label',   orbitalPeriodDays: 225 },
+  EARTH:   { name: 'Earth',   radius: 1.0   * SCENE_SCALE, size: 0.02  * SCENE_SCALE, color: 0x2a6a9c, angle: 0,   labelElementId: 'earth-label',   orbitalPeriodDays: 365.25 },
+  MOON:    { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
+  MARS:    { name: 'Mars',    radius: 1.52  * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 5.1, labelElementId: 'mars-label',    orbitalPeriodDays: 687 },
+  SUN:     { name: 'Sun',     radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' } // Sun data for consistency
 };
 
 export const POI_DATA_MAP: Record<string, POIData> = {
@@ -31,7 +29,6 @@ export const POI_DATA_MAP: Record<string, POIData> = {
     distanceFromParent: (15e6 / AU_IN_KM) * SCENE_SCALE, // Visually exaggerated distance (~15M km) for clarity
   }
 };
-
 
 export const SUN_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -71,7 +68,7 @@ float snoise(vec2 v) {
 void main() {
     float time = uTime * 0.1;
     vec2 distortedUV = vUv + 0.1 * vec2(snoise(vUv * 2.0 + time), snoise(vUv * 2.0 + time + 5.0));
-    float noiseVal = snoise(distortedUV * 5.0 + time); // Renamed from noise to avoid conflict
+    float noiseVal = snoise(distortedUV * 5.0 + time);
     noiseVal = (noiseVal + 1.0) * 0.5;
     vec3 color = mix(vec3(1.0, 0.8, 0.2), vec3(1.0, 0.5, 0.0), noiseVal);
     gl_FragColor = vec4(color, 1.0);
@@ -97,19 +94,18 @@ void main() {
     
     // Animate glow for 2.5 seconds after impact
     if (uImpactTime > 0.0 && timeSinceImpact > 0.0 && timeSinceImpact < 2.5) {
-        // A ripple effect that fades out
-        impactGlow = sin(timeSinceImpact * 5.0 - length(vNormal) * 2.0) * 0.5 + 0.5; // simple ripple
-        impactGlow *= smoothstep(2.5, 0.0, timeSinceImpact); // fade out over 2.5s
+        impactGlow = sin(timeSinceImpact * 5.0 - length(vNormal) * 2.0) * 0.5 + 0.5;
+        impactGlow *= smoothstep(2.5, 0.0, timeSinceImpact);
     }
     
     vec3 atmosphereColor = vec3(0.8, 0.85, 0.9);
-    // Add the base glow and the impact glow, making the impact glow bright
     vec3 finalColor = atmosphereColor * (baseIntensity + impactGlow * 2.0);
-    
-    // The final alpha is a combination of the base glow and the impact glow
     gl_FragColor = vec4(finalColor, baseIntensity + impactGlow);
 }`;
 
+// ------------------------------
+// AURORA SHADERS (UPDATED)
+// ------------------------------
 export const AURORA_VERTEX_SHADER = `
 varying vec3 vNormal;
 varying vec2 vUv;
@@ -119,14 +115,23 @@ void main() {
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+/**
+ * Aurora fragment shader
+ * - uAuroraMinY: sine of equatorward latitude boundary (e.g., sin(70°) ≈ 0.94)
+ *   Aurora shows where abs(normal.y) >= uAuroraMinY (both poles).
+ * - uAuroraIntensity: brightness multiplier (set by CPU from CME speed).
+ * - uImpactTime/uTime: temporal gating for short-lived impact glow.
+ */
 export const AURORA_FRAGMENT_SHADER = `
 uniform float uTime;
-uniform float uCmeSpeed; // e.g., 300 to 3000
-uniform float uImpactTime; // Time of impact start
+uniform float uCmeSpeed;     // optional for color dynamics
+uniform float uImpactTime;   // time of impact start
+uniform float uAuroraMinY;   // NEW: latitude extent control (sin(latitude))
+uniform float uAuroraIntensity; // NEW: brightness control
 varying vec3 vNormal;
 varying vec2 vUv;
 
-// 2D simplex noise function
+// 2D simplex noise
 vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
 
 float snoise(vec2 v) {
@@ -152,59 +157,46 @@ float snoise(vec2 v) {
 }
 
 void main() {
-    // 1. Fade effect based on time since last impact
+    // 1) Fade window based on time since last impact
     float timeSinceImpact = uTime - uImpactTime;
-    float fadeDuration = 10.0; // Effect lasts 10 seconds
+    float fadeDuration = 10.0; // seconds
     float impactFade = 0.0;
     if (uImpactTime > 0.0 && timeSinceImpact < fadeDuration) {
-        // Fade in quickly, fade out slowly towards the end
         impactFade = smoothstep(0.0, 1.5, timeSinceImpact) * smoothstep(fadeDuration, fadeDuration - 4.0, timeSinceImpact);
     }
-    if (impactFade <= 0.0) {
-        discard;
-    }
+    if (impactFade <= 0.0) { discard; }
 
-    // 2. Latitude extent based on CME speed
-    float minSpeed = 300.0;
-    float maxSpeed = 2500.0;
-    float speedT = pow(clamp((uCmeSpeed - minSpeed) / (maxSpeed - minSpeed), 0.0, 1.0), 1.5);
-    
-    // abs(vNormal.y) is 1 at poles, 0 at equator.
-    // Higher speed -> aurora reaches lower latitudes (vNormal.y closer to 0)
-    float polarBandStart = mix(0.85, 0.4, speedT); // Start of band from pole (0.85 = ~58 deg lat)
-    float polarBandEnd = 0.99; // End near pole
-    
-    float polarMask = smoothstep(polarBandStart, polarBandStart + 0.1, abs(vNormal.y)) - smoothstep(polarBandEnd, polarBandEnd + 0.05, abs(vNormal.y));
-    if (polarMask <= 0.0) {
-        discard;
-    }
+    // 2) Latitude mask using explicit boundary from CPU (both poles)
+    float y = abs(normalize(vNormal).y);
+    // soft edge around the boundary so expansion looks organic
+    float edge = 0.03;
+    float polarMask = smoothstep(uAuroraMinY - edge, uAuroraMinY + edge, y);
+    if (polarMask <= 0.0) { discard; }
 
-    // 3. Animated aurora curtain effect using noise
-    float longitude = atan(vNormal.x, vNormal.z);
-    float latitude = asin(vNormal.y);
-    float noiseTime = uTime * 0.2;
+    // 3) Aurora curtain noise/rays
+    vec3 nrm = normalize(vNormal);
+    float lon = atan(nrm.x, nrm.z);
+    float lat = asin(nrm.y);
+    float t = uTime * 0.2;
 
-    // Main wavy curtain patterns, moving at different speeds
-    float noise1 = snoise(vec2(longitude * 3.0, latitude * 5.0 - noiseTime));
-    float noise2 = snoise(vec2(longitude * 7.0, latitude * 6.0 + noiseTime * 1.5));
-    
-    // Vertical ray-like structure
-    float curtain = pow(snoise(vec2(longitude * 2.5, uTime * 0.1)), 2.0);
+    float noise1 = snoise(vec2(lon * 3.0, lat * 5.0 - t));
+    float noise2 = snoise(vec2(lon * 7.0, lat * 6.0 + t * 1.5));
+    float curtain = pow(snoise(vec2(lon * 2.5, uTime * 0.1)), 2.0);
     curtain = smoothstep(0.1, 0.6, curtain);
-    
     float finalNoise = (noise1 + noise2) * 0.5 * curtain;
-    finalNoise = pow(abs(finalNoise), 1.5) + pow(snoise(vec2(longitude * 1.5, latitude * 4.0 + noiseTime * -0.8)), 2.0) * 0.3;
+    finalNoise = pow(abs(finalNoise), 1.5) + pow(snoise(vec2(lon * 1.5, lat * 4.0 - t * 0.8)), 2.0) * 0.3;
 
-    // 4. Determine color
-    vec3 green = vec3(0.1, 1.0, 0.3);
+    // 4) Color blend (gentle variation)
+    vec3 green  = vec3(0.1, 1.0, 0.3);
     vec3 purple = vec3(0.8, 0.2, 1.0);
-    // Color varies slowly with time and position
-    vec3 color = mix(green, purple, smoothstep(0.3, 0.7, snoise(vec2(longitude * 0.5, latitude + uTime * 0.05))));
-    
-    // 5. Final output
-    gl_FragColor = vec4(color, finalNoise * polarMask * impactFade);
-}
-`;
+    vec3 color = mix(green, purple, smoothstep(0.3, 0.7, snoise(vec2(lon * 0.5, lat + uTime * 0.05))));
+
+    // 5) Apply intensity + masks
+    color *= uAuroraIntensity;
+    float alpha = finalNoise * polarMask * impactFade;
+
+    gl_FragColor = vec4(color, alpha);
+}`;
 
 // --- NEW: Shaders for the Flux Rope ---
 export const FLUX_ROPE_VERTEX_SHADER = `
@@ -223,31 +215,13 @@ varying vec2 vUv;
 void main() {
     float speed = 0.5;
     float pulseWidth = 0.1;
-    
-    // Create a repeating wave position from 0.0 to 1.0
     float wavePos = fract(uTime * speed);
-    
-    // Calculate distance from the current fragment's UV to the wave position,
-    // accounting for the texture wrapping around the torus.
-    float dist = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
-    
-    // Create a smooth pulse band using smoothstep. This is 1.0 at the center
-    // of the wave and fades to 0.0 at the edges of the pulseWidth.
-    float pulse = smoothstep(pulseWidth, 0.0, dist);
-    
-    // Sample the arrow texture. We only care about its alpha channel.
-    vec4 texColor = texture2D(uTexture, vUv);
-    
-    // If the texture has no alpha, or the pulse is invisible, discard the fragment.
-    if (texColor.a < 0.1 || pulse < 0.01) {
-        discard;
-    }
-    
-    // The final color is the uniform color, and the alpha is the arrow shape
-    // multiplied by the pulse intensity, creating the shockwave effect.
-    gl_FragColor = vec4(uColor, texColor.a * pulse);
+    float d = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
+    float pulse = smoothstep(pulseWidth, 0.0, d);
+    vec4 tex = texture2D(uTexture, vUv);
+    if (tex.a < 0.1 || pulse < 0.01) discard;
+    gl_FragColor = vec4(uColor, tex.a * pulse);
 }`;
-
 
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
