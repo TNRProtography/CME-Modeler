@@ -39,23 +39,35 @@ const formatNZTimestamp = (isoString: string | null | number) => {
 };
 
 const generateEnlilGifUrl = (simulation: WSAEnlilSimulation): string | null => {
-  if (!simulation.modelCompletionTime || !simulation.simulationID) {
+  // The correct timestamp is embedded as a parameter in the 'link' URL.
+  if (!simulation.link || !simulation.simulationID) {
     return null;
   }
+  
   try {
-    const date = new Date(simulation.modelCompletionTime);
-    const year = date.getUTCFullYear();
-    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-    const day = date.getUTCDate().toString().padStart(2, '0');
-    const hours = date.getUTCHours().toString().padStart(2, '0');
-    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-    const seconds = date.getUTCSeconds().toString().padStart(2, '0');
-    const dateTimeString = `${year}${month}${day}_${hours}${minutes}${seconds}`;
-    const versionMatch = simulation.simulationID.match(/(\d+\.\d+)$/);
-    const version = versionMatch?.[1] || '2.0'; // Default to 2.0 if parsing fails
+    // 1. Extract the timestamp from the link URL parameter.
+    // It looks like: "...?timestamp=2024-04-10 13:12:00&..."
+    const timestampMatch = simulation.link.match(/timestamp=([\d]{4}-[\d]{2}-[\d]{2}[ T][\d]{2}:[\d]{2}:[\d]{2})/);
+    if (!timestampMatch || !timestampMatch[1]) {
+      console.warn("Could not find timestamp in simulation link:", simulation.link);
+      return null;
+    }
+
+    // The matched timestamp will be "2024-04-10 13:12:00". Convert to "20240410_131200".
+    const modelRunTime = timestampMatch[1];
+    const dateTimeString = modelRunTime.replace(/-/g, '').replace(/[ T]/, '_').replace(/:/g, '');
+
+    // 2. Extract the version from the simulation ID.
+    // Example ID: "WSA-ENLIL_2024-04-10T13:12:00.0-1". The version is the last digit.
+    const versionMatch = simulation.simulationID.match(/-(\d+)$/);
+    // The URL version is usually "1.0", "2.0", etc.
+    const version = versionMatch && versionMatch[1] ? `${versionMatch[1]}.0` : '2.0'; // Default to 2.0
+
+    // 3. Construct the final URL.
     return `https://iswa.gsfc.nasa.gov/downloads/${dateTimeString}_${version}_anim.tim-den.gif`;
+
   } catch (error) {
-    console.error("Error generating ENLIL GIF URL:", error);
+    console.error("Error generating ENLIL GIF URL:", error, simulation);
     return null;
   }
 };
