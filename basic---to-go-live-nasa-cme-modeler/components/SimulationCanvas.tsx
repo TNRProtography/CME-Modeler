@@ -7,7 +7,8 @@ import {
   PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER
+  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
+  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
 
 /** =========================================================
@@ -31,76 +32,92 @@ const TEX = {
 };
 
 /** =========================================================
- *  KEEP YOUR ORIGINAL CME PARTICLE CONES (helpers below)
+ *  HELPERS
  *  ========================================================= */
 
-// Cache for the particle texture to avoid recreating it
 let particleTextureCache: any = null;
-
-// Creates a soft, radial gradient texture for the particles
 const createParticleTexture = (THREE: any) => {
   if (particleTextureCache) return particleTextureCache;
   if (!THREE || typeof document === 'undefined') return null;
-
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
   const context = canvas.getContext('2d');
   if (!context) return null;
-
   const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64);
   gradient.addColorStop(0, 'rgba(255,255,255,1)');
   gradient.addColorStop(0.2, 'rgba(255,255,255,0.8)');
   gradient.addColorStop(1, 'rgba(255,255,255,0)');
-
   context.fillStyle = gradient;
   context.fillRect(0, 0, 128, 128);
-
-  particleTextureCache = new (window as any).THREE.CanvasTexture(canvas);
+  particleTextureCache = new THREE.CanvasTexture(canvas);
   return particleTextureCache;
 };
 
-// Calculates CME opacity based on speed (km/s)
+// --- NEW: Function to create the arrow texture for the flux rope ---
+let arrowTextureCache: any = null;
+const createArrowTexture = (THREE: any) => {
+  if (arrowTextureCache) return arrowTextureCache;
+  if (!THREE || typeof document === 'undefined') return null;
+  
+  const canvas = document.createElement('canvas');
+  const size = 256;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+  const arrowWidth = size / 6;
+  const arrowHeight = size / 4;
+  const spacing = size / 3;
+
+  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, size * 0.5);
+      ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
+      ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
+      ctx.closePath();
+      ctx.fill();
+  }
+  
+  arrowTextureCache = new THREE.CanvasTexture(canvas);
+  arrowTextureCache.wrapS = THREE.RepeatWrapping;
+  arrowTextureCache.wrapT = THREE.RepeatWrapping;
+  return arrowTextureCache;
+};
+
+
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
-  const minSpeed = 300, maxSpeed = 3000, minOpacity = 0.06, maxOpacity = 0.65;
-  const s = THREE.MathUtils.clamp(speed, minSpeed, maxSpeed);
-  return THREE.MathUtils.mapLinear(s, minSpeed, maxSpeed, minOpacity, maxOpacity);
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65);
 };
 
-// Calculates CME particle count based on speed (km/s)
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  const minSpeed = 300, maxSpeed = 3000, minP = 1500, maxP = 7000;
-  const s = THREE.MathUtils.clamp(speed, minSpeed, maxSpeed);
-  return Math.floor(THREE.MathUtils.mapLinear(s, minSpeed, maxSpeed, minP, maxP));
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000));
 };
 
-// Calculates CME particle size based on speed (km/s)
 const getCmeParticleSize = (speed: number, scale: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.05 * scale;
-  const minSpeed = 300, maxSpeed = 3000, minSz = 0.04 * scale, maxSz = 0.08 * scale;
-  const s = THREE.MathUtils.clamp(speed, minSpeed, maxSpeed);
-  return THREE.MathUtils.mapLinear(s, minSpeed, maxSpeed, minSz, maxSz);
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.08 * scale);
 };
 
-// Determines the core color of the CME based on its speed
 const getCmeCoreColor = (speed: number): any => {
   const THREE = (window as any).THREE;
   if (!THREE) return { setHex: () => {} };
-  if (speed >= 2500) return new THREE.Color(0xff69b4); // Hot Pink
-  if (speed >= 1800) return new THREE.Color(0x9370db); // Medium Purple
-  if (speed >= 1000) return new THREE.Color(0xff4500); // OrangeRed
-  if (speed >= 800)  return new THREE.Color(0xffa500); // Orange
-  if (speed >= 500)  return new THREE.Color(0xffff00); // Yellow
-  if (speed < 350)   return new THREE.Color(0x808080); // Grey
+  if (speed >= 2500) return new THREE.Color(0xff69b4);
+  if (speed >= 1800) return new THREE.Color(0x9370db);
+  if (speed >= 1000) return new THREE.Color(0xff4500);
+  if (speed >= 800) return new THREE.Color(0xffa500);
+  if (speed >= 500) return new THREE.Color(0xffff00);
+  if (speed < 350) return new THREE.Color(0x808080);
   const grey = new THREE.Color(0x808080);
   const yellow = new THREE.Color(0xffff00);
-  const t = THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1);
-  return grey.lerp(yellow, t);
+  return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
 };
 
 const clamp = (v:number, a:number, b:number) => Math.max(a, Math.min(b, v));
@@ -117,19 +134,19 @@ interface SimulationCanvasProps {
   timelineActive: boolean;
   timelinePlaying: boolean;
   timelineSpeed: number;
-  timelineValue: number; // 0-1000
+  timelineValue: number;
   timelineMinDate: number;
   timelineMaxDate: number;
   setPlanetMeshesForLabels: (labels: PlanetLabelInfo[]) => void;
   setRendererDomElement: (element: HTMLCanvasElement) => void;
-  onCameraReady: (camera: any) => void; // Pass camera up for labels
+  onCameraReady: (camera: any) => void;
   getClockElapsedTime: () => number;
   resetClock: () => void;
   onScrubberChangeByAnim: (value: number) => void;
   onTimelineEnd: () => void;
   showExtraPlanets: boolean;
   showMoonL1: boolean;
-  showFluxRope: boolean; // --- NEW: Prop for Flux Rope ---
+  showFluxRope: boolean;
   dataVersion: number;
   interactionMode: InteractionMode;
 }
@@ -140,7 +157,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     activeView,
     focusTarget,
     currentlyModeledCMEId,
-    // onCMEClick,
     timelineActive,
     timelinePlaying,
     timelineSpeed,
@@ -156,7 +172,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     onTimelineEnd,
     showExtraPlanets,
     showMoonL1,
-    showFluxRope, // --- NEW: Destructure Flux Rope prop ---
+    showFluxRope,
     dataVersion,
     interactionMode,
   } = props;
@@ -170,9 +186,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
-  const fluxRopeRef = useRef<any>(null); // --- NEW: Ref for Flux Rope mesh ---
+  const fluxRopeRef = useRef<any>(null);
 
-  // Visual refs
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
 
@@ -180,39 +195,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const lastTimeRef = useRef(0);
 
   const animPropsRef = useRef({
-    onScrubberChangeByAnim,
-    onTimelineEnd,
-    currentlyModeledCMEId,
-    timelineActive,
-    timelinePlaying,
-    timelineSpeed,
-    timelineMinDate,
-    timelineMaxDate,
-    showFluxRope, // --- NEW: Add to animPropsRef for access in animation loop ---
+    onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
+    timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
+    showFluxRope,
   });
 
   useEffect(() => {
     animPropsRef.current = {
-      onScrubberChangeByAnim,
-      onTimelineEnd,
-      currentlyModeledCMEId,
-      timelineActive,
-      timelinePlaying,
-      timelineSpeed,
-      timelineMinDate,
-      timelineMaxDate,
-      showFluxRope, // --- NEW: Update in useEffect ---
+      onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
+      timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
+      showFluxRope,
     };
   }, [
-    onScrubberChangeByAnim,
-    onTimelineEnd,
-    currentlyModeledCMEId,
-    timelineActive,
-    timelinePlaying,
-    timelineSpeed,
-    timelineMinDate,
-    timelineMaxDate,
-    showFluxRope, // --- NEW: Dependency for update ---
+    onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
+    timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
+    showFluxRope,
   ]);
 
   const THREE = (window as any).THREE;
@@ -222,7 +219,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  /** Distance from Sun center in SCENE units (keeps your original mode/feel) */
   const calculateDistance = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number, useDeceleration: boolean): number => {
     const speed_km_per_sec = cme.speed;
     const speed_AU_per_sec = speed_km_per_sec / AU_IN_KM;
@@ -242,25 +238,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
     if (!THREE) return;
-
     const sunRadius = PLANET_DATA_MAP.SUN.size;
-
-    if (distTraveledInSceneUnits < 0) { // before start
+    if (distTraveledInSceneUnits < 0) {
       cmeObject.visible = false;
       return;
     }
-
     cmeObject.visible = true;
-
     const cmeLength = Math.max(0, distTraveledInSceneUnits - sunRadius);
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
-
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
-  // -------- Scene init --------
   useEffect(() => {
     if (!mountRef.current || !THREE) return;
     if (rendererRef.current) return;
@@ -271,91 +261,68 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
-      0.001 * SCENE_SCALE,
-      120 * SCENE_SCALE
-    );
+    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
     cameraRef.current = camera;
     onCameraReady(camera);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); // MODIFIED: preserveDrawingBuffer is needed for screenshots
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
     setRendererDomElement(renderer.domElement);
 
-    // Texture loader + anisotropy helper
     const loader = new THREE.TextureLoader();
     (loader as any).crossOrigin = "anonymous";
-    const withAniso = (t: any) => {
-      if (renderer.capabilities?.getMaxAnisotropy) {
-        t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      }
-      return t;
-    };
+    const withAniso = (t: any) => { if (renderer.capabilities?.getMaxAnisotropy) t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t; };
     const tex = {
-      earthDay: withAniso(loader.load(TEX.EARTH_DAY)),
-      earthNormal: withAniso(loader.load(TEX.EARTH_NORMAL)),
-      earthSpec: withAniso(loader.load(TEX.EARTH_SPEC)),
-      earthClouds: withAniso(loader.load(TEX.EARTH_CLOUDS)),
-      moon: withAniso(loader.load(TEX.MOON)),
-      sunPhoto: withAniso(loader.load(TEX.SUN_PHOTOSPHERE)),
+      earthDay: withAniso(loader.load(TEX.EARTH_DAY)), earthNormal: withAniso(loader.load(TEX.EARTH_NORMAL)),
+      earthSpec: withAniso(loader.load(TEX.EARTH_SPEC)), earthClouds: withAniso(loader.load(TEX.EARTH_CLOUDS)),
+      moon: withAniso(loader.load(TEX.MOON)), sunPhoto: withAniso(loader.load(TEX.SUN_PHOTOSPHERE)),
       milkyWay: withAniso(loader.load(TEX.MILKY_WAY)),
     };
-
     tex.milkyWay.mapping = THREE.EquirectangularReflectionMapping;
     scene.background = tex.milkyWay;
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
-    scene.add(ambientLight);
-    const pointLight = new THREE.PointLight(0xffffff, 2.4, 300 * SCENE_SCALE);
-    scene.add(pointLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    scene.add(new THREE.PointLight(0xffffff, 2.4, 300 * SCENE_SCALE));
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.screenSpacePanning = false;
-    controls.minDistance = 0.12 * SCENE_SCALE;
+    controls.enableDamping = true; controls.dampingFactor = 0.08;
+    controls.screenSpacePanning = false; controls.minDistance = 0.12 * SCENE_SCALE;
     controls.maxDistance = 55 * SCENE_SCALE;
     controlsRef.current = controls;
 
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- NEW: Create Flux Rope geometry and material ---
-    const fluxRopeGeometry = new THREE.TorusGeometry(0.95, 0.05, 16, 100);
-    const fluxRopeMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.7,
-      depthWrite: false,
+    // --- NEW: Create Flux Rope with ShaderMaterial ---
+    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    const fluxRopeMaterial = new THREE.ShaderMaterial({
+        vertexShader: FLUX_ROPE_VERTEX_SHADER,
+        fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
+        uniforms: {
+            uTime: { value: 0 },
+            uTexture: { value: createArrowTexture(THREE) },
+            uColor: { value: new THREE.Color(0xffffff) },
+        },
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
     });
     fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.rotation.x = Math.PI / 2; // Align with the cone's base
+    fluxRopeRef.current.rotation.x = Math.PI / 2;
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
 
+
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
-      for (let i = 0; i < count; i++) {
-        verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
-        verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
-        verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
-      }
+      for (let i = 0; i < count; i++) verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE), THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE), THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
-      const m = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: size * SCENE_SCALE,
-        sizeAttenuation: true,
-        transparent: true,
-        opacity: 0.95,
-        depthWrite: false
-      });
+      const m = new THREE.PointsMaterial({ color: 0xffffff, size: size * SCENE_SCALE, sizeAttenuation: true, transparent: true, opacity: 0.95, depthWrite: false });
       return new THREE.Points(g, m);
     };
     const starsNear = makeStars(30000, 250, 0.012);
@@ -367,24 +334,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     starsFarRef.current = starsFar;
 
     const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
-    const sunMaterial = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: SUN_VERTEX_SHADER,
-      fragmentShader: SUN_FRAGMENT_SHADER,
-      transparent: true,
-    });
+    const sunMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER, transparent: true });
     const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
     sunMesh.name = 'sun-shader';
     scene.add(sunMesh);
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
     const sunOverlayGeo = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64);
-    const sunOverlayMat = new THREE.MeshBasicMaterial({
-      map: tex.sunPhoto,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
+    const sunOverlayMat = new THREE.MeshBasicMaterial({ map: tex.sunPhoto, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     const sunOverlay = new THREE.Mesh(sunOverlayGeo, sunOverlayMat);
     sunOverlay.name = "sun-photosphere";
     scene.add(sunOverlay);
@@ -393,84 +350,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
-
-      let planetGeometry = new THREE.SphereGeometry(data.size, 64, 64);
-      let planetMaterial: any = new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 });
-      let planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+      const planetMesh = new THREE.Mesh(new THREE.SphereGeometry(data.size, 64, 64), new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 }));
       planetMesh.position.x = data.radius * Math.sin(data.angle);
       planetMesh.position.z = data.radius * Math.cos(data.angle);
       planetMesh.userData = data;
       scene.add(planetMesh);
       celestialBodiesRef.current[name] = { mesh: planetMesh, name: data.name, labelId: data.labelElementId, userData: data };
       planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: planetMesh });
-
       if (name === 'EARTH') {
-        const earthData = data as PlanetData;
-
-        const earthMat = new THREE.MeshPhongMaterial({
-          map: tex.earthDay,
-          normalMap: tex.earthNormal,
-          specularMap: tex.earthSpec,
-          specular: new THREE.Color(0x111111),
-          shininess: 6
-        });
-        planetMesh.material = earthMat;
-
-        const cloudsGeo = new THREE.SphereGeometry(earthData.size * 1.01, 48, 48);
-        const cloudsMat = new THREE.MeshLambertMaterial({
-          map: tex.earthClouds,
-          transparent: true,
-          opacity: 0.7,
-          depthWrite: false
-        });
-        const clouds = new THREE.Mesh(cloudsGeo, cloudsMat);
+        planetMesh.material = new THREE.MeshPhongMaterial({ map: tex.earthDay, normalMap: tex.earthNormal, specularMap: tex.earthSpec, specular: new THREE.Color(0x111111), shininess: 6 });
+        const clouds = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.01, 48, 48), new THREE.MeshLambertMaterial({ map: tex.earthClouds, transparent: true, opacity: 0.7, depthWrite: false }));
         clouds.name = 'clouds';
         planetMesh.add(clouds);
-
-        const atmosphereGeo = new THREE.SphereGeometry(earthData.size * 1.2, 32, 32);
-        const atmosphereMat = new THREE.ShaderMaterial({
-          vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER,
-          fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-          blending: THREE.AdditiveBlending,
-          side: THREE.BackSide,
-          transparent: true,
-          depthWrite: false,
-          uniforms: { uImpactTime: { value: 0.0 }, uTime: { value: 0.0 } }
-        });
-        const atmosphere = new THREE.Mesh(atmosphereGeo, atmosphereMat);
+        const atmosphere = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0.0 }, uTime: { value: 0.0 } } }));
         atmosphere.name = 'atmosphere';
         planetMesh.add(atmosphere);
-
-        const auroraGeo = new THREE.SphereGeometry(earthData.size * 1.25, 64, 64);
-        const auroraMat = new THREE.ShaderMaterial({
-          vertexShader: AURORA_VERTEX_SHADER,
-          fragmentShader: AURORA_FRAGMENT_SHADER,
-          blending: THREE.AdditiveBlending,
-          side: THREE.BackSide,
-          transparent: true,
-          depthWrite: false,
-          uniforms: {
-            uTime: { value: 0.0 },
-            uCmeSpeed: { value: 0.0 },
-            uImpactTime: { value: 0.0 }
-          }
-        });
-        const aurora = new THREE.Mesh(auroraGeo, auroraMat);
+        const aurora = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0.0 }, uCmeSpeed: { value: 0.0 }, uImpactTime: { value: 0.0 } } }));
         aurora.name = 'aurora';
         planetMesh.add(aurora);
       }
-
       const orbitPoints = [];
-      const orbitSegments = 128;
-      for (let i = 0; i <= orbitSegments; i++) {
-        const angle = (i / orbitSegments) * Math.PI * 2;
-        orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
-      }
-      const orbitCurve = new THREE.CatmullRomCurve3(orbitPoints);
-      const tubeThickness = 0.005 * SCENE_SCALE;
-      const orbitGeometry = new THREE.TubeGeometry(orbitCurve, orbitSegments, tubeThickness, 8, true);
-      const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.6 });
-      const orbitTube = new THREE.Mesh(orbitGeometry, orbitMaterial);
+      for (let i = 0; i <= 128; i++) orbitPoints.push(new THREE.Vector3(Math.sin((i / 128) * Math.PI * 2) * data.radius, 0, Math.cos((i / 128) * Math.PI * 2) * data.radius));
+      const orbitTube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(orbitPoints), 128, 0.005 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.6 }));
       scene.add(orbitTube);
       orbitsRef.current[name] = orbitTube;
     });
@@ -479,497 +380,167 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (!data.orbits) return;
       const parentBody = celestialBodiesRef.current[data.orbits];
       if (!parentBody) return;
-
-      const moonGeometry = new THREE.SphereGeometry(data.size, 16, 16);
-      const moonMaterial = new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null });
-      const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+      const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(data.size, 16, 16), new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null }));
       moonMesh.position.x = data.radius * Math.sin(data.angle);
       moonMesh.position.z = data.radius * Math.cos(data.angle);
       moonMesh.userData = data;
-
       parentBody.mesh.add(moonMesh);
       celestialBodiesRef.current[name] = { mesh: moonMesh, name: data.name, labelId: data.labelElementId, userData: data };
-      const existing = (name === 'MOON') ? planetLabelInfos.find(p => p.name === 'Moon') : undefined;
-      if (!existing) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
-
+      if (name === 'MOON' && !planetLabelInfos.find(p => p.name === 'Moon')) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
       const orbitPoints = [];
-      const orbitSegments = 64;
-      for (let i = 0; i <= orbitSegments; i++) {
-        const angle = (i / orbitSegments) * Math.PI * 2;
-        orbitPoints.push(new THREE.Vector3(Math.sin(angle) * data.radius, 0, Math.cos(angle) * data.radius));
-      }
-      const orbitCurve = new THREE.CatmullRomCurve3(orbitPoints);
-      const tubeThickness = 0.003 * SCENE_SCALE;
-      const orbitGeometry = new THREE.TubeGeometry(orbitCurve, orbitSegments, tubeThickness, 8, true);
-      const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.7 });
-      const orbitTube = new THREE.Mesh(orbitGeometry, orbitMaterial);
+      for (let i = 0; i <= 64; i++) orbitPoints.push(new THREE.Vector3(Math.sin((i / 64) * Math.PI * 2) * data.radius, 0, Math.cos((i / 64) * Math.PI * 2) * data.radius));
+      const orbitTube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(orbitPoints), 64, 0.003 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.7 }));
       orbitTube.name = 'moon-orbit';
       parentBody.mesh.add(orbitTube);
     });
 
     Object.entries(POI_DATA_MAP).forEach(([name, data]) => {
-      const poiGeometry = new THREE.TetrahedronGeometry(data.size, 0);
-      const poiMaterial = new THREE.MeshBasicMaterial({ color: data.color });
-      const poiMesh = new THREE.Mesh(poiGeometry, poiMaterial);
+      const poiMesh = new THREE.Mesh(new THREE.TetrahedronGeometry(data.size, 0), new THREE.MeshBasicMaterial({ color: data.color }));
       poiMesh.userData = data;
-
       scene.add(poiMesh);
       celestialBodiesRef.current[name] = { mesh: poiMesh, name: data.name, labelId: data.labelElementId, userData: data };
       planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: poiMesh });
     });
 
     setPlanetMeshesForLabels(planetLabelInfos);
-
-    const handleResize = () => {
-      if (mountRef.current && cameraRef.current && rendererRef.current) {
-        cameraRef.current.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
-        cameraRef.current.updateProjectionMatrix();
-        rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-      }
-    };
+    const handleResize = () => { if (mountRef.current && cameraRef.current && rendererRef.current) { cameraRef.current.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight; cameraRef.current.updateProjectionMatrix(); rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight); }};
     window.addEventListener('resize', handleResize);
 
     let animationFrameId: number;
-
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-
-      const {
-        currentlyModeledCMEId,
-        timelineActive,
-        timelinePlaying,
-        timelineSpeed,
-        timelineMinDate,
-        timelineMaxDate,
-        onScrubberChangeByAnim,
-        onTimelineEnd,
-        showFluxRope,
-      } = animPropsRef.current;
-
+      const { currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd, showFluxRope } = animPropsRef.current;
       const elapsedTime = getClockElapsedTime();
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
-
       if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
       if (starsFarRef.current)  starsFarRef.current.rotation.y += 0.00009;
-
       const ORBIT_SPEED_SCALE = 2000;
-      Object.values(celestialBodiesRef.current).forEach(body => {
-        const bodyData = body.userData as PlanetData | undefined;
-        if (!bodyData || !bodyData.orbitalPeriodDays) return;
-
-        const angularVelocity = (2 * Math.PI) / (bodyData.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE;
-        const angle = bodyData.angle + angularVelocity * elapsedTime;
-
-        body.mesh.position.x = bodyData.radius * Math.sin(angle);
-        body.mesh.position.z = bodyData.radius * Math.cos(angle);
-      });
-
-      const l1Body = celestialBodiesRef.current['L1'];
-      const earthBody = celestialBodiesRef.current['EARTH'];
-      if (l1Body && earthBody) {
-        const earthPos = new THREE.Vector3();
-        earthBody.mesh.getWorldPosition(earthPos);
-        const sunToEarthDir = earthPos.clone().normalize();
-        const l1Data = l1Body.userData as POIData;
-        const l1Pos = earthPos.clone().sub(sunToEarthDir.multiplyScalar(l1Data.distanceFromParent));
-        l1Body.mesh.position.copy(l1Pos);
-        l1Body.mesh.lookAt(earthPos);
-      }
-
-      if (celestialBodiesRef.current.SUN) {
-        (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
-      }
-      if (celestialBodiesRef.current.EARTH) {
-        const earthMesh = celestialBodiesRef.current.EARTH.mesh;
-        earthMesh.rotation.y += 0.05 * delta;
-        const clouds = earthMesh.children.find((c:any)=>c.name==='clouds');
-        if (clouds) clouds.rotation.y += 0.01 * delta;
-
-        earthMesh.children.forEach((child: any) => {
-          if (child.material?.uniforms?.uTime) {
-            child.material.uniforms.uTime.value = elapsedTime;
-          }
-        });
-      }
-
-      if (timelineActive) {
-        if (timelinePlaying) {
-          const timeRange = timelineMaxDate - timelineMinDate;
-          if (timeRange > 0 && timelineValueRef.current < 1000) {
-            const simHoursPerSecond = 3 * timelineSpeed;
-            const simMillisPerSecond = simHoursPerSecond * 3600 * 1000;
-            const simTimePassedThisFrame = delta * simMillisPerSecond;
-            const valueToAdd = (simTimePassedThisFrame / timeRange) * 1000;
-
-            const newValue = timelineValueRef.current + valueToAdd;
-
-            if (newValue >= 1000) {
-              timelineValueRef.current = 1000;
-              onTimelineEnd();
-            } else {
-              timelineValueRef.current = newValue;
-            }
-            onScrubberChangeByAnim(timelineValueRef.current);
-          }
-        }
-
-        const currentTimelineTime = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((cmeObject: any) => {
-          const cme: ProcessedCME = cmeObject.userData;
-          if (!cme) return;
-
-          const timeSinceEventSeconds = (currentTimelineTime - cme.startTime.getTime()) / 1000;
-          if (timeSinceEventSeconds < 0) {
-            updateCMEShape(cmeObject, -1);
-          } else {
-            const distSceneUnits = calculateDistance(cme, timeSinceEventSeconds, false);
-            updateCMEShape(cmeObject, distSceneUnits);
-          }
-        });
-
-      } else {
-        cmeGroupRef.current.children.forEach((cmeObject: any) => {
-          const cme: ProcessedCME = cmeObject.userData;
-          if (!cme) return;
-
-          let currentDistSceneUnits = 0;
-          if (currentlyModeledCMEId && cme.id === currentlyModeledCMEId) {
-            const simStartTime = cme.simulationStartTime !== undefined ? cme.simulationStartTime : elapsedTime;
-            const timeSinceEventVisual = elapsedTime - simStartTime;
-            currentDistSceneUnits = calculateDistance(cme, timeSinceEventVisual < 0 ? 0 : timeSinceEventVisual, true);
-          }
-          else if (!currentlyModeledCMEId) {
-            const timeSinceEventAPI = (Date.now() - cme.startTime.getTime()) / 1000;
-            currentDistSceneUnits = calculateDistance(cme, timeSinceEventAPI < 0 ? 0 : timeSinceEventAPI, false);
-          } else {
-            updateCMEShape(cmeObject, -1);
-            return;
-          }
-          updateCMEShape(cmeObject, currentDistSceneUnits);
-        });
-      }
-
-      // --- NEW: Flux Rope animation logic ---
+      Object.values(celestialBodiesRef.current).forEach(body => { const d = body.userData as PlanetData | undefined; if (d?.orbitalPeriodDays) { const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE) * elapsedTime; body.mesh.position.x = d.radius * Math.sin(a); body.mesh.position.z = d.radius * Math.cos(a); } });
+      const l1Body = celestialBodiesRef.current['L1']; const earthBody = celestialBodiesRef.current['EARTH'];
+      if (l1Body && earthBody) { const p = new THREE.Vector3(); earthBody.mesh.getWorldPosition(p); const d = p.clone().normalize(); const l1Pos = p.clone().sub(d.multiplyScalar((l1Body.userData as POIData).distanceFromParent)); l1Body.mesh.position.copy(l1Pos); l1Body.mesh.lookAt(p); }
+      if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
+      if (celestialBodiesRef.current.EARTH) { const e = celestialBodiesRef.current.EARTH.mesh; e.rotation.y += 0.05 * delta; const c = e.children.find((c:any)=>c.name==='clouds'); if(c) c.rotation.y += 0.01 * delta; e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; }); }
+      if (timelineActive) { if (timelinePlaying) { const r = timelineMaxDate - timelineMinDate; if (r > 0 && timelineValueRef.current < 1000) { const v = timelineValueRef.current + (delta * (3 * timelineSpeed * 3600 * 1000) / r) * 1000; if (v >= 1000) { timelineValueRef.current = 1000; onTimelineEnd(); } else { timelineValueRef.current = v; } onScrubberChangeByAnim(timelineValueRef.current); } } const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000); cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistance(c.userData, s, false)); }); } else { cmeGroupRef.current.children.forEach((c: any) => { let d = 0; if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) { const t = elapsedTime - (c.userData.simulationStartTime ?? elapsedTime); d = calculateDistance(c.userData, t < 0 ? 0 : t, true); } else if (!currentlyModeledCMEId) { const t = (Date.now() - c.userData.startTime.getTime()) / 1000; d = calculateDistance(c.userData, t < 0 ? 0 : t, false); } else { updateCMEShape(c, -1); return; } updateCMEShape(c, d); }); }
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
-        fluxRopeRef.current.visible = shouldShowFluxRope;
-        if (shouldShowFluxRope) {
-          const modeledCMEObject = cmeGroupRef.current.children.find(
-            (c: any) => c.userData.id === currentlyModeledCMEId
-          );
-          if (modeledCMEObject) {
-            fluxRopeRef.current.position.copy(modeledCMEObject.position);
-            fluxRopeRef.current.quaternion.copy(modeledCMEObject.quaternion);
-
-            const cme: ProcessedCME = modeledCMEObject.userData;
-            const coneHalfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
-            const coneRadiusAtTip = modeledCMEObject.scale.y * Math.tan(coneHalfAngleRad);
-            fluxRopeRef.current.scale.set(coneRadiusAtTip, coneRadiusAtTip, coneRadiusAtTip);
-            
-            // Move the rope to the front of the particle cone
-            const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(modeledCMEObject.quaternion);
-            const offset = direction.clone().multiplyScalar(modeledCMEObject.scale.y);
-            fluxRopeRef.current.position.add(offset);
+          fluxRopeRef.current.visible = shouldShowFluxRope;
+          if (shouldShowFluxRope) {
+              const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
+              if (cmeObject) {
+                  fluxRopeRef.current.position.copy(cmeObject.position);
+                  fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
+                  const cme: ProcessedCME = cmeObject.userData;
+                  const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+                  fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
+                  const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+                  fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+                  fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
+              }
           }
-        }
+          fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
-
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
-
       controlsRef.current.update();
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     };
     animate();
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (mountRef.current && rendererRef.current) {
-        mountRef.current.removeChild(rendererRef.current.domElement);
-      }
-      if (particleTextureCache) {
-        particleTextureCache.dispose?.();
-        particleTextureCache = null;
-      }
-      try { rendererRef.current?.dispose(); } catch {}
-      cancelAnimationFrame(animationFrameId);
-      sceneRef.current?.traverse((object:any) => {
-        if (object.geometry) object.geometry.dispose();
-        if (object.material) {
-          if (Array.isArray(object.material)) {
-            object.material.forEach((material:any) => material.dispose());
-          } else {
-            object.material.dispose();
-          }
-        }
-      });
-      rendererRef.current = null;
-    };
+    return () => { window.removeEventListener('resize', handleResize); if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement); if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; } if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; } try { rendererRef.current?.dispose(); } catch {} cancelAnimationFrame(animationFrameId); sceneRef.current?.traverse((o:any) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach((m:any) => m.dispose()); else o.material.dispose(); } }); rendererRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [THREE, dataVersion]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
-
-    while (cmeGroupRef.current.children.length > 0) {
-      const child = cmeGroupRef.current.children[0];
-      cmeGroupRef.current.remove(child);
-      if ((child as any).geometry) (child as any).geometry.dispose();
-      if ((child as any).material) {
-        const m = (child as any).material;
-        if (Array.isArray(m)) m.forEach((x:any)=>x.dispose()); else m.dispose();
-      }
-    }
-
+    while (cmeGroupRef.current.children.length > 0) { const c = cmeGroupRef.current.children[0]; cmeGroupRef.current.remove(c); if ((c as any).geometry) (c as any).geometry.dispose(); if ((c as any).material) { const m = (c as any).material; if (Array.isArray(m)) m.forEach((x:any)=>x.dispose()); else m.dispose(); } }
     const particleTexture = createParticleTexture(THREE);
-
     cmeData.forEach(cme => {
-      const particleCount = getCmeParticleCount(cme.speed);
-      const positions: number[] = [];
+      const pCount = getCmeParticleCount(cme.speed);
+      const pos: number[] = [];
       const colors: number[] = [];
-
-      const coneHalfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneHeight = 1;
-      const coneRadius = coneHeight * Math.tan(coneHalfAngleRad);
-      const bulgeFactor = 0.5;
-
+      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
+      const coneRadius = 1 * Math.tan(halfAngle);
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
-
-      for (let i = 0; i < particleCount; i++) {
-        const y = coneHeight * Math.cbrt(Math.random());
-        const radiusAtY = (y / coneHeight) * coneRadius;
+      for (let i = 0; i < pCount; i++) {
+        const y = Math.cbrt(Math.random());
+        const rAtY = y * coneRadius;
         const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * radiusAtY : 0;
-
+        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
-
-        const normalizedR = r / coneRadius;
-        const yOffset = bulgeFactor * (1 - normalizedR * normalizedR);
-        const finalY = y * (1 + yOffset);
-
-        positions.push(x, finalY, z);
-
-        const relativePos = y / coneHeight;
-        const finalColor = new THREE.Color();
-        const wakeEnd = 0.1;
-        const coreEnd = 0.3;
-
-        if (relativePos < wakeEnd) {
-          const t = relativePos / wakeEnd;
-          finalColor.copy(wakeColor).lerp(coreColor, t);
-        } else if (relativePos < coreEnd) {
-          finalColor.copy(coreColor);
-        } else {
-          const t = (relativePos - coreEnd) / (1.0 - coreEnd);
-          finalColor.copy(coreColor).lerp(shockColor, t);
-        }
+        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        const relPos = y; const finalColor = new THREE.Color();
+        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
+        else if (relPos < 0.3) finalColor.copy(coreColor);
+        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
-
-      const particlesGeometry = new THREE.BufferGeometry();
-      particlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      particlesGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-      const cmeMaterial = new THREE.PointsMaterial({
-        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
-        sizeAttenuation: true,
-        map: particleTexture,
-        transparent: true,
-        opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        vertexColors: true,
-      });
-
-      const cmeParticleSystem = new THREE.Points(particlesGeometry, cmeMaterial);
-      cmeParticleSystem.userData = cme;
-
-      const direction = new THREE.Vector3();
-      direction.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
-      cmeParticleSystem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-
-      cmeGroupRef.current.add(cmeParticleSystem);
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: particleTexture, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true });
+      const system = new THREE.Points(geom, mat);
+      system.userData = cme;
+      const dir = new THREE.Vector3();
+      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      cmeGroupRef.current.add(system);
     });
-
   }, [cmeData, getClockElapsedTime]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!cmeGroupRef.current) return;
-    cmeGroupRef.current.children.forEach((cmeMesh: any) => {
-      const cme: ProcessedCME = cmeMesh.userData;
-      if (currentlyModeledCMEId) {
-        cmeMesh.visible = cme.id === currentlyModeledCMEId;
-        if (cme.id === currentlyModeledCMEId && cmeMesh.userData) {
-          cmeMesh.userData.simulationStartTime = getClockElapsedTime();
-        }
-      } else {
-        cmeMesh.visible = true;
-      }
-    });
-
+    cmeGroupRef.current.children.forEach((cmeMesh: any) => { cmeMesh.visible = !currentlyModeledCMEId || cmeMesh.userData.id === currentlyModeledCMEId; if (cmeMesh.userData.id === currentlyModeledCMEId) cmeMesh.userData.simulationStartTime = getClockElapsedTime(); });
     if (!THREE || !sceneRef.current) return;
-    if (predictionLineRef.current) {
-      sceneRef.current.remove(predictionLineRef.current);
-      predictionLineRef.current.geometry.dispose();
-      predictionLineRef.current.material.dispose();
-      predictionLineRef.current = null;
-    }
-
+    if (predictionLineRef.current) { sceneRef.current.remove(predictionLineRef.current); predictionLineRef.current.geometry.dispose(); predictionLineRef.current.material.dispose(); predictionLineRef.current = null; }
     const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
-    if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) {
-      const earthPos = new THREE.Vector3();
-      celestialBodiesRef.current.EARTH.mesh.getWorldPosition(earthPos);
-      const points = [new THREE.Vector3(0, 0, 0), earthPos];
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineDashedMaterial({
-        color: 0xffff66,
-        transparent: true,
-        opacity: 0.85,
-        dashSize: 0.05 * SCENE_SCALE,
-        gapSize: 0.02 * SCENE_SCALE
-      });
-      const line = new THREE.Line(geometry, material);
-      line.computeLineDistances();
-      line.visible = !!currentlyModeledCMEId;
-      sceneRef.current.add(line);
-      predictionLineRef.current = line;
-    }
+    if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) { const p = new THREE.Vector3(); celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p); const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]); const m = new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE }); const l = new THREE.Line(g, m); l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l; }
   }, [currentlyModeledCMEId, cmeData, getClockElapsedTime]);
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
-    const THREE = (window as any).THREE;
-    const gsap = (window as any).gsap;
+    const THREE = (window as any).THREE; const gsap = (window as any).gsap;
     if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return;
-
-    const targetPosition = new THREE.Vector3(0, 0, 0);
-    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) {
-      celestialBodiesRef.current.EARTH.mesh.getWorldPosition(targetPosition);
-    }
-
-    let camPos = new THREE.Vector3();
-    if (view === ViewMode.TOP) {
-      camPos.set(targetPosition.x, targetPosition.y + SCENE_SCALE * 4.2, targetPosition.z + 0.01);
-    } else {
-      camPos.set(targetPosition.x + SCENE_SCALE * 1.9, targetPosition.y + SCENE_SCALE * 0.35 , targetPosition.z);
-    }
-
-    gsap.to(cameraRef.current.position, {
-      duration: 1.2,
-      x: camPos.x, y: camPos.y, z: camPos.z,
-      ease: "power2.inOut"
-    });
-    gsap.to(controlsRef.current.target, {
-      duration: 1.2,
-      x: targetPosition.x, y: targetPosition.y, z: targetPosition.z,
-      ease: "power2.inOut",
-      onUpdate: () => controlsRef.current.update()
-    });
+    const target = new THREE.Vector3(0, 0, 0);
+    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) celestialBodiesRef.current.EARTH.mesh.getWorldPosition(target);
+    const pos = new THREE.Vector3();
+    if (view === ViewMode.TOP) pos.set(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01);
+    else pos.set(target.x + SCENE_SCALE * 1.9, target.y + SCENE_SCALE * 0.35, target.z);
+    gsap.to(cameraRef.current.position, { duration: 1.2, x: pos.x, y: pos.y, z: pos.z, ease: "power2.inOut" });
+    gsap.to(controlsRef.current.target, { duration: 1.2, x: target.x, y: target.y, z: target.z, ease: "power2.inOut", onUpdate: () => controlsRef.current.update() });
   }, []);
 
-  useEffect(() => {
-    moveCamera(activeView, focusTarget);
-  }, [activeView, focusTarget, dataVersion, moveCamera]);
+  useEffect(() => { moveCamera(activeView, focusTarget); }, [activeView, focusTarget, dataVersion, moveCamera]);
 
-  // MODIFIED: useImperativeHandle now exposes the new capture function
   useImperativeHandle(ref, () => ({
-    resetView: () => {
-      moveCamera(ViewMode.TOP, FocusTarget.EARTH);
-    },
-    resetAnimationTimer: () => {
-      lastTimeRef.current = getClockElapsedTime();
-    },
-    captureCanvasAsDataURL: () => {
-      if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        // Force a render of the current frame to ensure it's up-to-date
-        rendererRef.current.render(sceneRef.current, cameraRef.current);
-        // Return the data URL of the canvas
-        return rendererRef.current.domElement.toDataURL('image/png');
-      }
-      return null;
-    }
+    resetView: () => { moveCamera(ViewMode.TOP, FocusTarget.EARTH); },
+    resetAnimationTimer: () => { lastTimeRef.current = getClockElapsedTime(); },
+    captureCanvasAsDataURL: () => { if (rendererRef.current && sceneRef.current && cameraRef.current) { rendererRef.current.render(sceneRef.current, cameraRef.current); return rendererRef.current.domElement.toDataURL('image/png'); } return null; }
   }), [moveCamera, getClockElapsedTime]);
 
-  useEffect(() => {
-    if (controlsRef.current && rendererRef.current?.domElement) {
-      controlsRef.current.enabled = true;
-      rendererRef.current.domElement.style.cursor = 'move';
-    }
-  }, [interactionMode]);
-
-  useEffect(() => {
-    if (!celestialBodiesRef.current || !orbitsRef.current) return;
-    ['MERCURY', 'VENUS', 'MARS'].forEach(name => {
-      const body = celestialBodiesRef.current[name];
-      const orbit = orbitsRef.current[name];
-      if (body) body.mesh.visible = showExtraPlanets;
-      if (orbit) orbit.visible = showExtraPlanets;
-    });
-  }, [showExtraPlanets]);
-
-  useEffect(() => {
-    if (!celestialBodiesRef.current) return;
-    const moon = celestialBodiesRef.current['MOON'];
-    const l1 = celestialBodiesRef.current['L1'];
-
-    if (moon) moon.mesh.visible = showMoonL1;
-    if (l1) l1.mesh.visible = showMoonL1;
-
-    const earthMesh = celestialBodiesRef.current['EARTH']?.mesh;
-    if (earthMesh) {
-      const moonOrbit = earthMesh.children.find((c:any) => c.name === 'moon-orbit');
-      if (moonOrbit) moonOrbit.visible = showMoonL1;
-    }
-  }, [showMoonL1]);
+  useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
+  useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n]; const o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
+  useEffect(() => { if (!celestialBodiesRef.current) return; const m = celestialBodiesRef.current['MOON']; const l = celestialBodiesRef.current['L1']; if (m) m.mesh.visible = showMoonL1; if (l) l.mesh.visible = showMoonL1; const e = celestialBodiesRef.current['EARTH']?.mesh; if (e) { const o = e.children.find((c:any) => c.name === 'moon-orbit'); if (o) o.visible = showMoonL1; } }, [showMoonL1]);
 
   const checkImpacts = useCallback(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
-
-    let maxImpactSpeed = 0;
-    const earthPos = new THREE.Vector3();
-    celestialBodiesRef.current.EARTH.mesh.getWorldPosition(earthPos);
-
-    cmeGroupRef.current.children.forEach((cmeObject: any) => {
-      const cme: ProcessedCME = cmeObject.userData;
-      if (!cme || !cmeObject.visible) return;
-
-      const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-      const tipWorld = cmeObject.position.clone().add(dir.clone().multiplyScalar(cmeObject.scale.y));
-      const d = tipWorld.distanceTo(earthPos);
-
-      const impactRadius = PLANET_DATA_MAP.EARTH.size * 2.2;
-      if (d < impactRadius) {
-        if (cme.speed > maxImpactSpeed) maxImpactSpeed = cme.speed;
-      }
-    });
-
-    return maxImpactSpeed;
+    let maxSpeed = 0; const p = new THREE.Vector3(); celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p);
+    cmeGroupRef.current.children.forEach((c: any) => { const d = c.userData; if (!d || !c.visible) return; const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion); const tip = c.position.clone().add(dir.clone().multiplyScalar(c.scale.y)); if (tip.distanceTo(p) < PLANET_DATA_MAP.EARTH.size * 2.2 && d.speed > maxSpeed) maxSpeed = d.speed; });
+    return maxSpeed;
   }, []);
 
   const updateImpactEffects = useCallback((maxImpactSpeed: number, elapsed: number) => {
     const earth = celestialBodiesRef.current.EARTH?.mesh;
     if (!earth) return;
-
     const aurora = earth.children.find((c: any) => c.name === 'aurora');
     const atmosphere = earth.children.find((c: any) => c.name === 'atmosphere');
-
     const hit = clamp(maxImpactSpeed / 1500, 0, 1);
-
-    if (aurora?.material?.uniforms) {
-      aurora.material.uniforms.uCmeSpeed.value = maxImpactSpeed;
-      (aurora.material as any).opacity = 0.20 + hit * (0.30 + 0.12 * Math.sin(elapsed * 2.2));
-    }
-
-    if (atmosphere?.material?.uniforms) {
-      (atmosphere.material as any).opacity = 0.12 + hit * 0.22;
-      atmosphere.material.uniforms.uImpactTime.value = hit > 0 ? elapsed : 0.0;
-    }
+    if (aurora?.material?.uniforms) { aurora.material.uniforms.uCmeSpeed.value = maxImpactSpeed; (aurora.material as any).opacity = 0.20 + hit * (0.30 + 0.12 * Math.sin(elapsed * 2.2)); }
+    if (atmosphere?.material?.uniforms) { (atmosphere.material as any).opacity = 0.12 + hit * 0.22; atmosphere.material.uniforms.uImpactTime.value = hit > 0 ? elapsed : 0.0; }
   }, []);
 
   return <div ref={mountRef} className="w-full h-full" />;

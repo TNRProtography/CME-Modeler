@@ -206,6 +206,49 @@ void main() {
 }
 `;
 
+// --- NEW: Shaders for the Flux Rope ---
+export const FLUX_ROPE_VERTEX_SHADER = `
+varying vec2 vUv;
+void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+export const FLUX_ROPE_FRAGMENT_SHADER = `
+uniform sampler2D uTexture;
+uniform float uTime;
+uniform vec3 uColor;
+varying vec2 vUv;
+
+void main() {
+    float speed = 0.5;
+    float pulseWidth = 0.1;
+    
+    // Create a repeating wave position from 0.0 to 1.0
+    float wavePos = fract(uTime * speed);
+    
+    // Calculate distance from the current fragment's UV to the wave position,
+    // accounting for the texture wrapping around the torus.
+    float dist = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
+    
+    // Create a smooth pulse band using smoothstep. This is 1.0 at the center
+    // of the wave and fades to 0.0 at the edges of the pulseWidth.
+    float pulse = smoothstep(pulseWidth, 0.0, dist);
+    
+    // Sample the arrow texture. We only care about its alpha channel.
+    vec4 texColor = texture2D(uTexture, vUv);
+    
+    // If the texture has no alpha, or the pulse is invisible, discard the fragment.
+    if (texColor.a < 0.1 || pulse < 0.01) {
+        discard;
+    }
+    
+    // The final color is the uniform color, and the alpha is the arrow shape
+    // multiplied by the pulse intensity, creating the shockwave effect.
+    gl_FragColor = vec4(uColor, texColor.a * pulse);
+}`;
+
+
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
 export const TEXT_COLOR = "#e5e5e5"; // neutral-200
