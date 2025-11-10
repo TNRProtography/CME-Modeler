@@ -274,4 +274,4 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 };
 
 export default ForecastModelsModal;
-// --- END OF FILE src/components/ForecastModelsModal.tsx ---
+// --- END OF FILE src/components/ForecastModelsModal.tsx --- 
