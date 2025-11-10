@@ -45,29 +45,32 @@ const generateEnlilGifUrl = (simulation: WSAEnlilSimulation): string | null => {
   }
   
   try {
-    // 1. Extract the timestamp from the link URL parameter.
-    // It looks like: "...?timestamp=2024-04-10 13:12:00&..."
-    const timestampMatch = simulation.link.match(/timestamp=([\d]{4}-[\d]{2}-[\d]{2}[ T][\d]{2}:[\d]{2}:[\d]{2})/);
-    if (!timestampMatch || !timestampMatch[1]) {
-      console.warn("Could not find timestamp in simulation link:", simulation.link);
+    // 1. Use URLSearchParams to safely parse the 'link' property.
+    const url = new URL(simulation.link);
+    const modelRunTimestamp = url.searchParams.get('timestamp');
+
+    if (!modelRunTimestamp) {
+      console.warn("Could not find 'timestamp' URL parameter in simulation link:", simulation.link);
       return null;
     }
 
-    // The matched timestamp will be "2024-04-10 13:12:00". Convert to "20240410_131200".
-    const modelRunTime = timestampMatch[1];
-    const dateTimeString = modelRunTime.replace(/-/g, '').replace(/[ T]/, '_').replace(/:/g, '');
+    // modelRunTimestamp is now a URL-decoded string like "YYYY-MM-DD HH:mm:ss"
+    const dateTimeString = modelRunTimestamp
+      .replace(/-/g, '')   // YYYYMMDD HH:mm:ss
+      .replace(' ', '_')  // YYYYMMDD_HH:mm:ss
+      .replace(/:/g, '');   // YYYYMMDD_HHmmss
 
     // 2. Extract the version from the simulation ID.
     // Example ID: "WSA-ENLIL_2024-04-10T13:12:00.0-1". The version is the last digit.
     const versionMatch = simulation.simulationID.match(/-(\d+)$/);
-    // The URL version is usually "1.0", "2.0", etc.
-    const version = versionMatch && versionMatch[1] ? `${versionMatch[1]}.0` : '2.0'; // Default to 2.0
+    // The API provides the run number (e.g., 1), but the URL needs the version (e.g., 1.0)
+    const version = versionMatch && versionMatch[1] ? `${versionMatch[1]}.0` : '2.0'; 
 
     // 3. Construct the final URL.
     return `https://iswa.gsfc.nasa.gov/downloads/${dateTimeString}_${version}_anim.tim-den.gif`;
 
   } catch (error) {
-    console.error("Error generating ENLIL GIF URL:", error, simulation);
+    console.error("Error generating ENLIL GIF URL for simulation:", simulation, error);
     return null;
   }
 };
