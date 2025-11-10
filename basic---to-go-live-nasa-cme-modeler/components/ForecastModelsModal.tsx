@@ -228,7 +228,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                              </p>
                              {sim.estimatedShockArrivalTime && (
                                <p className="text-neutral-300">
-                                 <strong>Predicted Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
+                                 <strong>Estimated Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
                                </p>
                              )}
                            </a>
