@@ -27,6 +27,7 @@ import CmeIcon from './components/icons/CmeIcon';
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
+import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports
 import SettingsModal from './components/SettingsModal';
@@ -116,6 +117,9 @@ const App: React.FC = () => {
   const [isAndroidIab, setIsAndroidIab] = useState(false);
   const deferredInstallPromptRef = useRef<any>(null);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
+
+  const [isAppReady, setIsAppReady] = useState(false);
+  const cmePageLoadedOnce = useRef(false);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';
@@ -228,23 +232,19 @@ const App: React.FC = () => {
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
-  const loadCMEData = useCallback(async (days: TimeRange, isBackgroundRefresh: boolean = false) => {
-    if (!isBackgroundRefresh) {
-      setIsLoading(true);
-      setFetchError(null);
-      setCurrentlyModeledCMEId(null);
-      setSelectedCMEForInfo(null);
-      setTimelineActive(false);
-      setTimelinePlaying(false);
-      setTimelineScrubberValue(0);
-      resetClock();
-      setDataVersion((v: number) => v + 1);
-    }
-    
+  const loadCMEData = useCallback(async (days: TimeRange) => {
+    setIsLoading(true);
+    setFetchError(null);
+    setCurrentlyModeledCMEId(null);
+    setSelectedCMEForInfo(null);
+    setTimelineActive(false);
+    setTimelinePlaying(false);
+    setTimelineScrubberValue(0);
+    resetClock();
+    setDataVersion((v: number) => v + 1);
     try {
       const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
-
       if (data.length > 0) {
         const endDate = new Date();
         const futureDate = new Date();
@@ -258,10 +258,6 @@ const App: React.FC = () => {
         setTimelineMinDate(0);
         setTimelineMaxDate(0);
       }
-      if (isBackgroundRefresh) {
-        setFetchError(null);
-      }
-
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -269,25 +265,23 @@ const App: React.FC = () => {
       } else {
         setFetchError((err as Error).message || "Unknown error fetching data.");
       }
-      if (!isBackgroundRefresh) {
-          setCmeData([]);
-      }
+      setCmeData([]);
     } finally {
-      if (!isBackgroundRefresh) {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   }, [resetClock, apiKey]);
 
   useEffect(() => {
-    loadCMEData(activeTimeRange, false);
-    const refreshInterval = 5 * 60 * 1000; // 5 minutes
-    const intervalId = setInterval(() => {
-      loadCMEData(activeTimeRange, true);
-    }, refreshInterval);
+      if (activePage === 'modeler' && !cmePageLoadedOnce.current) {
+          loadCMEData(activeTimeRange);
+          cmePageLoadedOnce.current = true;
+      }
+  }, [activePage, activeTimeRange, loadCMEData]);
 
-    return () => clearInterval(intervalId);
-  }, [activeTimeRange, loadCMEData]);
+  const handleTimeRangeChange = (range: TimeRange) => {
+      setActiveTimeRange(range);
+      loadCMEData(range);
+  };
 
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
@@ -300,7 +294,7 @@ const App: React.FC = () => {
   }, [currentlyModeledCMEId, cmeData, filteredCmes]);
 
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
-  const handleTimeRangeChange = (range: TimeRange) => setActiveTimeRange(range);
+  
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
   const handleResetView = useCallback(() => { setActiveView(ViewMode.TOP); setActiveFocus(FocusTarget.EARTH); canvasRef.current?.resetView(); }, []);
@@ -549,6 +543,22 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const handleInitialLoad = useCallback(() => {
+      setIsAppReady(true);
+  }, []);
+
+  if (!isAppReady) {
+      return (
+          <>
+              <InitialLoadingScreen />
+              {/* Render ForecastDashboard hidden to trigger its data fetch */}
+              <div style={{ display: 'none' }}>
+                  <ForecastDashboard onInitialLoad={handleInitialLoad} setCurrentAuroraScore={() => {}} setSubstormActivityStatus={() => {}} setIpsAlertData={() => {}} navigationTarget={null} />
+              </div>
+          </>
+      );
+  }
+
   return (
     <div className="w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden">
         <style>{`.tutorial-highlight { position: relative; z-index: 2003 !important; box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.7); border-color: #3b82f6 !important; }`}</style>
@@ -638,7 +648,7 @@ const App: React.FC = () => {
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
                 </div>
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
-                {isLoading && <LoadingOverlay />}
+                {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
             </div>
             <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
@@ -648,6 +658,7 @@ const App: React.FC = () => {
                     setSubstormActivityStatus={setSubstormActivityStatus}
                     setIpsAlertData={setIpsAlertData}
                     navigationTarget={navigationTarget}
+                    onInitialLoad={handleInitialLoad}
                 />
             </div>
             <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>

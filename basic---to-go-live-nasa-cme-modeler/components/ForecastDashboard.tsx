@@ -1,6 +1,6 @@
 //--- START OF FILE src/components/ForecastDashboard.tsx ---
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
@@ -42,6 +42,7 @@ interface ForecastDashboardProps {
   setSubstormActivityStatus: (status: SubstormActivity | null) => void;
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
+  onInitialLoad?: () => void;
 }
 
 interface Camera {
@@ -186,7 +187,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
@@ -201,6 +202,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
     const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
     const [viewMode, setViewMode] = useState<'simple' | 'advanced'>('simple');
+    const initialLoadCalled = useRef(false);
+
+    useEffect(() => {
+        if (!isLoading && onInitialLoad && !initialLoadCalled.current) {
+            onInitialLoad();
+            initialLoadCalled.current = true;
+        }
+    }, [isLoading, onInitialLoad]);
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -750,4 +759,4 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 };
 
 export default ForecastDashboard;
-//--- END OF FI
+//--- END OF FILE src/components/ForecastDashboard.tsx ---
