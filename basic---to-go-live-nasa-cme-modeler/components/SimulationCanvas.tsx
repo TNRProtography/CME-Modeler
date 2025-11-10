@@ -551,4 +551,4 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   return <div ref={mountRef} className="w-full h-full" />;
 };
 
-export default React.forwardRef(SimulationCanvas);
+export default React.forwardRef(SimulationCanvas); 

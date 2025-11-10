@@ -237,12 +237,15 @@ uniform vec3 uColor;
 varying vec2 vUv;
 varying float vFresnel;
 
+// Function to draw an arrow shape in a 0-1 UV space
 float arrow(vec2 uv, float thickness, float headSize) {
-    // Shaft
+    // Shaft (a vertical line)
     float shaft = smoothstep(thickness, 0.0, abs(uv.x - 0.5));
-    // Head
+    
+    // Head (a triangle pointing up)
     float head = smoothstep(headSize, 0.0, abs(uv.y - 0.8) - uv.x) 
                * smoothstep(headSize, 0.0, abs(uv.y - 0.8) - (1.0 - uv.x));
+               
     return max(shaft, head) * step(0.0, uv.y);
 }
 
@@ -250,11 +253,13 @@ void main() {
     float numArrows = 20.0;
     float arrowSpeed = -2.0;
 
-    // Local UV for one repeating arrow segment
+    // Create a local coordinate system for each arrow that repeats along the tube
     vec2 localUv = vec2(fract(vUv.x * numArrows + uTime * arrowSpeed), vUv.y);
 
-    // Draw up arrows on top, down arrows on bottom
+    // Draw up-pointing arrows on the top half of the tube (vUv.y > 0.5)
     float upArrow = arrow(localUv, 0.05, 0.2);
+    
+    // Draw down-pointing arrows on the bottom half by flipping the y-coordinate
     float downArrow = arrow(vec2(localUv.x, 1.0 - localUv.y), 0.05, 0.2);
     
     float arrowMask = 0.0;
@@ -264,9 +269,10 @@ void main() {
         arrowMask = downArrow;
     }
     
-    // Coils of the rope
+    // Create subtle glowing coils for the main body of the rope
     float coil = sin(vUv.y * 30.0 + vUv.x * 10.0) * 0.3 + 0.7;
 
+    // Combine the glowing edge (fresnel), the coils, and the bright arrows
     float finalAlpha = (vFresnel * 0.7) + (coil * 0.3) + (arrowMask * 1.0);
     
     if (finalAlpha < 0.1) {
