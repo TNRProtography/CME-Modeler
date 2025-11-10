@@ -5,18 +5,16 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-// Import only flare functions/types (IPS fully removed)
+// Import only flare functions/types (IPS removed)
 import { 
   fetchFlareData, 
   SolarFlare
 } from '../services/nasaService';
 
 interface SolarActivityDashboardProps {
-  // apiKey not needed
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   onViewCMEInVisualization: (cmeId: string) => void;
-  navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 
 interface SolarActivitySummary {
@@ -30,7 +28,6 @@ const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xra
 const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
-// const NASA_DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
@@ -109,9 +106,13 @@ const getOverallActivityStatus = (xrayClass: string, protonClass: string): 'Quie
   if (xrayClass.startsWith('X')) activityLevel = 'Very High';
   else if (xrayClass.startsWith('M')) activityLevel = 'High';
   else if (xrayClass.startsWith('C')) activityLevel = 'Moderate';
+
   if (protonClass === 'S5' || protonClass === 'S4') activityLevel = 'Very High';
-  else if (protonClass === 'S3' || 'S2') { if (protonClass === 'S3' || protonClass === 'S2') if (activityLevel !== 'Very High') activityLevel = 'High'; }
-  else if (protonClass === 'S1') { if (activityLevel === 'Quiet') activityLevel = 'Moderate'; }
+  else if (protonClass === 'S3' || protonClass === 'S2') {
+    if (activityLevel !== 'Very High') activityLevel = 'High';
+  } else if (protonClass === 'S1') {
+    if (activityLevel === 'Quiet') activityLevel = 'Moderate';
+  }
   return activityLevel;
 };
 
@@ -250,18 +251,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
 
-  // Tooltips (IPS removed)
+  // Tooltips
   const tooltipContent = useMemo(() => ({
     'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
     'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
-    'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy, especially bursts from solar flares. **Best for: Monitoring solar flares and active regions.**',
-    'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> This EUV wavelength reveals the cooler, denser plasma in the Sun\'s chromosphere and transition region. It\'s excellent for observing prominences and filaments. **Best for: Prominences and filaments.**',
-    'sdo-hmibc-1024': '<strong>SDO HMI Continuum (1024px):</strong> Visible light view showing sunspots and granulation. **Best for: Sunspots and active region morphology.**',
-    'sdo-hmiif-1024': '<strong>SDO HMI Intensitygram (1024px):</strong> Highlights magnetic field concentrations. **Best for: Tracking sunspot evolution.**',
-    'sdo-aia193-2048': '<strong>SDO AIA 193Å (2048px):</strong> High-res corona; great for coronal holes and fast wind sources.',
+    'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> Hot, flaring corona regions. <em>Best for:</em> Monitoring flares & active regions.',
+    'suvi-304': '<strong>SUVI 304Å (Angstrom):</strong> Cooler, denser plasma; prominences/filaments.',
+    'sdo-hmibc-1024': '<strong>SDO HMI Continuum (1024px):</strong> Sunspots & granulation.',
+    'sdo-hmiif-1024': '<strong>SDO HMI Intensitygram (1024px):</strong> Magnetic field concentrations.',
+    'sdo-aia193-2048': '<strong>SDO AIA 193Å (2048px):</strong> Coronal holes & large-scale corona.',
     'ccor1-video': '<strong>CCOR1 Coronagraph Video:</strong> Tracks CMEs leaving the Sun.',
     'solar-flares': 'Latest detected solar flares. M/X are stronger. "CME Event" highlights linked CMEs.',
-    'solar-imagery': `<p><strong>SUVI 131Å:</strong> Hot, flaring regions.</p><br><p><strong>SUVI 304Å:</strong> Cooler, denser plasma; prominences.</p><br><p><strong>AIA 193Å:</strong> Coronal holes & large-scale corona.</p><br><p><strong>HMI Continuum/Intensity:</strong> Sunspots & magnetic structure.</p>`
+    'solar-imagery': `<p><strong>SUVI 131Å:</strong> Hot, flaring regions.</p><br><p><strong>SUVI 304Å:</strong> Cooler plasma; prominences.</p><br><p><strong>AIA 193Å:</strong> Coronal holes.</p><br><p><strong>HMI:</strong> Sunspots & magnetic structure.</p>`
   }), []);
 
   const openModal = useCallback((id: string) => {
@@ -388,7 +389,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       setSolarFlares(processedData);
       setLoadingFlares(null);
       setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
-      // Optionally set a latest event headline
+      // Optional headline for the banner
       const firstStrong = processedData.find(f => f.classType?.startsWith('M') || f.classType?.startsWith('X'));
       if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatNZTimestamp(firstStrong.peakTime)}`);
     } catch (error) {
@@ -513,23 +514,54 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     };
   }, [allProtonData]);
 
+  // --- Build the 24h summary strictly from the last 24 hours ---
   useMemo(() => {
-    if (allXrayData.length === 0 && allProtonData.length === 0 && solarFlares.length === 0) {
+    const now = Date.now();
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+
+    const xray24 = allXrayData.filter(d => d.time >= dayAgo && d.time <= now);
+    const proton24 = allProtonData.filter(d => d.time >= dayAgo && d.time <= now);
+
+    const flares24 = solarFlares.filter(flare => {
+      const t = flare.peakTime ?? flare.beginTime ?? flare.endTime;
+      const ts = t ? new Date(t).getTime() : NaN;
+      return !isNaN(ts) && ts >= dayAgo && ts <= now;
+    });
+
+    if (xray24.length === 0 && proton24.length === 0 && flares24.length === 0) {
       setActivitySummary(null);
       return;
     }
-    const highestXray = allXrayData.reduce((max, current) => current.short > max.short ? current : max, { short: 0, time: 0 });
-    const highestProton = allProtonData.reduce((max, current) => current.flux > max.flux ? current : max, { flux: 0, time: 0 });
+
+    const highestXray = xray24.reduce(
+      (max, current) => (current.short > max.short ? current : max),
+      { short: 0, time: 0 }
+    );
+
+    const highestProton = proton24.reduce(
+      (max, current) => (current.flux > max.flux ? current : max),
+      { flux: 0, time: 0 }
+    );
+
     const flareCounts = { x: 0, m: 0, c: 0 };
-    solarFlares.forEach(flare => {
+    flares24.forEach(flare => {
       const type = flare.classType?.[0]?.toUpperCase();
       if (type === 'X') flareCounts.x++;
       else if (type === 'M') flareCounts.m++;
       else if (type === 'C') flareCounts.c++;
     });
+
     setActivitySummary({
-      highestXray: { flux: highestXray.short, class: getXrayClass(highestXray.short), timestamp: highestXray.time },
-      highestProton: { flux: highestProton.flux, class: getProtonClass(highestProton.flux), timestamp: highestProton.time },
+      highestXray: {
+        flux: highestXray.short,
+        class: getXrayClass(highestXray.short),
+        timestamp: highestXray.time,
+      },
+      highestProton: {
+        flux: highestProton.flux,
+        class: getProtonClass(highestProton.flux),
+        timestamp: highestProton.time,
+      },
       flareCounts,
     });
   }, [allXrayData, allProtonData, solarFlares]);
