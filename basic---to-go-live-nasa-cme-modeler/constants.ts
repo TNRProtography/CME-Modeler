@@ -206,27 +206,28 @@ void main() {
 }
 `;
 
-// --- NEW: Shaders for the Flux Rope ---
+// --- NEW: Shaders for the Teardrop Flux Rope ---
 export const FLUX_ROPE_VERTEX_SHADER = `
+uniform float uStretch;
 varying vec2 vUv;
 varying float vFresnel;
 
 void main() {
     vUv = uv;
 
-    // Deform the straight tube into a cone shape.
-    // The geometry is created along the Z axis.
-    // 'position.z' gives the progress along the tube (0.0 to 1.0).
-    // This scales the radius of the helix from 0 to its full size.
-    float coneRadiusScale = position.z;
+    // Deform a sphere into a teardrop shape.
+    // The sphere is created with its pole along the Y axis.
+    // We stretch vertices with a positive Y value.
+    float stretchFactor = pow(max(0.0, position.y), 2.0) * uStretch;
+    
     vec3 deformedPosition = position;
-    deformedPosition.xy *= coneRadiusScale;
-
+    deformedPosition.y += stretchFactor;
+    
     // Calculate fresnel for a nice glow effect on the edges.
     vec4 mvPosition = modelViewMatrix * vec4(deformedPosition, 1.0);
     vec3 normal = normalize(normalMatrix * normal);
     vec3 viewVector = normalize(-mvPosition.xyz);
-    vFresnel = pow(1.0 - abs(dot(normal, viewVector)), 3.0);
+    vFresnel = pow(1.0 - abs(dot(normal, viewVector)), 4.0);
 
     gl_Position = projectionMatrix * mvPosition;
 }`;
@@ -238,33 +239,21 @@ varying vec2 vUv;
 varying float vFresnel;
 
 void main() {
-    float speed = 0.8;
-    float numArrows = 10.0;
-    float arrowWidth = 0.03;
-    float arrowheadSize = 0.1;
+    // Animate flow from the tip (vUv.y = 1) to the base (vUv.y = 0)
+    float flow = fract(vUv.y * 5.0 - uTime * 0.8);
+    float pulse = smoothstep(0.4, 0.5, flow) - smoothstep(0.5, 0.6, flow);
 
-    // Create a repeating pattern for the arrows along the tube's circumference (vUv.y).
-    float arrowPattern = mod(vUv.y * numArrows, 1.0);
+    // Create longitude lines for the arrows
+    float numArrows = 16.0;
+    float arrowLine = smoothstep(0.02, 0.0, abs(fract(vUv.x * numArrows) - 0.5));
 
-    // Draw the arrow shaft (a thin vertical line).
-    float shaft = smoothstep(arrowWidth, 0.0, abs(arrowPattern - 0.5));
-    
-    // Draw the arrowhead (a triangle).
-    float headY = 0.8; // Position of the arrowhead tip
-    float head = smoothstep(arrowheadSize, 0.0, abs(arrowPattern - headY) - (vUv.x * 0.5)) * step(headY, arrowPattern);
-    
-    float arrowAlpha = max(shaft, head);
-    
-    // Create a simple glowing pulse effect that moves along the helix.
-    float pulse = sin(vUv.x * 20.0 - uTime * 5.0) * 0.4 + 0.6;
-    
-    // Final alpha is a combination of the arrow shape, the pulse, and the edge glow.
-    float finalAlpha = arrowAlpha * pulse + vFresnel * 0.8;
-    
+    // Combine the pulse and lines
+    float finalAlpha = (pulse * 0.8 + vFresnel * 0.5) * arrowLine;
+
     if (finalAlpha < 0.1) {
         discard;
     }
-    
+
     gl_FragColor = vec4(uColor, finalAlpha);
 }`;
 
