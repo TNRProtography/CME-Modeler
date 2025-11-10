@@ -5,12 +5,10 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-// --- MODIFICATION: Import new service functions and types ---
+// --- MODIFICATION: Import only flare functions/types ---
 import { 
     fetchFlareData, 
-    fetchIPSData,
-    SolarFlare,
-    InterplanetaryShock 
+    SolarFlare
 } from '../services/nasaService';
 
 interface SolarActivityDashboardProps {
@@ -245,16 +243,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const [loadingProton, setLoadingProton] = useState<string | null>('Loading proton flux data...');
     const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000);
     
-    // --- MODIFICATION: Updated state for Flares ---
-    const [solarFlares, setSolarFlares] = useState<SolarFlare[]>([]); // Use imported type
+    // --- MODIFICATION: Flares only ---
+    const [solarFlares, setSolarFlares] = useState<SolarFlare[]>([]);
     const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
     const [selectedFlare, setSelectedFlare] = useState<SolarFlare | null>(null);
-    
-    // --- NEW: State for Interplanetary Shocks ---
-    //const [ipsData, setIpsData] = useState<InterplanetaryShock[]>([]);
-    //const [loadingIps, setLoadingIps] = useState<string | null>('Loading shock data...');
-    //const [lastIpsUpdate, setLastIpsUpdate] = useState<string | null>(null);
-    //const [selectedIps, setSelectedIps] = useState<InterplanetaryShock | null>(null);
 
     // General state (unchanged)
     const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
@@ -268,10 +260,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
     const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
 
-    // --- MODIFICATION: Add new tooltip content for IPS ---
+    // --- MODIFICATION: Remove IPS tooltip; keep others ---
     const tooltipContent = useMemo(() => ({
-        // ... (all previous tooltips remain the same) ...
-        //'ips-shocks': 'An Interplanetary Shock is the shockwave at the front of a large cloud of solar particles (a CME) travelling from the Sun. The arrival of a shockwave at our satellites is a major event that can cause a sudden and dramatic change in solar wind conditions, often triggering a strong auroral display very soon after it arrives.',
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy, especially bursts from solar flares. **Best for: Monitoring solar flares and active regions.**',
@@ -290,7 +280,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         if (contentData) {
             let title = '';
             if (id === 'xray-flux') title = 'About GOES X-ray Flux';
- //           else if (id === 'ips-shocks') title = 'About Interplanetary Shocks';
             else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
@@ -409,21 +398,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         }
     }, []);
     
-    // --- NEW: Function to fetch Interplanetary Shock data ---
-    const fetchIPS = useCallback(async () => {
-        setLoadingIps('Loading shock data...');
-        try {
-            const data = await fetchIPSData();
-            setIpsData(data);
-            setLoadingIps(null);
-            setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ'));
-        } catch (error) {
-            console.error('Error fetching IPS data:', error);
-            setLoadingIps(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            setLastIpsUpdate(new Date().toLocaleTimeString('en-NZ'));
-        }
-    }, []);
-
+    // --- MODIFICATION: Removed IPS fetching & calls ---
 
     useEffect(() => {
         const runAllUpdates = () => {
@@ -436,12 +411,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             fetchXrayFlux();
             fetchProtonFlux();
             fetchFlares();
-            fetchIPS(); // --- MODIFICATION: Call the new fetch function ---
+            // REMOVED: fetchIPS();
         };
         runAllUpdates();
         const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares, fetchIPS]); // --- MODIFICATION: Add fetchIPS dependency ---
+    }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares]); // REMOVED: fetchIPS from deps
 
     // ... (All chart options, chart data, and other useMemo/useEffect hooks are unchanged) ...
     // --- Main useEffect for updates ---
@@ -613,34 +588,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                             <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastImagesUpdate || 'N/A'}</div>
                         </div>
 
-                        {/* --- NEW: Interplanetary Shocks Panel --- */}
-                        <div id="ips-shocks-section" className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-4 flex flex-col min-h-[550px]">
-                            <div className="flex justify-center items-center gap-2">
-                                <h2 className="text-xl font-semibold text-white text-center mb-4">Recent Interplanetary Shocks</h2>
-                                <button onClick={() => openModal('ips-shocks')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Interplanetary Shocks.">?</button>
-                            </div>
-                            <div className="flex-grow overflow-y-auto max-h-[450px] styled-scrollbar pr-2">
-                                {loadingIps ? (
-                                    <LoadingSpinner message={loadingIps} />
-                                ) : ipsData.length > 0 ? (
-                                    <ul className="space-y-3">
-                                        {ipsData.map((shock) => (
-                                            <li key={shock.activityID} onClick={() => setSelectedIps(shock)} className="bg-neutral-800 p-3 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="font-semibold text-sky-300">{shock.location}</span>
-                                                    <span className="text-xs text-neutral-400">{formatNZTimestamp(shock.eventTime)}</span>
-                                                </div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <div className="flex items-center justify-center h-full">
-                                        <p className="text-center text-neutral-400 italic">No significant interplanetary shocks detected recently.</p>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastIpsUpdate || 'N/A'}</div>
-                        </div>
+                        {/* --- REMOVED: Interplanetary Shocks Panel --- */}
 
                         <div id="goes-xray-flux-section" className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
                             <div className="flex justify-center items-center gap-2"><h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2><button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button></div>
@@ -699,9 +647,38 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                  </div>
             </div>
             {/* Flare Modal */}
-            <InfoModal isOpen={!!selectedFlare} onClose={() => setSelectedFlare(null)} title={`Flare Details: ${selectedFlare?.flrID || ''}`} content={ selectedFlare && ( <div className="space-y-2"> <p><strong>Class:</strong> {selectedFlare.classType}</p> <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p> <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p> <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p> <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p> <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p> <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p> <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> {selectedFlare.hasCME && (<button onClick={() => { onViewCMEInVisualization(selectedFlare.linkedEvents.find((e: any) => e.activityID.includes('CME'))?.activityID); setSelectedFlare(null); }} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors">View in CME Visualization</button>)}</div> )} />
-            {/* IPS Modal */}
-            <InfoModal isOpen={!!selectedIps} onClose={() => setSelectedIps(null)} title={`Interplanetary Shock Details`} content={ selectedIps && ( <div className="space-y-2"> <p><strong>Activity ID:</strong> {selectedIps.activityID}</p> <p><strong>Event Time (NZT):</strong> {formatNZTimestamp(selectedIps.eventTime)}</p> <p><strong>Location:</strong> {selectedIps.location}</p> <p><strong>Instruments:</strong> {selectedIps.instruments.map(i => i.displayName).join(', ')}</p> <p><a href={selectedIps.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p> </div> )} />
+            <InfoModal
+              isOpen={!!selectedFlare}
+              onClose={() => setSelectedFlare(null)}
+              title={`Flare Details: ${selectedFlare?.flrID || ''}`}
+              content={
+                selectedFlare && (
+                  <div className="space-y-2">
+                    <p><strong>Class:</strong> {selectedFlare.classType}</p>
+                    <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.beginTime)}</p>
+                    <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p>
+                    <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p>
+                    <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p>
+                    <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p>
+                    <p><strong>CME Associated:</strong> {selectedFlare.hasCME ? 'Yes' : 'No'}</p>
+                    <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p>
+                    {selectedFlare.hasCME && (
+                      <button
+                        onClick={() => {
+                          onViewCMEInVisualization(selectedFlare.linkedEvents.find((e: any) => e.activityID.includes('CME'))?.activityID);
+                          setSelectedFlare(null);
+                        }}
+                        className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors"
+                      >
+                        View in CME Visualization
+                      </button>
+                    )}
+                  </div>
+                )
+              }
+            />
+
+            {/* REMOVED: IPS Modal */}
 
             {modalState && (<InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />)}
         </div>
