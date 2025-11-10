@@ -22,7 +22,6 @@ import ForecastIcon from './components/icons/ForecastIcon'; // Now points to you
 import GlobeIcon from './components/icons/GlobeIcon';
 import SunIcon from './components/icons/SunIcon';
 import CmeIcon from './components/icons/CmeIcon';
-import ForecastModelsModal from './components/ForecastModelsModal';
 
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
@@ -79,7 +78,6 @@ const App: React.FC = () => {
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  const [isForecastModelsOpen, setIsForecastModelsOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
@@ -589,12 +587,6 @@ const App: React.FC = () => {
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
                             <div className="flex flex-col items-center w-14">
-                                <button id="forecast-models-button" onClick={() => setIsForecastModelsOpen(true)} className={`p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform ${highlightedElementId === 'forecast-models-button' ? 'tutorial-highlight' : ''}`} title="Official CME Forecast Models">
-                                    <GlobeIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Official CME Models</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
                                 <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
                                     <DownloadIcon className="w-6 h-6" />
                                 </button>
@@ -618,12 +610,6 @@ const App: React.FC = () => {
                 {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                 {isLoading && <LoadingOverlay />}
                 <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-                <ForecastModelsModal 
-                    isOpen={isForecastModelsOpen} 
-                    onClose={() => setIsForecastModelsOpen(false)} 
-                    setViewerMedia={setViewerMedia} 
-                    shouldPreload={false} 
-                />
             </> )}
             {activePage === 'forecast' && (
                 <ForecastDashboard

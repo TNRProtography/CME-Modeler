@@ -2,16 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
+// --- MODIFICATION: Corrected the import path for the spinner ---
+import LoadingSpinner from './icons/LoadingSpinner'; 
 import { fetchWSAEnlilSimulations, WSAEnlilSimulation } from '../services/nasaService';
-
-// --- FIX: Defined LoadingSpinner locally to prevent import-related crashes. ---
-const LoadingSpinner: React.FC = () => (
-    <svg className="animate-spin h-8 w-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-);
-
 
 // Define the media object type to ensure type safety when calling setViewerMedia
 type MediaObject = 
@@ -69,37 +62,24 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
     const huxtImage = new Image();
     huxtImage.src = HUXT_FORECAST_IMAGE_URL;
 
-    // --- MODIFICATION: Replaced aggressive parallel fetch with a more mobile-friendly sequential fetch ---
     const fetchNoaaEnlilImages = async () => {
       setIsLoadingEnlil(true);
       setEnlilError(null);
-      const loadedUrls: string[] = [];
-      let consecutiveFailures = 0;
-      const MAX_CONSECUTIVE_FAILURES = 5;
+      const potentialUrls = Array.from({ length: MAX_FRAMES_TO_CHECK }, (_, i) => `${ENLIL_BASE_URL}${i + 1}`);
+      const results = await Promise.allSettled(
+        potentialUrls.map(url => fetch(url).then(res => {
+            if (!res.ok) throw new Error(`Frame load failed: ${res.status}`);
+            return res.blob();
+        }))
+      );
+      const successfulUrls = results
+        .map(r => r.status === 'fulfilled' ? URL.createObjectURL(r.value) : null)
+        .filter((url): url is string => url !== null);
 
-      for (let i = 1; i <= MAX_FRAMES_TO_CHECK; i++) {
-        const url = `${ENLIL_BASE_URL}${i}`;
-        try {
-          const res = await fetch(url);
-          if (!res.ok) {
-            throw new Error(`Frame ${i} failed with status ${res.status}`);
-          }
-          const blob = await res.blob();
-          loadedUrls.push(URL.createObjectURL(blob));
-          consecutiveFailures = 0; // Reset counter on success
-        } catch (error) {
-          consecutiveFailures++;
-          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            console.log(`Stopping ENLIL fetch at frame ${i} after ${MAX_CONSECUTIVE_FAILURES} consecutive failures.`);
-            break; // Stop fetching
-          }
-        }
-      }
-
-      if (loadedUrls.length > 0) {
-        setEnlilImageUrls(loadedUrls);
+      if (successfulUrls.length > 0) {
+        setEnlilImageUrls(successfulUrls);
       } else {
-        setEnlilError('No NOAA ENLIL images could be loaded. The forecast may be updating.');
+        setEnlilError('No NOAA ENLIL images could be loaded from the proxy.');
       }
       setIsLoadingEnlil(false);
     };
@@ -244,3 +224,4 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 };
 
 export default ForecastModelsModal;
+// --- END OF FILE src/components/ForecastModelsModal.tsx ---

@@ -131,6 +131,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
                 <img ref={contentRef as React.RefObject<HTMLImageElement>} src={media.url} alt="Full screen media" className="max-w-[95vw] max-h-[95vh] cursor-grab active:cursor-grabbing" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()} />
             )}
             
+            {/* === START: CORRECTED VIDEO RENDERING BLOCK === */}
             {media.type === 'video' && (
                 // This wrapper div now handles all interactions (panning, zooming) by acting as a transparent overlay.
                 <div
@@ -154,6 +155,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
                     </video>
                 </div>
             )}
+            {/* === END: CORRECTED VIDEO RENDERING BLOCK === */}
             
             {media.type === 'animation' && media.urls.length > 0 && (
                 <img ref={contentRef as React.RefObject<HTMLImageElement>} src={media.urls[currentFrame]} alt={`Animation frame ${currentFrame + 1}`} className="max-w-[90vw] max-h-[80vh] cursor-grab active:cursor-grabbing" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()} />
