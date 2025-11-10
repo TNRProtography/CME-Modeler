@@ -38,44 +38,6 @@ const formatNZTimestamp = (isoString: string | null | number) => {
     } catch { return "Invalid Date"; }
 };
 
-const generateEnlilGifUrl = (simulation: WSAEnlilSimulation): string | null => {
-  // The correct timestamp is embedded as a parameter in the 'link' URL.
-  if (!simulation.link || !simulation.simulationID) {
-    return null;
-  }
-  
-  try {
-    // 1. Use URLSearchParams to safely parse the 'link' property.
-    const url = new URL(simulation.link);
-    const modelRunTimestamp = url.searchParams.get('timestamp');
-
-    if (!modelRunTimestamp) {
-      console.warn("Could not find 'timestamp' URL parameter in simulation link:", simulation.link);
-      return null;
-    }
-
-    // modelRunTimestamp is now a URL-decoded string like "YYYY-MM-DD HH:mm:ss"
-    const dateTimeString = modelRunTimestamp
-      .replace(/-/g, '')   // YYYYMMDD HH:mm:ss
-      .replace(' ', '_')  // YYYYMMDD_HH:mm:ss
-      .replace(/:/g, '');   // YYYYMMDD_HHmmss
-
-    // 2. Extract the version from the simulation ID.
-    // Example ID: "WSA-ENLIL_2024-04-10T13:12:00.0-1". The version is the last digit.
-    const versionMatch = simulation.simulationID.match(/-(\d+)$/);
-    // The API provides the run number (e.g., 1), but the URL needs the version (e.g., 1.0)
-    const version = versionMatch && versionMatch[1] ? `${versionMatch[1]}.0` : '2.0'; 
-
-    // 3. Construct the final URL.
-    return `https://iswa.gsfc.nasa.gov/downloads/${dateTimeString}_${version}_anim.tim-den.gif`;
-
-  } catch (error) {
-    console.error("Error generating ENLIL GIF URL for simulation:", simulation, error);
-    return null;
-  }
-};
-
-
 const ModelCard: React.FC<{ title: string; source: string; sourceUrl: string; children: React.ReactNode; description: React.ReactNode; }> = ({ title, source, sourceUrl, children, description }) => (
     <section className="bg-neutral-900/70 border border-neutral-700/60 rounded-lg p-4 flex flex-col">
         <h3 className="text-xl font-semibold text-neutral-200 border-b border-neutral-600 pb-2 mb-3">{title}</h3>
@@ -236,41 +198,39 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                 {nasaEnlilError && <p className="text-red-400 text-center text-sm p-4 flex-grow flex items-center justify-center">{nasaEnlilError}</p>}
                 {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
                    <div className="space-y-2 overflow-y-auto max-h-[500px] styled-scrollbar pr-2">
-                       {nasaEnlilSimulations.slice(0, 10).map(sim => {
-                            const gifUrl = generateEnlilGifUrl(sim);
-                            return (
-                               <button
-                                 key={sim.simulationID}
-                                 onClick={() => gifUrl && setViewerMedia({ url: gifUrl, type: 'image' })}
-                                 disabled={!gifUrl}
-                                 className="w-full text-left bg-neutral-900/60 p-3 rounded-md text-xs transition-colors hover:bg-neutral-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
-                               >
-                                 <div className="flex justify-between items-start mb-2">
-                                   <div>
-                                     <p className="font-bold text-neutral-200">Model Time:</p>
-                                     <p>{formatNZTimestamp(sim.modelCompletionTime)}</p>
-                                   </div>
-                                   {sim.isEarthGB ? (
-                                     <span className="px-2 py-1 rounded bg-green-500/20 text-green-300 font-bold text-xs border border-green-500/50">
-                                       Earth Directed
-                                     </span>
-                                   ) : (
-                                     <span className="px-2 py-1 rounded bg-red-500/20 text-red-300 font-bold text-xs border border-red-500/50">
-                                       Not Earth Directed
-                                     </span>
-                                   )}
-                                 </div>
-                                 <p className="text-neutral-300">
-                                   <strong>CMEs:</strong> {sim.cmeIDs?.join(', ') || 'N/A'}
-                                 </p>
-                                 {sim.estimatedShockArrivalTime && (
-                                   <p className="text-neutral-300">
-                                     <strong>Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
-                                   </p>
-                                 )}
-                               </button>
-                            )
-                       })}
+                       {nasaEnlilSimulations.slice(0, 15).map(sim => (
+                           <a
+                             key={sim.simulationID}
+                             href={sim.link}
+                             target="_blank"
+                             rel="noopener noreferrer"
+                             className="block text-left bg-neutral-900/60 p-3 rounded-md text-xs transition-colors hover:bg-neutral-700/80"
+                           >
+                             <div className="flex justify-between items-start mb-2">
+                               <div>
+                                 <p className="font-bold text-neutral-200">Model Time:</p>
+                                 <p>{formatNZTimestamp(sim.modelCompletionTime)}</p>
+                               </div>
+                               {sim.isEarthGB ? (
+                                 <span className="px-2 py-1 rounded bg-green-500/20 text-green-300 font-bold text-xs border border-green-500/50">
+                                   Earth Directed
+                                 </span>
+                               ) : (
+                                 <span className="px-2 py-1 rounded bg-red-500/20 text-red-300 font-bold text-xs border border-red-500/50">
+                                   Not Earth Directed
+                                 </span>
+                               )}
+                             </div>
+                             <p className="text-neutral-300">
+                               <strong>CMEs:</strong> {sim.cmeIDs?.join(', ') || 'N/A'}
+                             </p>
+                             {sim.estimatedShockArrivalTime && (
+                               <p className="text-neutral-300">
+                                 <strong>Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
+                               </p>
+                             )}
+                           </a>
+                       ))}
                    </div>
                 )}
                  {!isLoadingNasaEnlil && nasaEnlilSimulations.length === 0 && <p className="text-neutral-400 italic text-center flex-grow flex items-center justify-center">No recent NASA simulations found.</p>}
