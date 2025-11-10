@@ -251,10 +251,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const [selectedFlare, setSelectedFlare] = useState<SolarFlare | null>(null);
     
     // --- NEW: State for Interplanetary Shocks ---
-    const [ipsData, setIpsData] = useState<InterplanetaryShock[]>([]);
-    const [loadingIps, setLoadingIps] = useState<string | null>('Loading shock data...');
-    const [lastIpsUpdate, setLastIpsUpdate] = useState<string | null>(null);
-    const [selectedIps, setSelectedIps] = useState<InterplanetaryShock | null>(null);
+    //const [ipsData, setIpsData] = useState<InterplanetaryShock[]>([]);
+    //const [loadingIps, setLoadingIps] = useState<string | null>('Loading shock data...');
+    //const [lastIpsUpdate, setLastIpsUpdate] = useState<string | null>(null);
+    //const [selectedIps, setSelectedIps] = useState<InterplanetaryShock | null>(null);
 
     // General state (unchanged)
     const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
@@ -271,7 +271,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     // --- MODIFICATION: Add new tooltip content for IPS ---
     const tooltipContent = useMemo(() => ({
         // ... (all previous tooltips remain the same) ...
-        'ips-shocks': 'An Interplanetary Shock is the shockwave at the front of a large cloud of solar particles (a CME) travelling from the Sun. The arrival of a shockwave at our satellites is a major event that can cause a sudden and dramatic change in solar wind conditions, often triggering a strong auroral display very soon after it arrives.',
+        //'ips-shocks': 'An Interplanetary Shock is the shockwave at the front of a large cloud of solar particles (a CME) travelling from the Sun. The arrival of a shockwave at our satellites is a major event that can cause a sudden and dramatic change in solar wind conditions, often triggering a strong auroral display very soon after it arrives.',
         'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense. Higher class flares (M and X) can cause radio blackouts and enhanced aurora.',
         'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater. Proton events (Solar Radiation Storms) are classified on an S-scale from S1 to S5 based on the peak flux. These events can cause radiation hazards for astronauts and satellite operations, and can contribute to auroral displays.',
         'suvi-131': '<strong>SUVI 131Å (Angstrom):</strong> This Extreme Ultraviolet (EUV) wavelength shows the hot, flaring regions of the Sun\'s corona, highlighting solar flares and active regions. It\'s good for seeing intense bursts of energy, especially bursts from solar flares. **Best for: Monitoring solar flares and active regions.**',
@@ -290,7 +290,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         if (contentData) {
             let title = '';
             if (id === 'xray-flux') title = 'About GOES X-ray Flux';
-            else if (id === 'ips-shocks') title = 'About Interplanetary Shocks';
+ //           else if (id === 'ips-shocks') title = 'About Interplanetary Shocks';
             else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
             else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
             else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
