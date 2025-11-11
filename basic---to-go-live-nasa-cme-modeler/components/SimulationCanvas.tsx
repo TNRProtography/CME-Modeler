@@ -228,14 +228,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  // --- START OF MODIFICATION: Corrected Deceleration Logic ---
-  const MIN_CME_SPEED_KMS = 300; // Ambient solar wind speed floor
+  const MIN_CME_SPEED_KMS = 300;
 
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const u_kms = cme.speed;
     const t_s = Math.max(0, timeSinceEventSeconds);
 
-    // If initial speed is already below the floor, assume constant speed.
     if (u_kms <= MIN_CME_SPEED_KMS) {
         const distance_km = u_kms * t_s;
         return (distance_km / AU_IN_KM) * SCENE_SCALE;
@@ -244,31 +242,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const a_ms2 = 1.41 - 0.0035 * u_kms;
     const a_kms2 = a_ms2 / 1000.0;
 
-    // If it's accelerating (slow CME), use the simple formula without a floor.
     if (a_kms2 >= 0) {
         const distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
         return (distance_km / AU_IN_KM) * SCENE_SCALE;
     }
     
-    // For decelerating CMEs, find the time it takes to reach the speed floor.
-    // v = u + at  =>  t = (v - u) / a
     const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
 
     let distance_km;
     if (t_s < time_to_floor_s) {
-        // Case 1: The CME is still decelerating. Use standard kinematic equation.
         distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
     } else {
-        // Case 2: The CME has hit the speed floor.
-        // Part 1: Distance traveled during deceleration phase.
         const distance_during_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
-        
-        // Part 2: Time spent coasting at the minimum speed.
         const time_coasting = t_s - time_to_floor_s;
-
-        // Part 3: Distance traveled during the coasting phase.
         const distance_during_coast = MIN_CME_SPEED_KMS * time_coasting;
-        
         distance_km = distance_during_decel + distance_during_coast;
     }
 
@@ -284,7 +271,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const distanceActualAU = proportionOfTravel * earthOrbitRadiusActualAU;
     return distanceActualAU * SCENE_SCALE;
   }, []);
-  // --- END OF MODIFICATION ---
 
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
     if (!THREE) return;
@@ -553,42 +539,79 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      if (timelineActive) {
-        if (timelinePlaying) {
-          const r = timelineMaxDate - timelineMinDate;
-          if (r > 0 && timelineValueRef.current < 1000) {
-            const v = timelineValueRef.current + (delta * (3 * timelineSpeed * 3600 * 1000) / r) * 1000;
-            if (v >= 1000) { timelineValueRef.current = 1000; onTimelineEnd(); }
-            else { timelineValueRef.current = v; }
-            onScrubberChangeByAnim(timelineValueRef.current);
-          }
-        }
-        const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => {
-          const s = (t - c.userData.startTime.getTime()) / 1000;
-          updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s));
-        });
-      } else {
-        cmeGroupRef.current.children.forEach((c: any) => {
-          let d = 0;
-          if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
-            const cme = c.userData;
+      // --- START OF MODIFICATION: CME Collision Logic ---
+      
+      // 1. Calculate potential distances for all CMEs
+      const potentialDistances: Map<string, number> = new Map();
+      const timeOffset = timelineActive ? (timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)) : Date.now();
+      
+      cmeGroupRef.current.children.forEach((c: any) => {
+        const cme = c.userData as ProcessedCME;
+        let dist = -1;
+
+        if (currentlyModeledCMEId && cme.id === currentlyModeledCMEId) {
             const t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
             if (cme.isEarthDirected && cme.predictedArrivalTime) {
-                d = calculateDistanceByInterpolation(cme, t < 0 ? 0 : t); 
+                dist = calculateDistanceByInterpolation(cme, t < 0 ? 0 : t); 
             } else {
-                d = calculateDistanceWithDeceleration(cme, t < 0 ? 0 : t);
+                dist = calculateDistanceWithDeceleration(cme, t < 0 ? 0 : t);
             }
-          } else if (!currentlyModeledCMEId) {
-            const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
-            d = calculateDistanceWithDeceleration(c.userData, t < 0 ? 0 : t);
-          } else {
-            updateCMEShape(c, -1);
-            return;
+        } else if (!currentlyModeledCMEId) {
+            const t = (timeOffset - cme.startTime.getTime()) / 1000;
+            dist = (t < 0) ? -1 : calculateDistanceWithDeceleration(cme, t);
+        }
+        potentialDistances.set(cme.id, dist);
+      });
+
+      // 2. Resolve collisions
+      const finalDistances = new Map(potentialDistances);
+      const sortedCmes = [...cmeGroupRef.current.children].sort((a, b) => b.userData.speed - a.userData.speed);
+
+      sortedCmes.forEach(cmeObject => { cmeObject.userData.isColliding = false; });
+      
+      for (let i = 0; i < sortedCmes.length; i++) {
+        for (let j = 0; j < sortedCmes.length; j++) {
+          if (i === j) continue;
+
+          const fasterCME = sortedCmes[i];
+          const slowerCME = sortedCmes[j];
+
+          // Only check if a faster CME is behind a slower one
+          if (fasterCME.userData.speed <= slowerCME.userData.speed) continue;
+
+          const fasterDist = finalDistances.get(fasterCME.userData.id) ?? -1;
+          const slowerDist = finalDistances.get(slowerCME.userData.id) ?? -1;
+          
+          if (fasterDist < 0 || slowerDist < 0 || fasterDist < slowerDist) continue;
+          
+          const dirFaster = new THREE.Vector3(0, 1, 0).applyQuaternion(fasterCME.quaternion);
+          const dirSlower = new THREE.Vector3(0, 1, 0).applyQuaternion(slowerCME.quaternion);
+          const angleBetween = dirFaster.angleTo(dirSlower);
+          const collisionThreshold = THREE.MathUtils.degToRad(fasterCME.userData.halfAngle + slowerCME.userData.halfAngle);
+
+          if (angleBetween < collisionThreshold) {
+            finalDistances.set(fasterCME.userData.id, slowerDist);
+            fasterCME.userData.isColliding = true;
           }
-          updateCMEShape(c, d);
-        });
+        }
       }
+
+      // 3. Update CMEs with final positions and visual effects
+      cmeGroupRef.current.children.forEach((c: any) => {
+        const finalDist = finalDistances.get(c.userData.id) ?? -1;
+        updateCMEShape(c, finalDist);
+
+        const defaultOpacity = getCmeOpacity(c.userData.speed);
+        const defaultSize = getCmeParticleSize(c.userData.speed, SCENE_SCALE);
+        if (c.userData.isColliding) {
+            c.material.opacity = Math.min(1.0, defaultOpacity * 2.5);
+            c.material.size = defaultSize * 1.5;
+        } else {
+            c.material.opacity = defaultOpacity;
+            c.material.size = defaultSize;
+        }
+      });
+      // --- END OF MODIFICATION ---
 
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
