@@ -25,7 +25,7 @@ interface Effect {
   color: string;
 }
 
-const SubstormSurge: React.FC = () => {
+export const SubstormSurge: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   const particlesRef = useRef<Particle[]>([]);
@@ -52,9 +52,8 @@ const SubstormSurge: React.FC = () => {
   const handleTap = useCallback(() => {
     if (gameState !== 'playing' || !canvasRef.current) return;
 
-    const now = performance.now();
     const targetX = canvasRef.current.width / 2;
-    const hitWindow = 50; // pixels
+    const hitWindow = 50 * window.devicePixelRatio; // Scale hit window
     let hit = false;
 
     particlesRef.current.forEach(p => {
@@ -114,7 +113,7 @@ const SubstormSurge: React.FC = () => {
       // --- Draw Target Zone ---
       if (gameState === 'playing') {
         ctx.strokeStyle = `rgba(255, 255, 255, 0.5)`;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * window.devicePixelRatio;
         ctx.beginPath();
         ctx.moveTo(canvas.width / 2, arcY - 30);
         ctx.lineTo(canvas.width / 2, arcY + 10);
@@ -164,14 +163,14 @@ const SubstormSurge: React.FC = () => {
 
       // --- Update & Draw Effects ---
       effectsRef.current.forEach((e, i) => {
-        e.radius += 20;
+        e.radius += 20 * window.devicePixelRatio;
         e.alpha -= 0.04;
         if (e.alpha <= 0) {
           effectsRef.current.splice(i, 1);
           return;
         }
         ctx.strokeStyle = `rgba(${e.color}, ${e.alpha})`;
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 4 * window.devicePixelRatio;
         ctx.beginPath();
         ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
         ctx.stroke();
@@ -218,5 +217,5 @@ const SubstormSurge: React.FC = () => {
   );
 };
 
-//export default SubstormSurge;
+// No default export
 // --- END OF FILE src/components/easter-egg/SubstormSurge.tsx ---

@@ -11,7 +11,7 @@ const COLORS = [
   'hsl(270, 100%, 70%)', // Purple
 ];
 
-const MagneticMusician: React.FC = () => {
+export const MagneticMusician: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
 
@@ -179,5 +179,5 @@ const MagneticMusician: React.FC = () => {
   );
 };
 
-//export default MagneticMusician;
+// No default export
 // --- END OF FILE src/components/easter-egg/MagneticMusician.tsx ---

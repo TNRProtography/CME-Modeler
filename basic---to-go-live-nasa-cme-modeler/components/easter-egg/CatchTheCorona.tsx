@@ -16,7 +16,7 @@ interface Burst {
 
 const GAME_DURATION_S = 60;
 
-const CatchTheCorona: React.FC = () => {
+export const CatchTheCorona: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   const burstsRef = useRef<Burst[]>([]);
@@ -185,5 +185,5 @@ const CatchTheCorona: React.FC = () => {
   );
 };
 
-//export default CatchTheCorona;
+// No default export
 // --- END OF FILE src/components/easter-egg/CatchTheCorona.tsx ---

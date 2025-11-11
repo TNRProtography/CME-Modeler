@@ -1,10 +1,10 @@
 // --- START OF FILE src/components/easter-egg/EasterEggManager.tsx ---
 
-import React, { useState, useMemo } from 'react';
-import AuroraPainter from './AuroraPainter';
-import SubstormSurge from './SubstormSurge';
-import CatchTheCorona from './CatchTheCorona';
-import MagneticMusician from './MagneticMusician';
+import React, { useState } from 'react';
+import { AuroraPainter } from './AuroraPainter';
+import { SubstormSurge } from './SubstormSurge';
+import { CatchTheCorona } from './CatchTheCorona';
+import { MagneticMusician } from './MagneticMusician';
 
 const games = [
   { id: 'painter', component: AuroraPainter },
@@ -39,6 +39,4 @@ export const EasterEggManager: React.FC<EasterEggManagerProps> = ({ onClose }) =
     </div>
   );
 };
-
-// No default export anymore
 // --- END OF FILE src/components/easter-egg/EasterEggManager.tsx ---
