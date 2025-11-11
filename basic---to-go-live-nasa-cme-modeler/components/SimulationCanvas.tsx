@@ -753,7 +753,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       return null;
     },
-    // --- NEW: Function to calculate the impact graph data ---
     calculateImpactProfile: () => {
         if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
         
@@ -762,22 +761,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (timelineDuration <= 0) return [];
 
         const graphData = [];
-        const numSteps = 200; // Number of points on the graph
+        const numSteps = 200;
 
         for (let i = 0; i <= numSteps; i++) {
             const stepRatio = i / numSteps;
             const currentTime = timelineMinDate + timelineDuration * stepRatio;
 
-            // Calculate Earth's orbital position at this time
-            const timeSinceStartOfSim = (currentTime - timelineMinDate) / 1000;
-            const ORBIT_SPEED_SCALE = (3 * 5 * 3600); // from timelineSpeed
-            const earthAngle = earthData.angle + ((2 * Math.PI) / (earthData.orbitalPeriodDays! * 24 * 3600) * ORBIT_SPEED_SCALE) * (timeSinceStartOfSim / 1000);
+            // --- START OF FIX: Correctly calculate Earth's position ---
+            const totalSecondsInTimeline = timelineDuration / 1000;
+            const elapsedSecondsForEarth = totalSecondsInTimeline * stepRatio;
+            const orbitalPeriodSeconds = earthData.orbitalPeriodDays! * 24 * 3600;
+            const startingAngle = earthData.angle;
+            const earthAngle = startingAngle + ((2 * Math.PI) / orbitalPeriodSeconds) * elapsedSecondsForEarth;
+            // --- END OF FIX ---
+
             const earthX = earthData.radius * Math.sin(earthAngle);
             const earthZ = earthData.radius * Math.cos(earthAngle);
             const earthPos = new THREE.Vector3(earthX, 0, earthZ);
             
-            let totalSpeed = 350; // Ambient solar wind
-            let totalDensity = 5; // Ambient solar wind
+            let totalSpeed = 350;
+            let totalDensity = 5;
 
             cmeGroupRef.current.children.forEach((cmeObject: any) => {
                 const cme = cmeObject.userData as ProcessedCME;
@@ -786,17 +789,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                 if (timeSinceCmeStart > 0) {
                     const cmeDist = calculateDistanceWithDeceleration(cme, timeSinceCmeStart);
                     
-                    // Check if Earth is within the CME cone
                     const cmeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
                     const angleToEarth = cmeDir.angleTo(earthPos.clone().normalize());
 
                     if (angleToEarth < THREE.MathUtils.degToRad(cme.halfAngle)) {
                         const distToEarth = earthPos.length();
                         const cmeFront = cmeDist;
-                        const cmeBack = cmeDist - (SCENE_SCALE * 0.3); // Give CME a thickness
+                        const cmeBack = cmeDist - (SCENE_SCALE * 0.3);
 
                         if (distToEarth < cmeFront && distToEarth > cmeBack) {
-                             // v = u + at
                             const u_kms = cme.speed;
                             const a_ms2 = 1.41 - 0.0035 * u_kms;
                             const a_kms2 = a_ms2 / 1000.0;
