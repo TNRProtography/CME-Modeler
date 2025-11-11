@@ -28,7 +28,7 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
-import EasterEggManager from './components/easter-egg/EasterEggManager';
+import { EasterEggManager } from './components/easter-egg/EasterEggManager';
 
 // Modal Imports
 import SettingsModal from './components/SettingsModal';
