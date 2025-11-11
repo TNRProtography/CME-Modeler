@@ -1,152 +1,128 @@
 // --- START OF FILE src/components/SolarSurferGame.tsx ---
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import CloseIcon from './icons/CloseIcon';
 
 // --- TYPE DEFINITIONS ---
-type GameState = 'start' | 'playing' | 'levelEnd' | 'gameOver';
+type GameState = 'start' | 'playing' | 'gameOver';
 
-interface Particle {
+interface Player {
   x: number;
   y: number;
-  z: number;
-  px: number;
-  py: number;
+  radius: number;
+  velocityY: number;
+  trail: { x: number; y: number }[];
 }
 
-interface Obstacle {
+interface Pillar {
   x: number;
-  y: number;
-  z: number;
-  radius: number;
-  type: 'cloud' | 'ring';
-  rotation: number;
-  color: string;
+  gapY: number; // Center of the gap
+  gapHeight: number;
+  scored: boolean;
 }
 
-interface Collectible {
+interface Star {
   x: number;
   y: number;
-  z: number;
   radius: number;
+  speed: number;
+}
+
+interface PowerUp {
+    x: number;
+    y: number;
+    radius: number;
+    active: boolean;
 }
 
 // --- GAME CONFIGURATION ---
-const STAR_COUNT = 2000;
-const PLAYER_TRAIL_LENGTH = 25;
-const OBSTACLE_COUNT = 30;
-const COLLECTIBLE_COUNT = 50;
-const LEVEL_DISTANCE = 5000;
-const INITIAL_SPEED = 3;
-const MAX_SPEED = 12;
+const GRAVITY = 0.3;
+const FLAP_STRENGTH = 7;
+const PLAYER_X = 150;
+const PILLAR_WIDTH = 100;
+const INITIAL_PILLAR_FREQUENCY = 180; // frames between pillars
+const INITIAL_GAME_SPEED = 3;
+const SCORE_MULTIPLIER = 5;
+const CME_DURATION = 10 * 60; // 10 seconds at 60fps
 
 // --- COMPONENT ---
-const SolarSurferGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gameState = useRef<GameState>('start');
   const animationFrameId = useRef<number>();
-
-  // Game state refs
-  const playerPos = useRef({ x: 0, y: 0 });
-  const playerTrail = useRef<{ x: number; y: number }[]>([]);
-  const stars = useRef<Particle[]>([]);
-  const obstacles = useRef<Obstacle[]>([]);
-  const collectibles = useRef<Collectible[]>([]);
   
-  const distance = useRef(0);
-  const score = useRef(0);
-  const cohesion = useRef(100);
-  const gameSpeed = useRef(INITIAL_SPEED);
-  const level = useRef(1);
+  // Game logic refs (for high-frequency updates inside the loop)
+  const playerRef = useRef<Player>({ x: PLAYER_X, y: 300, radius: 15, velocityY: 0, trail: [] });
+  const pillarsRef = useRef<Pillar[]>([]);
+  const frameRef = useRef(0);
+  const powerRef = useRef(0);
+  const gameSpeedRef = useRef(INITIAL_GAME_SPEED);
+  const pillarFrequencyRef = useRef(INITIAL_PILLAR_FREQUENCY);
+  const starsRef = useRef<Star[]>([]);
+  const cmeStateRef = useRef({ active: false, timer: 0 });
+  const powerUpRef = useRef<PowerUp | null>(null);
+  
+  // React state (for UI rendering)
+  const [gameState, setGameState] = useState<GameState>('start');
+  const [hemisphericPower, setHemisphericPower] = useState(0);
+  const [cmeCharge, setCmeCharge] = useState(0);
 
-  // Final gate state for level end
-  const earthGateState = useRef({
-    approaching: false,
-    earthZ: 0,
-    safeGateY: 0,
-  });
-
-  const mousePos = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-
-  // --- UTILITY FUNCTIONS ---
-  const setupGame = useCallback((canvas: HTMLCanvasElement) => {
-    const { width, height } = canvas;
-    const center = { x: width / 2, y: height / 2 };
-
-    // Initialize stars
-    stars.current = [];
-    for (let i = 0; i < STAR_COUNT; i++) {
-      stars.current.push({
-        x: (Math.random() - 0.5) * width,
-        y: (Math.random() - 0.5) * height,
-        z: Math.random() * width,
-        px: 0,
-        py: 0,
-      });
+  const activateCME = useCallback(() => {
+    if (cmeCharge >= 100 && !cmeStateRef.current.active) {
+        cmeStateRef.current = { active: true, timer: CME_DURATION };
+        gameSpeedRef.current = INITIAL_GAME_SPEED * 1.8;
+        pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY / 2;
+        setCmeCharge(0);
     }
-    
-    // Initialize player trail
-    playerTrail.current = Array(PLAYER_TRAIL_LENGTH).fill({ x: center.x, y: center.y });
+  }, [cmeCharge]);
 
-    const spawnObstaclesAndCollectibles = () => {
-        // Initialize obstacles
-        obstacles.current = [];
-        for (let i = 0; i < OBSTACLE_COUNT; i++) {
-            const z = (i / OBSTACLE_COUNT) * LEVEL_DISTANCE + 500;
-            obstacles.current.push({
-                x: (Math.random() - 0.5) * width * 1.5,
-                y: (Math.random() - 0.5) * height * 1.5,
-                z: z,
-                radius: 30 + Math.random() * 40,
-                type: Math.random() > 0.4 ? 'cloud' : 'ring',
-                rotation: Math.random() * Math.PI * 2,
-                color: `rgba(${150 + Math.random() * 105}, 50, ${100 + Math.random() * 155}, 0.6)`,
-            });
-        }
-        // Initialize collectibles
-        collectibles.current = [];
-        for (let i = 0; i < COLLECTIBLE_COUNT; i++) {
-             const z = (i / COLLECTIBLE_COUNT) * LEVEL_DISTANCE + 500;
-            collectibles.current.push({
-                x: (Math.random() - 0.5) * width,
-                y: (Math.random() - 0.5) * height,
-                z: z,
-                radius: 15,
-            });
-        }
-    };
-    
-    spawnObstaclesAndCollectibles();
-
-    // Reset game state
-    distance.current = 0;
-    score.current = 0;
-    cohesion.current = 100;
-    gameSpeed.current = INITIAL_SPEED + (level.current - 1) * 0.5;
-    earthGateState.current = { approaching: false, earthZ: 0, safeGateY: 0 };
-    gameState.current = 'playing';
-
-  }, [level]);
-
-  // --- MOUSE/TOUCH HANDLING ---
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      mousePos.current = { x: e.clientX, y: e.clientY };
-    };
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches[0]) {
-        mousePos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      }
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('touchmove', handleTouchMove);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('touchmove', handleTouchMove);
-    };
+  const resetGame = useCallback((canvas: HTMLCanvasElement) => {
+    playerRef.current = { x: PLAYER_X, y: canvas.height / 2, radius: 15, velocityY: 0, trail: [] };
+    pillarsRef.current = [];
+    frameRef.current = 0;
+    powerRef.current = 0;
+    setHemisphericPower(0);
+    gameSpeedRef.current = INITIAL_GAME_SPEED;
+    pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY;
+    cmeStateRef.current = { active: false, timer: 0 };
+    setCmeCharge(0);
+    powerUpRef.current = null;
+    setGameState('playing');
   }, []);
 
-  // --- GAME LOOP ---
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleInput = () => {
+      if (gameState === 'playing') {
+        playerRef.current.velocityY = -FLAP_STRENGTH;
+      } else {
+        resetGame(canvas);
+      }
+    };
+    
+    const handleCMEKey = (e: KeyboardEvent) => {
+        if(e.key.toLowerCase() === 'c') {
+            activateCME();
+        }
+    };
+
+    canvas.addEventListener('mousedown', handleInput);
+    window.addEventListener('keydown', (e) => e.key === ' ' && handleInput());
+    window.addEventListener('keydown', handleCMEKey);
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        handleInput();
+    });
+
+    return () => {
+      canvas.removeEventListener('mousedown', handleInput);
+      window.removeEventListener('keydown', (e) => e.key === ' ' && handleInput());
+      window.removeEventListener('keydown', handleCMEKey);
+      canvas.removeEventListener('touchstart', handleInput);
+    };
+  }, [resetGame, activateCME, gameState]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -154,206 +130,138 @@ const SolarSurferGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     if (!ctx) return;
 
     const resizeCanvas = () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      starsRef.current = [];
+      for(let i=0; i<100; i++) {
+        starsRef.current.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            radius: Math.random() * 1.5,
+            speed: 0.5 + Math.random() * 0.5,
+        });
+      }
     };
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
     const gameLoop = () => {
-      const { width, height } = canvas;
-      const fov = width * 0.8;
-      const center = { x: width / 2, y: height / 2 };
-
-      // Clear canvas
-      ctx.fillStyle = '#010418';
-      ctx.fillRect(0, 0, width, height);
-      
-      if (gameState.current === 'start') {
-        // Handled by React UI
-      } else if (gameState.current === 'playing' || gameState.current === 'levelEnd') {
-        // --- UPDATE LOGIC ---
-        distance.current += gameSpeed.current;
-        score.current += gameSpeed.current * 0.1;
-
-        // Smoothly move player towards mouse
-        playerPos.current.x += (mousePos.current.x - playerPos.current.x) * 0.1;
-        playerPos.current.y += (mousePos.current.y - playerPos.current.y) * 0.1;
+        const { width, height } = canvas;
+        frameRef.current++;
         
-        // Update player trail
-        playerTrail.current.push({ x: playerPos.current.x, y: playerPos.current.y });
-        if (playerTrail.current.length > PLAYER_TRAIL_LENGTH) {
-          playerTrail.current.shift();
-        }
+        ctx.fillStyle = cmeStateRef.current.active ? '#300' : '#010418';
+        ctx.fillRect(0, 0, width, height);
 
-        // --- DRAWING LOGIC ---
-        // Draw stars
-        stars.current.forEach(star => {
-          star.z -= gameSpeed.current;
-          if (star.z <= 0) {
-            star.z = width;
-            star.x = (Math.random() - 0.5) * width;
-            star.y = (Math.random() - 0.5) * height;
-          }
-          const scale = fov / (fov + star.z);
-          const x = star.x * scale + center.x;
-          const y = star.y * scale + center.y;
-          const r = scale * 2;
-          
-          if (x > 0 && x < width && y > 0 && y < height) {
-             ctx.beginPath();
-             ctx.arc(x, y, r, 0, Math.PI * 2);
-             ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + scale * 0.5})`;
-             ctx.fill();
-          }
-        });
-        
-        // Draw Obstacles & check collisions
-        obstacles.current.forEach(obs => {
-          obs.z -= gameSpeed.current;
-          if (obs.z <= 0) {
-              obs.z = LEVEL_DISTANCE;
-              obs.x = (Math.random() - 0.5) * width * 1.5;
-              obs.y = (Math.random() - 0.5) * height * 1.5;
-          }
-
-          const scale = fov / (fov + obs.z);
-          const x = obs.x * scale + center.x;
-          const y = obs.y * scale + center.y;
-          const r = obs.radius * scale;
-          
-          if (x + r > 0 && x - r < width && y + r > 0 && y - r < height) {
-              if(obs.type === 'cloud') {
-                const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
-                gradient.addColorStop(0, obs.color.replace('0.6', '0.4'));
-                gradient.addColorStop(1, obs.color.replace('0.6', '0'));
-                ctx.fillStyle = gradient;
-                ctx.fillRect(x - r, y - r, r * 2, r * 2);
-              } else { // ring
-                ctx.strokeStyle = obs.color;
-                ctx.lineWidth = 10 * scale;
-                ctx.beginPath();
-                ctx.arc(x, y, r, 0, Math.PI * 2);
-                ctx.stroke();
-              }
-          }
-
-          // Collision detection
-          const distToPlayer = Math.hypot(x - playerPos.current.x, y - playerPos.current.y);
-          if (obs.z < 50 && distToPlayer < r + 10) {
-              cohesion.current -= 1;
-              if (cohesion.current <= 0) {
-                  gameState.current = 'gameOver';
-              }
-          }
-        });
-
-        // Draw Collectibles & check collisions
-        collectibles.current.forEach(col => {
-          col.z -= gameSpeed.current;
-          if (col.z <= 0) {
-              col.z = LEVEL_DISTANCE;
-              col.x = (Math.random() - 0.5) * width;
-              col.y = (Math.random() - 0.5) * height;
-          }
-          const scale = fov / (fov + col.z);
-          const x = col.x * scale + center.x;
-          const y = col.y * scale + center.y;
-          const r = col.radius * scale;
-          
-           if (x + r > 0 && x - r < width && y + r > 0 && y - r < height) {
-              ctx.beginPath();
-              ctx.arc(x, y, r, 0, Math.PI * 2);
-              const gradient = ctx.createRadialGradient(x,y,0,x,y,r);
-              gradient.addColorStop(0, 'rgba(255, 255, 150, 1)');
-              gradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
-              ctx.fillStyle = gradient;
-              ctx.fill();
-           }
-            // Collision
-           if (col.z < 50 && Math.hypot(x - playerPos.current.x, y - playerPos.current.y) < r + 10) {
-              score.current += 500;
-              col.z = LEVEL_DISTANCE; // Respawn
-           }
-        });
-
-        // Draw player trail
-        for (let i = 0; i < playerTrail.current.length; i++) {
-          const pos = playerTrail.current[i];
-          const alpha = (i / playerTrail.current.length) * 0.5;
-          const radius = (i / playerTrail.current.length) * 15;
-          ctx.beginPath();
-          ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-          const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
-          gradient.addColorStop(0, `rgba(150, 200, 255, ${alpha})`);
-          gradient.addColorStop(0.8, `rgba(50, 100, 255, ${alpha * 0.5})`);
-          gradient.addColorStop(1, `rgba(50, 100, 255, 0)`);
-          ctx.fillStyle = gradient;
-          ctx.fill();
-        }
-
-        // --- LEVEL END SEQUENCE ---
-        if (distance.current >= LEVEL_DISTANCE && !earthGateState.current.approaching) {
-          gameState.current = 'levelEnd';
-          earthGateState.current = {
-              approaching: true,
-              earthZ: 800,
-              safeGateY: center.y + (Math.random() - 0.5) * (height * 0.6)
-          };
-        }
-        
-        if (gameState.current === 'levelEnd') {
-            earthGateState.current.earthZ -= gameSpeed.current * 1.5;
-            const earthZ = earthGateState.current.earthZ;
-            const scale = fov / (fov + earthZ);
-            const earthRadius = 400 * scale;
-
-            // Earth
-            const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, earthRadius);
-            gradient.addColorStop(0, '#8cb1de');
-            gradient.addColorStop(0.9, '#2a6a9c');
-            gradient.addColorStop(1, '#1d4f7a');
-            ctx.fillStyle = gradient;
+        starsRef.current.forEach(star => {
+            star.x -= star.speed * gameSpeedRef.current * 0.5;
+            if (star.x < 0) star.x = width;
             ctx.beginPath();
-            ctx.arc(center.x, center.y, earthRadius, 0, Math.PI * 2);
+            ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.fill();
+        });
+
+        if (gameState === 'playing') {
+            if (frameRef.current % Math.floor(pillarFrequencyRef.current) === 0) {
+                const gapHeight = 180 - Math.min(powerRef.current / 500, 60);
+                pillarsRef.current.push({
+                    x: width,
+                    gapY: (height * 0.2) + Math.random() * (height * 0.6),
+                    gapHeight: gapHeight,
+                    scored: false,
+                });
+            }
+
+            pillarsRef.current.forEach(p => {
+                p.x -= gameSpeedRef.current;
+                
+                ctx.fillStyle = 'rgba(10, 200, 120, 0.2)';
+                ctx.fillRect(p.x, p.gapY - p.gapHeight / 2, PILLAR_WIDTH, p.gapHeight);
+
+                const topGrad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_WIDTH, 0);
+                topGrad.addColorStop(0, '#ff4444'); topGrad.addColorStop(1, '#ff8888');
+                ctx.fillStyle = topGrad;
+                ctx.fillRect(p.x, 0, PILLAR_WIDTH, p.gapY - p.gapHeight / 2);
+
+                const botGrad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_WIDTH, 0);
+                botGrad.addColorStop(0, '#ff4444'); botGrad.addColorStop(1, '#ff8888');
+                ctx.fillStyle = botGrad;
+                ctx.fillRect(p.x, p.gapY + p.gapHeight / 2, PILLAR_WIDTH, height);
+
+                if (!p.scored && p.x + PILLAR_WIDTH < playerRef.current.x) {
+                    powerRef.current += gameSpeedRef.current * SCORE_MULTIPLIER;
+                    setCmeCharge(c => Math.min(100, c + 5));
+                    p.scored = true;
+                }
+            });
+            pillarsRef.current = pillarsRef.current.filter(p => p.x + PILLAR_WIDTH > 0);
+            
+            playerRef.current.velocityY += GRAVITY;
+            playerRef.current.y += playerRef.current.velocityY;
+            
+            playerRef.current.trail.push({ x: playerRef.current.x, y: playerRef.current.y });
+            if(playerRef.current.trail.length > 20) playerRef.current.trail.shift();
+
+            for(let i=playerRef.current.trail.length - 1; i>=0; i--) {
+                const t = playerRef.current.trail[i];
+                const ratio = i / playerRef.current.trail.length;
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, playerRef.current.radius * ratio, 0, Math.PI * 2);
+                const color = cmeStateRef.current.active ? `rgba(255, 200, 50, ${ratio * 0.5})` : `rgba(150, 200, 255, ${ratio * 0.5})`;
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+
+            ctx.beginPath();
+            ctx.arc(playerRef.current.x, playerRef.current.y, playerRef.current.radius, 0, Math.PI * 2);
+            const playerGrad = ctx.createRadialGradient(playerRef.current.x, playerRef.current.y, 0, playerRef.current.x, playerRef.current.y, playerRef.current.radius);
+            const pColor1 = cmeStateRef.current.active ? '#ffff88' : '#aaccff';
+            const pColor2 = cmeStateRef.current.active ? '#ff8800' : '#4488ff';
+            playerGrad.addColorStop(0, pColor1); playerGrad.addColorStop(1, pColor2);
+            ctx.fillStyle = playerGrad;
             ctx.fill();
 
-            // Gates
-            const gateHeight = 200 * scale;
-            const gateWidth = 50 * scale;
-            const safeY = earthGateState.current.safeGateY;
-            
-            // Safe Gate (Green)
-            ctx.fillStyle = 'rgba(50, 255, 150, 0.8)';
-            ctx.fillRect(center.x - gateWidth / 2, safeY - gateHeight / 2, gateWidth, gateHeight);
-            ctx.strokeStyle = 'rgba(200, 255, 220, 1)';
-            ctx.strokeRect(center.x - gateWidth / 2, safeY - gateHeight / 2, gateWidth, gateHeight);
-            
-            // Unsafe Gate (Red) - position it opposite to the green one
-            const unsafeY = center.y - (safeY - center.y);
-            ctx.fillStyle = 'rgba(255, 50, 100, 0.8)';
-            ctx.fillRect(center.x - gateWidth / 2, unsafeY - gateHeight / 2, gateWidth, gateHeight);
-            ctx.strokeStyle = 'rgba(255, 200, 220, 1)';
-            ctx.strokeRect(center.x - gateWidth / 2, unsafeY - gateHeight / 2, gateWidth, gateHeight);
+            if(!powerUpRef.current && Math.random() < 0.002) {
+                powerUpRef.current = { x: width, y: height * 0.2 + Math.random() * height * 0.6, radius: 20, active: true };
+            }
+            if(powerUpRef.current && powerUpRef.current.active) {
+                powerUpRef.current.x -= gameSpeedRef.current;
+                const p = powerUpRef.current;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                const sunGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
+                sunGrad.addColorStop(0, '#fff5e6'); sunGrad.addColorStop(0.8, '#ffcc00'); sunGrad.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                ctx.fillStyle = sunGrad;
+                ctx.fill();
+                if(Math.hypot(p.x - playerRef.current.x, p.y - playerRef.current.y) < p.radius + playerRef.current.radius) {
+                    setCmeCharge(c => Math.min(100, c + 34));
+                    p.active = false;
+                }
+                if(p.x < -p.radius) powerUpRef.current = null;
+            }
 
-            if (earthZ < 50) {
-                const playerY = playerPos.current.y;
-                if (playerY > safeY - gateHeight / 2 && playerY < safeY + gateHeight / 2) {
-                    // Level complete!
-                    score.current += 1000 * level.current;
-                    level.current += 1;
-                    setupGame(canvas); // Resets for next level
-                } else {
-                    // Failed
-                    gameState.current = 'gameOver';
+            if(cmeStateRef.current.active) {
+                cmeStateRef.current.timer--;
+                if(cmeStateRef.current.timer <= 0) {
+                    cmeStateRef.current.active = false;
+                    gameSpeedRef.current = INITIAL_GAME_SPEED;
+                    pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY;
                 }
             }
+
+            const p = pillarsRef.current[0];
+            if(p && playerRef.current.x + playerRef.current.radius > p.x && playerRef.current.x - playerRef.current.radius < p.x + PILLAR_WIDTH) {
+                if(playerRef.current.y - playerRef.current.radius < p.gapY - p.gapHeight/2 || playerRef.current.y + playerRef.current.radius > p.gapY + p.gapHeight/2) {
+                    setGameState('gameOver');
+                }
+            }
+            if(playerRef.current.y > height || playerRef.current.y < 0) {
+                 setGameState('gameOver');
+            }
+
+            setHemisphericPower(powerRef.current);
         }
 
-      } else if (gameState.current === 'gameOver') {
-          // Handled by React UI
-      }
-      
       animationFrameId.current = requestAnimationFrame(gameLoop);
     };
 
@@ -361,71 +269,76 @@ const SolarSurferGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     
     return () => {
       window.removeEventListener('resize', resizeCanvas);
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
-  }, [setupGame]);
-  
-  const startGame = () => {
-    level.current = 1;
-    if (canvasRef.current) {
-        setupGame(canvasRef.current);
-    }
-  };
+  }, [resetGame]);
 
-  const HUD = () => (
-    <div className="absolute top-4 left-4 right-4 text-white font-bold text-lg flex justify-between items-center pointer-events-none">
-        <div>Score: {Math.floor(score.current)}</div>
-        <div className="text-center">Level: {level.current}<br/><span className="text-sm">Distance: {Math.floor(distance.current)} / {LEVEL_DISTANCE}</span></div>
-        <div>
-            Cohesion: {Math.max(0, Math.floor(cohesion.current))}%
-            <div className="w-32 h-2 bg-neutral-700 rounded mt-1">
-                <div className="h-2 bg-gradient-to-r from-sky-400 to-blue-500 rounded" style={{width: `${Math.max(0, cohesion.current)}%`}}></div>
-            </div>
-        </div>
-    </div>
-  );
+  const isCmeReady = cmeCharge >= 100 && !cmeStateRef.current.active;
 
   return (
-    <div className="fixed inset-0 z-[4000] bg-black/50 backdrop-blur-sm flex items-center justify-center">
+    <div className="fixed inset-0 z-[4000] bg-black/80 backdrop-blur-md flex items-center justify-center cursor-pointer">
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
       
-      <button onClick={onClose} className="absolute top-5 right-5 p-2 bg-black/50 rounded-full text-white hover:bg-white/20 transition-colors z-10">
+      <button onClick={onClose} className="absolute top-5 right-5 p-2 bg-black/50 rounded-full text-white hover:bg-white/20 transition-colors z-20">
         <CloseIcon className="w-8 h-8"/>
       </button>
 
-      {gameState.current === 'playing' || gameState.current === 'levelEnd' ? <HUD /> : null}
-      
-      {gameState.current === 'start' && (
-        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg">
-            <h1 className="text-5xl font-extrabold mb-4 text-amber-300">Solar Surfer</h1>
-            <h2 className="text-xl font-semibold mb-6">Your Journey from the Sun to Earth!</h2>
-            <div className="text-left space-y-3 mb-8">
-                <p><strong>Objective:</strong> Guide your particle stream to Earth. Dodge obstacles and collect energy to score points.</p>
-                <p><strong>Controls:</strong> Use your <strong>Mouse</strong> or <strong>Touch</strong> to move.</p>
-                <p><strong>Hazards:</strong> Avoid plasma clouds and magnetic rings, they will reduce your cohesion.</p>
-                <p><strong>The Final Gate:</strong> At the end of each level, you will approach Earth. You must pass through the <strong className="text-green-400">GREEN (Bz South)</strong> gate to create an aurora and complete the level. Hitting the <strong className="text-red-400">RED (Bz North)</strong> gate will end your journey!</p>
+      {gameState === 'playing' && (
+        <div className="absolute top-4 left-4 right-4 text-white font-bold text-lg flex justify-between items-center pointer-events-none z-10">
+            <div className="bg-black/50 p-2 rounded-md">
+                Power: {Math.floor(hemisphericPower)} GW
             </div>
-            <button onClick={startGame} className="px-8 py-4 bg-sky-600 text-white font-bold text-xl rounded-lg hover:bg-sky-500 transition-transform hover:scale-105">
-                Start Game
-            </button>
+            <div className="bg-black/50 p-2 rounded-md flex items-center gap-2">
+                <span>CME Charge</span>
+                <div className="w-24 h-4 bg-neutral-700 rounded">
+                    <div className={`h-4 rounded transition-all ${isCmeReady ? 'bg-yellow-400' : 'bg-orange-500'}`} style={{width: `${cmeCharge}%`}}></div>
+                </div>
+            </div>
         </div>
       )}
 
-      {gameState.current === 'gameOver' && (
-        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg">
-            <h1 className="text-5xl font-extrabold mb-4 text-red-500">Game Over</h1>
-            <h2 className="text-2xl font-semibold mb-2">Final Score: {Math.floor(score.current)}</h2>
-            <p className="mb-8">You completed {level.current - 1} level(s)!</p>
-            <button onClick={startGame} className="px-8 py-4 bg-sky-600 text-white font-bold text-xl rounded-lg hover:bg-sky-500 transition-transform hover:scale-105">
-                Play Again
-            </button>
+      {gameState === 'start' && (
+        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none">
+            <h1 className="text-5xl font-extrabold mb-4 text-amber-300">Solar Flap</h1>
+            <h2 className="text-xl font-semibold mb-6">Can you create an aurora?</h2>
+            <div className="text-left space-y-3 mb-8">
+                <p><strong>Controls:</strong> Click, Tap, or press Spacebar to flap upwards.</p>
+                <p><strong>Goal:</strong> Fly through the <strong className="text-green-400">green (-Bz)</strong> gaps to increase Hemispheric Power. Avoid the <strong className="text-red-400">red (+Bz)</strong> pillars!</p>
+                <p><strong>Power Up:</strong> Collect sun icons to charge your CME. When full, press <strong className="text-yellow-400">'C'</strong> or <strong className="text-yellow-400">tap the icon</strong> to unleash it for double pillars and faster speeds!</p>
+            </div>
+            <p className="text-2xl font-bold animate-pulse">Click anywhere to Start</p>
         </div>
+      )}
+      
+      {gameState === 'gameOver' && (
+        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none">
+            <h1 className="text-5xl font-extrabold mb-4 text-red-500">Impact Failure</h1>
+            <h2 className="text-3xl font-semibold mb-2">Final Power: {Math.floor(hemisphericPower)} GW</h2>
+            <p className="text-xl mt-8 animate-pulse">Click anywhere to try again</p>
+        </div>
+      )}
+
+      {/* --- NEW: On-screen CME button for mobile --- */}
+      {isCmeReady && gameState === 'playing' && (
+        <button 
+            onClick={(e) => {
+                e.stopPropagation(); // Prevent flap
+                activateCME();
+            }}
+            onTouchStart={(e) => {
+                e.stopPropagation(); // Prevent flap
+                activateCME();
+            }}
+            className="absolute top-20 left-4 w-20 h-20 bg-yellow-400/80 rounded-full z-20 flex items-center justify-center text-black font-bold text-4xl border-4 border-yellow-200 shadow-lg animate-pulse cursor-pointer"
+            style={{ textShadow: '0 0 10px white' }}
+            title="Activate CME (C Key)"
+        >
+            C
+        </button>
       )}
     </div>
   );
 };
 
-export default SolarSurferGame;
+export default SolarFlap;
 // --- END OF FILE src/components/SolarSurferGame.tsx ---
