@@ -14,7 +14,7 @@ interface Particle {
   size: number;
 }
 
-const AuroraPainter: React.FC = () => {
+export const AuroraPainter: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   const particlesRef = useRef<Particle[]>([]);
@@ -153,5 +153,5 @@ const AuroraPainter: React.FC = () => {
   );
 };
 
-export default AuroraPainter;
+// No default export
 // --- END OF FILE src/components/easter-egg/AuroraPainter.tsx ---
