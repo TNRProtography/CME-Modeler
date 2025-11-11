@@ -189,7 +189,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
-  const fluxRopeGroupRef = useRef<any>(null);
+  const fluxRopeRef = useRef<any>(null);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
@@ -335,26 +335,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- START OF MODIFICATION: Create Teardrop Shape Group ---
-    fluxRopeGroupRef.current = new THREE.Group();
+    // --- START OF MODIFICATION: Reverting to original blinking ring ---
+    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
       fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-      uniforms: { uColor: { value: new THREE.Color(0xffffff) } },
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: {
+        uTime: { value: 0 },
+        uTexture: { value: createArrowTexture(THREE) },
+        uColor: { value: new THREE.Color(0xffffff) },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
     });
-    // Cone for the tail (open-ended at the base)
-    const coneGeom = new THREE.ConeGeometry(1, 1, 32, 1, true); 
-    const coneMesh = new THREE.Mesh(coneGeom, fluxRopeMaterial);
-    coneMesh.name = "rope_cone";
-    fluxRopeGroupRef.current.add(coneMesh);
-    // Hemisphere for the rounded front
-    const hemisphereGeom = new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-    const hemisphereMesh = new THREE.Mesh(hemisphereGeom, fluxRopeMaterial);
-    hemisphereMesh.name = "rope_head";
-    fluxRopeGroupRef.current.add(hemisphereMesh);
-    fluxRopeGroupRef.current.visible = false;
-    scene.add(fluxRopeGroupRef.current);
+    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
+    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    fluxRopeRef.current.visible = false;
+    scene.add(fluxRopeRef.current);
     // --- END OF MODIFICATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
@@ -588,39 +587,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- START OF MODIFICATION: New Flux Rope Animation Logic ---
+      // --- START OF MODIFICATION: Reverting Flux Rope Animation Logic ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
-      if (fluxRopeGroupRef.current) {
-        fluxRopeGroupRef.current.visible = shouldShowFluxRope;
+      if (fluxRopeRef.current) {
+        fluxRopeRef.current.visible = shouldShowFluxRope;
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
+            fluxRopeRef.current.position.copy(cmeObject.position);
+            fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
-            const cmeLength = cmeObject.scale.y; 
-            const coneRadius = cmeLength * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            const sunRadius = PLANET_DATA_MAP.SUN.size;
-
+            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
             const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            
-            fluxRopeGroupRef.current.position.copy(dir.clone().multiplyScalar(sunRadius));
-            fluxRopeGroupRef.current.quaternion.copy(cmeObject.quaternion);
-
-            const coneMesh = fluxRopeGroupRef.current.children.find((c: any) => c.name === 'rope_cone');
-            const hemisphereMesh = fluxRopeGroupRef.current.children.find((c: any) => c.name === 'rope_head');
-
-            if (coneMesh) {
-              coneMesh.scale.set(coneRadius, cmeLength, coneRadius);
-              coneMesh.position.set(0, cmeLength / 2, 0);
-            }
-            if (hemisphereMesh) {
-              hemisphereMesh.scale.set(coneRadius, coneRadius, coneRadius);
-              hemisphereMesh.position.set(0, cmeLength, 0);
-              hemisphereMesh.rotation.set(Math.PI / 2, 0, 0);
-            }
-            
-            (fluxRopeGroupRef.current.children[0].material as any).uniforms.uColor.value = getCmeCoreColor(cme.speed);
+            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+            fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
         }
+        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
       // --- END OF MODIFICATION ---
 
