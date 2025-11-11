@@ -228,60 +228,63 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  // --- START OF MODIFICATION: New Deceleration Logic ---
+  // --- START OF MODIFICATION: Corrected Deceleration Logic ---
+  const MIN_CME_SPEED_KMS = 300; // Ambient solar wind speed floor
 
-  /**
-   * Calculates CME distance traveled using a physics-based deceleration model.
-   * Formula for acceleration: a = 1.41 - 0.0035 * u (a in m/s^2, u in km/s)
-   * Kinematic equation for distance: s = ut + 0.5at^2
-   */
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    // 1. Get initial speed 'u' in km/s from CME data
     const u_kms = cme.speed;
+    const t_s = Math.max(0, timeSinceEventSeconds);
 
-    // 2. Calculate acceleration 'a' in m/s^2 using the provided formula
+    // If initial speed is already below the floor, assume constant speed.
+    if (u_kms <= MIN_CME_SPEED_KMS) {
+        const distance_km = u_kms * t_s;
+        return (distance_km / AU_IN_KM) * SCENE_SCALE;
+    }
+
     const a_ms2 = 1.41 - 0.0035 * u_kms;
-
-    // 3. Convert acceleration to km/s^2 for consistency
     const a_kms2 = a_ms2 / 1000.0;
 
-    // 4. Use kinematic equation for distance: s = ut + 0.5at^2
-    const t_s = Math.max(0, timeSinceEventSeconds);
-    const distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
+    // If it's accelerating (slow CME), use the simple formula without a floor.
+    if (a_kms2 >= 0) {
+        const distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
+        return (distance_km / AU_IN_KM) * SCENE_SCALE;
+    }
     
-    // If deceleration is very high, distance could become negative over long periods. Prevent this.
-    if (distance_km < 0) return 0; 
+    // For decelerating CMEs, find the time it takes to reach the speed floor.
+    // v = u + at  =>  t = (v - u) / a
+    const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
 
-    // 5. Convert final distance from km to the simulation's scaled AU units
-    const distance_au = distance_km / AU_IN_KM;
-    const distance_scene_units = distance_au * SCENE_SCALE;
+    let distance_km;
+    if (t_s < time_to_floor_s) {
+        // Case 1: The CME is still decelerating. Use standard kinematic equation.
+        distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
+    } else {
+        // Case 2: The CME has hit the speed floor.
+        // Part 1: Distance traveled during deceleration phase.
+        const distance_during_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
+        
+        // Part 2: Time spent coasting at the minimum speed.
+        const time_coasting = t_s - time_to_floor_s;
 
-    return distance_scene_units;
+        // Part 3: Distance traveled during the coasting phase.
+        const distance_during_coast = MIN_CME_SPEED_KMS * time_coasting;
+        
+        distance_km = distance_during_decel + distance_during_coast;
+    }
+
+    return (distance_km / AU_IN_KM) * SCENE_SCALE;
   }, []);
 
-  /**
-   * Calculates CME distance by linearly interpolating to match a predicted arrival time.
-   * This is used ONLY for individually-modeled CMEs that have an official NASA prediction.
-   */
   const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     if (!cme.predictedArrivalTime) return 0;
-
     const earthOrbitRadiusActualAU = PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE;
     const totalTravelTimeSeconds = (cme.predictedArrivalTime.getTime() - cme.startTime.getTime()) / 1000;
-    
     if (totalTravelTimeSeconds <= 0) return 0;
-    
-    // Find what proportion of the journey is complete
     const proportionOfTravel = Math.min(1.0, timeSinceEventSeconds / totalTravelTimeSeconds);
-    
-    // Calculate distance in AU based on this proportion
     const distanceActualAU = proportionOfTravel * earthOrbitRadiusActualAU;
-    
     return distanceActualAU * SCENE_SCALE;
   }, []);
-
   // --- END OF MODIFICATION ---
-
 
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
     if (!THREE) return;
