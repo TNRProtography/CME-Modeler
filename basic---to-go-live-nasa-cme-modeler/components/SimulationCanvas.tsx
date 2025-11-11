@@ -1,5 +1,3 @@
-// --- START OF FILE src/components/SimulationCanvas.tsx ---
-
 import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
@@ -98,7 +96,7 @@ const getCmeOpacity = (speed: number): number => {
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 1500, 7000));
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000));
 };
 
 const getCmeParticleSize = (speed: number, scale: number): number => {
@@ -150,7 +148,6 @@ interface SimulationCanvasProps {
   showFluxRope: boolean;
   dataVersion: number;
   interactionMode: InteractionMode;
-  onSunClick: () => void; // NEW PROP
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -159,7 +156,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     activeView,
     focusTarget,
     currentlyModeledCMEId,
-    onCMEClick,
     timelineActive,
     timelinePlaying,
     timelineSpeed,
@@ -178,7 +174,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     showFluxRope,
     dataVersion,
     interactionMode,
-    onSunClick, // NEW PROP
   } = props;
 
   const mountRef = useRef<HTMLDivElement>(null);
@@ -194,9 +189,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
-  
-  const raycasterRef = useRef<any>(null); // NEW for clicking
-  const pointerRef = useRef<any>(null); // NEW for clicking
 
   const timelineValueRef = useRef(timelineValue);
   const lastTimeRef = useRef(0);
@@ -267,9 +259,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    
-    raycasterRef.current = new THREE.Raycaster();
-    pointerRef.current = new THREE.Vector2();
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
     cameraRef.current = camera;
@@ -397,6 +386,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         planetMesh.add(atmosphere);
 
         // --- Aurora shell (backface) ---
+        // Added uniforms: uAuroraMinY (latitude boundary), uAuroraIntensity (brightness)
         const aurora = new THREE.Mesh(
           new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64),
           new THREE.ShaderMaterial({
@@ -410,7 +400,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
               uTime: { value: 0.0 },
               uCmeSpeed: { value: 0.0 },
               uImpactTime: { value: 0.0 },
-              uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) },
+              // NEW uniforms for latitude expansion & intensity
+              uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, // start ~70° geomagnetic latitude
               uAuroraIntensity: { value: 0.0 }
             }
           })
@@ -493,25 +484,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     };
     window.addEventListener('resize', handleResize);
-    
-    // --- NEW: Click handler for raycasting ---
-    const onCanvasClick = (event: MouseEvent) => {
-        if (!mountRef.current || !cameraRef.current || !raycasterRef.current || !sceneRef.current) return;
-        const rect = mountRef.current.getBoundingClientRect();
-        pointerRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        pointerRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        
-        raycasterRef.current.setFromCamera(pointerRef.current, cameraRef.current);
-        
-        const sun = celestialBodiesRef.current['SUN']?.mesh;
-        if (sun) {
-            const intersects = raycasterRef.current.intersectObject(sun);
-            if (intersects.length > 0) {
-                onSunClick(); // Trigger the easter egg
-            }
-        }
-    };
-    renderer.domElement.addEventListener('click', onCanvasClick);
 
     // Animation loop
     let animationFrameId: number;
@@ -626,10 +598,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (rendererRef.current) {
-          rendererRef.current.domElement.removeEventListener('click', onCanvasClick);
-          if (mountRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
-      }
+      if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
       if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
       try { rendererRef.current?.dispose(); } catch {}
@@ -822,6 +791,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, []);
 
   // Map speed to aurora brightness and equatorward latitude boundary
+  // speed (km/s): 300 -> 70° (confined), 3000 -> 45° (big storm)
   const speedToLatBoundaryDeg = (speed: number) => {
     const s = clamp(speed, 300, 3000);
     const t = (s - 300) / (3000 - 300); // 0..1
@@ -854,8 +824,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       aurora.material.uniforms.uCmeSpeed.value = maxImpactSpeed;
       aurora.material.uniforms.uImpactTime.value = hit > 0 ? elapsed : 0.0;
+      // NEW: latitude boundary & brightness
       aurora.material.uniforms.uAuroraMinY.value = minY;
       aurora.material.uniforms.uAuroraIntensity.value = intensity;
+
+      // Base opacity pulse on impact
       (aurora.material as any).opacity = 0.12 + hit * (0.45 + 0.18 * Math.sin(elapsed * 2.0));
     }
 
@@ -870,4 +843,3 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
-// --- END OF FILE src/components/SimulationCanvas.tsx ---
