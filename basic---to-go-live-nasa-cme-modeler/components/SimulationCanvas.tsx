@@ -757,12 +757,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
         
         const earthData = PLANET_DATA_MAP.EARTH;
-        const timelineDuration = timelineMaxDate - timelineMinDate;
-        if (timelineDuration <= 0) return [];
+        const simStartTime = timelineMinDate;
+        if (simStartTime <= 0) return [];
 
         // --- START: MODIFIED GRAPH LOGIC ---
-        const graphEndDate = timelineMaxDate + 3 * 24 * 3600 * 1000; // Extend graph 3 days into the future
-        const graphDuration = graphEndDate - timelineMinDate;
+        const graphStartTime = Date.now();
+        const graphEndTime = graphStartTime + 7 * 24 * 3600 * 1000; // 7 days ahead
+        const graphDuration = graphEndTime - graphStartTime;
 
         const graphData = [];
         const numSteps = 200; 
@@ -771,13 +772,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
         for (let i = 0; i <= numSteps; i++) {
             const stepRatio = i / numSteps;
-            const currentTime = timelineMinDate + graphDuration * stepRatio;
+            const currentTime = graphStartTime + graphDuration * stepRatio;
 
-            // Correctly calculate Earth's orbital position at any given time in the simulation
-            const totalSecondsSinceSimStart = (currentTime - cmeData[0]?.startTime.getTime() ?? 0) / 1000;
+            // Correctly calculate Earth's orbital position at any given time
+            const secondsSinceSimEpoch = (currentTime - simStartTime) / 1000;
             const orbitalPeriodSeconds = earthData.orbitalPeriodDays! * 24 * 3600;
             const startingAngle = earthData.angle;
-            const earthAngle = startingAngle + ((2 * Math.PI) / orbitalPeriodSeconds) * totalSecondsSinceSimStart;
+            const angularVelocity = (2 * Math.PI) / orbitalPeriodSeconds; 
+            const earthAngle = startingAngle + angularVelocity * secondsSinceSimEpoch;
             
             const earthX = earthData.radius * Math.sin(earthAngle);
             const earthZ = earthData.radius * Math.cos(earthAngle);
@@ -808,21 +810,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                             const a_kms2 = a_ms2 / 1000.0;
                             const currentSpeed = Math.max(MIN_CME_SPEED_KMS, u_kms + a_kms2 * timeSinceCmeStart);
                             
-                            // Calculate intensity based on how far through the CME Earth is
                             const penetration_distance = cmeFront - distToEarth;
-                            const coreThickness = cmeThickness * 0.25; // First 25% is the core
+                            const coreThickness = cmeThickness * 0.25;
                             let intensity = 0;
 
                             if (penetration_distance <= coreThickness) {
-                                // In the shock/core, intensity is max
                                 intensity = 1.0;
                             } else {
-                                // In the wake, smoothly decrease intensity using a cosine curve
                                 const wake_progress = (penetration_distance - coreThickness) / (cmeThickness - coreThickness);
                                 intensity = 0.5 * (1 + Math.cos(wake_progress * Math.PI));
                             }
                             
-                            // Add the CME's contribution, scaled by intensity
                             const speedContribution = (currentSpeed - ambientSpeed) * intensity;
                             const densityContribution = (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ambientDensity) * intensity;
                             
@@ -837,7 +835,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         return graphData;
         // --- END: MODIFIED GRAPH LOGIC ---
     }
-  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, timelineMaxDate, calculateDistanceWithDeceleration, cmeData]);
+  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 
   useEffect(() => {
     if (controlsRef.current && rendererRef.current?.domElement) {
