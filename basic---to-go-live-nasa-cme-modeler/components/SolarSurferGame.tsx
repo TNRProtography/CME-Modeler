@@ -61,6 +61,8 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [cmeCharge, setCmeCharge] = useState(0);
   const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('auroraCollectorHighScore') || '0'));
   const [finalCombo, setFinalCombo] = useState(0);
+  // --- FIX: Added missing state declaration ---
+  const [gameOverReason, setGameOverReason] = useState('');
 
   const resetGame = useCallback(() => {
     playerX.current = window.innerWidth / 2;
@@ -151,8 +153,6 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             }
 
             // Update and draw everything in a single loop
-            particlesRef.current.forEach((p, index) => { /* Particle logic is below */ });
-            
             ctx.save();
             if (screenShakeRef.current > 1) { ctx.translate((Math.random() - 0.5) * screenShakeRef.current, (Math.random() - 0.5) * screenShakeRef.current); screenShakeRef.current *= 0.9; }
 
@@ -199,6 +199,10 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             for (let i = particlesToRemove.length - 1; i >= 0; i--) particlesRef.current.splice(particlesToRemove[i], 1);
 
             // DRAW FLARE
+            if(score > 2000 && !flareRef.current.active && flareRef.current.warningTimer <= 0 && Math.random() < 0.005) {
+                flareRef.current.warningTimer = 120; // 2 second warning
+                flareRef.current.y = Math.random() * height;
+            }
             if(flareRef.current.warningTimer > 0) {
                 flareRef.current.warningTimer--;
                 ctx.fillStyle = `rgba(255, 100, 0, ${0.5 * Math.sin(frameRef.current * 0.5)})`;
@@ -235,7 +239,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const isCmeReady = cmeCharge >= 100;
 
   return (
-    <div className="fixed inset-0 z-[4000] bg-black/90 flex items-center justify-center cursor-crosshair">
+    <div className="fixed inset-0 z-[4000] bg-black/90 flex items-center justify-center cursor-crosshair" onClick={() => { if (gameState !== 'playing') resetGame(); }}>
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
       <button onClick={onClose} className="absolute top-5 right-5 p-2 bg-black/50 rounded-full text-white hover:bg-white/20 transition-colors z-20"><CloseIcon className="w-8 h-8"/></button>
 
@@ -253,10 +257,11 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       )}
 
       {gameState === 'start' && (
-        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-2xl cursor-pointer" onClick={resetGame}>
+        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-2xl pointer-events-none">
             <h1 className="text-5xl font-extrabold mb-4 text-sky-300">Aurora Collector</h1>
             <h2 className="text-xl font-semibold mb-6">Harness the Solar Wind!</h2>
             <div className="text-left space-y-3 mb-8">
+                <p><strong>Controls:</strong> Move your mouse or finger to control the magnetic field.</p>
                 <p><strong>Goal:</strong> Collect <strong className="text-green-400">Green (-Bz)</strong> particles to build Aurora Power and get a high score!</p>
                 <p><strong>Avoid:</strong> <strong className="text-red-400">Red (+Bz)</strong> particles damage your shield. <strong className="text-purple-400">Purple (Protons)</strong> are faster and deal double damage!</p>
                 <p><strong>Watch out for <span className="text-orange-400">Solar Flares!</span></strong> A warning will appear before a horizontal beam sweeps across the screen.</p>
@@ -268,7 +273,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       )}
       
       {gameState === 'gameOver' && (
-        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg cursor-pointer" onClick={resetGame}>
+        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none">
             <h1 className="text-5xl font-extrabold mb-4 text-red-500">Shields Down!</h1>
             <h2 className="text-3xl font-semibold">Final Power: {score}</h2>
             <p className="text-xl text-yellow-300">Highest Combo: {finalCombo}</p>
