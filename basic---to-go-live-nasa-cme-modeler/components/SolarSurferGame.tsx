@@ -13,6 +13,7 @@ interface Particle {
   radius: number;
   speed: number;
   type: ParticleType;
+  opacity: number;
 }
 
 interface Star {
@@ -26,7 +27,7 @@ interface Star {
 const PLAYER_WIDTH = 150;
 const IS_MOBILE = window.innerWidth < 768;
 const INITIAL_SPEED = IS_MOBILE ? 2 : 3;
-const INITIAL_SPAWN_RATE = IS_MOBILE ? 15 : 10; // Lower is more frequent
+const INITIAL_SPAWN_RATE = IS_MOBILE ? 15 : 10;
 const MAX_SPEED = 12;
 const CME_DURATION = 7 * 60; // 7 seconds at 60fps
 
@@ -48,6 +49,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [score, setScore] = useState(0);
   const [shield, setShield] = useState(100);
   const [cmeCharge, setCmeCharge] = useState(0);
+  const [gameOverReason, setGameOverReason] = useState('');
 
   const resetGame = useCallback(() => {
     playerX.current = window.innerWidth / 2;
@@ -113,7 +115,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         const { width, height } = canvas;
 
         // --- BACKGROUND ---
-        ctx.fillStyle = '#010418';
+        ctx.fillStyle = cmeStateRef.current.active ? '#4d0f0f' : '#010418';
         ctx.fillRect(0, 0, width, height);
         starsRef.current.forEach(star => {
             ctx.beginPath();
@@ -146,6 +148,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         radius: type === 'good' ? 8 + Math.random() * 4 : 10 + Math.random() * 6,
                         speed: currentSpeed + Math.random() * 2 + (isCME ? 5 : 0),
                         type,
+                        opacity: 1
                     });
                 }
             }
@@ -153,8 +156,9 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             // --- UPDATE & DRAW PARTICLES ---
             particlesRef.current.forEach((p, index) => {
                 p.y += p.speed;
-                if (p.y > height + 20) particlesRef.current.splice(index, 1);
+                if (p.y > height + 20 || p.opacity <= 0) particlesRef.current.splice(index, 1);
                 
+                ctx.globalAlpha = p.opacity;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
                 const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
@@ -167,6 +171,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 }
                 ctx.fillStyle = gradient;
                 ctx.fill();
+                ctx.globalAlpha = 1;
             });
             
             // --- PLAYER ---
@@ -175,8 +180,8 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             const playerHalfWidth = PLAYER_WIDTH / 2;
 
             // Collision Detection
-            particlesRef.current.forEach((p, index) => {
-                if (p.y > playerY - 20 && p.y < playerY + 20 && p.x > playerX.current - playerHalfWidth && p.x < playerX.current + playerHalfWidth) {
+            particlesRef.current.forEach((p) => {
+                if (p.y > playerY - 40 && p.y < playerY + 40 && p.x > playerX.current - playerHalfWidth && p.x < playerX.current + playerHalfWidth && p.opacity > 0.5) {
                     if (p.type === 'good') {
                         setScore(s => s + (isCME ? 20 : 10));
                         setCmeCharge(c => Math.min(100, c + 2));
@@ -184,26 +189,27 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         setShield(s => {
                             const newShield = s - (isCME ? 15 : 10);
                             if (newShield <= 0) {
+                                setGameOverReason('Your shields were depleted!');
                                 setGameState('gameOver');
                             }
                             return Math.max(0, newShield);
                         });
                         screenShakeRef.current = 15;
                     }
-                    particlesRef.current.splice(index, 1);
+                    p.opacity = 0; // Mark for removal
                 }
             });
 
             // Screen Shake
-            if (screenShakeRef.current > 0) {
-                ctx.save();
+            ctx.save();
+            if (screenShakeRef.current > 1) {
                 const dx = (Math.random() - 0.5) * screenShakeRef.current;
                 const dy = (Math.random() - 0.5) * screenShakeRef.current;
                 ctx.translate(dx, dy);
                 screenShakeRef.current *= 0.9;
             }
 
-            // Draw Player
+            // Draw Player (Magnetic Funnel)
             const playerGrad = ctx.createLinearGradient(playerX.current - playerHalfWidth, 0, playerX.current + playerHalfWidth, 0);
             playerGrad.addColorStop(0, 'rgba(0, 150, 255, 0)');
             playerGrad.addColorStop(0.2, 'rgba(100, 200, 255, 0.8)');
@@ -217,7 +223,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             ctx.quadraticCurveTo(playerX.current, playerY - 20, playerX.current - playerHalfWidth, playerY);
             ctx.fill();
 
-            if (screenShakeRef.current > 0) ctx.restore();
+            ctx.restore();
         }
         animationFrameId.current = requestAnimationFrame(gameLoop);
     };
@@ -243,7 +249,7 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       )}
 
       {gameState === 'start' && (
-        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none" onClick={resetGame}>
+        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg cursor-pointer" onClick={resetGame}>
             <h1 className="text-5xl font-extrabold mb-4 text-sky-300">Aurora Collector</h1>
             <h2 className="text-xl font-semibold mb-6">Harness the Solar Wind!</h2>
             <div className="text-left space-y-3 mb-8">
@@ -256,8 +262,9 @@ const AuroraCollector: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       )}
       
       {gameState === 'gameOver' && (
-        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none" onClick={resetGame}>
+        <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg cursor-pointer" onClick={resetGame}>
             <h1 className="text-5xl font-extrabold mb-4 text-red-500">Shields Down!</h1>
+            <p className="text-lg mb-4">{gameOverReason}</p>
             <h2 className="text-3xl font-semibold mb-2">Final Aurora Power: {score}</h2>
             <p className="text-xl mt-8 animate-pulse">Click anywhere to try again</p>
         </div>
