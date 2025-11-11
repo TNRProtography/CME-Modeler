@@ -1,3 +1,5 @@
+// --- START OF FILE SimulationCanvas.tsx ---
+
 import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
@@ -148,6 +150,7 @@ interface SimulationCanvasProps {
   showFluxRope: boolean;
   dataVersion: number;
   interactionMode: InteractionMode;
+  onSunClick?: () => void; // --- NEW: Optional callback for Sun click ---
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -174,6 +177,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     showFluxRope,
     dataVersion,
     interactionMode,
+    onSunClick, // --- NEW ---
   } = props;
 
   const mountRef = useRef<HTMLDivElement>(null);
@@ -192,6 +196,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   const timelineValueRef = useRef(timelineValue);
   const lastTimeRef = useRef(0);
+
+  // --- NEW: Raycaster for detecting clicks on 3D objects ---
+  const raycasterRef = useRef<any>(null);
+  const mouseRef = useRef<any>(null);
 
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
@@ -270,6 +278,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
     setRendererDomElement(renderer.domElement);
+
+    // --- NEW: Initialize raycaster and mouse vector ---
+    raycasterRef.current = new THREE.Raycaster();
+    mouseRef.current = new THREE.Vector2();
 
     const loader = new THREE.TextureLoader();
     (loader as any).crossOrigin = "anonymous";
@@ -485,6 +497,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
     window.addEventListener('resize', handleResize);
 
+    // --- NEW: Mouse click listener for raycasting ---
+    const handleMouseClick = (event: MouseEvent) => {
+        if (!mountRef.current || !cameraRef.current || !raycasterRef.current || !mouseRef.current || !sceneRef.current) return;
+
+        const rect = mountRef.current.getBoundingClientRect();
+        mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+        
+        const sunObject = celestialBodiesRef.current['SUN']?.mesh;
+        if (sunObject) {
+            const intersects = raycasterRef.current.intersectObject(sunObject);
+            if (intersects.length > 0) {
+                if (onSunClick) {
+                    onSunClick();
+                }
+            }
+        }
+    };
+    renderer.domElement.addEventListener('click', handleMouseClick);
+
     // Animation loop
     let animationFrameId: number;
     const animate = () => {
@@ -598,6 +632,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (rendererRef.current?.domElement) {
+          rendererRef.current.domElement.removeEventListener('click', handleMouseClick);
+      }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
       if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
@@ -843,3 +880,4 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
+// --- END OF FILE SimulationCanvas.tsx ---

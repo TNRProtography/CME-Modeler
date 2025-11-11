@@ -35,6 +35,9 @@ import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 
+// --- NEW: Import the Solar Surfer Game ---
+import SolarSurferGame from './components/SolarSurferGame';
+
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -87,6 +90,9 @@ const App: React.FC = () => {
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
+
+  // --- NEW: State for the Solar Surfer game ---
+  const [isGameOpen, setIsGameOpen] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -351,6 +357,16 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
+  // --- NEW: Handlers for the Solar Surfer game ---
+  const handleOpenGame = useCallback(() => {
+    setIsGameOpen(true);
+  }, []);
+
+  const handleCloseGame = useCallback(() => {
+    setIsGameOpen(false);
+  }, []);
+
+
   const handleTimelinePlayPause = useCallback(() => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
@@ -601,7 +617,34 @@ const App: React.FC = () => {
                       <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                   </div>
                   <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
-                      <SimulationCanvas ref={canvasRef} cmeData={cmesToRender} activeView={activeView} focusTarget={activeFocus} currentlyModeledCMEId={currentlyModeledCMEId} onCMEClick={handleCMEClickFromCanvas} timelineActive={timelineActive} timelinePlaying={timelinePlaying} timelineSpeed={timelineSpeed} timelineValue={timelineScrubberValue} timelineMinDate={timelineMinDate} timelineMaxDate={timelineMaxDate} setPlanetMeshesForLabels={handleSetPlanetMeshes} setRendererDomElement={setRendererDomElement} onCameraReady={setThreeCamera} getClockElapsedTime={getClockElapsedTime} resetClock={resetClock} onScrubberChangeByAnim={handleScrubberChangeByAnim} onTimelineEnd={handleTimelineEnd} showExtraPlanets={showExtraPlanets} showMoonL1={showMoonL1} showFluxRope={showFluxRope} dataVersion={dataVersion} interactionMode={InteractionMode.MOVE} />
+                      {/* --- MODIFIED: Added onSunClick prop for the game easter egg --- */}
+                      <SimulationCanvas
+                          ref={canvasRef}
+                          cmeData={cmesToRender}
+                          activeView={activeView}
+                          focusTarget={activeFocus}
+                          currentlyModeledCMEId={currentlyModeledCMEId}
+                          onCMEClick={handleCMEClickFromCanvas}
+                          timelineActive={timelineActive}
+                          timelinePlaying={timelinePlaying}
+                          timelineSpeed={timelineSpeed}
+                          timelineValue={timelineScrubberValue}
+                          timelineMinDate={timelineMinDate}
+                          timelineMaxDate={timelineMaxDate}
+                          setPlanetMeshesForLabels={handleSetPlanetMeshes}
+                          setRendererDomElement={setRendererDomElement}
+                          onCameraReady={setThreeCamera}
+                          getClockElapsedTime={getClockElapsedTime}
+                          resetClock={resetClock}
+                          onScrubberChangeByAnim={handleScrubberChangeByAnim}
+                          onTimelineEnd={handleTimelineEnd}
+                          showExtraPlanets={showExtraPlanets}
+                          showMoonL1={showMoonL1}
+                          showFluxRope={showFluxRope}
+                          dataVersion={dataVersion}
+                          interactionMode={InteractionMode.MOVE}
+                          onSunClick={handleOpenGame}
+                      />
                       {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                       <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
                           <div className="flex items-start text-center space-x-2 pointer-events-auto">
@@ -693,6 +736,9 @@ const App: React.FC = () => {
               onClose={() => setIsForecastModelsModalOpen(false)}
               setViewerMedia={setViewerMedia}
           />
+
+          {/* --- NEW: Conditionally render the Solar Surfer game --- */}
+          {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
 
           {showIabBanner && (
             <div
