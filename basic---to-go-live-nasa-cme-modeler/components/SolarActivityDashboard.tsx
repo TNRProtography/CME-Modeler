@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
@@ -15,6 +15,7 @@ interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   onViewCMEInVisualization: (cmeId: string) => void;
+  navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
 }
 
 interface SolarActivitySummary {
@@ -33,7 +34,7 @@ const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const SDO_AIA_193_2048_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-2048`;
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 
 // --- HELPERS ---
 const getCssVar = (name: string): string => {
@@ -238,6 +239,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 
 // --- COMPONENT ---
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization }) => {
+  const isInitialLoad = useRef(true);
   // Imagery state
   const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -308,7 +310,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const closeModal = useCallback(() => setModalState(null), []);
 
   const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
-    setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
+    if (isInitialLoad.current) {
+        setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
+    }
     try {
       const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
       const res = await fetch(fetchUrl);
@@ -328,7 +332,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, []);
 
   const fetchXrayFlux = useCallback(() => {
-    setLoadingXray('Loading X-ray flux data...');
+    if (isInitialLoad.current) {
+        setLoadingXray('Loading X-ray flux data...');
+    }
     fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`)
       .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
       .then(rawData => {
@@ -365,7 +371,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [setLatestXrayFlux]);
 
   const fetchProtonFlux = useCallback(() => {
-    setLoadingProton('Loading proton flux data...');
+    if (isInitialLoad.current) {
+        setLoadingProton('Loading proton flux data...');
+    }
     fetch(`${NOAA_PROTON_FLUX_URL}?_=${new Date().getTime()}`)
       .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
       .then(rawData => {
@@ -394,7 +402,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, []);
 
   const fetchFlares = useCallback(async () => {
-    setLoadingFlares('Loading solar flares...');
+    if (isInitialLoad.current) {
+        setLoadingFlares('Loading solar flares...');
+    }
     try {
       const data = await fetchFlareData();
       if (!data || data.length === 0) {
@@ -433,6 +443,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       fetchFlares();
     };
     runAllUpdates();
+    isInitialLoad.current = false; // Mark initial load as done after the first run
     const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares]);
