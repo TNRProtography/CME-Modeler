@@ -60,14 +60,15 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const starsRef = useRef<Star[]>([]);
   const cmeStateRef = useRef({ active: false, timer: 0 });
   const powerUpRef = useRef<PowerUp | null>(null);
-  
-  // React state (for UI rendering)
-  const [gameState, setGameState] = useState<GameState>('start');
+  const gameStateRef = useRef<GameState>('start');
+
+  // React state (for UI rendering and triggering re-renders)
+  const [uiState, setUiState] = useState<GameState>('start');
   const [hemisphericPower, setHemisphericPower] = useState(0);
   const [cmeCharge, setCmeCharge] = useState(0);
 
   const activateCME = useCallback(() => {
-    if (cmeCharge >= 100 && !cmeStateRef.current.active) {
+    if (cmeCharge >= 100 && !cmeStateRef.current.active && gameStateRef.current === 'playing') {
         cmeStateRef.current = { active: true, timer: CME_DURATION };
         gameSpeedRef.current = INITIAL_GAME_SPEED * 1.8;
         pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY / 2;
@@ -86,17 +87,23 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     cmeStateRef.current = { active: false, timer: 0 };
     setCmeCharge(0);
     powerUpRef.current = null;
-    setGameState('playing');
+    gameStateRef.current = 'playing';
+    setUiState('playing');
   }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const handleInput = () => {
-      if (gameState === 'playing') {
+    const handleInput = (e: Event) => {
+      // Stop propagation if the click is on the CME button
+      if (e.target instanceof HTMLElement && e.target.id === 'cme-button') {
+        return;
+      }
+      
+      if (gameStateRef.current === 'playing') {
         playerRef.current.velocityY = -FLAP_STRENGTH;
-      } else {
+      } else if (gameStateRef.current === 'start' || gameStateRef.current === 'gameOver') {
         resetGame(canvas);
       }
     };
@@ -112,7 +119,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     window.addEventListener('keydown', handleCMEKey);
     canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        handleInput();
+        handleInput(e);
     });
 
     return () => {
@@ -121,13 +128,15 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       window.removeEventListener('keydown', handleCMEKey);
       canvas.removeEventListener('touchstart', handleInput);
     };
-  }, [resetGame, activateCME, gameState]);
+  }, [resetGame, activateCME]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    let isRunning = true;
 
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
@@ -146,6 +155,8 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     window.addEventListener('resize', resizeCanvas);
 
     const gameLoop = () => {
+        if (!isRunning) return;
+
         const { width, height } = canvas;
         frameRef.current++;
         
@@ -161,7 +172,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             ctx.fill();
         });
 
-        if (gameState === 'playing') {
+        if (gameStateRef.current === 'playing') {
             if (frameRef.current % Math.floor(pillarFrequencyRef.current) === 0) {
                 const gapHeight = 180 - Math.min(powerRef.current / 500, 60);
                 pillarsRef.current.push({
@@ -252,22 +263,25 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             const p = pillarsRef.current[0];
             if(p && playerRef.current.x + playerRef.current.radius > p.x && playerRef.current.x - playerRef.current.radius < p.x + PILLAR_WIDTH) {
                 if(playerRef.current.y - playerRef.current.radius < p.gapY - p.gapHeight/2 || playerRef.current.y + playerRef.current.radius > p.gapY + p.gapHeight/2) {
-                    setGameState('gameOver');
+                    gameStateRef.current = 'gameOver';
+                    setUiState('gameOver');
                 }
             }
             if(playerRef.current.y > height || playerRef.current.y < 0) {
-                 setGameState('gameOver');
+                 gameStateRef.current = 'gameOver';
+                 setUiState('gameOver');
             }
 
             setHemisphericPower(powerRef.current);
         }
 
-      animationFrameId.current = requestAnimationFrame(gameLoop);
+        animationFrameId.current = requestAnimationFrame(gameLoop);
     };
 
-    animationFrameId.current = requestAnimationFrame(gameLoop);
+    gameLoop();
     
     return () => {
+      isRunning = false;
       window.removeEventListener('resize', resizeCanvas);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
@@ -283,7 +297,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <CloseIcon className="w-8 h-8"/>
       </button>
 
-      {gameState === 'playing' && (
+      {uiState === 'playing' && (
         <div className="absolute top-4 left-4 right-4 text-white font-bold text-lg flex justify-between items-center pointer-events-none z-10">
             <div className="bg-black/50 p-2 rounded-md">
                 Power: {Math.floor(hemisphericPower)} GW
@@ -297,7 +311,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       )}
 
-      {gameState === 'start' && (
+      {uiState === 'start' && (
         <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none">
             <h1 className="text-5xl font-extrabold mb-4 text-amber-300">Solar Flap</h1>
             <h2 className="text-xl font-semibold mb-6">Can you create an aurora?</h2>
@@ -310,7 +324,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       )}
       
-      {gameState === 'gameOver' && (
+      {uiState === 'gameOver' && (
         <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-lg pointer-events-none">
             <h1 className="text-5xl font-extrabold mb-4 text-red-500">Impact Failure</h1>
             <h2 className="text-3xl font-semibold mb-2">Final Power: {Math.floor(hemisphericPower)} GW</h2>
@@ -318,18 +332,18 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       )}
 
-      {/* --- NEW: On-screen CME button for mobile --- */}
-      {isCmeReady && gameState === 'playing' && (
+      {isCmeReady && uiState === 'playing' && (
         <button 
+            id="cme-button"
             onClick={(e) => {
-                e.stopPropagation(); // Prevent flap
+                e.stopPropagation();
                 activateCME();
             }}
             onTouchStart={(e) => {
-                e.stopPropagation(); // Prevent flap
+                e.stopPropagation();
                 activateCME();
             }}
-            className="absolute top-20 left-4 w-20 h-20 bg-yellow-400/80 rounded-full z-20 flex items-center justify-center text-black font-bold text-4xl border-4 border-yellow-200 shadow-lg animate-pulse cursor-pointer"
+            className="absolute top-20 left-4 w-20 h-20 bg-yellow-400/80 rounded-full z-20 flex items-center justify-center text-black font-bold text-4xl border-4 border-yellow-200 shadow-lg animate-pulse"
             style={{ textShadow: '0 0 10px white' }}
             title="Activate CME (C Key)"
         >
