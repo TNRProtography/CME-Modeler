@@ -335,17 +335,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    // --- START OF MODIFICATION: New Flux Rope Geometry and Material ---
+    const fluxRopeGeometry = new THREE.SphereGeometry(1, 32, 32); 
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
       fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-      uniforms: { uTime: { value: 0 }, uTexture: { value: createArrowTexture(THREE) }, uColor: { value: new THREE.Color(0xffffff) }, },
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: {
+        uColor: { value: new THREE.Color(0xffffff) },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.rotation.x = Math.PI / 2;
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
+    // --- END OF MODIFICATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -578,24 +583,33 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
+      // --- START OF MODIFICATION: New Flux Rope Animation Logic ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
-            fluxRopeRef.current.position.copy(cmeObject.position);
-            fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
+            const cmeLength = cmeObject.scale.y; // The length of the CME particle cone
+            const coneRadius = cmeLength * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+
+            // Position the teardrop halfway along the CME's length
             const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+            fluxRopeRef.current.position.copy(dir.clone().multiplyScalar(cmeLength / 2));
+            
+            // Orient it to point away from the Sun
+            fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
+            
+            // Scale it into an ellipsoid/teardrop shape
+            fluxRopeRef.current.scale.set(coneRadius, cmeLength, coneRadius);
+
+            // Set its color
             fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
         }
-        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
+      // --- END OF MODIFICATION ---
 
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
@@ -760,7 +774,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const simStartTime = timelineMinDate;
         if (simStartTime <= 0) return [];
 
-        // --- START: MODIFIED GRAPH LOGIC ---
         const graphStartTime = Date.now();
         const graphEndTime = graphStartTime + 7 * 24 * 3600 * 1000; // 7 days ahead
         const graphDuration = graphEndTime - graphStartTime;
@@ -774,8 +787,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const stepRatio = i / numSteps;
             const currentTime = graphStartTime + graphDuration * stepRatio;
 
-            // Correctly calculate Earth's orbital position at any given time
-            const secondsSinceSimEpoch = (currentTime - simStartTime) / 1000;
+            const totalSecondsSinceSimEpoch = (currentTime - simStartTime) / 1000;
             const orbitalPeriodSeconds = earthData.orbitalPeriodDays! * 24 * 3600;
             const startingAngle = earthData.angle;
             const angularVelocity = (2 * Math.PI) / orbitalPeriodSeconds; 
@@ -833,7 +845,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             graphData.push({ time: currentTime, speed: totalSpeed, density: totalDensity });
         }
         return graphData;
-        // --- END: MODIFIED GRAPH LOGIC ---
     }
   }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 

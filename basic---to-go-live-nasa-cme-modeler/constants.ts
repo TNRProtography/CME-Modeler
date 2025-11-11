@@ -1,3 +1,5 @@
+// --- START OF FILE constants.ts ---
+
 // src/constants.ts
 import { PlanetData, POIData } from './types';
 
@@ -198,32 +200,32 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- NEW: Shaders for the Flux Rope ---
+// --- START OF MODIFICATION: New Shaders for the Flux Rope Teardrop ---
 export const FLUX_ROPE_VERTEX_SHADER = `
-varying vec2 vUv;
+varying vec3 vNormal;
 void main() {
-    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
 export const FLUX_ROPE_FRAGMENT_SHADER = `
-uniform sampler2D uTexture;
-uniform float uTime;
 uniform vec3 uColor;
-varying vec2 vUv;
+varying vec3 vNormal;
 
 void main() {
-    float speed = 0.5;
-    float pulseWidth = 0.1;
-    float wavePos = fract(uTime * speed);
-    float d = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
-    float pulse = smoothstep(pulseWidth, 0.0, d);
-    vec4 tex = texture2D(uTexture, vUv);
-    if (tex.a < 0.1 || pulse < 0.01) discard;
-    gl_FragColor = vec4(uColor, tex.a * pulse);
+    // Create a rim-lighting effect to make the edges glow brighter
+    float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+    
+    // Set a base transparency
+    float alpha = 0.35;
+
+    // The final color is the base color, with transparency boosted by the rim light
+    gl_FragColor = vec4(uColor, alpha + intensity);
 }`;
+// --- END OF MODIFICATION ---
 
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
 export const TEXT_COLOR = "#e5e5e5"; // neutral-200
 export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)"; // neutral-800
+// --- END OF FILE constants.ts ---
