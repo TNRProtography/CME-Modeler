@@ -19,6 +19,8 @@ interface Pillar {
   gapY: number; // Center of the gap
   gapHeight: number;
   scored: boolean;
+  isMoving: boolean;
+  oscillationOffset: number;
 }
 
 interface Star {
@@ -40,29 +42,40 @@ const GRAVITY = 0.3;
 const FLAP_STRENGTH = 7;
 const PLAYER_X = 150;
 const PILLAR_WIDTH = 100;
-const INITIAL_PILLAR_FREQUENCY = 180; // frames between pillars
-const INITIAL_GAME_SPEED = 3;
+
+// --- NEW DYNAMIC CONFIG ---
+const IS_MOBILE = window.innerWidth < 768;
+const BASE_SPEED = IS_MOBILE ? 2.5 : 3.5;
+const BASE_PILLAR_FREQUENCY = IS_MOBILE ? 200 : 160;
+
 const SCORE_MULTIPLIER = 5;
 const CME_DURATION = 10 * 60; // 10 seconds at 60fps
+const COMBO_MESSAGES: { [key: number]: string } = {
+    5: 'Great!',
+    10: 'Awesome!',
+    15: 'Super!',
+    25: 'Godlike!',
+};
 
 // --- COMPONENT ---
 const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   
-  // Game logic refs (for high-frequency updates inside the loop)
   const playerRef = useRef<Player>({ x: PLAYER_X, y: 300, radius: 15, velocityY: 0, trail: [] });
   const pillarsRef = useRef<Pillar[]>([]);
   const frameRef = useRef(0);
   const powerRef = useRef(0);
-  const gameSpeedRef = useRef(INITIAL_GAME_SPEED);
-  const pillarFrequencyRef = useRef(INITIAL_PILLAR_FREQUENCY);
+  const gameSpeedRef = useRef(BASE_SPEED);
+  const pillarFrequencyRef = useRef(BASE_PILLAR_FREQUENCY);
   const starsRef = useRef<Star[]>([]);
   const cmeStateRef = useRef({ active: false, timer: 0 });
   const powerUpRef = useRef<PowerUp | null>(null);
   const gameStateRef = useRef<GameState>('start');
+  const comboStreakRef = useRef(0);
+  const comboMessageRef = useRef({ text: '', alpha: 0, timer: 0 });
+  const levelRef = useRef(1);
 
-  // React state (for UI rendering and triggering re-renders)
   const [uiState, setUiState] = useState<GameState>('start');
   const [hemisphericPower, setHemisphericPower] = useState(0);
   const [cmeCharge, setCmeCharge] = useState(0);
@@ -70,8 +83,8 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const activateCME = useCallback(() => {
     if (cmeCharge >= 100 && !cmeStateRef.current.active && gameStateRef.current === 'playing') {
         cmeStateRef.current = { active: true, timer: CME_DURATION };
-        gameSpeedRef.current = INITIAL_GAME_SPEED * 1.8;
-        pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY / 2;
+        gameSpeedRef.current = BASE_SPEED * 1.8;
+        pillarFrequencyRef.current = BASE_PILLAR_FREQUENCY / 2;
         setCmeCharge(0);
     }
   }, [cmeCharge]);
@@ -82,13 +95,15 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     frameRef.current = 0;
     powerRef.current = 0;
     setHemisphericPower(0);
-    gameSpeedRef.current = INITIAL_GAME_SPEED;
-    pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY;
+    gameSpeedRef.current = BASE_SPEED;
+    pillarFrequencyRef.current = BASE_PILLAR_FREQUENCY;
     cmeStateRef.current = { active: false, timer: 0 };
     setCmeCharge(0);
     powerUpRef.current = null;
     gameStateRef.current = 'playing';
     setUiState('playing');
+    comboStreakRef.current = 0;
+    levelRef.current = 1;
   }, []);
 
   useEffect(() => {
@@ -96,31 +111,20 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     if (!canvas) return;
 
     const handleInput = (e: Event) => {
-      // Stop propagation if the click is on the CME button
-      if (e.target instanceof HTMLElement && e.target.id === 'cme-button') {
-        return;
-      }
-      
+      if (e.target instanceof HTMLElement && e.target.id === 'cme-button') return;
       if (gameStateRef.current === 'playing') {
         playerRef.current.velocityY = -FLAP_STRENGTH;
-      } else if (gameStateRef.current === 'start' || gameStateRef.current === 'gameOver') {
+      } else {
         resetGame(canvas);
       }
     };
     
-    const handleCMEKey = (e: KeyboardEvent) => {
-        if(e.key.toLowerCase() === 'c') {
-            activateCME();
-        }
-    };
+    const handleCMEKey = (e: KeyboardEvent) => { if(e.key.toLowerCase() === 'c') activateCME(); };
 
     canvas.addEventListener('mousedown', handleInput);
     window.addEventListener('keydown', (e) => e.key === ' ' && handleInput());
     window.addEventListener('keydown', handleCMEKey);
-    canvas.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        handleInput(e);
-    });
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleInput(e); });
 
     return () => {
       canvas.removeEventListener('mousedown', handleInput);
@@ -131,11 +135,8 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   }, [resetGame, activateCME]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
     let isRunning = true;
 
     const resizeCanvas = () => {
@@ -143,12 +144,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       canvas.height = window.innerHeight;
       starsRef.current = [];
       for(let i=0; i<100; i++) {
-        starsRef.current.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            radius: Math.random() * 1.5,
-            speed: 0.5 + Math.random() * 0.5,
-        });
+        starsRef.current.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, radius: Math.random() * 1.5, speed: 0.5 + Math.random() * 0.5 });
       }
     };
     resizeCanvas();
@@ -156,7 +152,6 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
     const gameLoop = () => {
         if (!isRunning) return;
-
         const { width, height } = canvas;
         frameRef.current++;
         
@@ -175,34 +170,46 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         if (gameStateRef.current === 'playing') {
             if (frameRef.current % Math.floor(pillarFrequencyRef.current) === 0) {
                 const gapHeight = 180 - Math.min(powerRef.current / 500, 60);
+                const isMoving = levelRef.current > 1 && Math.random() > 0.5;
                 pillarsRef.current.push({
                     x: width,
                     gapY: (height * 0.2) + Math.random() * (height * 0.6),
                     gapHeight: gapHeight,
                     scored: false,
+                    isMoving: isMoving,
+                    oscillationOffset: Math.random() * Math.PI * 2
                 });
             }
 
             pillarsRef.current.forEach(p => {
                 p.x -= gameSpeedRef.current;
                 
+                if (p.isMoving) {
+                    p.gapY += Math.sin(frameRef.current * 0.02 + p.oscillationOffset) * 1.5;
+                }
+                
                 ctx.fillStyle = 'rgba(10, 200, 120, 0.2)';
                 ctx.fillRect(p.x, p.gapY - p.gapHeight / 2, PILLAR_WIDTH, p.gapHeight);
 
-                const topGrad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_WIDTH, 0);
-                topGrad.addColorStop(0, '#ff4444'); topGrad.addColorStop(1, '#ff8888');
-                ctx.fillStyle = topGrad;
+                const grad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_WIDTH, 0);
+                grad.addColorStop(0, '#ff4444'); grad.addColorStop(1, '#ff8888');
+                ctx.fillStyle = grad;
                 ctx.fillRect(p.x, 0, PILLAR_WIDTH, p.gapY - p.gapHeight / 2);
-
-                const botGrad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_WIDTH, 0);
-                botGrad.addColorStop(0, '#ff4444'); botGrad.addColorStop(1, '#ff8888');
-                ctx.fillStyle = botGrad;
                 ctx.fillRect(p.x, p.gapY + p.gapHeight / 2, PILLAR_WIDTH, height);
 
                 if (!p.scored && p.x + PILLAR_WIDTH < playerRef.current.x) {
-                    powerRef.current += gameSpeedRef.current * SCORE_MULTIPLIER;
+                    comboStreakRef.current++;
+                    const comboBonus = Math.floor(comboStreakRef.current / 5);
+                    powerRef.current += (gameSpeedRef.current * SCORE_MULTIPLIER) + comboBonus;
                     setCmeCharge(c => Math.min(100, c + 5));
                     p.scored = true;
+                    if (COMBO_MESSAGES[comboStreakRef.current]) {
+                        comboMessageRef.current = { text: COMBO_MESSAGES[comboStreakRef.current], alpha: 1, timer: 60 };
+                    }
+                    if(powerRef.current > levelRef.current * 2000) {
+                        levelRef.current++;
+                        gameSpeedRef.current += 0.2;
+                    }
                 }
             });
             pillarsRef.current = pillarsRef.current.filter(p => p.x + PILLAR_WIDTH > 0);
@@ -218,8 +225,13 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 const ratio = i / playerRef.current.trail.length;
                 ctx.beginPath();
                 ctx.arc(t.x, t.y, playerRef.current.radius * ratio, 0, Math.PI * 2);
-                const color = cmeStateRef.current.active ? `rgba(255, 200, 50, ${ratio * 0.5})` : `rgba(150, 200, 255, ${ratio * 0.5})`;
-                ctx.fillStyle = color;
+                
+                const comboRatio = Math.min(1, comboStreakRef.current / 15);
+                const cmeActive = cmeStateRef.current.active;
+                const r = cmeActive ? 255 : 150 + 105 * comboRatio;
+                const g = cmeActive ? 200 : 200 - 100 * comboRatio;
+                const b = cmeActive ? 50 : 255 - 205 * comboRatio;
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${ratio * 0.5})`;
                 ctx.fill();
             }
 
@@ -255,37 +267,43 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 cmeStateRef.current.timer--;
                 if(cmeStateRef.current.timer <= 0) {
                     cmeStateRef.current.active = false;
-                    gameSpeedRef.current = INITIAL_GAME_SPEED;
-                    pillarFrequencyRef.current = INITIAL_PILLAR_FREQUENCY;
+                    gameSpeedRef.current = BASE_SPEED + (levelRef.current - 1) * 0.2;
+                    pillarFrequencyRef.current = BASE_PILLAR_FREQUENCY;
                 }
+            }
+
+            if (comboMessageRef.current.timer > 0) {
+                comboMessageRef.current.timer--;
+                comboMessageRef.current.alpha = Math.min(1, comboMessageRef.current.timer / 30);
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 36px sans-serif';
+                ctx.fillStyle = `rgba(255, 221, 68, ${comboMessageRef.current.alpha})`;
+                ctx.fillText(comboMessageRef.current.text, width / 2, height / 2 - 100);
             }
 
             const p = pillarsRef.current[0];
+            let hasCollided = false;
             if(p && playerRef.current.x + playerRef.current.radius > p.x && playerRef.current.x - playerRef.current.radius < p.x + PILLAR_WIDTH) {
                 if(playerRef.current.y - playerRef.current.radius < p.gapY - p.gapHeight/2 || playerRef.current.y + playerRef.current.radius > p.gapY + p.gapHeight/2) {
-                    gameStateRef.current = 'gameOver';
-                    setUiState('gameOver');
+                    hasCollided = true;
                 }
             }
             if(playerRef.current.y > height || playerRef.current.y < 0) {
-                 gameStateRef.current = 'gameOver';
-                 setUiState('gameOver');
+                 hasCollided = true;
             }
-
+            if(hasCollided) {
+                gameStateRef.current = 'gameOver';
+                setUiState('gameOver');
+                comboStreakRef.current = 0;
+            }
             setHemisphericPower(powerRef.current);
         }
 
         animationFrameId.current = requestAnimationFrame(gameLoop);
     };
-
     gameLoop();
-    
-    return () => {
-      isRunning = false;
-      window.removeEventListener('resize', resizeCanvas);
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-    };
-  }, [resetGame]);
+    return () => { isRunning = false; window.removeEventListener('resize', resizeCanvas); if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
+  }, []);
 
   const isCmeReady = cmeCharge >= 100 && !cmeStateRef.current.active;
 
@@ -302,6 +320,7 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="bg-black/50 p-2 rounded-md">
                 Power: {Math.floor(hemisphericPower)} GW
             </div>
+            <div className="bg-black/50 p-2 rounded-md">Level: {levelRef.current}</div>
             <div className="bg-black/50 p-2 rounded-md flex items-center gap-2">
                 <span>CME Charge</span>
                 <div className="w-24 h-4 bg-neutral-700 rounded">
@@ -335,14 +354,8 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       {isCmeReady && uiState === 'playing' && (
         <button 
             id="cme-button"
-            onClick={(e) => {
-                e.stopPropagation();
-                activateCME();
-            }}
-            onTouchStart={(e) => {
-                e.stopPropagation();
-                activateCME();
-            }}
+            onClick={(e) => { e.stopPropagation(); activateCME(); }}
+            onTouchStart={(e) => { e.stopPropagation(); activateCME(); }}
             className="absolute top-20 left-4 w-20 h-20 bg-yellow-400/80 rounded-full z-20 flex items-center justify-center text-black font-bold text-4xl border-4 border-yellow-200 shadow-lg animate-pulse"
             style={{ textShadow: '0 0 10px white' }}
             title="Activate CME (C Key)"
