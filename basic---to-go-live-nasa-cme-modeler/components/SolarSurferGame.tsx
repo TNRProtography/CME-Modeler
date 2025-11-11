@@ -6,54 +6,53 @@ import CloseIcon from './icons/CloseIcon';
 // --- TYPE DEFINITIONS ---
 type GameState = 'start' | 'playing' | 'gameOver';
 
-interface Player { x: number; y: number; radius: number; velocityY: number; trail: { x: number; y: number }[]; invincibilityTimer: number; }
-interface Pillar { x: number; gapY: number; gapHeight: number; scored: boolean; isMoving: boolean; oscillationOffset: number; }
+interface Player { x: number; y: number; radius: number; velocityY: number; rotation: number; isOnGround: boolean; invincibilityTimer: number; }
+interface Obstacle { x: number; width: number; height: number; type: '+Bz' } // Red obstacles to jump over
+interface Ring { x: number; y: number; radius: number; scored: boolean; type: '-Bz' } // Green rings to jump through
 interface Star { x: number; y: number; radius: number; speed: number; }
 interface PowerUp { x: number; y: number; radius: number; active: boolean; }
 interface SmokeParticle { x: number; y: number; radius: number; opacity: number; velocityX: number; velocityY: number; }
-interface MegaCME { x: number; width: number; active: boolean; }
+interface MegaCME { x: number; gapY: number; gapHeight: number; active: boolean; }
 
 // --- GAME CONFIGURATION ---
-const GRAVITY = 0.35;
-const FLAP_STRENGTH = 8;
-const PLAYER_X = 150;
-const PILLAR_WIDTH = 120;
+const GRAVITY = 0.5;
+const JUMP_STRENGTH = 12;
+const PLAYER_X_POS = 150;
+
 const IS_MOBILE = window.innerWidth < 768;
-
-const DESKTOP_BASE_SPEED = 4;
-const MOBILE_BASE_SPEED = DESKTOP_BASE_SPEED * 0.6; // 40% slower
+const DESKTOP_BASE_SPEED = 5;
+const MOBILE_BASE_SPEED = DESKTOP_BASE_SPEED * 0.7; // 30% slower for better control
 const BASE_SPEED = IS_MOBILE ? MOBILE_BASE_SPEED : DESKTOP_BASE_SPEED;
-const BASE_PILLAR_FREQUENCY = IS_MOBILE ? 180 : 140;
 
-const CME_DURATION = 5 * 60; // 5 seconds at 60fps
-const CME_SPEED_MULTIPLIER = 1.5; // 50% faster
+const CME_DURATION = 5 * 60; // 5 seconds
+const CME_SPEED_MULTIPLIER = 1.5;
 
 const GW_LOW_THRESHOLD = 50;
 const GW_HIGH_THRESHOLD = 300;
 const GW_CRITICAL_THRESHOLD = 500;
-const LOW_GW_DURATION = 10 * 60; // 10 seconds
-const CRITICAL_GW_DURATION = 5 * 60; // 5 seconds
+const LOW_GW_DURATION = 10 * 60;
+const CRITICAL_GW_DURATION = 5 * 60;
 
-const MEGA_CME_MIN_INTERVAL = 15 * 60; // 15 seconds
-const MEGA_CME_MAX_INTERVAL = 30 * 60; // 30 seconds
+const MEGA_CME_MIN_INTERVAL = 15 * 60;
+const MEGA_CME_MAX_INTERVAL = 30 * 60;
 const MEGA_CME_SPEED = 15;
 
-const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+const EarthJumper: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   
   // Game logic refs
-  const playerRef = useRef<Player>({ x: PLAYER_X, y: 300, radius: 15, velocityY: 0, trail: [], invincibilityTimer: 0 });
-  const pillarsRef = useRef<Pillar[]>([]);
+  const playerRef = useRef<Player>({ x: PLAYER_X_POS, y: 300, radius: 30, velocityY: 0, rotation: 0, isOnGround: true, invincibilityTimer: 0 });
+  const obstaclesRef = useRef<Obstacle[]>([]);
+  const ringsRef = useRef<Ring[]>([]);
   const frameRef = useRef(0);
   const starsRef = useRef<Star[]>([]);
   const cmeStateRef = useRef({ active: false, timer: 0 });
   const gameStateRef = useRef<GameState>('start');
-  const levelRef = useRef(1);
   const smokeParticlesRef = useRef<SmokeParticle[]>([]);
   const lowGwTimerRef = useRef(0);
   const highGwTimerRef = useRef(0);
-  const megaCmeRef = useRef<MegaCME>({ x: 0, width: 0, active: false });
+  const megaCmeRef = useRef<MegaCME>({ x: 0, gapY: 0, gapHeight: 0, active: false });
   const nextMegaCmeFrameRef = useRef(0);
 
   // React state for UI
@@ -63,22 +62,6 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [cmeCharge, setCmeCharge] = useState(0);
   const [gameOverReason, setGameOverReason] = useState('');
 
-  const resetGame = useCallback((canvas: HTMLCanvasElement) => {
-    playerRef.current = { x: PLAYER_X, y: canvas.height / 2, radius: 15, velocityY: 0, trail: [], invincibilityTimer: 0 };
-    pillarsRef.current = [];
-    frameRef.current = 0;
-    setGw(50);
-    setHappiness(100);
-    cmeStateRef.current = { active: false, timer: 0 };
-    setCmeCharge(0);
-    gameStateRef.current = 'playing';
-    setUiState('playing');
-    levelRef.current = 1;
-    lowGwTimerRef.current = 0;
-    highGwTimerRef.current = 0;
-    nextMegaCmeFrameRef.current = frameRef.current + MEGA_CME_MIN_INTERVAL + Math.random() * (MEGA_CME_MAX_INTERVAL - MEGA_CME_MIN_INTERVAL);
-  }, []);
-
   const activateCME = useCallback(() => {
     if (cmeCharge >= 100 && !cmeStateRef.current.active && gameStateRef.current === 'playing') {
         cmeStateRef.current = { active: true, timer: CME_DURATION };
@@ -86,21 +69,35 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }
   }, [cmeCharge]);
 
+  const resetGame = useCallback((canvas: HTMLCanvasElement) => {
+    playerRef.current = { x: PLAYER_X_POS, y: canvas.height - 50, radius: 30, velocityY: 0, rotation: 0, isOnGround: true, invincibilityTimer: 0 };
+    obstaclesRef.current = [];
+    ringsRef.current = [];
+    frameRef.current = 0;
+    setGw(50);
+    setHappiness(100);
+    cmeStateRef.current = { active: false, timer: 0 };
+    setCmeCharge(0);
+    gameStateRef.current = 'playing';
+    setUiState('playing');
+    lowGwTimerRef.current = 0;
+    highGwTimerRef.current = 0;
+    nextMegaCmeFrameRef.current = frameRef.current + MEGA_CME_MIN_INTERVAL + Math.random() * (MEGA_CME_MAX_INTERVAL - MEGA_CME_MIN_INTERVAL);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
     const handleInput = (e: Event) => {
       if (e.target instanceof HTMLElement && e.target.id === 'cme-button') return;
-      if (gameStateRef.current === 'playing') { playerRef.current.velocityY = -FLAP_STRENGTH; } 
-      else { resetGame(canvas); }
+      if (gameStateRef.current === 'playing' && playerRef.current.isOnGround) { playerRef.current.velocityY = -JUMP_STRENGTH; playerRef.current.isOnGround = false; } 
+      else if (gameStateRef.current !== 'playing') { resetGame(canvas); }
     };
     const handleCMEKey = (e: KeyboardEvent) => { if(e.key.toLowerCase() === 'c') activateCME(); };
     canvas.addEventListener('mousedown', handleInput);
-    window.addEventListener('keydown', (e) => e.key === ' ' && handleInput());
     window.addEventListener('keydown', handleCMEKey);
     canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleInput(e); });
     return () => {
       canvas.removeEventListener('mousedown', handleInput);
-      window.removeEventListener('keydown', (e) => e.key === ' ' && handleInput());
       window.removeEventListener('keydown', handleCMEKey);
       canvas.removeEventListener('touchstart', handleInput);
     };
@@ -122,128 +119,115 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const gameLoop = () => {
         if (!isRunning) return;
         const { width, height } = canvas;
+        const groundY = height - 20;
         frameRef.current++;
+        const gameSpeed = cmeStateRef.current.active ? BASE_SPEED * CME_SPEED_MULTIPLIER : BASE_SPEED;
         
-        // --- Background and Earth Effects ---
-        const gameSpeed = cmeStateRef.current.active ? BASE_SPEED * CME_SPEED_MULTIPLIER : BASE_SPEED + (levelRef.current - 1) * 0.2;
-        ctx.fillStyle = cmeStateRef.current.active ? '#400' : '#010418';
-        ctx.fillRect(0, 0, width, height);
-
+        ctx.fillStyle = cmeStateRef.current.active ? '#400' : '#010418'; ctx.fillRect(0, 0, width, height);
         starsRef.current.forEach(star => {
-            star.x -= star.speed * gameSpeed * 0.5;
-            if (star.x < 0) star.x = width;
+            star.x -= star.speed * gameSpeed * 0.2; if (star.x < 0) star.x = width;
             ctx.beginPath(); ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; ctx.fill();
         });
-
-        // Earth & Effects
-        const earthX = -100; const earthRadius = 200;
-        const earthGrad = ctx.createRadialGradient(earthX, height / 2, 0, earthX, height / 2, earthRadius);
-        earthGrad.addColorStop(0, '#8cb1de'); earthGrad.addColorStop(1, '#1d4f7a');
-        ctx.fillStyle = earthGrad; ctx.beginPath(); ctx.arc(earthX, height / 2, earthRadius, 0, Math.PI * 2); ctx.fill();
-        
-        // Aurora
-        ctx.globalAlpha = Math.max(0, happiness / 100);
-        const auroraGrad = ctx.createRadialGradient(earthX, height / 2, earthRadius, earthX, height/2, earthRadius * 2);
-        const auroraColor = `rgba(50, 255, 150, ${0.4 + 0.3 * Math.sin(frameRef.current * 0.05)})`;
-        auroraGrad.addColorStop(0, auroraColor); auroraGrad.addColorStop(1, 'rgba(50, 255, 150, 0)');
-        ctx.fillStyle = auroraGrad; ctx.beginPath(); ctx.arc(earthX, height / 2, earthRadius * 2, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // Smoke
-        if (gw > GW_HIGH_THRESHOLD) {
-            for(let i=0; i< (gw-GW_HIGH_THRESHOLD)/100; i++) smokeParticlesRef.current.push({ x: earthX + Math.random() * 100, y: height/2 + (Math.random()-0.5) * earthRadius, radius: Math.random() * 5 + 2, opacity: 1, velocityX: Math.random() * 2, velocityY: -Math.random() * 2 });
-        }
-        smokeParticlesRef.current.forEach((p, i) => {
-            p.x += p.velocityX; p.y += p.velocityY; p.opacity -= 0.01;
-            if (p.opacity <= 0) smokeParticlesRef.current.splice(i, 1);
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fillStyle = `rgba(100, 100, 100, ${p.opacity})`; ctx.fill();
-        });
+        ctx.fillStyle = '#222'; ctx.fillRect(0, groundY, width, 20);
 
         if (gameStateRef.current === 'playing') {
-            // --- Pillar Logic ---
+            // --- Obstacle & Ring Spawning ---
             if (frameRef.current % Math.floor(BASE_PILLAR_FREQUENCY / (gameSpeed / BASE_SPEED)) === 0) {
-                const isMoving = levelRef.current > 1 && Math.random() > 0.4;
-                pillarsRef.current.push({ x: width, gapY: (height * 0.2) + Math.random() * (height * 0.6), gapHeight: 150 + Math.random() * 50, scored: false, isMoving: isMoving, oscillationOffset: Math.random() * Math.PI * 2 });
+                if(Math.random() > 0.5) {
+                    obstaclesRef.current.push({ x: width, width: 40 + Math.random() * 40, height: 40 + Math.random() * 80, type: '+Bz' });
+                } else {
+                    const radius = 35 + Math.random() * 25;
+                    ringsRef.current.push({ x: width, y: groundY - radius - 20 - Math.random() * 150, radius, scored: false, type: '-Bz' });
+                }
             }
-            pillarsRef.current.forEach(p => {
-                p.x -= gameSpeed;
-                if (p.isMoving) p.gapY += Math.sin(frameRef.current * 0.02 + p.oscillationOffset) * 1.5;
-                ctx.fillStyle = 'rgba(10, 200, 120, 0.2)'; ctx.fillRect(p.x, p.gapY - p.gapHeight / 2, PILLAR_WIDTH, p.gapHeight);
-                const grad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_WIDTH, 0);
-                grad.addColorStop(0, '#ff4444'); grad.addColorStop(1, '#ff8888');
-                ctx.fillStyle = grad; ctx.fillRect(p.x, 0, PILLAR_WIDTH, p.gapY - p.gapHeight / 2); ctx.fillRect(p.x, p.gapY + p.gapHeight / 2, PILLAR_WIDTH, height);
-                
-                if (!p.scored && p.x + PILLAR_WIDTH < playerRef.current.x) {
-                    const baseReward = cmeStateRef.current.active ? 50 : 5;
-                    const gapFactor = 200 / p.gapHeight; // Smaller gap = higher factor
-                    const reward = Math.floor(baseReward * gapFactor);
-                    setGw(g => g + reward);
-                    setCmeCharge(c => Math.min(100, c + 5));
-                    p.scored = true;
+
+            // --- Update & Draw Obstacles ---
+            obstaclesRef.current.forEach(obs => {
+                obs.x -= gameSpeed;
+                ctx.fillStyle = '#ff4444'; ctx.fillRect(obs.x, groundY - obs.height, obs.width, obs.height);
+                if (playerRef.current.invincibilityTimer === 0 && playerRef.current.x + playerRef.current.radius > obs.x && playerRef.current.x - playerRef.current.radius < obs.x + obs.width && playerRef.current.y + playerRef.current.radius > groundY - obs.height) {
+                    setGw(g => Math.max(0, g - 50));
+                    playerRef.current.invincibilityTimer = 60;
                 }
             });
-            pillarsRef.current = pillarsRef.current.filter(p => p.x + PILLAR_WIDTH > 0);
-            
-            // --- Player Logic ---
+            obstaclesRef.current = obstaclesRef.current.filter(o => o.x + o.width > 0);
+
+            // --- Update & Draw Rings ---
+            ringsRef.current.forEach(ring => {
+                ring.x -= gameSpeed;
+                ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(10, 200, 120, ${ring.scored ? 0.3 : 1})`; ctx.lineWidth = 5; ctx.stroke();
+                
+                const dist = Math.hypot(playerRef.current.x - ring.x, playerRef.current.y - ring.y);
+                if (!ring.scored && dist < playerRef.current.radius + ring.radius) {
+                    const baseReward = cmeStateRef.current.active ? 50 : 5;
+                    const sizeFactor = 60 / ring.radius; // Smaller rings worth more
+                    setGw(g => g + Math.floor(baseReward * sizeFactor));
+                    setCmeCharge(c => Math.min(100, c + 10));
+                    ring.scored = true;
+                }
+            });
+            ringsRef.current = ringsRef.current.filter(r => r.x + r.radius > 0);
+
+            // --- Player Physics & Drawing ---
             if (playerRef.current.invincibilityTimer > 0) playerRef.current.invincibilityTimer--;
             playerRef.current.velocityY += GRAVITY;
             playerRef.current.y += playerRef.current.velocityY;
-            playerRef.current.trail.push({ x: playerRef.current.x, y: playerRef.current.y });
-            if(playerRef.current.trail.length > 20) playerRef.current.trail.shift();
-            
-            ctx.globalAlpha = playerRef.current.invincibilityTimer % 10 < 5 ? 0.5 : 1;
-            for(let i=playerRef.current.trail.length - 1; i>=0; i--) { /* ... trail drawing ... */ } // Simplified for brevity, logic is same
-            ctx.beginPath(); ctx.arc(playerRef.current.x, playerRef.current.y, playerRef.current.radius, 0, Math.PI * 2);
-            const playerGrad = ctx.createRadialGradient(playerRef.current.x, playerRef.current.y, 0, playerRef.current.x, playerRef.current.y, playerRef.current.radius);
-            const pColor1 = cmeStateRef.current.active ? '#ffff88' : '#aaccff';
-            const pColor2 = cmeStateRef.current.active ? '#ff8800' : '#4488ff';
-            playerGrad.addColorStop(0, pColor1); playerGrad.addColorStop(1, pColor2);
-            ctx.fillStyle = playerGrad; ctx.fill();
-            ctx.globalAlpha = 1;
+            playerRef.current.rotation += 0.02 * gameSpeed;
 
-            // --- Mega CME Logic ---
+            if (playerRef.current.y + playerRef.current.radius > groundY) {
+                playerRef.current.y = groundY - playerRef.current.radius;
+                playerRef.current.velocityY = 0;
+                playerRef.current.isOnGround = true;
+            }
+            
+            ctx.save();
+            ctx.translate(playerRef.current.x, playerRef.current.y);
+            ctx.rotate(playerRef.current.rotation);
+            ctx.globalAlpha = playerRef.current.invincibilityTimer % 10 < 5 ? 0.5 : 1;
+            const earthGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, playerRef.current.radius);
+            earthGrad.addColorStop(0, '#8cb1de'); earthGrad.addColorStop(1, '#1d4f7a');
+            ctx.fillStyle = earthGrad; ctx.beginPath(); ctx.arc(0, 0, playerRef.current.radius, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            ctx.globalAlpha = 1;
+            
+            // --- Mega CME ---
             if (frameRef.current > nextMegaCmeFrameRef.current && !megaCmeRef.current.active) {
-                megaCmeRef.current = { x: width, width: PILLAR_WIDTH * 1.5, active: true };
+                megaCmeRef.current = { x: width, gapY: height * 0.4 + Math.random() * (height*0.5), gapHeight: 200, active: true };
                 nextMegaCmeFrameRef.current = frameRef.current + MEGA_CME_MIN_INTERVAL + Math.random() * (MEGA_CME_MAX_INTERVAL - MEGA_CME_MIN_INTERVAL);
             }
             if (megaCmeRef.current.active) {
                 const cme = megaCmeRef.current; cme.x -= MEGA_CME_SPEED;
-                ctx.fillStyle = 'rgba(10, 255, 150, 0.4)'; ctx.fillRect(cme.x, 0, cme.width, height);
-                ctx.fillStyle = 'white'; ctx.font = 'bold 24px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('AVOID!', cme.x + cme.width / 2, 30);
-                if (playerRef.current.x + playerRef.current.radius > cme.x && playerRef.current.x - playerRef.current.radius < cme.x + cme.width) { setGw(g => g + 500); cme.active = false; }
-                if (cme.x + cme.width < 0) cme.active = false;
+                ctx.fillStyle = 'rgba(10, 255, 150, 0.4)';
+                ctx.fillRect(cme.x, 0, 150, cme.gapY - cme.gapHeight/2);
+                ctx.fillRect(cme.x, cme.gapY + cme.gapHeight/2, 150, height);
+                ctx.fillStyle = 'white'; ctx.font = 'bold 24px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('AVOID!', cme.x + 75, 30);
+                if (playerRef.current.x + playerRef.current.radius > cme.x && playerRef.current.x - playerRef.current.radius < cme.x + 150) {
+                    if (playerRef.current.y - playerRef.current.radius > cme.gapY - cme.gapHeight/2 && playerRef.current.y + playerRef.current.radius < cme.gapY + cme.gapHeight/2) {
+                        // Safe
+                    } else {
+                        setGw(g => g + 500); cme.active = false;
+                    }
+                }
+                if (cme.x + 150 < 0) cme.active = false;
             }
-
-            // --- GW and Happiness Logic ---
+            
+            // --- Happiness & Game Over Logic ---
             setGw(g => {
-                if (g < GW_LOW_THRESHOLD) { lowGwTimerRef.current++; } else { lowGwTimerRef.current = 0; }
-                if (g > GW_CRITICAL_THRESHOLD) { highGwTimerRef.current++; } else { highGwTimerRef.current = 0; }
+                if (g < GW_LOW_THRESHOLD) lowGwTimerRef.current++; else lowGwTimerRef.current = 0;
+                if (g > GW_CRITICAL_THRESHOLD) highGwTimerRef.current++; else highGwTimerRef.current = 0;
                 return g;
             });
-
             setHappiness(h => {
                 let newH = h;
-                if (gw < GW_LOW_THRESHOLD && lowGwTimerRef.current > LOW_GW_DURATION) newH -= 0.2;
-                else if (gw > GW_HIGH_THRESHOLD) newH -= (gw - GW_HIGH_THRESHOLD) * 0.001;
-                else newH = Math.min(100, h + 0.1);
+                if (lowGwTimerRef.current > 0) newH -= (lowGwTimerRef.current / LOW_GW_DURATION) * 0.2;
+                if (gw > GW_HIGH_THRESHOLD) newH -= (gw - GW_HIGH_THRESHOLD) * 0.001;
+                else if (lowGwTimerRef.current === 0) newH = Math.min(100, h + 0.1);
                 
                 if (newH <= 0) { gameStateRef.current = 'gameOver'; setUiState('gameOver'); setGameOverReason('The grid collapsed from lack of power!'); }
                 if (highGwTimerRef.current > CRITICAL_GW_DURATION) { gameStateRef.current = 'gameOver'; setUiState('gameOver'); setGameOverReason('The grid was overloaded and destroyed!'); }
-                return newH;
+                return Math.max(0, newH);
             });
-
-            // --- Collision Detection ---
-            const p = pillarsRef.current[0];
-            if(p && playerRef.current.invincibilityTimer === 0 && playerRef.current.x + playerRef.current.radius > p.x && playerRef.current.x - playerRef.current.radius < p.x + PILLAR_WIDTH) {
-                if(playerRef.current.y - playerRef.current.radius < p.gapY - p.gapHeight/2 || playerRef.current.y + playerRef.current.radius > p.gapY + p.gapHeight/2) {
-                    setGw(g => Math.max(0, g - 50));
-                    playerRef.current.invincibilityTimer = 60; // 1 second invincibility
-                }
-            }
-            if(playerRef.current.invincibilityTimer === 0 && (playerRef.current.y > height || playerRef.current.y < 0)) {
-                setGw(g => Math.max(0, g - 50));
-                playerRef.current.invincibilityTimer = 60;
-            }
         }
         animationFrameId.current = requestAnimationFrame(gameLoop);
     };
@@ -263,7 +247,6 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="bg-black/50 p-2 rounded-md">
                 <span className={`transition-colors ${gw > GW_CRITICAL_THRESHOLD ? 'text-red-500' : gw > GW_HIGH_THRESHOLD ? 'text-yellow-400' : 'text-white'}`}>Power: {Math.floor(gw)} GW</span>
             </div>
-            <div className="bg-black/50 p-2 rounded-md">Level: {levelRef.current}</div>
             <div className="bg-black/50 p-2 rounded-md flex flex-col items-end">
                 <span>Grid Happiness: {Math.floor(happiness)}%</span>
                 <div className="w-32 h-2 bg-neutral-700 rounded mt-1"><div className="h-2 bg-green-500 rounded" style={{width: `${happiness}%`}}></div></div>
@@ -273,14 +256,14 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
       {uiState === 'start' && (
         <div className="relative z-10 text-white text-center bg-black/60 p-8 rounded-lg max-w-2xl pointer-events-none">
-            <h1 className="text-5xl font-extrabold mb-4 text-amber-300">Solar Flap</h1>
+            <h1 className="text-5xl font-extrabold mb-4 text-amber-300">Earth Jumper</h1>
             <h2 className="text-xl font-semibold mb-6">Power the World with Auroras!</h2>
             <div className="text-left space-y-3 mb-8">
-                <p><strong>Goal:</strong> Maintain the grid's power between <strong className="text-green-400">50 GW</strong> and <strong className="text-red-500">500 GW</strong> to keep happiness high.</p>
-                <p><strong>Gameplay:</strong> Fly through <strong className="text-green-400">green (-Bz)</strong> gaps. Smaller gaps give more power. Hitting a <strong className="text-red-500">red (+Bz)</strong> pillar costs 50 GW.</p>
-                <p><strong>Happiness:</strong> Drops if power is too high (&gt;300GW) or too low (&lt;50GW for too long). Game over at 0% happiness!</p>
-                <p><strong>Watch Out:</strong> Dodge the massive <strong className="text-green-400">MEGA CME</strong> waves! Hitting them adds a dangerous +500 GW.</p>
-                <p><strong>Power Up:</strong> Collect sun icons. When charged, click the CME button to enter hyper mode for 5 seconds!</p>
+                <p><strong>Controls:</strong> Click, Tap, or press Spacebar to jump.</p>
+                <p><strong>Goal:</strong> Maintain grid power between <strong className="text-green-400">50 GW</strong> and <strong className="text-red-500">500 GW</strong>. Keep happiness high!</p>
+                <p><strong>Gameplay:</strong> Jump through <strong className="text-green-400">green (-Bz) rings</strong> for power. Jump over <strong className="text-red-500">red (+Bz) pillars</strong> to avoid losing power.</p>
+                <p><strong>Danger:</strong> Happiness drops if power is too high (&gt;300GW) or too low. Dodge the giant <strong className="text-green-400">MEGA CME</strong> waves!</p>
+                <p><strong>Power Up:</strong> Charge your CME. When ready, click the button to enter hyper mode!</p>
             </div>
             <p className="text-2xl font-bold animate-pulse">Click anywhere to Start</p>
         </div>
@@ -313,5 +296,5 @@ const SolarFlap: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   );
 };
 
-export default SolarFlap;
+export default EarthJumper;
 // --- END OF FILE src/components/SolarSurferGame.tsx ---
