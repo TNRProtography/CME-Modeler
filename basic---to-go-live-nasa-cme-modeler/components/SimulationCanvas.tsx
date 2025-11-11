@@ -760,27 +760,31 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const timelineDuration = timelineMaxDate - timelineMinDate;
         if (timelineDuration <= 0) return [];
 
+        // --- START: MODIFIED GRAPH LOGIC ---
+        const graphEndDate = timelineMaxDate + 3 * 24 * 3600 * 1000; // Extend graph 3 days into the future
+        const graphDuration = graphEndDate - timelineMinDate;
+
         const graphData = [];
-        const numSteps = 200;
+        const numSteps = 200; 
+        const ambientSpeed = 350;
+        const ambientDensity = 5;
 
         for (let i = 0; i <= numSteps; i++) {
             const stepRatio = i / numSteps;
-            const currentTime = timelineMinDate + timelineDuration * stepRatio;
+            const currentTime = timelineMinDate + graphDuration * stepRatio;
 
-            // --- START OF FIX: Correctly calculate Earth's position ---
-            const totalSecondsInTimeline = timelineDuration / 1000;
-            const elapsedSecondsForEarth = totalSecondsInTimeline * stepRatio;
+            // Correctly calculate Earth's orbital position at any given time in the simulation
+            const totalSecondsSinceSimStart = (currentTime - cmeData[0]?.startTime.getTime() ?? 0) / 1000;
             const orbitalPeriodSeconds = earthData.orbitalPeriodDays! * 24 * 3600;
             const startingAngle = earthData.angle;
-            const earthAngle = startingAngle + ((2 * Math.PI) / orbitalPeriodSeconds) * elapsedSecondsForEarth;
-            // --- END OF FIX ---
-
+            const earthAngle = startingAngle + ((2 * Math.PI) / orbitalPeriodSeconds) * totalSecondsSinceSimStart;
+            
             const earthX = earthData.radius * Math.sin(earthAngle);
             const earthZ = earthData.radius * Math.cos(earthAngle);
             const earthPos = new THREE.Vector3(earthX, 0, earthZ);
             
-            let totalSpeed = 350;
-            let totalDensity = 5;
+            let totalSpeed = ambientSpeed;
+            let totalDensity = ambientDensity;
 
             cmeGroupRef.current.children.forEach((cmeObject: any) => {
                 const cme = cmeObject.userData as ProcessedCME;
@@ -794,8 +798,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
                     if (angleToEarth < THREE.MathUtils.degToRad(cme.halfAngle)) {
                         const distToEarth = earthPos.length();
+                        const cmeThickness = SCENE_SCALE * 0.3; // Visual thickness of the CME
                         const cmeFront = cmeDist;
-                        const cmeBack = cmeDist - (SCENE_SCALE * 0.3);
+                        const cmeBack = cmeDist - cmeThickness;
 
                         if (distToEarth < cmeFront && distToEarth > cmeBack) {
                             const u_kms = cme.speed;
@@ -803,8 +808,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                             const a_kms2 = a_ms2 / 1000.0;
                             const currentSpeed = Math.max(MIN_CME_SPEED_KMS, u_kms + a_kms2 * timeSinceCmeStart);
                             
-                            totalSpeed = Math.max(totalSpeed, currentSpeed);
-                            totalDensity += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50);
+                            // Calculate intensity based on how far through the CME Earth is
+                            const penetration_distance = cmeFront - distToEarth;
+                            const coreThickness = cmeThickness * 0.25; // First 25% is the core
+                            let intensity = 0;
+
+                            if (penetration_distance <= coreThickness) {
+                                // In the shock/core, intensity is max
+                                intensity = 1.0;
+                            } else {
+                                // In the wake, smoothly decrease intensity using a cosine curve
+                                const wake_progress = (penetration_distance - coreThickness) / (cmeThickness - coreThickness);
+                                intensity = 0.5 * (1 + Math.cos(wake_progress * Math.PI));
+                            }
+                            
+                            // Add the CME's contribution, scaled by intensity
+                            const speedContribution = (currentSpeed - ambientSpeed) * intensity;
+                            const densityContribution = (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ambientDensity) * intensity;
+                            
+                            totalSpeed = Math.max(totalSpeed, ambientSpeed + speedContribution);
+                            totalDensity += densityContribution;
                         }
                     }
                 }
@@ -812,8 +835,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             graphData.push({ time: currentTime, speed: totalSpeed, density: totalDensity });
         }
         return graphData;
+        // --- END: MODIFIED GRAPH LOGIC ---
     }
-  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, timelineMaxDate, calculateDistanceWithDeceleration]);
+  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, timelineMaxDate, calculateDistanceWithDeceleration, cmeData]);
 
   useEffect(() => {
     if (controlsRef.current && rendererRef.current?.domElement) {
