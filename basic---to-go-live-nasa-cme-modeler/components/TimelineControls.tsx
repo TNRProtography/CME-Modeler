@@ -1,3 +1,5 @@
+// --- START OF FILE TimelineControls.tsx ---
+
 import React from 'react';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
@@ -15,7 +17,14 @@ interface TimelineControlsProps {
   onSetSpeed: (speed: number) => void;
   minDate: number; // timestamp
   maxDate: number; // timestamp
+  onOpenImpactGraph: () => void; // --- NEW PROP ---
 }
+
+const ChartIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 19.5h16.5m-16.5-6.375h16.5m-16.5-6.375h16.5m-16.5-6.375h16.5" />
+    </svg>
+);
 
 const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode; title: string; id?: string }> = ({ onClick, children, title, id }) => (
   <button
@@ -45,7 +54,7 @@ const SpeedButton: React.FC<{ onClick: () => void; isActive: boolean; children: 
 
 const TimelineControls: React.FC<TimelineControlsProps> = ({
   isVisible, isPlaying, onPlayPause, onScrub, scrubberValue, onStepFrame,
-  playbackSpeed, onSetSpeed, minDate, maxDate
+  playbackSpeed, onSetSpeed, minDate, maxDate, onOpenImpactGraph
 }) => {
   if (!isVisible) return null;
 
@@ -66,7 +75,6 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
 
   return (
-    // MODIFIED: Added an ID to the main container for the tutorial to target
     <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
@@ -102,6 +110,11 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             </>
             )}
         </div>
+        
+        {/* --- NEW: Graph Button --- */}
+        <PlaybackButton onClick={onOpenImpactGraph} title="Show Impact Graphs">
+            <ChartIcon className="w-4 h-4" />
+        </PlaybackButton>
 
         <div className="hidden sm:block text-xs tabular-nums whitespace-nowrap min-w-[150px] text-right text-neutral-400">
           {getCurrentTimelineDate()}
@@ -121,3 +134,4 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 };
 
 export default TimelineControls;
+// --- END OF FILE TimelineControls.tsx ---

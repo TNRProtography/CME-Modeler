@@ -228,14 +228,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  // --- START OF MODIFICATION: Corrected Deceleration Logic ---
-  const MIN_CME_SPEED_KMS = 300; // Ambient solar wind speed floor
+  const MIN_CME_SPEED_KMS = 300;
 
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const u_kms = cme.speed;
     const t_s = Math.max(0, timeSinceEventSeconds);
 
-    // If initial speed is already below the floor, assume constant speed.
     if (u_kms <= MIN_CME_SPEED_KMS) {
         const distance_km = u_kms * t_s;
         return (distance_km / AU_IN_KM) * SCENE_SCALE;
@@ -244,31 +242,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const a_ms2 = 1.41 - 0.0035 * u_kms;
     const a_kms2 = a_ms2 / 1000.0;
 
-    // If it's accelerating (slow CME), use the simple formula without a floor.
     if (a_kms2 >= 0) {
         const distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
         return (distance_km / AU_IN_KM) * SCENE_SCALE;
     }
     
-    // For decelerating CMEs, find the time it takes to reach the speed floor.
-    // v = u + at  =>  t = (v - u) / a
     const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
 
     let distance_km;
     if (t_s < time_to_floor_s) {
-        // Case 1: The CME is still decelerating. Use standard kinematic equation.
         distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
     } else {
-        // Case 2: The CME has hit the speed floor.
-        // Part 1: Distance traveled during deceleration phase.
         const distance_during_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
-        
-        // Part 2: Time spent coasting at the minimum speed.
         const time_coasting = t_s - time_to_floor_s;
-
-        // Part 3: Distance traveled during the coasting phase.
         const distance_during_coast = MIN_CME_SPEED_KMS * time_coasting;
-        
         distance_km = distance_during_decel + distance_during_coast;
     }
 
@@ -284,7 +271,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const distanceActualAU = proportionOfTravel * earthOrbitRadiusActualAU;
     return distanceActualAU * SCENE_SCALE;
   }, []);
-  // --- END OF MODIFICATION ---
 
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
     if (!THREE) return;
@@ -553,6 +539,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
+      cmeGroupRef.current.children.forEach((c: any) => c.material.opacity = getCmeOpacity(c.userData.speed));
+
       if (timelineActive) {
         if (timelinePlaying) {
           const r = timelineMaxDate - timelineMinDate;
@@ -764,8 +752,67 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         return rendererRef.current.domElement.toDataURL('image/png');
       }
       return null;
+    },
+    // --- NEW: Function to calculate the impact graph data ---
+    calculateImpactProfile: () => {
+        if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
+        
+        const earthData = PLANET_DATA_MAP.EARTH;
+        const timelineDuration = timelineMaxDate - timelineMinDate;
+        if (timelineDuration <= 0) return [];
+
+        const graphData = [];
+        const numSteps = 200; // Number of points on the graph
+
+        for (let i = 0; i <= numSteps; i++) {
+            const stepRatio = i / numSteps;
+            const currentTime = timelineMinDate + timelineDuration * stepRatio;
+
+            // Calculate Earth's orbital position at this time
+            const timeSinceStartOfSim = (currentTime - timelineMinDate) / 1000;
+            const ORBIT_SPEED_SCALE = (3 * 5 * 3600); // from timelineSpeed
+            const earthAngle = earthData.angle + ((2 * Math.PI) / (earthData.orbitalPeriodDays! * 24 * 3600) * ORBIT_SPEED_SCALE) * (timeSinceStartOfSim / 1000);
+            const earthX = earthData.radius * Math.sin(earthAngle);
+            const earthZ = earthData.radius * Math.cos(earthAngle);
+            const earthPos = new THREE.Vector3(earthX, 0, earthZ);
+            
+            let totalSpeed = 350; // Ambient solar wind
+            let totalDensity = 5; // Ambient solar wind
+
+            cmeGroupRef.current.children.forEach((cmeObject: any) => {
+                const cme = cmeObject.userData as ProcessedCME;
+                const timeSinceCmeStart = (currentTime - cme.startTime.getTime()) / 1000;
+                
+                if (timeSinceCmeStart > 0) {
+                    const cmeDist = calculateDistanceWithDeceleration(cme, timeSinceCmeStart);
+                    
+                    // Check if Earth is within the CME cone
+                    const cmeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+                    const angleToEarth = cmeDir.angleTo(earthPos.clone().normalize());
+
+                    if (angleToEarth < THREE.MathUtils.degToRad(cme.halfAngle)) {
+                        const distToEarth = earthPos.length();
+                        const cmeFront = cmeDist;
+                        const cmeBack = cmeDist - (SCENE_SCALE * 0.3); // Give CME a thickness
+
+                        if (distToEarth < cmeFront && distToEarth > cmeBack) {
+                             // v = u + at
+                            const u_kms = cme.speed;
+                            const a_ms2 = 1.41 - 0.0035 * u_kms;
+                            const a_kms2 = a_ms2 / 1000.0;
+                            const currentSpeed = Math.max(MIN_CME_SPEED_KMS, u_kms + a_kms2 * timeSinceCmeStart);
+                            
+                            totalSpeed = Math.max(totalSpeed, currentSpeed);
+                            totalDensity += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50);
+                        }
+                    }
+                }
+            });
+            graphData.push({ time: currentTime, speed: totalSpeed, density: totalDensity });
+        }
+        return graphData;
     }
-  }), [moveCamera, getClockElapsedTime]);
+  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, timelineMaxDate, calculateDistanceWithDeceleration]);
 
   useEffect(() => {
     if (controlsRef.current && rendererRef.current?.domElement) {

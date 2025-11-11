@@ -35,6 +35,7 @@ import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
+import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -62,6 +63,14 @@ interface IpsAlertData {
     };
 }
 
+// --- NEW: Type for impact graph data points ---
+interface ImpactDataPoint {
+    time: number;
+    speed: number;
+    density: number;
+}
+
+
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
@@ -88,6 +97,10 @@ const App: React.FC = () => {
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [isGameOpen, setIsGameOpen] = useState(false);
+
+  // --- NEW: State for the impact graph modal ---
+  const [isImpactGraphOpen, setIsImpactGraphOpen] = useState(false);
+  const [impactGraphData, setImpactGraphData] = useState<ImpactDataPoint[]>([]);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -421,6 +434,17 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
+  // --- NEW: Handler for opening the impact graph modal ---
+  const handleOpenImpactGraph = useCallback(() => {
+    if (canvasRef.current) {
+      const data = canvasRef.current.calculateImpactProfile();
+      if (data) {
+        setImpactGraphData(data);
+        setIsImpactGraphOpen(true);
+      }
+    }
+  }, []);
+
   const handleDownloadImage = useCallback(() => {
     const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
     if (!dataUrl || !rendererDomElement || !threeCamera) {
@@ -607,7 +631,6 @@ const App: React.FC = () => {
 
           <div className="flex flex-grow min-h-0">
               <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
-                {/* --- START: CORRECTED LAYOUT --- */}
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
@@ -677,13 +700,12 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
+                    <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
                 </main>
 
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
                 </div>
-                {/* --- END: CORRECTED LAYOUT --- */}
                   
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
@@ -734,6 +756,14 @@ const App: React.FC = () => {
               onClose={() => setIsForecastModelsModalOpen(false)}
               setViewerMedia={setViewerMedia}
           />
+
+          {/* --- NEW: Render the ImpactGraphModal --- */}
+          <ImpactGraphModal
+            isOpen={isImpactGraphOpen}
+            onClose={() => setIsImpactGraphOpen(false)}
+            data={impactGraphData}
+          />
+
           {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
 
           {showIabBanner && (
