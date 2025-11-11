@@ -34,8 +34,6 @@ import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
-
-// --- NEW: Import the Solar Surfer Game ---
 import SolarSurferGame from './components/SolarSurferGame';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -55,7 +53,6 @@ interface NavigationTarget {
   expandId?: string;
 }
 
-// --- MODIFICATION: Added type for IPS Alert Data ---
 interface IpsAlertData {
     shock: InterplanetaryShock;
     solarWind: {
@@ -90,8 +87,6 @@ const App: React.FC = () => {
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
-
-  // --- NEW: State for the Solar Surfer game ---
   const [isGameOpen, setIsGameOpen] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
@@ -357,7 +352,6 @@ const App: React.FC = () => {
     setIsCmeListOpen(true);
   }, [handleSelectCMEForModeling]);
 
-  // --- NEW: Handlers for the Solar Surfer game ---
   const handleOpenGame = useCallback(() => {
     setIsGameOpen(true);
   }, []);
@@ -612,12 +606,19 @@ const App: React.FC = () => {
           </header>
 
           <div className="flex flex-grow min-h-0">
-              <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
-                  <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+              <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex flex-col' : 'hidden'}`}>
+                {/* --- START OF LAYOUT CHANGE --- */}
+                <div className="w-full contents lg:flex lg:flex-row lg:items-stretch lg:gap-5 lg:p-5 lg:flex-shrink-0">
+                  <div id="controls-panel-container" className={`flex-shrink-0 fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:w-[340px] lg:max-w-none lg:transform-none lg:transition-none`}>
                       <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                   </div>
-                  <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
-                      {/* --- MODIFIED: Added onSunClick prop for the game easter egg --- */}
+                  <div id="cme-list-panel-container" className={`flex-shrink-0 fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:w-auto lg:flex-1 lg:max-w-md lg:transform-none lg:transition-none`}>
+                      <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
+                  </div>
+                </div>
+
+                <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
+                {/* --- END OF LAYOUT CHANGE --- */}
                       <SimulationCanvas
                           ref={canvasRef}
                           cmeData={cmesToRender}
@@ -684,9 +685,6 @@ const App: React.FC = () => {
                       </div>
                       <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} />
                   </main>
-                  <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:relative lg:translate-x-0 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-                      <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
-                  </div>
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
@@ -736,8 +734,6 @@ const App: React.FC = () => {
               onClose={() => setIsForecastModelsModalOpen(false)}
               setViewerMedia={setViewerMedia}
           />
-
-          {/* --- NEW: Conditionally render the Solar Surfer game --- */}
           {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
 
           {showIabBanner && (
