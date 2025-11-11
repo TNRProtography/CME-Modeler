@@ -336,7 +336,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(cmeGroupRef.current);
 
     // --- START OF MODIFICATION: New Flux Rope Geometry and Material ---
-    const fluxRopeGeometry = new THREE.SphereGeometry(1, 32, 32); 
+    const fluxRopeGeometry = new THREE.ConeGeometry(1, 1, 32, 1, true); // Radius, Height, Segments, openEnded
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
       fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
@@ -346,6 +346,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      side: THREE.DoubleSide, // Render both inside and outside of the cone
     });
     fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
     fluxRopeRef.current.visible = false;
@@ -591,17 +592,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
             const cme: ProcessedCME = cmeObject.userData;
-            const cmeLength = cmeObject.scale.y; // The length of the CME particle cone
+            const cmeLength = cmeObject.scale.y; 
             const coneRadius = cmeLength * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
 
-            // Position the teardrop halfway along the CME's length
             const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.copy(dir.clone().multiplyScalar(cmeLength / 2));
+            
+            // The cone's origin is at its center. We want the tip at the sun, and the base at the CME front.
+            // So we move the whole object forward by half its length.
+            const sunRadius = PLANET_DATA_MAP.SUN.size;
+            fluxRopeRef.current.position.copy(dir.clone().multiplyScalar(sunRadius + cmeLength / 2));
             
             // Orient it to point away from the Sun
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             
-            // Scale it into an ellipsoid/teardrop shape
+            // Scale it into the correct cone/teardrop shape
             fluxRopeRef.current.scale.set(coneRadius, cmeLength, coneRadius);
 
             // Set its color
@@ -791,7 +795,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const orbitalPeriodSeconds = earthData.orbitalPeriodDays! * 24 * 3600;
             const startingAngle = earthData.angle;
             const angularVelocity = (2 * Math.PI) / orbitalPeriodSeconds; 
-            const earthAngle = startingAngle + angularVelocity * secondsSinceSimEpoch;
+            const earthAngle = startingAngle + angularVelocity * totalSecondsSinceSimEpoch;
             
             const earthX = earthData.radius * Math.sin(earthAngle);
             const earthZ = earthData.radius * Math.cos(earthAngle);
