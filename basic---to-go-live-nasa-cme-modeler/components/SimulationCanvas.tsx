@@ -200,7 +200,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const raycasterRef = useRef<any>(null);
   const mouseRef = useRef<any>(null);
   
-  // --- NEW: Refs for robust tap/click detection ---
   const pointerDownTime = useRef(0);
   const pointerDownPosition = useRef({ x: 0, y: 0 });
 
@@ -229,22 +228,60 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  const calculateDistance = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number, useDeceleration: boolean): number => {
-    const speed_km_per_sec = cme.speed;
-    const speed_AU_per_sec = speed_km_per_sec / AU_IN_KM;
+  // --- START OF MODIFICATION: New Deceleration Logic ---
 
-    if (cme.isEarthDirected && cme.predictedArrivalTime && useDeceleration) {
-      const earthOrbitRadiusActualAU = PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE;
-      const totalTravelTimeSeconds = (cme.predictedArrivalTime.getTime() - cme.startTime.getTime()) / 1000;
-      if (totalTravelTimeSeconds <= 0) return 0;
-      const proportionOfTravel = Math.min(1.0, timeSinceEventSeconds / totalTravelTimeSeconds);
-      const distanceActualAU = proportionOfTravel * earthOrbitRadiusActualAU;
-      return distanceActualAU * SCENE_SCALE;
-    }
+  /**
+   * Calculates CME distance traveled using a physics-based deceleration model.
+   * Formula for acceleration: a = 1.41 - 0.0035 * u (a in m/s^2, u in km/s)
+   * Kinematic equation for distance: s = ut + 0.5at^2
+   */
+  const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
+    // 1. Get initial speed 'u' in km/s from CME data
+    const u_kms = cme.speed;
 
-    const distanceActualAU = speed_AU_per_sec * Math.max(0, timeSinceEventSeconds);
+    // 2. Calculate acceleration 'a' in m/s^2 using the provided formula
+    const a_ms2 = 1.41 - 0.0035 * u_kms;
+
+    // 3. Convert acceleration to km/s^2 for consistency
+    const a_kms2 = a_ms2 / 1000.0;
+
+    // 4. Use kinematic equation for distance: s = ut + 0.5at^2
+    const t_s = Math.max(0, timeSinceEventSeconds);
+    const distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
+    
+    // If deceleration is very high, distance could become negative over long periods. Prevent this.
+    if (distance_km < 0) return 0; 
+
+    // 5. Convert final distance from km to the simulation's scaled AU units
+    const distance_au = distance_km / AU_IN_KM;
+    const distance_scene_units = distance_au * SCENE_SCALE;
+
+    return distance_scene_units;
+  }, []);
+
+  /**
+   * Calculates CME distance by linearly interpolating to match a predicted arrival time.
+   * This is used ONLY for individually-modeled CMEs that have an official NASA prediction.
+   */
+  const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
+    if (!cme.predictedArrivalTime) return 0;
+
+    const earthOrbitRadiusActualAU = PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE;
+    const totalTravelTimeSeconds = (cme.predictedArrivalTime.getTime() - cme.startTime.getTime()) / 1000;
+    
+    if (totalTravelTimeSeconds <= 0) return 0;
+    
+    // Find what proportion of the journey is complete
+    const proportionOfTravel = Math.min(1.0, timeSinceEventSeconds / totalTravelTimeSeconds);
+    
+    // Calculate distance in AU based on this proportion
+    const distanceActualAU = proportionOfTravel * earthOrbitRadiusActualAU;
+    
     return distanceActualAU * SCENE_SCALE;
   }, []);
+
+  // --- END OF MODIFICATION ---
+
 
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
     if (!THREE) return;
@@ -427,7 +464,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
     window.addEventListener('resize', handleResize);
 
-    // --- MODIFICATION: Robust tap/click detection for game easter egg ---
     const handlePointerDown = (event: PointerEvent) => {
         pointerDownTime.current = Date.now();
         pointerDownPosition.current.x = event.clientX;
@@ -441,7 +477,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const deltaY = Math.abs(event.clientY - pointerDownPosition.current.y);
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
         
-        // Check if it's a tap (short duration, little movement)
         if (deltaTime < 200 && distance < 10) {
             if (!mountRef.current || !cameraRef.current || !raycasterRef.current || !mouseRef.current || !sceneRef.current) return;
             
@@ -528,17 +563,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
         cmeGroupRef.current.children.forEach((c: any) => {
           const s = (t - c.userData.startTime.getTime()) / 1000;
-          updateCMEShape(c, s < 0 ? -1 : calculateDistance(c.userData, s, false));
+          updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s));
         });
       } else {
         cmeGroupRef.current.children.forEach((c: any) => {
           let d = 0;
           if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
-            const t = elapsedTime - (c.userData.simulationStartTime ?? elapsedTime);
-            d = calculateDistance(c.userData, t < 0 ? 0 : t, true);
+            const cme = c.userData;
+            const t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
+            if (cme.isEarthDirected && cme.predictedArrivalTime) {
+                d = calculateDistanceByInterpolation(cme, t < 0 ? 0 : t); 
+            } else {
+                d = calculateDistanceWithDeceleration(cme, t < 0 ? 0 : t);
+            }
           } else if (!currentlyModeledCMEId) {
             const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
-            d = calculateDistance(c.userData, t < 0 ? 0 : t, false);
+            d = calculateDistanceWithDeceleration(c.userData, t < 0 ? 0 : t);
           } else {
             updateCMEShape(c, -1);
             return;
