@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/InitialLoadingScreen.tsx ---
 
 import React, { useState, useEffect } from 'react';
+import LoadingSpinner from './icons/LoadingSpinner';
 
 const SLOGANS = [
   'Aligning planetary orbits...',
