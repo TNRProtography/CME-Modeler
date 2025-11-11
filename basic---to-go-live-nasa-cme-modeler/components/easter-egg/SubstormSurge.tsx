@@ -216,6 +216,4 @@ export const SubstormSurge: React.FC = () => {
     </div>
   );
 };
-
-// No default export
 // --- END OF FILE src/components/easter-egg/SubstormSurge.tsx ---
