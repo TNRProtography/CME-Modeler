@@ -590,11 +590,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
-
-    if (cmeGroupRef.current.children.length > 0 && cmeGroupRef.current.children[0].userData.id === cmeData[0]?.id) {
-        return;
-    }
-
+    
+    // --- MODIFICATION (BUG FIX): Removed the faulty optimization.
+    // This will now correctly clear and rebuild the CMEs whenever cmeData or dataVersion changes.
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
@@ -657,7 +655,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
-  }, [cmeData, getClockElapsedTime]);
+    // --- MODIFICATION (BUG FIX): Changed the dependency array to correctly trigger rebuilds.
+  }, [cmeData, dataVersion, THREE]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
