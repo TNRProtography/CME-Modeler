@@ -200,8 +200,6 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- REMOVED OLD FLUX ROPE SHADERS ---
-
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
 export const TEXT_COLOR = "#e5e5e5"; // neutral-200
