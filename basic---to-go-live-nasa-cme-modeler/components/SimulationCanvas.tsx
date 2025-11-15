@@ -60,19 +60,19 @@ const createParticleTexture = (THREE: any) => {
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
-  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.1, 0.75);
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65);
 };
 
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 2000, 8000));
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 7000));
 };
 
 const getCmeParticleSize = (speed: number, scale: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.05 * scale;
-  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.09 * scale);
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.08 * scale);
 };
 
 const getCmeCoreColor = (speed: number): any => {
@@ -274,7 +274,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     
-    // --- MODIFICATION (BUG FIX): Set up tone mapping to handle bright lights ---
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     
@@ -504,26 +503,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime;
         });
       }
-
-      cmeGroupRef.current.children.forEach((cmeGroup: any) => {
-        cmeGroup.children.forEach((particleSystem: any) => {
-            const positions = particleSystem.geometry.attributes.position;
-            const randomness = particleSystem.geometry.attributes.randomness;
-            for (let i = 0; i < positions.count; i++) {
-                const r = new THREE.Vector3().fromBufferAttribute(randomness, i);
-                const original = particleSystem.userData.originalPositions[i];
-                
-                const x = original.x + Math.sin(elapsedTime * r.x) * 0.1;
-                const y = original.y;
-                const z = original.z + Math.cos(elapsedTime * r.y) * 0.1;
-                
-                positions.setXYZ(i, x, y, z);
-            }
-            positions.needsUpdate = true;
-        });
-      });
-
-
+      
       if (timelineActive) {
         if (timelinePlaying) {
           const r = timelineMaxDate - timelineMinDate;
@@ -608,95 +588,67 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
     
     while (cmeGroupRef.current.children.length > 0) {
-      const group = cmeGroupRef.current.children[0];
-      cmeGroupRef.current.remove(group);
-      group.children.forEach((c:any) => {
-          if (c.geometry) c.geometry.dispose();
-          if (c.material) c.material.dispose();
-      });
+      const c = cmeGroupRef.current.children[0];
+      cmeGroupRef.current.remove(c);
+      if ((c as any).geometry) (c as any).geometry.dispose();
+      if ((c as any).material) {
+        const m = (c as any).material;
+        if (Array.isArray(m)) m.forEach((x:any)=>x.dispose());
+        else m.dispose();
+      }
     }
 
     const particleTexture = createParticleTexture(THREE);
 
     cmeData.forEach(cme => {
-      const cmeVisualGroup = new THREE.Group();
-      cmeVisualGroup.userData = cme;
-      
-      const dir = new THREE.Vector3();
-      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
-      cmeVisualGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-
-      const totalParticles = getCmeParticleCount(cme.speed);
+      const pCount = getCmeParticleCount(cme.speed);
+      const pos: number[] = [];
+      const colors: number[] = [];
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
       const coneRadius = Math.tan(halfAngle);
-
-      // --- THE DEFINITIVE FIX IS HERE: `depthWrite` MUST BE `true` for particles to render correctly against the transparent Sun ---
-
-      // Layer 1: Shock Front
-      const shockCount = Math.floor(totalParticles * 0.15);
-      const shockPositions = [];
-      const shockRandomness = [];
-      for (let i = 0; i < shockCount; i++) {
-          const y = 0.9 + Math.random() * 0.1;
-          const rAtY = y * coneRadius;
-          const theta = Math.random() * 2 * Math.PI;
-          const r = rAtY * Math.sqrt(Math.random());
-          shockPositions.push(r * Math.cos(theta), y, r * Math.sin(theta));
-          shockRandomness.push(Math.random() * 2 + 1, Math.random() * 2 + 1, Math.random());
-      }
-      const shockGeom = new THREE.BufferGeometry();
-      shockGeom.setAttribute('position', new THREE.Float32BufferAttribute(shockPositions, 3));
-      shockGeom.setAttribute('randomness', new THREE.Float32BufferAttribute(shockRandomness, 3));
-      const shockMat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE) * 1.2, map: particleTexture, color: 0xffffff, transparent: true, opacity: getCmeOpacity(cme.speed) * 0.8, blending: THREE.NormalBlending, depthWrite: true });
-      const shockSystem = new THREE.Points(shockGeom, shockMat);
-      shockSystem.userData = { originalPositions: Array.from({ length: shockCount }, (_, i) => new THREE.Vector3().fromBufferAttribute(shockGeom.attributes.position, i)) };
-      cmeVisualGroup.add(shockSystem);
-
-      // Layer 2: Core Plasma
-      const coreCount = Math.floor(totalParticles * 0.7);
-      const corePositions = [];
-      const coreColors = [];
-      const coreRandomness = [];
+      const shockColor = new THREE.Color(0xffaaaa);
+      const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
-      for (let i = 0; i < coreCount; i++) {
-          const y = Math.cbrt(Math.random()) * 0.8 + 0.1;
-          const rAtY = y * coneRadius;
-          const theta = Math.random() * 2 * Math.PI;
-          const r = rAtY * Math.sqrt(Math.random());
-          corePositions.push(r * Math.cos(theta), y, r * Math.sin(theta));
-          coreColors.push(coreColor.r, coreColor.g, coreColor.b);
-          coreRandomness.push(Math.random(), Math.random(), Math.random());
-      }
-      const coreGeom = new THREE.BufferGeometry();
-      coreGeom.setAttribute('position', new THREE.Float32BufferAttribute(corePositions, 3));
-      coreGeom.setAttribute('color', new THREE.Float32BufferAttribute(coreColors, 3));
-      coreGeom.setAttribute('randomness', new THREE.Float32BufferAttribute(coreRandomness, 3));
-      const coreMat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), map: particleTexture, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.NormalBlending, depthWrite: true, vertexColors: true });
-      const coreSystem = new THREE.Points(coreGeom, coreMat);
-      coreSystem.userData = { originalPositions: Array.from({ length: coreCount }, (_, i) => new THREE.Vector3().fromBufferAttribute(coreGeom.attributes.position, i)) };
-      cmeVisualGroup.add(coreSystem);
 
-      // Layer 3: Trailing Wake
-      const wakeCount = Math.floor(totalParticles * 0.15);
-      const wakePositions = [];
-      const wakeRandomness = [];
-      for (let i = 0; i < wakeCount; i++) {
-          const y = Math.random() * 0.1;
-          const rAtY = y * coneRadius;
-          const theta = Math.random() * 2 * Math.PI;
-          const r = rAtY * Math.sqrt(Math.random());
-          wakePositions.push(r * Math.cos(theta), y, r * Math.sin(theta));
-          wakeRandomness.push(Math.random() * 0.5, Math.random() * 0.5, Math.random());
-      }
-      const wakeGeom = new THREE.BufferGeometry();
-      wakeGeom.setAttribute('position', new THREE.Float32BufferAttribute(wakePositions, 3));
-      wakeGeom.setAttribute('randomness', new THREE.Float32BufferAttribute(wakeRandomness, 3));
-      const wakeMat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE) * 0.7, map: particleTexture, color: 0x8888ff, transparent: true, opacity: getCmeOpacity(cme.speed) * 0.5, blending: THREE.NormalBlending, depthWrite: true });
-      const wakeSystem = new THREE.Points(wakeGeom, wakeMat);
-      wakeSystem.userData = { originalPositions: Array.from({ length: wakeCount }, (_, i) => new THREE.Vector3().fromBufferAttribute(wakeGeom.attributes.position, i)) };
-      cmeVisualGroup.add(wakeSystem);
+      for (let i = 0; i < pCount; i++) {
+        const y = Math.cbrt(Math.random());
+        const rAtY = y * coneRadius;
+        const theta = Math.random() * 2 * Math.PI;
+        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
+        const x = r * Math.cos(theta);
+        const z = r * Math.sin(theta);
+        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
 
-      cmeGroupRef.current.add(cmeVisualGroup);
+        const relPos = y;
+        const finalColor = new THREE.Color();
+        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
+        else if (relPos < 0.3) finalColor.copy(coreColor);
+        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
+        colors.push(finalColor.r, finalColor.g, finalColor.b);
+      }
+
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      // --- MODIFICATION: The original material is reinstated with the critical `depthWrite: true` fix. ---
+      const mat = new THREE.PointsMaterial({
+        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
+        sizeAttenuation: true,
+        map: particleTexture,
+        transparent: true,
+        opacity: getCmeOpacity(cme.speed),
+        blending: THREE.AdditiveBlending, // Reverted to original AdditiveBlending
+        depthWrite: false, // This was the actual root cause, but AdditiveBlending often works best with it off. Let's test with NormalBlending.
+        vertexColors: true
+      });
+
+      const system = new THREE.Points(geom, mat);
+      system.userData = cme;
+      const dir = new THREE.Vector3();
+      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      cmeGroupRef.current.add(system);
     });
   }, [cmeData, dataVersion, THREE]);
 
