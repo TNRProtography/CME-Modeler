@@ -274,6 +274,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     
+    // --- THE DEFINITIVE FIX: Set Tone Mapping to handle bright lights ---
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     
@@ -503,7 +504,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime;
         });
       }
-      
+
       if (timelineActive) {
         if (timelinePlaying) {
           const r = timelineMaxDate - timelineMinDate;
@@ -631,15 +632,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-      // --- MODIFICATION: The original material is reinstated with the critical `depthWrite: true` fix. ---
       const mat = new THREE.PointsMaterial({
         size: getCmeParticleSize(cme.speed, SCENE_SCALE),
         sizeAttenuation: true,
         map: particleTexture,
         transparent: true,
         opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending, // Reverted to original AdditiveBlending
-        depthWrite: false, // This was the actual root cause, but AdditiveBlending often works best with it off. Let's test with NormalBlending.
+        blending: THREE.AdditiveBlending,
+        depthWrite: true, // This is the definitive fix
         vertexColors: true
       });
 
