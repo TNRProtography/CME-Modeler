@@ -1,4 +1,4 @@
-// --- START OF FILE SimulationCanvas.tsx ---
+// --- START OF FILE src/components/SimulationCanvas.tsx ---
 
 import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import {
@@ -9,8 +9,7 @@ import {
   PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
-  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
+  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER
 } from '../constants';
 
 /** =========================================================
@@ -56,38 +55,29 @@ const createParticleTexture = (THREE: any) => {
   return particleTextureCache;
 };
 
-// --- Arrow flow texture for flux rope ---
-let arrowTextureCache: any = null;
-const createArrowTexture = (THREE: any) => {
-  if (arrowTextureCache) return arrowTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-  
-  const canvas = document.createElement('canvas');
-  const size = 256;
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
+// --- Arrow creation helper for new flux rope ---
+const createCustomArrow = (THREE: any, direction: any, length: number, color: string) => {
+    const coneHeight = length * 0.2;
+    const cylinderHeight = length - coneHeight;
+    const coneRadius = coneHeight * 0.5;
+    const cylinderRadius = coneRadius * 0.4;
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
-  const arrowWidth = size / 6;
-  const arrowHeight = size / 4;
-  const spacing = size / 3;
+    const group = new THREE.Group();
+    const material = new THREE.MeshBasicMaterial({ color, toneMapped: false, transparent: true });
 
-  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
-    ctx.beginPath();
-    ctx.moveTo(x, size * 0.5);
-    ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
-    ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
-    ctx.closePath();
-    ctx.fill();
-  }
-  
-  arrowTextureCache = new THREE.CanvasTexture(canvas);
-  arrowTextureCache.wrapS = THREE.RepeatWrapping;
-  arrowTextureCache.wrapT = THREE.RepeatWrapping;
-  return arrowTextureCache;
+    const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(cylinderRadius, cylinderRadius, cylinderHeight, 12), material);
+    cylinder.position.y = cylinderHeight / 2;
+    
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(coneRadius, coneHeight, 12), material);
+    cone.position.y = cylinderHeight + coneHeight / 2;
+
+    group.add(cylinder);
+    group.add(cone);
+
+    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+    return group;
 };
+
 
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
@@ -98,7 +88,7 @@ const getCmeOpacity = (speed: number): number => {
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000));
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 7000));
 };
 
 const getCmeParticleSize = (speed: number, scale: number): number => {
@@ -335,26 +325,86 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- START OF MODIFICATION: Reverting to original blinking ring ---
-    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
-    const fluxRopeMaterial = new THREE.ShaderMaterial({
-      vertexShader: FLUX_ROPE_VERTEX_SHADER,
-      fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-      uniforms: {
-        uTime: { value: 0 },
-        uTexture: { value: createArrowTexture(THREE) },
-        uColor: { value: new THREE.Color(0xffffff) },
-      },
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.rotation.x = Math.PI / 2;
-    fluxRopeRef.current.visible = false;
-    scene.add(fluxRopeRef.current);
-    // --- END OF MODIFICATION ---
+    // --- NEW FLUX ROPE CREATION ---
+    const ropeGroup = new THREE.Group();
+    fluxRopeRef.current = ropeGroup;
+    ropeGroup.visible = false;
+    scene.add(ropeGroup);
+    
+    const config = { numRings: 7, baseRadius: 3, tubeRadius: 0.3, curveSegments: 128, poloidalArrowLength: 2.5 };
+    const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(-10, 0, 0),
+        new THREE.Vector3(0, 15, 0),
+        new THREE.Vector3(10, 0, 0)
+    );
+
+    const points = curve.getPoints(config.curveSegments);
+    const { tangents, normals, binormals } = curve.computeFrenetFrames(config.curveSegments, false);
+    const spacing = Math.floor(config.curveSegments / (config.numRings + 1));
+    const isFlipped = false; // Hardcoded as per instructions
+
+    // Create Rings
+    for (let i = 1; i <= config.numRings; i++) {
+        const index = i * spacing;
+        const t = index / config.curveSegments;
+        const position = points[index];
+        const radius = config.baseRadius * (1 + t * 0.3);
+        const tube = config.tubeRadius * (1 + t * 0.3);
+        const ringQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangents[index]);
+        const ringMaterial = new THREE.MeshStandardMaterial({
+            emissive: "#ff6347",
+            emissiveIntensity: 3,
+            roughness: 0.4,
+            metalness: 0.2,
+            transparent: true
+        });
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 16, 100), ringMaterial);
+        ring.position.copy(position);
+        ring.quaternion.copy(ringQuaternion);
+        ropeGroup.add(ring);
+    }
+    
+    // Create Poloidal Arrows
+    for (let i = 1; i <= config.numRings; i++) {
+        const index = i * spacing;
+        const t = index / config.curveSegments;
+        const position = points[index];
+        const radius = config.baseRadius * (1 + t * 0.3);
+        
+        const frontArrowPos = position.clone().addScaledVector(binormals[index], radius);
+        const frontArrowDir = normals[index].clone().multiplyScalar(isFlipped ? -1 : 1);
+        const frontArrow = createCustomArrow(THREE, frontArrowDir, config.poloidalArrowLength, '#ffffff');
+        frontArrow.position.copy(frontArrowPos);
+        ropeGroup.add(frontArrow);
+        
+        const backArrowPos = position.clone().addScaledVector(binormals[index], -radius);
+        const backArrowDir = normals[index].clone().multiplyScalar(isFlipped ? 1 : -1);
+        const backArrow = createCustomArrow(THREE, backArrowDir, config.poloidalArrowLength, '#ffffff');
+        backArrow.position.copy(backArrowPos);
+        ropeGroup.add(backArrow);
+    }
+
+    // Create Axial Arrow
+    const axialArrowGroup = new THREE.Group();
+    const axialBody = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, config.curveSegments, 0.1, 8, false),
+        new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false, transparent: true })
+    );
+    const arrowT = isFlipped ? 0 : 1;
+    const arrowHeadPosition = curve.getPoint(arrowT);
+    const tangent = curve.getTangent(arrowT).normalize();
+    const arrowDirection = isFlipped ? tangent.negate() : tangent;
+    const arrowheadQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), arrowDirection);
+    const axialHead = new THREE.Mesh(
+        new THREE.ConeGeometry(0.3, 0.8, 12),
+        new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false, transparent: true })
+    );
+    axialHead.position.copy(arrowHeadPosition);
+    axialHead.quaternion.copy(arrowheadQuaternion);
+    axialArrowGroup.add(axialBody);
+    axialArrowGroup.add(axialHead);
+    ropeGroup.add(axialArrowGroup);
+    // --- END OF NEW FLUX ROPE CREATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -587,26 +637,44 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- START OF MODIFICATION: Reverting Flux Rope Animation Logic ---
+      // --- NEW FLUX ROPE ANIMATION LOGIC ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
+            const cme: ProcessedCME = cmeObject.userData;
             fluxRopeRef.current.position.copy(cmeObject.position);
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
-            const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
-            fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
+
+            const cmeLength = cmeObject.scale.y;
+            // The flux rope curve has a natural height of 15. We scale it to match the CME length.
+            const scaleY = cmeLength / 15;
+            
+            // The flux rope curve has a natural width of 10 (from center). We scale it to be slightly smaller than the CME particle cone.
+            const coneRadius = cmeLength * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+            const scaleXZ = (coneRadius / 10) * 0.8; // 0.8 factor to make it smaller
+            
+            fluxRopeRef.current.scale.set(scaleXZ, scaleY, scaleXZ);
+
+            // Update opacity and color of all parts
+            const opacity = getCmeOpacity(cme.speed) * 1.5; // Make it slightly more visible
+            const color = getCmeCoreColor(cme.speed);
+
+            fluxRopeRef.current.traverse((child: any) => {
+                if (child.isMesh && child.material) {
+                    child.material.opacity = opacity;
+                    if(child.material.emissive) {
+                        child.material.emissive.copy(color);
+                    } else if (child.material.color) {
+                        child.material.color.copy(color);
+                    }
+                }
+            });
           }
         }
-        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
-      // --- END OF MODIFICATION ---
 
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
@@ -624,7 +692,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
-      if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
       sceneRef.current?.traverse((o:any) => {
