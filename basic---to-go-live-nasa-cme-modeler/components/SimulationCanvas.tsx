@@ -60,19 +60,19 @@ const createParticleTexture = (THREE: any) => {
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
-  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65);
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.1, 0.75);
 };
 
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 7000));
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 2000, 8000));
 };
 
 const getCmeParticleSize = (speed: number, scale: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.05 * scale;
-  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.08 * scale);
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.09 * scale);
 };
 
 const getCmeCoreColor = (speed: number): any => {
@@ -273,6 +273,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    
+    // --- MODIFICATION (BUG FIX): Set up tone mapping to handle bright lights ---
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
     setRendererDomElement(renderer.domElement);
@@ -625,6 +630,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
       const coneRadius = Math.tan(halfAngle);
 
+      // --- THE DEFINITIVE FIX IS HERE: `depthWrite` MUST BE `true` for particles to render correctly against the transparent Sun ---
+
       // Layer 1: Shock Front
       const shockCount = Math.floor(totalParticles * 0.15);
       const shockPositions = [];
@@ -644,7 +651,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const shockSystem = new THREE.Points(shockGeom, shockMat);
       shockSystem.userData = { originalPositions: Array.from({ length: shockCount }, (_, i) => new THREE.Vector3().fromBufferAttribute(shockGeom.attributes.position, i)) };
       cmeVisualGroup.add(shockSystem);
-
 
       // Layer 2: Core Plasma
       const coreCount = Math.floor(totalParticles * 0.7);
