@@ -589,8 +589,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
     
-    // --- MODIFICATION (BUG FIX): The faulty optimization has been removed.
-    // This code will now run whenever the CME data changes, correctly clearing and rebuilding the particle systems.
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
@@ -641,7 +639,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         map: particleTexture,
         transparent: true,
         opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending,
+        // --- MODIFICATION (BUG FIX): Changed blending mode ---
+        blending: THREE.NormalBlending,
         depthWrite: false,
         vertexColors: true
       });
@@ -653,7 +652,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
-    // --- MODIFICATION (BUG FIX): The dependency array is now correct.
   }, [cmeData, dataVersion, THREE]);
 
   useEffect(() => {
