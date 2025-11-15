@@ -253,8 +253,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
     
-    // --- MODIFICATION (BUG FIX): Reverted to uniform scaling.
-    // This scales the cone shape (both length and width) correctly.
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
@@ -591,8 +589,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
     
-    // --- MODIFICATION (BUG FIX): Removed the faulty optimization.
-    // This will now correctly clear and rebuild the CMEs whenever cmeData or dataVersion changes.
+    // --- MODIFICATION (BUG FIX): The faulty optimization has been removed.
+    // This code will now run whenever the CME data changes, correctly clearing and rebuilding the particle systems.
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
@@ -655,7 +653,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
-    // --- MODIFICATION (BUG FIX): Changed the dependency array to correctly trigger rebuilds.
+    // --- MODIFICATION (BUG FIX): The dependency array is now correct.
   }, [cmeData, dataVersion, THREE]);
 
   useEffect(() => {
