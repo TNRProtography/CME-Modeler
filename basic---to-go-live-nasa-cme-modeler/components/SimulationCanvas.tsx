@@ -60,19 +60,19 @@ const createParticleTexture = (THREE: any) => {
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
-  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.1, 0.75); // Increased opacity slightly
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.1, 0.75);
 };
 
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 2000, 8000)); // Adjusted counts
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 2000, 8000));
 };
 
 const getCmeParticleSize = (speed: number, scale: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.05 * scale;
-  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.09 * scale); // Adjusted sizes
+  return THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.09 * scale);
 };
 
 const getCmeCoreColor = (speed: number): any => {
@@ -505,7 +505,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const positions = particleSystem.geometry.attributes.position;
             const randomness = particleSystem.geometry.attributes.randomness;
             for (let i = 0; i < positions.count; i++) {
-                const r = randomness.getXYZ(i);
+                const r = new THREE.Vector3().fromBufferAttribute(randomness, i);
                 const original = particleSystem.userData.originalPositions[i];
                 
                 const x = original.x + Math.sin(elapsedTime * r.x) * 0.1;
@@ -624,8 +624,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const totalParticles = getCmeParticleCount(cme.speed);
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
       const coneRadius = Math.tan(halfAngle);
-
-      // --- THE FIX IS HERE: Set depthWrite to true for all particle materials ---
 
       // Layer 1: Shock Front
       const shockCount = Math.floor(totalParticles * 0.15);
