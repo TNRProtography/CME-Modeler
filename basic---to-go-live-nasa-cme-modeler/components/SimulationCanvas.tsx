@@ -583,19 +583,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [THREE, dataVersion]);
 
-  // Build CME particle systems
+  // --- MODIFICATION: Reinstated original particle effect with the critical bug fixes ---
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
-    
+
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
-      if ((c as any).geometry) (c as any).geometry.dispose();
-      if ((c as any).material) {
-        const m = (c as any).material;
-        if (Array.isArray(m)) m.forEach((x:any)=>x.dispose());
-        else m.dispose();
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        if (Array.isArray(c.material)) c.material.forEach((m:any) => m.dispose());
+        else c.material.dispose();
       }
     }
 
@@ -618,7 +617,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        pos.push(x, y, z);
 
         const relPos = y;
         const finalColor = new THREE.Color();
@@ -639,7 +638,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         transparent: true,
         opacity: getCmeOpacity(cme.speed),
         blending: THREE.AdditiveBlending,
-        depthWrite: true, // This is the definitive fix
+        depthWrite: true, // THE DEFINITIVE FIX
         vertexColors: true
       });
 
