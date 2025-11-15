@@ -11,7 +11,6 @@ import {
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER
 } from '../constants';
-// --- MODIFICATION: Import the new flux rope functions ---
 import { createFluxRopeGroup, updateFluxRope } from './FluxRope';
 
 
@@ -253,9 +252,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
-    // --- MODIFICATION: The bug was here. Scaling was incorrect for Points material.
-    // It should be (1, length, 1) to stretch the cone of points.
-    cmeObject.scale.set(1, cmeLength, 1);
+    
+    // --- MODIFICATION (BUG FIX): Reverted to uniform scaling.
+    // This scales the cone shape (both length and width) correctly.
+    cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
   useEffect(() => {
@@ -306,7 +306,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- MODIFICATION: Initialize the flux rope from the new component ---
     const ropeGroup = createFluxRopeGroup(THREE);
     fluxRopeRef.current = ropeGroup;
     scene.add(ropeGroup);
@@ -503,7 +502,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- MODIFICATION: Opacity is now updated inside the particle system build effect, but we keep this for potential dynamic changes.
       cmeGroupRef.current.children.forEach((c: any) => {
         if(c.material.opacity !== getCmeOpacity(c.userData.speed)) {
           c.material.opacity = getCmeOpacity(c.userData.speed);
@@ -547,7 +545,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- MODIFICATION: Animate the new flux rope ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
@@ -594,7 +591,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
 
-    // --- MODIFICATION: This check ensures we don't clear the group unnecessarily, preserving it across renders.
     if (cmeGroupRef.current.children.length > 0 && cmeGroupRef.current.children[0].userData.id === cmeData[0]?.id) {
         return;
     }
@@ -617,7 +613,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pos: number[] = [];
       const colors: number[] = [];
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      // --- MODIFICATION: The bug was here. The cone radius should be based on the Y-length of 1, not the absolute size.
       const coneRadius = Math.tan(halfAngle); 
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
@@ -630,7 +625,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
-        // --- MODIFICATION: This structure builds a cone pointing along the Y-axis.
         pos.push(x, y, z); 
 
         const relPos = y;
@@ -841,7 +835,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const d = c.userData;
       if (!d || !c.visible) return;
       const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
-      // --- MODIFICATION: The bug was also here. Use scale.y for length.
       const tip = c.position.clone().add(dir.clone().multiplyScalar(c.scale.y));
       if (tip.distanceTo(p) < PLANET_DATA_MAP.EARTH.size * 2.2 && d.speed > maxSpeed) maxSpeed = d.speed;
     });
