@@ -54,8 +54,12 @@ interface ControlsPanelProps {
   onShowExtraPlanetsChange: (show: boolean) => void;
   showMoonL1: boolean;
   onShowMoonL1Change: (show: boolean) => void;
-  showFluxRope: boolean; // --- NEW: Prop for Flux Rope ---
-  onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
+  showFluxRope: boolean;
+  onShowFluxRopeChange: (show: boolean) => void;
+  // --- NEW: Props for HSS ---
+  showHSS?: boolean; 
+  onShowHSSChange?: (show: boolean) => void;
+  // -------------------------
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -101,6 +105,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowMoonL1Change,
   showFluxRope,
   onShowFluxRopeChange,
+  showHSS = false, // Default
+  onShowHSSChange,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -179,6 +185,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <ToggleSwitch id="show-extra-planets-toggle" label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
             <ToggleSwitch id="show-moon-l1-toggle" label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
             <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
+            
+            {/* --- NEW: High Speed Stream Toggle --- */}
+            {onShowHSSChange && (
+                <ToggleSwitch 
+                    id="show-hss-toggle" 
+                    label="High Speed Streams" 
+                    checked={showHSS} 
+                    onChange={onShowHSSChange} 
+                />
+            )}
           </div>
         </div>
 
@@ -191,7 +207,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           </div>
         </div>
         
-        {/* --- MODIFICATION: Moved CME Speed Guide inside scrollable area --- */}
         <div className="pt-2">
             <ColorScaleGuide isMobileView={true} />
         </div>

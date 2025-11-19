@@ -3,10 +3,8 @@
 // src/constants.ts
 import { PlanetData, POIData } from './types';
 
-// --- THIS IS THE CORRECTED LINE ---
 // Vite uses import.meta.env to access environment variables
 export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
-// ------------------------------------
 
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
@@ -105,9 +103,6 @@ void main() {
     gl_FragColor = vec4(finalColor, baseIntensity + impactGlow);
 }`;
 
-// ------------------------------
-// AURORA SHADERS (UPDATED)
-// ------------------------------
 export const AURORA_VERTEX_SHADER = `
 varying vec3 vNormal;
 varying vec2 vUv;
@@ -193,8 +188,7 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE "SLINKY" SHADERS (REVERTED) ---
-
+// --- FLUX ROPE SHADERS (Original Glowing Wire) ---
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -218,41 +212,62 @@ varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
-    // Slinky Effect: Create a helical spiral pattern
-    // uTime shifts the pattern to simulate plasma flow away from the source
-    // vUv.x is along the tube length, vUv.y is around the tube circumference
+    // Helical spiral pattern
+    float frequency = 60.0; 
+    float speed = 2.0;      
+    float twist = 10.0;     
     
-    float frequency = 60.0; // Density of the coils
-    float speed = 2.0;      // Speed of flow
-    float twist = 10.0;     // Amount of twist around the tube
-    
-    // The core spiral pattern
     float coil = sin(vUv.x * frequency - uTime * speed + vUv.y * twist);
-    
-    // Sharpen the coil to look like distinct rings/filaments
     float ring = smoothstep(0.2, 0.8, coil);
     
-    // Add a second, fainter overlapping wave for complexity
     float secondary = sin(vUv.x * (frequency * 0.5) - uTime * (speed * 0.8) - vUv.y * 5.0);
     ring += smoothstep(0.4, 0.6, secondary) * 0.3;
 
-    // Rim lighting (fresnel) to make it look 3D and volumetric
     vec3 viewDir = normalize(vViewPosition);
     float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
-    
-    // Fade out at the start (near sun) and very end
     float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
     
-    vec3 glowColor = uColor + vec3(0.2); // Make the glow slightly whiter/brighter
+    vec3 glowColor = uColor + vec3(0.2);
     vec3 finalColor = mix(uColor, glowColor, fresnel);
     
-    // Combine alpha sources
     float alpha = (ring * 0.6 + 0.1) * fresnel * endsFade * uOpacity;
-    
-    // Boost alpha slightly on the edges for better visibility against space
     alpha += fresnel * 0.2 * endsFade * uOpacity;
 
     gl_FragColor = vec4(finalColor, alpha);
+}`;
+
+// --- HSS (High Speed Stream) SHADERS ---
+export const HSS_VERTEX_SHADER = `
+varying vec2 vUv;
+void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+export const HSS_FRAGMENT_SHADER = `
+uniform float uTime;
+varying vec2 vUv;
+
+void main() {
+    // vUv.x is along the spiral length
+    // Flowing effect
+    float flow = fract(vUv.x * 8.0 - uTime * 1.5);
+    
+    // Create a dashed/stream line look
+    float stream = smoothstep(0.4, 0.6, sin(flow * 3.14));
+    
+    // Fade out near the sun and at the end of the stream
+    float opacity = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.5, vUv.x);
+    
+    vec3 color = vec3(0.2, 0.8, 1.0); // Cyan/Blue for HSS
+    
+    // Add a subtle core glow
+    float core = 1.0 - abs(vUv.y - 0.5) * 2.0;
+    core = pow(core, 3.0);
+
+    float alpha = (stream * 0.6 + core * 0.4) * opacity * 0.5;
+
+    gl_FragColor = vec4(color, alpha); 
 }`;
 
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)

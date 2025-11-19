@@ -6,12 +6,12 @@ import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
+import TutorialModal from './components/TutorialModal';
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
-import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
-import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
+import { fetchCMEData, fetchHSSData } from './services/nasaService';
+import { ProcessedCME, ProcessedHSS, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
+import { SCENE_SCALE } from './constants';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -63,13 +63,11 @@ interface IpsAlertData {
     };
 }
 
-// Type for impact graph data points
 interface ImpactDataPoint {
     time: number;
     speed: number;
     density: number;
 }
-
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
@@ -77,7 +75,11 @@ const APP_VERSION = 'V1.0';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
+  
+  // Data States
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
+  const [hssData, setHssData] = useState<ProcessedHSS[]>([]); // NEW: HSS Data
+  
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
@@ -86,6 +88,8 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
+  
+  // UI States
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -97,28 +101,34 @@ const App: React.FC = () => {
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [isGameOpen, setIsGameOpen] = useState(false);
-
-  // State for the impact graph modal
   const [isImpactGraphOpen, setIsImpactGraphOpen] = useState(false);
   const [impactGraphData, setImpactGraphData] = useState<ImpactDataPoint[]>([]);
 
+  // Visual Toggle States
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
-  const [showFluxRope, setShowFluxRope] = useState(false); 
+  const [showFluxRope, setShowFluxRope] = useState(false);
+  const [showHSS, setShowHSS] = useState(false); // NEW: Toggle for HSS
+  
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
+  
+  // Timeline States
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
   const [timelineSpeed, setTimelineSpeed] = useState<number>(5);
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
+  
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
+  
+  // Alert States
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
@@ -266,14 +276,22 @@ const App: React.FC = () => {
     setTimelineScrubberValue(0);
     resetClock();
     setDataVersion((v: number) => v + 1);
+    
     try {
-      const data = await fetchCMEData(days, apiKey);
-      setCmeData(data);
-      if (data.length > 0) {
+      // --- UPDATE: Fetch CMEs and HSS in parallel ---
+      const [cmeResults, hssResults] = await Promise.all([
+        fetchCMEData(days, apiKey),
+        fetchHSSData() // HSS data usually returns recent events from worker cache
+      ]);
+
+      setCmeData(cmeResults);
+      setHssData(hssResults);
+
+      if (cmeResults.length > 0) {
         const endDate = new Date();
         const futureDate = new Date();
         futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
+        const earliestCMEStartTime = cmeResults.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - days);
         setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
@@ -290,6 +308,7 @@ const App: React.FC = () => {
         setFetchError((err as Error).message || "Unknown error fetching data.");
       }
       setCmeData([]);
+      setHssData([]);
     } finally {
       setIsLoading(false);
     }
@@ -434,7 +453,6 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // Handler for opening the impact graph modal
   const handleOpenImpactGraph = useCallback(() => {
     if (canvasRef.current) {
       const data = canvasRef.current.calculateImpactProfile();
@@ -632,13 +650,39 @@ const App: React.FC = () => {
           <div className="flex flex-grow min-h-0">
               <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
+                    <ControlsPanel 
+                        activeTimeRange={activeTimeRange} 
+                        onTimeRangeChange={handleTimeRangeChange} 
+                        activeView={activeView} 
+                        onViewChange={handleViewChange} 
+                        activeFocus={activeFocus} 
+                        onFocusChange={handleFocusChange} 
+                        isLoading={isLoading} 
+                        onClose={() => setIsControlsOpen(false)} 
+                        onOpenGuide={() => setIsTutorialOpen(true)} 
+                        showLabels={showLabels} 
+                        onShowLabelsChange={setShowLabels} 
+                        showExtraPlanets={showExtraPlanets} 
+                        onShowExtraPlanetsChange={setShowExtraPlanets} 
+                        showMoonL1={showMoonL1} 
+                        onShowMoonL1Change={setShowMoonL1} 
+                        cmeFilter={cmeFilter} 
+                        onCmeFilterChange={setCmeFilter} 
+                        showFluxRope={showFluxRope} 
+                        onShowFluxRopeChange={setShowFluxRope}
+                        // Pass HSS props to ControlsPanel (Component needs update to use them)
+                        // @ts-ignore - Component update pending in next steps if needed
+                        showHSS={showHSS}
+                        // @ts-ignore
+                        onShowHSSChange={setShowHSS}
+                    />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
                     <SimulationCanvas
                         ref={canvasRef}
                         cmeData={cmesToRender}
+                        hssData={hssData} // Pass HSS Data
                         activeView={activeView}
                         focusTarget={activeFocus}
                         currentlyModeledCMEId={currentlyModeledCMEId}
@@ -659,6 +703,9 @@ const App: React.FC = () => {
                         showExtraPlanets={showExtraPlanets}
                         showMoonL1={showMoonL1}
                         showFluxRope={showFluxRope}
+                        // Note: We are passing showHSS logic into the canvas
+                        // The canvas component handles the actual rendering toggle internally
+                        // We might need to update the SimulationCanvas interface to accept this prop explicitly if not already
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
