@@ -193,7 +193,7 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE SHADERS (WIRE STYLE WITH ARROWS) ---
+// --- FLUX ROPE "SLINKY" SHADERS (REVERTED) ---
 
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -212,67 +212,46 @@ export const FLUX_ROPE_FRAGMENT_SHADER = `
 uniform float uTime;
 uniform vec3 uColor;
 uniform float uOpacity;
-uniform float uPolarity; // 1.0 or -1.0
 
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
-    // vUv.x = Length along curve (0 at Sun, 1 at Tip)
-    // vUv.y = Circumference around tube
+    // Slinky Effect: Create a helical spiral pattern
+    // uTime shifts the pattern to simulate plasma flow away from the source
+    // vUv.x is along the tube length, vUv.y is around the tube circumference
+    
+    float frequency = 60.0; // Density of the coils
+    float speed = 2.0;      // Speed of flow
+    float twist = 10.0;     // Amount of twist around the tube
+    
+    // The core spiral pattern
+    float coil = sin(vUv.x * frequency - uTime * speed + vUv.y * twist);
+    
+    // Sharpen the coil to look like distinct rings/filaments
+    float ring = smoothstep(0.2, 0.8, coil);
+    
+    // Add a second, fainter overlapping wave for complexity
+    float secondary = sin(vUv.x * (frequency * 0.5) - uTime * (speed * 0.8) - vUv.y * 5.0);
+    ring += smoothstep(0.4, 0.6, secondary) * 0.3;
 
-    // --- 1. Twisted Wire Look ---
-    // Create helical lines running along the rope
-    float strands = 10.0; // Number of distinct field lines
-    float twist = 8.0;    // How much they spiral
-    float helix = vUv.y * strands + vUv.x * twist;
-    
-    float wirePattern = sin(helix * 3.14159);
-    float wires = smoothstep(0.5, 0.8, wirePattern); // Make lines sharp
-    
-    // --- 2. Directional Arrows ---
-    // Animate small pulses/arrows moving along the wires
-    float flowSpeed = 2.0;
-    float flowPos = vUv.x * 8.0 - uTime * flowSpeed * uPolarity;
-    float localFlow = fract(flowPos);
-    
-    // Create an arrowhead shape: Sharp tip, trailing tail
-    float arrow = 0.0;
-    if (uPolarity > 0.0) {
-        // Moving forward (0 -> 1)
-        // Peak at 1.0
-        arrow = smoothstep(0.0, 1.0, localFlow);
-        arrow = pow(arrow, 15.0); // Sharpen
-    } else {
-        // Moving backward (1 -> 0)
-        // Peak at 0.0
-        arrow = smoothstep(1.0, 0.0, localFlow);
-        arrow = pow(arrow, 15.0);
-    }
-    
-    // Restrict arrows to sit ON the wires
-    float arrowMask = arrow * wires;
-
-    // --- 3. Color & Lighting ---
-    vec3 baseGlow = uColor * wires * 0.3;     // Dim orange lines
-    vec3 arrowColor = vec3(1.0, 1.0, 1.0);    // White arrows
-    
-    vec3 finalColor = mix(baseGlow, arrowColor, arrowMask);
-    
-    // Add rim lighting (Fresnel) for 3D volume
+    // Rim lighting (fresnel) to make it look 3D and volumetric
     vec3 viewDir = normalize(vViewPosition);
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
     
-    finalColor += uColor * fresnel * 0.4;
+    // Fade out at the start (near sun) and very end
+    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
     
-    // --- 4. Alpha/Opacity ---
-    // Fade near the sun (start) and tip (end)
-    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
+    vec3 glowColor = uColor + vec3(0.2); // Make the glow slightly whiter/brighter
+    vec3 finalColor = mix(uColor, glowColor, fresnel);
     
-    // Combine transparency
-    float alpha = (wires * 0.2 + arrowMask * 0.9 + fresnel * 0.2) * uOpacity * endsFade;
+    // Combine alpha sources
+    float alpha = (ring * 0.6 + 0.1) * fresnel * endsFade * uOpacity;
     
+    // Boost alpha slightly on the edges for better visibility against space
+    alpha += fresnel * 0.2 * endsFade * uOpacity;
+
     gl_FragColor = vec4(finalColor, alpha);
 }`;
 

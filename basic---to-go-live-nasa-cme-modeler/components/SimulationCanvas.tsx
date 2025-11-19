@@ -1,6 +1,6 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
-import React, { useRef, useEffect, useCallback, useImperativeHandle, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
   InteractionMode, SimulationCanvasHandle
@@ -140,8 +140,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     onSunClick,
   } = props;
 
-  const [fluxRopePolarity, setFluxRopePolarity] = useState<number>(1);
-
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
   const sceneRef = useRef<any>(null);
@@ -167,19 +165,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
     timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope, fluxRopePolarity
+    showFluxRope
   });
 
   useEffect(() => {
     animPropsRef.current = {
       onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, fluxRopePolarity
+      showFluxRope
     };
   }, [
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
     timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope, fluxRopePolarity
+    showFluxRope
   ]);
 
   const THREE = (window as any).THREE;
@@ -433,12 +431,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                    if (onSunClick) onSunClick();
                    return;
                 }
-
-                // Check for Flux Rope Click to toggle polarity
-                if (firstHit.object.name === 'flux-rope') {
-                   setFluxRopePolarity(prev => prev * -1);
-                   return;
-                }
             }
         }
     };
@@ -453,7 +445,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const {
         currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed,
         timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd,
-        showFluxRope, fluxRopePolarity
+        showFluxRope
       } = animPropsRef.current;
 
       const elapsedTime = getClockElapsedTime();
@@ -544,7 +536,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
              if (fluxRope.visible) {
                  if (fluxRope.material.uniforms) {
                      fluxRope.material.uniforms.uTime.value = elapsedTime;
-                     fluxRope.material.uniforms.uPolarity.value = fluxRopePolarity;
                  }
              }
          }
@@ -647,20 +638,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
 
       // --- CREATE FLUX ROPE ---
-      // Create a Bulbous / Inverted Teardrop shape (REVERTED TO PREVIOUS STYLE)
+      // Create a Bulbous / Inverted Teardrop shape.
       // Wide near the top, tapering to pinch at the sun.
       
-      const ropeWidth = coneRadius * 0.8; 
-      const ropeHeight = 0.95; 
-      const twistZ = ropeWidth * 0.3; 
+      const ropeWidth = coneRadius * 0.8; // Occupy 80% of the cone width
+      const ropeHeight = 0.95; // Almost full length
+      const twistZ = ropeWidth * 0.3; // Slight 3D twist depth
 
-      // Curve geometry points matching the "Teardrop" look
+      // Define points for the loop:
+      // Starts near (0,0,0), goes up one side, arches over the top, comes down the other side.
       const curve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(-ropeWidth * 0.1, 0.0, 0),           // Pinch at Sun
           new THREE.Vector3(-ropeWidth * 0.5, ropeHeight * 0.3, twistZ * 0.5), // Taper out
-          new THREE.Vector3(-ropeWidth, ropeHeight * 0.7, twistZ),             // Widest point
-          new THREE.Vector3(0, ropeHeight, 0),                   // Rounded Tip
-          new THREE.Vector3(ropeWidth, ropeHeight * 0.7, -twistZ),             // Widest point
+          new THREE.Vector3(-ropeWidth, ropeHeight * 0.7, twistZ),             // Widest point (Shoulder)
+          new THREE.Vector3(0, ropeHeight, 0),                   // Rounded Tip (Front)
+          new THREE.Vector3(ropeWidth, ropeHeight * 0.7, -twistZ),             // Widest point (Shoulder)
           new THREE.Vector3(ropeWidth * 0.5, ropeHeight * 0.3, -twistZ * 0.5), // Taper in
           new THREE.Vector3(ropeWidth * 0.1, 0.0, 0)             // Pinch at Sun
       ]);
@@ -673,8 +665,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           uniforms: {
               uTime: { value: 0 },
               uColor: { value: coreColor },
-              uOpacity: { value: 0.9 },
-              uPolarity: { value: 1.0 } // Default value
+              uOpacity: { value: 0.9 }
           },
           transparent: true,
           blending: THREE.AdditiveBlending,
@@ -684,9 +675,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const fluxRopeMesh = new THREE.Mesh(tubeGeom, ropeMat);
       fluxRopeMesh.name = 'flux-rope';
-      fluxRopeMesh.visible = false; 
+      fluxRopeMesh.visible = false; // Hidden by default until enabled
       
-      system.add(fluxRopeMesh);
+      system.add(fluxRopeMesh); // Attach to the particle system so it scales/rotates with it
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
@@ -913,24 +904,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, []);
 
-  return (
-      <div ref={mountRef} className="w-full h-full relative">
-        {/* Overlay for Flux Rope Polarity Toggle - Only visible when Flux Rope is active */}
-        {currentlyModeledCMEId && showFluxRope && (
-             <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto">
-                 <button
-                     onClick={() => setFluxRopePolarity(p => p * -1)}
-                     className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 text-neutral-200 px-4 py-2 rounded-full font-medium text-sm shadow-xl hover:bg-neutral-800 active:scale-95 transition-all flex items-center gap-2"
-                 >
-                     <svg xmlns="http://www.w3.org/2000/svg" className={`w-4 h-4 transition-transform duration-300 ${fluxRopePolarity > 0 ? 'rotate-0' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                     </svg>
-                     Flip Field Direction ({fluxRopePolarity > 0 ? 'N' : 'S'})
-                 </button>
-             </div>
-        )}
-      </div>
-  );
+  return <div ref={mountRef} className="w-full h-full" />;
 };
 
 export default React.forwardRef(SimulationCanvas);
