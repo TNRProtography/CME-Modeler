@@ -156,7 +156,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
-  
+
   // Note: fluxRopeRef removed in favor of attaching specific ropes to specific CMEs
 
   const starsNearRef = useRef<any>(null);
@@ -395,7 +395,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       poiMesh.userData = data;
       scene.add(poiMesh);
       celestialBodiesRef.current[name] = { mesh: poiMesh, name: data.name, labelId: data.labelElementId, userData: data };
-      planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: poiMesh });
+      planetLabelInfos.push({ id: data.labelElementId, name: data.name, labelId: data.labelElementId, userData: data });
     });
 
     setPlanetMeshesForLabels(planetLabelInfos);
@@ -646,20 +646,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
 
       // --- CREATE FLUX ROPE ---
-      // Create a U-shape curve that fits within the CME cone.
-      // It starts at one edge, loops up to the leading edge, and comes back down the other side.
-      const ropeWidth = coneRadius * 0.6; // Slightly smaller than full cone width
-      const ropeHeight = 0.9; // Length along the cone (normalized to 1.0)
+      // Create a Bulbous / Inverted Teardrop shape.
+      // Wide near the top, tapering to pinch at the sun.
+      // The flux rope sits inside the CME cone.
       
+      const ropeWidth = coneRadius * 0.8; // Occupy 80% of the cone width
+      const ropeHeight = 0.95; // Almost full length
+      const twistZ = ropeWidth * 0.3; // Slight 3D twist depth
+
+      // Define points for the loop:
+      // Starts near (0,0,0), goes up one side, arches over the top, comes down the other side.
       const curve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(-ropeWidth, 0.0, 0),
-          new THREE.Vector3(-ropeWidth * 0.8, ropeHeight * 0.5, 0),
-          new THREE.Vector3(0, ropeHeight, 0),
-          new THREE.Vector3(ropeWidth * 0.8, ropeHeight * 0.5, 0),
-          new THREE.Vector3(ropeWidth, 0.0, 0)
+          new THREE.Vector3(-ropeWidth * 0.1, 0.0, 0),           // Pinch at Sun
+          new THREE.Vector3(-ropeWidth * 0.5, ropeHeight * 0.3, twistZ * 0.5), // Taper out
+          new THREE.Vector3(-ropeWidth, ropeHeight * 0.7, twistZ),             // Widest point (Shoulder)
+          new THREE.Vector3(0, ropeHeight, 0),                   // Rounded Tip (Front)
+          new THREE.Vector3(ropeWidth, ropeHeight * 0.7, -twistZ),             // Widest point (Shoulder)
+          new THREE.Vector3(ropeWidth * 0.5, ropeHeight * 0.3, -twistZ * 0.5), // Taper in
+          new THREE.Vector3(ropeWidth * 0.1, 0.0, 0)             // Pinch at Sun
       ]);
 
-      const tubeGeom = new THREE.TubeGeometry(curve, 64, 0.03, 8, false); // 0.03 radius scaled by CME size
+      // Create a thicker tube to see the field lines clearly
+      const tubeGeom = new THREE.TubeGeometry(curve, 64, 0.06, 16, false); 
       const ropeMat = new THREE.ShaderMaterial({
           vertexShader: FLUX_ROPE_VERTEX_SHADER,
           fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,

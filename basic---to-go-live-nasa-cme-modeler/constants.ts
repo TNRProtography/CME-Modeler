@@ -200,7 +200,7 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE "SLINKY" SHADERS ---
+// --- FLUX ROPE SHADERS (UPDATED FOR FIELD LINES) ---
 
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -225,39 +225,52 @@ varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
-    // Slinky Effect: Create a helical spiral pattern
-    // uTime shifts the pattern to simulate plasma flow away from the source
-    // vUv.x is along the tube length, vUv.y is around the tube circumference
+    // Field Lines Visualization:
+    // Create distinct, high-contrast twisted lines (helical) along the tube.
+    // vUv.x = length of tube (0 at Sun, 1 at Tip)
+    // vUv.y = circumference
     
-    float frequency = 60.0; // Density of the coils
-    float speed = 2.0;      // Speed of flow
-    float twist = 10.0;     // Amount of twist around the tube
+    float linesCount = 18.0;     // Number of distinct field lines
+    float twistRate = 10.0;      // How many times the lines wrap around the rope length
+    float flowSpeed = 2.0;       // Speed of the plasma flow animation
     
-    // The core spiral pattern
-    float coil = sin(vUv.x * frequency - uTime * speed + vUv.y * twist);
+    // Helical coordinate: y (circumference) + x offset (twist)
+    // We subtract uTime to animate flow outward
+    float helix = (vUv.y * linesCount) + (vUv.x * twistRate) - (uTime * flowSpeed);
     
-    // Sharpen the coil to look like distinct rings/filaments
-    float ring = smoothstep(0.2, 0.8, coil);
+    // Generate a repeating sine pattern
+    float pattern = sin(helix);
     
-    // Add a second, fainter overlapping wave for complexity
-    float secondary = sin(vUv.x * (frequency * 0.5) - uTime * (speed * 0.8) - vUv.y * 5.0);
-    ring += smoothstep(0.4, 0.6, secondary) * 0.3;
-
-    // Rim lighting (fresnel) to make it look 3D and volumetric
+    // Sharpen the sine wave into distinct strands (tubes)
+    // smoothstep creates hard edges for high contrast
+    float strands = smoothstep(0.4, 0.5, pattern) - smoothstep(0.9, 1.0, pattern);
+    
+    // Rim lighting (Fresnel) for 3D volume effect
     vec3 viewDir = normalize(vViewPosition);
     float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
     
-    // Fade out at the start (near sun) and very end
-    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+    // Fade Logic:
+    // Fade sharply at the Sun (start) to avoid clipping artifacts
+    // Fade gently at the Tip (end) for a plasma dissipating look
+    float endsFade = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.8, vUv.x);
     
-    vec3 glowColor = uColor + vec3(0.2); // Make the glow slightly whiter/brighter
-    vec3 finalColor = mix(uColor, glowColor, fresnel);
+    // Color Composition:
+    // Base is faint, Strands are bright
+    vec3 baseColor = uColor * 0.3;
+    vec3 strandColor = uColor * 1.5;
+    vec3 finalColor = mix(baseColor, strandColor, strands);
     
-    // Combine alpha sources
-    float alpha = (ring * 0.6 + 0.1) * fresnel * endsFade * uOpacity;
+    // Add white highlight to the edges of strands for "electric" look
+    float highlights = smoothstep(0.45, 0.5, pattern) - smoothstep(0.5, 0.55, pattern);
+    finalColor += vec3(1.0) * highlights * 0.5;
     
-    // Boost alpha slightly on the edges for better visibility against space
-    alpha += fresnel * 0.2 * endsFade * uOpacity;
+    // Add fresnel glow
+    finalColor += uColor * fresnel * 0.5;
+
+    // Alpha logic
+    float alpha = (0.2 + strands * 0.8) * endsFade * uOpacity;
+    // Enhance edge visibility
+    alpha = max(alpha, fresnel * 0.4 * endsFade * uOpacity);
 
     gl_FragColor = vec4(finalColor, alpha);
 }`;
