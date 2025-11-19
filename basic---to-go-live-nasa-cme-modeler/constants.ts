@@ -200,7 +200,7 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE SHADERS (UPDATED FOR FIELD LINES) ---
+// --- FLUX ROPE SHADERS (UPDATED FOR VISIBLE FIELD LINES & POLARITY) ---
 
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -219,58 +219,72 @@ export const FLUX_ROPE_FRAGMENT_SHADER = `
 uniform float uTime;
 uniform vec3 uColor;
 uniform float uOpacity;
+uniform float uPolarity; // 1.0 or -1.0 for flow direction
 
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
-    // Field Lines Visualization:
-    // Create distinct, high-contrast twisted lines (helical) along the tube.
-    // vUv.x = length of tube (0 at Sun, 1 at Tip)
-    // vUv.y = circumference
+    // vUv.x is along the length (0 at Sun, 1 at Tip)
+    // vUv.y is circumference
+
+    // 1. Base Helical Structure
+    // Create repeating rings (coils)
+    float coilFreq = 30.0;
+    float helix = vUv.y + vUv.x * coilFreq;
+    float coil = 0.5 + 0.5 * sin(helix * 6.28);
     
-    float linesCount = 18.0;     // Number of distinct field lines
-    float twistRate = 10.0;      // How many times the lines wrap around the rope length
-    float flowSpeed = 2.0;       // Speed of the plasma flow animation
+    // Sharpen the coil to distinct bands
+    float rings = smoothstep(0.2, 0.3, coil) - smoothstep(0.8, 0.9, coil);
     
-    // Helical coordinate: y (circumference) + x offset (twist)
-    // We subtract uTime to animate flow outward
-    float helix = (vUv.y * linesCount) + (vUv.x * twistRate) - (uTime * flowSpeed);
+    // 2. Directional Indicators (Arrows/Pulses)
+    // We create a moving pattern that looks like "comets" or arrows
+    // Flow direction depends on uPolarity
+    float flowSpeed = 5.0;
+    float flowOffset = uTime * flowSpeed * -uPolarity; 
     
-    // Generate a repeating sine pattern
-    float pattern = sin(helix);
+    // We place directional markers along the helix
+    float markerFreq = 25.0; 
+    float markerPhase = helix + flowOffset;
+    float markerCycle = fract(markerPhase);
     
-    // Sharpen the sine wave into distinct strands (tubes)
-    // smoothstep creates hard edges for high contrast
-    float strands = smoothstep(0.4, 0.5, pattern) - smoothstep(0.9, 1.0, pattern);
+    // Create a tapered shape: Sharp leading edge, soft tail
+    float markerShape = 0.0;
+    if (uPolarity > 0.0) {
+        // Forward: Sharp at 1.0, tail towards 0.0
+        markerShape = smoothstep(0.0, 1.0, markerCycle);
+        markerShape = pow(markerShape, 5.0); // Make it pointy
+        // Cut off strictly at 1.0 (wrap)
+        // Add a little gap
+        markerShape *= step(0.1, markerCycle);
+    } else {
+        // Backward: Sharp at 0.0, tail towards 1.0
+        markerShape = smoothstep(1.0, 0.0, markerCycle);
+        markerShape = pow(markerShape, 5.0);
+        markerShape *= step(markerCycle, 0.9);
+    }
     
-    // Rim lighting (Fresnel) for 3D volume effect
+    // 3. Combine
+    // Base color is the coil (orange/red)
+    // Marker color is bright white/yellow
+    vec3 baseGlow = uColor * (0.1 + 0.4 * rings);
+    vec3 markerColor = vec3(1.0, 1.0, 0.9) * 2.0; // Overbright
+    
+    vec3 finalColor = mix(baseGlow, markerColor, markerShape * 0.9); // Markers dominate
+    
+    // 4. Rim Lighting (Fresnel) for volume
     vec3 viewDir = normalize(vViewPosition);
     float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
-    
-    // Fade Logic:
-    // Fade sharply at the Sun (start) to avoid clipping artifacts
-    // Fade gently at the Tip (end) for a plasma dissipating look
-    float endsFade = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.8, vUv.x);
-    
-    // Color Composition:
-    // Base is faint, Strands are bright
-    vec3 baseColor = uColor * 0.3;
-    vec3 strandColor = uColor * 1.5;
-    vec3 finalColor = mix(baseColor, strandColor, strands);
-    
-    // Add white highlight to the edges of strands for "electric" look
-    float highlights = smoothstep(0.45, 0.5, pattern) - smoothstep(0.5, 0.55, pattern);
-    finalColor += vec3(1.0) * highlights * 0.5;
-    
-    // Add fresnel glow
     finalColor += uColor * fresnel * 0.5;
-
-    // Alpha logic
-    float alpha = (0.2 + strands * 0.8) * endsFade * uOpacity;
-    // Enhance edge visibility
-    alpha = max(alpha, fresnel * 0.4 * endsFade * uOpacity);
+    
+    // 5. Fade at ends (Near sun and very tip)
+    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+    
+    // 6. Alpha
+    // Visible where there are rings OR markers, plus some base transparency
+    float alpha = (0.1 + rings * 0.3 + markerShape * 0.8) * uOpacity * endsFade;
+    alpha = max(alpha, fresnel * 0.3 * uOpacity * endsFade); // Keep edges visible
 
     gl_FragColor = vec4(finalColor, alpha);
 }`;

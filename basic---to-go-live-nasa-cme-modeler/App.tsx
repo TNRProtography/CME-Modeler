@@ -18,7 +18,7 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
+import ForecastIcon from './components/icons/ForecastIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
 import SunIcon from './components/icons/SunIcon';
 import CmeIcon from './components/icons/CmeIcon';
@@ -35,7 +35,7 @@ import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
-import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
+import ImpactGraphModal from './components/ImpactGraphModal';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -63,7 +63,7 @@ interface IpsAlertData {
     };
 }
 
-// --- NEW: Type for impact graph data points ---
+// Type for impact graph data points
 interface ImpactDataPoint {
     time: number;
     speed: number;
@@ -98,7 +98,7 @@ const App: React.FC = () => {
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [isGameOpen, setIsGameOpen] = useState(false);
 
-  // --- NEW: State for the impact graph modal ---
+  // State for the impact graph modal
   const [isImpactGraphOpen, setIsImpactGraphOpen] = useState(false);
   const [impactGraphData, setImpactGraphData] = useState<ImpactDataPoint[]>([]);
 
@@ -434,7 +434,7 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // --- NEW: Handler for opening the impact graph modal ---
+  // Handler for opening the impact graph modal
   const handleOpenImpactGraph = useCallback(() => {
     if (canvasRef.current) {
       const data = canvasRef.current.calculateImpactProfile();
@@ -757,7 +757,7 @@ const App: React.FC = () => {
               setViewerMedia={setViewerMedia}
           />
 
-          {/* --- NEW: Render the ImpactGraphModal --- */}
+          {/* Render the ImpactGraphModal */}
           <ImpactGraphModal
             isOpen={isImpactGraphOpen}
             onClose={() => setIsImpactGraphOpen(false)}

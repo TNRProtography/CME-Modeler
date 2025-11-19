@@ -1,6 +1,6 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
-import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle, useState } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
   InteractionMode, SimulationCanvasHandle
@@ -14,23 +14,16 @@ import {
 } from '../constants';
 
 /** =========================================================
- *  STABLE, HOTLINK-SAFE TEXTURE URLS (Wikimedia + Wellesley)
+ *  STABLE, HOTLINK-SAFE TEXTURE URLS
  *  ========================================================= */
 const TEX = {
-  EARTH_DAY:
-    "https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg",
-  EARTH_NORMAL:
-    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_normal_2048.jpg",
-  EARTH_SPEC:
-    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_specular_2048.jpg",
-  EARTH_CLOUDS:
-    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_clouds_2048.png",
-  MOON:
-    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/moon_1024.jpg",
-  SUN_PHOTOSPHERE:
-    "https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg",
-  MILKY_WAY:
-    "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
+  EARTH_DAY: "https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg",
+  EARTH_NORMAL: "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_normal_2048.jpg",
+  EARTH_SPEC: "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_specular_2048.jpg",
+  EARTH_CLOUDS: "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_clouds_2048.png",
+  MOON: "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/moon_1024.jpg",
+  SUN_PHOTOSPHERE: "https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg",
+  MILKY_WAY: "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
 };
 
 /** =========================================================
@@ -147,6 +140,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     onSunClick,
   } = props;
 
+  // Internal state for Flux Rope polarity (1 or -1)
+  const [fluxRopePolarity, setFluxRopePolarity] = useState<number>(1);
+
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
   const sceneRef = useRef<any>(null);
@@ -156,8 +152,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
-
-  // Note: fluxRopeRef removed in favor of attaching specific ropes to specific CMEs
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
@@ -174,19 +168,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
     timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope,
+    showFluxRope, fluxRopePolarity
   });
 
   useEffect(() => {
     animPropsRef.current = {
       onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope,
+      showFluxRope, fluxRopePolarity
     };
   }, [
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
     timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope,
+    showFluxRope, fluxRopePolarity
   ]);
 
   const THREE = (window as any).THREE;
@@ -431,13 +425,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             
             raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
             
-            const sunObject = celestialBodiesRef.current['SUN']?.mesh;
-            if (sunObject) {
-                const intersects = raycasterRef.current.intersectObject(sunObject);
-                if (intersects.length > 0) {
-                    if (onSunClick) {
-                        onSunClick();
-                    }
+            const intersects = raycasterRef.current.intersectObjects(sceneRef.current.children, true);
+            if (intersects.length > 0) {
+                const firstHit = intersects[0];
+                
+                // Check for Sun Click
+                if (firstHit.object.name === 'sun-shader' || firstHit.object.name === 'sun-photosphere') {
+                   if (onSunClick) onSunClick();
+                   return;
+                }
+
+                // Check for Flux Rope Click to toggle polarity
+                if (firstHit.object.name === 'flux-rope') {
+                   setFluxRopePolarity(prev => prev * -1);
+                   return;
                 }
             }
         }
@@ -453,7 +454,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const {
         currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed,
         timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd,
-        showFluxRope
+        showFluxRope, fluxRopePolarity
       } = animPropsRef.current;
 
       const elapsedTime = getClockElapsedTime();
@@ -544,6 +545,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
              if (fluxRope.visible) {
                  if (fluxRope.material.uniforms) {
                      fluxRope.material.uniforms.uTime.value = elapsedTime;
+                     fluxRope.material.uniforms.uPolarity.value = fluxRopePolarity;
                  }
              }
          }
@@ -674,7 +676,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           uniforms: {
               uTime: { value: 0 },
               uColor: { value: coreColor },
-              uOpacity: { value: 0.9 }
+              uOpacity: { value: 0.9 },
+              uPolarity: { value: 1.0 } // Default value
           },
           transparent: true,
           blending: THREE.AdditiveBlending,
@@ -913,7 +916,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, []);
 
-  return <div ref={mountRef} className="w-full h-full" />;
+  return (
+      <div ref={mountRef} className="w-full h-full relative">
+        {/* Overlay for Flux Rope Polarity Toggle - Only visible when Flux Rope is active */}
+        {currentlyModeledCMEId && showFluxRope && (
+             <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto">
+                 <button
+                     onClick={() => setFluxRopePolarity(p => p * -1)}
+                     className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 text-neutral-200 px-4 py-2 rounded-full font-medium text-sm shadow-xl hover:bg-neutral-800 active:scale-95 transition-all flex items-center gap-2"
+                 >
+                     <svg xmlns="http://www.w3.org/2000/svg" className={`w-4 h-4 transition-transform duration-300 ${fluxRopePolarity > 0 ? 'rotate-0' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                     </svg>
+                     Flip Field Direction ({fluxRopePolarity > 0 ? 'N' : 'S'})
+                 </button>
+             </div>
+        )}
+      </div>
+  );
 };
 
 export default React.forwardRef(SimulationCanvas);
