@@ -17,7 +17,6 @@ import { SCENE_SCALE } from './constants';
 import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
-import GlobeIcon from './components/icons/GlobeIcon';
 import SunIcon from './components/icons/SunIcon';
 import CmeIcon from './components/icons/CmeIcon';
 
@@ -107,7 +106,7 @@ const App: React.FC = () => {
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [showFluxRope, setShowFluxRope] = useState(false);
-  const [showHSS, setShowHSS] = useState(true); // Default HSS to true
+  const [showHSS, setShowHSS] = useState(true);
   
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   
@@ -213,7 +212,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
-      setTimeout(() => setShowInitialLoader(false), 1000); // Increased for smoother fade
+      setTimeout(() => setShowInitialLoader(false), 1000);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
 
@@ -461,7 +460,6 @@ const App: React.FC = () => {
   }, []);
 
   const handleDownloadImage = useCallback(() => {
-      // ... (Logic maintained from original file for brevity)
       const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
       if (!dataUrl || !rendererDomElement || !threeCamera) return;
       
@@ -579,10 +577,7 @@ const App: React.FC = () => {
                         onCmeFilterChange={setCmeFilter} 
                         showFluxRope={showFluxRope} 
                         onShowFluxRopeChange={setShowFluxRope}
-                        // Pass HSS props to ControlsPanel
-                        // @ts-ignore 
                         showHSS={showHSS}
-                        // @ts-ignore
                         onShowHSSChange={setShowHSS}
                     />
                 </div>
@@ -591,7 +586,7 @@ const App: React.FC = () => {
                     <SimulationCanvas
                         ref={canvasRef}
                         cmeData={cmesToRender}
-                        hssData={hssData} // Pass HSS Data
+                        hssData={hssData} 
                         activeView={activeView}
                         focusTarget={activeFocus}
                         currentlyModeledCMEId={currentlyModeledCMEId}
@@ -612,13 +607,11 @@ const App: React.FC = () => {
                         showExtraPlanets={showExtraPlanets}
                         showMoonL1={showMoonL1}
                         showFluxRope={showFluxRope}
-                        // @ts-ignore - Add this prop to SimulationCanvas props interface in next file
                         showHSS={showHSS} 
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
                     />
-                    {/* ... (Labels rendering) ... */}
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
 
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
@@ -635,9 +628,19 @@ const App: React.FC = () => {
                                 </button>
                                 <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
                             </div>
-                            {/* ... (Other Buttons) ... */}
+                            <div className="flex flex-col items-center w-14">
+                                <button id="forecast-models-button" onClick={() => setIsForecastModelsModalOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME Forecast Models">
+                                    <GlobeIcon className="w-6 h-6" />
+                                </button>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Forecast Models</span>
+                            </div>
+                            <div className="flex flex-col items-center w-14">
+                                <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
+                                    <DownloadIcon className="w-6 h-6" />
+                                </button>
+                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Download Image</span>
+                            </div>
                         </div>
-                        {/* ... (Right Buttons) ... */}
                         <div className="flex items-start text-center space-x-2 pointer-events-auto">
                             <div className="flex flex-col items-center w-14 lg:hidden">
                                 <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME List">
@@ -658,7 +661,6 @@ const App: React.FC = () => {
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
               </div>
-              {/* ... (Dashboard components) ... */}
               <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
                   <ForecastDashboard
                       setViewerMedia={setViewerMedia}
@@ -714,7 +716,6 @@ const App: React.FC = () => {
           {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
 
           {showIabBanner && (
-             // ... (IAB Banner logic preserved)
              <div className="pointer-events-auto" style={{ position: 'fixed', bottom: '1rem', left: '1rem', right: '1rem', background: '#171717', padding: '1rem', zIndex: 9999, borderRadius: '12px' }}>
                  <p>Install App</p>
                  <button onClick={() => setShowIabBanner(false)}>Close</button>
@@ -726,3 +727,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+// --- END OF FILE App.tsx ---
