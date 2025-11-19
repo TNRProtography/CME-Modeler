@@ -1,3 +1,5 @@
+// --- START OF FILE src/components/FirstVisitTutorial.tsx ---
+
 import React, { useState, useEffect, useMemo } from 'react';
 
 interface TutorialStep {
@@ -99,7 +101,7 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   
   const currentStep = STEPS[stepIndex];
 
-  const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
+  const { tooltipStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { 
           tooltipStyle: { opacity: 0, visibility: 'hidden' as const }, 
@@ -184,3 +186,4 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
 };
 
 export default FirstVisitTutorial;
+// --- END OF FILE src/components/FirstVisitTutorial.tsx ---

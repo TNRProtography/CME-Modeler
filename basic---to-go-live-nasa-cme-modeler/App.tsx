@@ -17,8 +17,11 @@ import { SCENE_SCALE } from './constants';
 import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import ForecastIcon from './components/icons/ForecastIcon';
+import GlobeIcon from './components/icons/GlobeIcon';
 import SunIcon from './components/icons/SunIcon';
 import CmeIcon from './components/icons/CmeIcon';
+import MoveIcon from './components/icons/MoveIcon';
+import SelectIcon from './components/icons/SelectIcon';
 
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';

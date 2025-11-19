@@ -814,3 +814,4 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 };
 
 export default React.forwardRef(SimulationCanvas);
+// --- END OF FILE src/components/SimulationCanvas.tsx ---

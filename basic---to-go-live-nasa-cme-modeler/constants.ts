@@ -2,11 +2,12 @@
 
 import { PlanetData, POIData } from './types';
 
+// Vite uses import.meta.env to access environment variables
 export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
 
 export const AU_IN_KM = 149597870.7;
-export const SCENE_SCALE = 3.0; 
-export const SUN_ANGULAR_VELOCITY = 2.61799e-6; 
+export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
+export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day synodic period)
 
 export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 1.2, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
@@ -14,7 +15,7 @@ export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   EARTH:   { name: 'Earth',   radius: 1.0   * SCENE_SCALE, size: 0.02  * SCENE_SCALE, color: 0x2a6a9c, angle: 0,   labelElementId: 'earth-label',   orbitalPeriodDays: 365.25 },
   MOON:    { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
   MARS:    { name: 'Mars',    radius: 1.52  * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 5.1, labelElementId: 'mars-label',    orbitalPeriodDays: 687 },
-  SUN:     { name: 'Sun',     radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' }
+  SUN:     { name: 'Sun',     radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' } // Sun data for consistency
 };
 
 export const POI_DATA_MAP: Record<string, POIData> = {
@@ -24,7 +25,7 @@ export const POI_DATA_MAP: Record<string, POIData> = {
     color: 0xffaaff,
     labelElementId: 'l1-label',
     parent: 'EARTH',
-    distanceFromParent: (15e6 / AU_IN_KM) * SCENE_SCALE, 
+    distanceFromParent: (15e6 / AU_IN_KM) * SCENE_SCALE, // Visually exaggerated distance (~15M km) for clarity
   }
 };
 
@@ -90,6 +91,7 @@ void main() {
     float impactGlow = 0.0;
     float timeSinceImpact = uTime - uImpactTime;
     
+    // Animate glow for 2.5 seconds after impact
     if (uImpactTime > 0.0 && timeSinceImpact > 0.0 && timeSinceImpact < 2.5) {
         impactGlow = sin(timeSinceImpact * 5.0 - length(vNormal) * 2.0) * 0.5 + 0.5;
         impactGlow *= smoothstep(2.5, 0.0, timeSinceImpact);
@@ -111,13 +113,14 @@ void main() {
 
 export const AURORA_FRAGMENT_SHADER = `
 uniform float uTime;
-uniform float uCmeSpeed;
-uniform float uImpactTime;
-uniform float uAuroraMinY;
-uniform float uAuroraIntensity;
+uniform float uCmeSpeed;     // optional for color dynamics
+uniform float uImpactTime;   // time of impact start
+uniform float uAuroraMinY;   // NEW: latitude extent control (sin(latitude))
+uniform float uAuroraIntensity; // NEW: brightness control
 varying vec3 vNormal;
 varying vec2 vUv;
 
+// 2D simplex noise
 vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
 
 float snoise(vec2 v) {
@@ -143,19 +146,23 @@ float snoise(vec2 v) {
 }
 
 void main() {
+    // 1) Fade window based on time since last impact
     float timeSinceImpact = uTime - uImpactTime;
-    float fadeDuration = 10.0;
+    float fadeDuration = 10.0; // seconds
     float impactFade = 0.0;
     if (uImpactTime > 0.0 && timeSinceImpact < fadeDuration) {
         impactFade = smoothstep(0.0, 1.5, timeSinceImpact) * smoothstep(fadeDuration, fadeDuration - 4.0, timeSinceImpact);
     }
     if (impactFade <= 0.0) { discard; }
 
+    // 2) Latitude mask using explicit boundary from CPU (both poles)
     float y = abs(normalize(vNormal).y);
+    // soft edge around the boundary so expansion looks organic
     float edge = 0.03;
     float polarMask = smoothstep(uAuroraMinY - edge, uAuroraMinY + edge, y);
     if (polarMask <= 0.0) { discard; }
 
+    // 3) Aurora curtain noise/rays
     vec3 nrm = normalize(vNormal);
     float lon = atan(nrm.x, nrm.z);
     float lat = asin(nrm.y);
@@ -168,16 +175,19 @@ void main() {
     float finalNoise = (noise1 + noise2) * 0.5 * curtain;
     finalNoise = pow(abs(finalNoise), 1.5) + pow(snoise(vec2(lon * 1.5, lat * 4.0 - t * 0.8)), 2.0) * 0.3;
 
+    // 4) Color blend (gentle variation)
     vec3 green  = vec3(0.1, 1.0, 0.3);
     vec3 purple = vec3(0.8, 0.2, 1.0);
     vec3 color = mix(green, purple, smoothstep(0.3, 0.7, snoise(vec2(lon * 0.5, lat + uTime * 0.05))));
 
+    // 5) Apply intensity + masks
     color *= uAuroraIntensity;
     float alpha = finalNoise * polarMask * impactFade;
 
     gl_FragColor = vec4(color, alpha);
 }`;
 
+// --- FLUX ROPE SHADERS (Original Glowing Wire) ---
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -201,6 +211,7 @@ varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
+    // Helical spiral pattern
     float frequency = 60.0; 
     float speed = 2.0;      
     float twist = 10.0;     
@@ -237,18 +248,29 @@ uniform float uTime;
 varying vec2 vUv;
 
 void main() {
+    // vUv.x is along the spiral length
+    // Flowing effect
     float flow = fract(vUv.x * 8.0 - uTime * 1.5);
+    
+    // Create a dashed/stream line look
     float stream = smoothstep(0.4, 0.6, sin(flow * 3.14));
+    
+    // Fade out near the sun and at the end of the stream
     float opacity = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.5, vUv.x);
-    vec3 color = vec3(0.2, 0.8, 1.0); // Cyan/Blue
+    
+    vec3 color = vec3(0.2, 0.8, 1.0); // Cyan/Blue for HSS
+    
+    // Add a subtle core glow
     float core = 1.0 - abs(vUv.y - 0.5) * 2.0;
     core = pow(core, 3.0);
+
     float alpha = (stream * 0.6 + core * 0.4) * opacity * 0.5;
+
     gl_FragColor = vec4(color, alpha); 
 }`;
 
-export const PRIMARY_COLOR = "#fafafa"; 
-export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)";
-export const TEXT_COLOR = "#e5e5e5"; 
-export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)"; 
+export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
+export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
+export const TEXT_COLOR = "#e5e5e5"; // neutral-200
+export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)"; // neutral-800
 // --- END OF FILE src/constants.ts ---

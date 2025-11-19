@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+// --- START OF FILE src/components/InitialLoadingScreen.tsx ---
+
+import React, { useState, useEffect, useRef } from 'react';
 
 const SLOGANS = [
   'Aligning planetary orbits...',
@@ -22,7 +24,6 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
   
-  // Use a ref for stars so we don't re-allocate arrays constantly
   const starsRef = useRef<{ x: number; y: number; z: number; o: number }[]>([]);
 
   useEffect(() => {
@@ -44,14 +45,13 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
       
-      // Initialize stars with a Z depth for warp effect
       starsRef.current = [];
       const starCount = Math.floor((canvas.width * canvas.height) / 1000);
       for (let i = 0; i < starCount; i++) {
         starsRef.current.push({
           x: (Math.random() - 0.5) * canvas.width,
           y: (Math.random() - 0.5) * canvas.height,
-          z: Math.random() * canvas.width, // Depth
+          z: Math.random() * canvas.width, 
           o: Math.random(),
         });
       }
@@ -61,14 +61,12 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
     window.addEventListener('resize', resizeCanvas);
 
     const animate = (time: number) => {
-      // Fade effect for trails
       ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
 
-      // 1. Draw Warp Stars
       const speed = 5;
       ctx.fillStyle = '#ffffff';
       
@@ -95,11 +93,9 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
       });
       ctx.globalAlpha = 1.0;
 
-      // 2. Draw Stylized Sun
-      const sunY = cy - 50 * window.devicePixelRatio; // Move slightly up
+      const sunY = cy - 50 * window.devicePixelRatio; 
       const sunRadius = Math.min(canvas.width, canvas.height) * 0.12;
       
-      // Outer Glow
       const pulse = 1 + 0.05 * Math.sin(time / 500);
       const glowGrad = ctx.createRadialGradient(cx, sunY, sunRadius * 0.5, cx, sunY, sunRadius * 2.5 * pulse);
       glowGrad.addColorStop(0, 'rgba(253, 184, 19, 0.8)');
@@ -111,7 +107,6 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
       ctx.arc(cx, sunY, sunRadius * 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Core
       const coreGrad = ctx.createRadialGradient(cx, sunY, 0, cx, sunY, sunRadius);
       coreGrad.addColorStop(0, '#fff');
       coreGrad.addColorStop(0.3, '#fdb813');
@@ -160,3 +155,4 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
 };
 
 export default InitialLoadingScreen;
+// --- END OF FILE src/components/InitialLoadingScreen.tsx ---
