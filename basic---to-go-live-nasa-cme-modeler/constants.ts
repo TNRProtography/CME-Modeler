@@ -200,31 +200,67 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- START OF MODIFICATION: Reverting Flux Rope Shaders ---
+// --- FLUX ROPE "SLINKY" SHADERS ---
+
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
+varying vec3 vNormal;
+varying vec3 vViewPosition;
+
 void main() {
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPosition = -mvPosition.xyz;
+    gl_Position = projectionMatrix * mvPosition;
 }`;
 
 export const FLUX_ROPE_FRAGMENT_SHADER = `
-uniform sampler2D uTexture;
 uniform float uTime;
 uniform vec3 uColor;
+uniform float uOpacity;
+
 varying vec2 vUv;
+varying vec3 vNormal;
+varying vec3 vViewPosition;
 
 void main() {
-    float speed = 0.5;
-    float pulseWidth = 0.1;
-    float wavePos = fract(uTime * speed);
-    float d = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
-    float pulse = smoothstep(pulseWidth, 0.0, d);
-    vec4 tex = texture2D(uTexture, vUv);
-    if (tex.a < 0.1 || pulse < 0.01) discard;
-    gl_FragColor = vec4(uColor, tex.a * pulse);
+    // Slinky Effect: Create a helical spiral pattern
+    // uTime shifts the pattern to simulate plasma flow away from the source
+    // vUv.x is along the tube length, vUv.y is around the tube circumference
+    
+    float frequency = 60.0; // Density of the coils
+    float speed = 2.0;      // Speed of flow
+    float twist = 10.0;     // Amount of twist around the tube
+    
+    // The core spiral pattern
+    float coil = sin(vUv.x * frequency - uTime * speed + vUv.y * twist);
+    
+    // Sharpen the coil to look like distinct rings/filaments
+    float ring = smoothstep(0.2, 0.8, coil);
+    
+    // Add a second, fainter overlapping wave for complexity
+    float secondary = sin(vUv.x * (frequency * 0.5) - uTime * (speed * 0.8) - vUv.y * 5.0);
+    ring += smoothstep(0.4, 0.6, secondary) * 0.3;
+
+    // Rim lighting (fresnel) to make it look 3D and volumetric
+    vec3 viewDir = normalize(vViewPosition);
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
+    
+    // Fade out at the start (near sun) and very end
+    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+    
+    vec3 glowColor = uColor + vec3(0.2); // Make the glow slightly whiter/brighter
+    vec3 finalColor = mix(uColor, glowColor, fresnel);
+    
+    // Combine alpha sources
+    float alpha = (ring * 0.6 + 0.1) * fresnel * endsFade * uOpacity;
+    
+    // Boost alpha slightly on the edges for better visibility against space
+    alpha += fresnel * 0.2 * endsFade * uOpacity;
+
+    gl_FragColor = vec4(finalColor, alpha);
 }`;
-// --- END OF MODIFICATION ---
 
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
