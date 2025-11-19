@@ -647,22 +647,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
 
       // --- CREATE FLUX ROPE ---
-      // Create a Bulbous / Inverted Teardrop shape.
+      // Create a Bulbous / Inverted Teardrop shape (REVERTED TO PREVIOUS STYLE)
       // Wide near the top, tapering to pinch at the sun.
-      // The flux rope sits inside the CME cone.
       
-      const ropeWidth = coneRadius * 0.8; // Occupy 80% of the cone width
-      const ropeHeight = 0.95; // Almost full length
-      const twistZ = ropeWidth * 0.3; // Slight 3D twist depth
+      const ropeWidth = coneRadius * 0.8; 
+      const ropeHeight = 0.95; 
+      const twistZ = ropeWidth * 0.3; 
 
-      // Define points for the loop:
-      // Starts near (0,0,0), goes up one side, arches over the top, comes down the other side.
+      // Curve geometry points matching the "Teardrop" look
       const curve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(-ropeWidth * 0.1, 0.0, 0),           // Pinch at Sun
           new THREE.Vector3(-ropeWidth * 0.5, ropeHeight * 0.3, twistZ * 0.5), // Taper out
-          new THREE.Vector3(-ropeWidth, ropeHeight * 0.7, twistZ),             // Widest point (Shoulder)
-          new THREE.Vector3(0, ropeHeight, 0),                   // Rounded Tip (Front)
-          new THREE.Vector3(ropeWidth, ropeHeight * 0.7, -twistZ),             // Widest point (Shoulder)
+          new THREE.Vector3(-ropeWidth, ropeHeight * 0.7, twistZ),             // Widest point
+          new THREE.Vector3(0, ropeHeight, 0),                   // Rounded Tip
+          new THREE.Vector3(ropeWidth, ropeHeight * 0.7, -twistZ),             // Widest point
           new THREE.Vector3(ropeWidth * 0.5, ropeHeight * 0.3, -twistZ * 0.5), // Taper in
           new THREE.Vector3(ropeWidth * 0.1, 0.0, 0)             // Pinch at Sun
       ]);
@@ -686,9 +684,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const fluxRopeMesh = new THREE.Mesh(tubeGeom, ropeMat);
       fluxRopeMesh.name = 'flux-rope';
-      fluxRopeMesh.visible = false; // Hidden by default until enabled
+      fluxRopeMesh.visible = false; 
       
-      system.add(fluxRopeMesh); // Attach to the particle system so it scales/rotates with it
+      system.add(fluxRopeMesh);
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);

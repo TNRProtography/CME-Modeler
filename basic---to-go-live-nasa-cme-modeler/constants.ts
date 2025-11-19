@@ -193,7 +193,7 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE SHADERS (ARROWS + STATIC FIELD LINES) ---
+// --- FLUX ROPE SHADERS (WIRE STYLE WITH ARROWS) ---
 
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -212,110 +212,66 @@ export const FLUX_ROPE_FRAGMENT_SHADER = `
 uniform float uTime;
 uniform vec3 uColor;
 uniform float uOpacity;
-uniform float uPolarity; // 1.0 (North/Forward) or -1.0 (South/Backward)
+uniform float uPolarity; // 1.0 or -1.0
 
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
-    // vUv.x = length of tube (0 at Sun, 1 at Tip)
-    // vUv.y = circumference
+    // vUv.x = Length along curve (0 at Sun, 1 at Tip)
+    // vUv.y = Circumference around tube
 
-    // --- 1. Static Background Field Lines ---
-    // Creates a twisted wireframe/coil look
-    float twist = 15.0; // How much it twists along the length
-    float strands = 12.0; // Number of wires
-    float coilPattern = sin(vUv.y * strands + vUv.x * twist);
+    // --- 1. Twisted Wire Look ---
+    // Create helical lines running along the rope
+    float strands = 10.0; // Number of distinct field lines
+    float twist = 8.0;    // How much they spiral
+    float helix = vUv.y * strands + vUv.x * twist;
     
-    // Create sharp lines
-    float lines = smoothstep(0.8, 0.9, coilPattern);
-    vec3 lineColor = uColor * 0.5; // Dimmer than the arrows
-
-    // --- 2. Directional Arrows (Front, Core, Back) ---
-    // We want 3 arrows placed at x ~ 0.2, 0.5, 0.8
-    float arrowZones = 3.0;
+    float wirePattern = sin(helix * 3.14159);
+    float wires = smoothstep(0.5, 0.8, wirePattern); // Make lines sharp
     
-    // Calculate local coordinates for each of the 3 zones
-    // localX will go 0->1 three times along the length
-    float localX = fract(vUv.x * arrowZones); 
+    // --- 2. Directional Arrows ---
+    // Animate small pulses/arrows moving along the wires
+    float flowSpeed = 2.0;
+    float flowPos = vUv.x * 8.0 - uTime * flowSpeed * uPolarity;
+    float localFlow = fract(flowPos);
     
-    // We want the arrow centered in the zone (e.g. at localX 0.5)
-    // Shift logic based on polarity so arrows point correctly
-    // Polarity 1:  >  (Arrow points to 1.0)
-    // Polarity -1: <  (Arrow points to 0.0)
-    
-    float arrowShape = 0.0;
-    float arrowWidth = 0.15; // Thickness of the arrow line
-    
-    // To draw a chevron on a UV plane:
-    // |y - 0.5| represents distance from center line of the arrow
-    // If we relate X position to |Y|, we get a V shape.
-    
-    // Normalize Y to -0.5 to 0.5 for easier math, handling wrap around
-    float ny = fract(vUv.y + vUv.x * (twist / strands)) - 0.5; 
-    // Actually, simple planar projection for the arrow icon usually looks cleaner
-    // Let's just project "on top" of the tube in UV space.
-    // Since UV y wraps, we draw the arrow "multiple times" around the circumference 
-    // or just rely on the twist to make it look 3D.
-    // Let's draw it based on the coil pattern to sit "on" the wires.
-    
-    // Simplified Arrow Logic:
-    // Use a sawtooth wave modified by Y to create a chevron
-    
-    float direction = uPolarity; 
-    
-    // Create a chevron pattern "V"
-    // Phase shift X by Y creates a slant. 
-    // Two opposing slants create a V.
-    
-    float chevronY = fract(vUv.y * 4.0); // 4 arrows around the circumference
-    float chevronX = localX;
-    
-    // Centering the arrow in the zone (0.2 to 0.8 range)
-    float inZone = step(0.2, chevronX) * step(chevronX, 0.8);
-    
-    // Math for the V shape:
-    // We want a pulse where X relates to abs(Y-0.5)
-    float yDist = abs(chevronY - 0.5);
-    
-    float arrowFront = 0.0;
-    if (direction > 0.0) {
-        // Pointing Forward >
-        // The "tip" is at higher X. 
-        // Shape defined by: x = center - yDist
-        float tipX = 0.6;
-        // Distance from the V-shape line
-        float d = abs(chevronX - (tipX - yDist * 0.5));
-        arrowFront = 1.0 - smoothstep(0.0, 0.08, d);
+    // Create an arrowhead shape: Sharp tip, trailing tail
+    float arrow = 0.0;
+    if (uPolarity > 0.0) {
+        // Moving forward (0 -> 1)
+        // Peak at 1.0
+        arrow = smoothstep(0.0, 1.0, localFlow);
+        arrow = pow(arrow, 15.0); // Sharpen
     } else {
-        // Pointing Backward <
-        // The "tip" is at lower X.
-        float tipX = 0.4;
-        float d = abs(chevronX - (tipX + yDist * 0.5));
-        arrowFront = 1.0 - smoothstep(0.0, 0.08, d);
+        // Moving backward (1 -> 0)
+        // Peak at 0.0
+        arrow = smoothstep(1.0, 0.0, localFlow);
+        arrow = pow(arrow, 15.0);
     }
     
-    arrowShape = arrowFront * inZone;
-    
-    // --- 3. Composition ---
-    vec3 finalColor = mix(vec3(0.0), lineColor, 0.3); // Weak background lines
-    
-    // Add the arrows (Bright)
-    finalColor = mix(finalColor, vec3(1.0, 1.0, 1.0), arrowShape);
-    
-    // Add Glow to arrows
-    finalColor += uColor * arrowShape * 2.0;
+    // Restrict arrows to sit ON the wires
+    float arrowMask = arrow * wires;
 
-    // Rim lighting
+    // --- 3. Color & Lighting ---
+    vec3 baseGlow = uColor * wires * 0.3;     // Dim orange lines
+    vec3 arrowColor = vec3(1.0, 1.0, 1.0);    // White arrows
+    
+    vec3 finalColor = mix(baseGlow, arrowColor, arrowMask);
+    
+    // Add rim lighting (Fresnel) for 3D volume
     vec3 viewDir = normalize(vViewPosition);
     float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
+    
     finalColor += uColor * fresnel * 0.4;
     
-    // Fade ends
+    // --- 4. Alpha/Opacity ---
+    // Fade near the sun (start) and tip (end)
     float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
     
-    float alpha = (lines * 0.2 + arrowShape * 0.9 + fresnel * 0.3) * uOpacity * endsFade;
+    // Combine transparency
+    float alpha = (wires * 0.2 + arrowMask * 0.9 + fresnel * 0.2) * uOpacity * endsFade;
     
     gl_FragColor = vec4(finalColor, alpha);
 }`;
