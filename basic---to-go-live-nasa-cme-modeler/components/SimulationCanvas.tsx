@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/SimulationCanvas.tsx ---
 
-import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle, useState } from 'react';
 import {
   ProcessedCME, ProcessedHSS, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
   InteractionMode, SimulationCanvasHandle
@@ -43,38 +43,6 @@ const createParticleTexture = (THREE: any) => {
   return particleTextureCache;
 };
 
-let arrowTextureCache: any = null;
-const createArrowTexture = (THREE: any) => {
-  if (arrowTextureCache) return arrowTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-  
-  const canvas = document.createElement('canvas');
-  const size = 256;
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
-  const arrowWidth = size / 6;
-  const arrowHeight = size / 4;
-  const spacing = size / 3;
-
-  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
-    ctx.beginPath();
-    ctx.moveTo(x, size * 0.5);
-    ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
-    ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
-    ctx.closePath();
-    ctx.fill();
-  }
-  
-  arrowTextureCache = new THREE.CanvasTexture(canvas);
-  arrowTextureCache.wrapS = THREE.RepeatWrapping;
-  arrowTextureCache.wrapT = THREE.RepeatWrapping;
-  return arrowTextureCache;
-};
-
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
@@ -106,8 +74,6 @@ const getCmeCoreColor = (speed: number): any => {
   const yellow = new THREE.Color(0xffff00);
   return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
 };
-
-const clamp = (v:number, a:number, b:number) => Math.max(a, Math.min(b, v));
 
 interface SimulationCanvasProps {
   cmeData: ProcessedCME[];
@@ -167,6 +133,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const mouseRef = useRef<any>(null);
   const pointerDownTime = useRef(0);
   const pointerDownPosition = useRef({ x: 0, y: 0 });
+  
+  // Track if the scene is fully initialized to prevent camera race conditions
+  const [sceneReady, setSceneReady] = useState(false);
 
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
@@ -236,21 +205,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
+  // Camera movement logic
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
     if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return;
+    
     const target = new THREE.Vector3(0, 0, 0);
-    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) celestialBodiesRef.current.EARTH.mesh.getWorldPosition(target);
+    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) {
+      celestialBodiesRef.current.EARTH.mesh.getWorldPosition(target);
+    }
+    
     const pos = new THREE.Vector3();
-    if (view === ViewMode.TOP) pos.set(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01);
-    else pos.set(target.x + SCENE_SCALE * 1.9, target.y + SCENE_SCALE * 0.35, target.z);
+    if (view === ViewMode.TOP) {
+      // Offset Y for top-down view
+      pos.set(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01);
+    } else {
+      // Offset X/Y for side view
+      pos.set(target.x + SCENE_SCALE * 1.9, target.y + SCENE_SCALE * 0.35, target.z);
+    }
+
     gsap.to(cameraRef.current.position, { duration: 1.2, x: pos.x, y: pos.y, z: pos.z, ease: "power2.inOut" });
     gsap.to(controlsRef.current.target, { duration: 1.2, x: target.x, y: target.y, z: target.z, ease: "power2.inOut", onUpdate: () => controlsRef.current.update() });
   }, []);
 
-  useEffect(() => { moveCamera(activeView, focusTarget); }, [activeView, focusTarget, dataVersion, moveCamera]);
+  // Trigger camera move only when scene is ready
+  useEffect(() => { 
+    if (sceneReady) {
+      moveCamera(activeView, focusTarget); 
+    }
+  }, [activeView, focusTarget, dataVersion, moveCamera, sceneReady]);
 
 
+  // --- MAIN SCENE INITIALIZATION ---
   useEffect(() => {
     if (!mountRef.current || !THREE || rendererRef.current) return;
 
@@ -260,10 +246,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
+    // Setup Camera
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
+    // Set a default position so it's not at 0,0,0 if GSAP fails or delays
+    camera.position.set(0, SCENE_SCALE * 4, 0.01);
     cameraRef.current = camera;
     onCameraReady(camera);
 
+    // Setup Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -288,12 +278,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     scene.add(new THREE.PointLight(0xffffff, 2.4, 300 * SCENE_SCALE));
 
+    // Setup Controls
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.enableZoom = true; // Explicitly enable
-    controls.enableRotate = true; // Explicitly enable
-    controls.enablePan = true; // Explicitly enable
+    controls.enableZoom = true;
+    controls.enableRotate = true;
+    controls.enablePan = true;
     controlsRef.current = controls;
 
     cmeGroupRef.current = new THREE.Group();
@@ -302,6 +293,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     hssGroupRef.current = new THREE.Group();
     scene.add(hssGroupRef.current);
 
+    // Flux Rope Mesh
     const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
@@ -314,6 +306,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
 
+    // Stars
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
       for (let i = 0; i < count; i++) verts.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE), THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE), THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
@@ -326,12 +319,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(starsNearRef.current);
     scene.add(starsFarRef.current);
 
+    // Sun
     const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
     const sunMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER, transparent: true });
     const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
     scene.add(sunMesh);
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
+    // Planets
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
@@ -358,6 +353,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       orbitsRef.current[name] = orbitTube;
     });
 
+    // Moons
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (!data.orbits) return;
       const parentBody = celestialBodiesRef.current[data.orbits];
@@ -369,6 +365,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (name === 'MOON') planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
     });
     
+    // POIs (L1)
     Object.entries(POI_DATA_MAP).forEach(([name, data]) => {
       const poiMesh = new THREE.Mesh(new THREE.TetrahedronGeometry(data.size, 0), new THREE.MeshBasicMaterial({ color: data.color }));
       poiMesh.userData = data;
@@ -379,6 +376,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     setPlanetMeshesForLabels(planetLabelInfos);
 
+    // Handle Resizing
     const handleResize = () => {
        if (mountRef.current && cameraRef.current && rendererRef.current) {
          cameraRef.current.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
@@ -388,11 +386,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
     window.addEventListener('resize', handleResize);
 
+    // Interaction Handlers
     const handlePointerDown = (event: PointerEvent) => {
         pointerDownTime.current = Date.now();
         pointerDownPosition.current.x = event.clientX;
         pointerDownPosition.current.y = event.clientY;
-        // IMPORTANT: Do not stop propagation here, or OrbitControls won't receive the event.
     };
 
     const handlePointerUp = (event: PointerEvent) => {
@@ -402,7 +400,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const deltaY = Math.abs(event.clientY - pointerDownPosition.current.y);
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
         
-        // Only trigger sun click if it was a quick tap (not a drag)
         if (deltaTime < 200 && distance < 10) {
             if (!mountRef.current || !cameraRef.current || !raycasterRef.current || !mouseRef.current || !sceneRef.current) return;
             
@@ -422,11 +419,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
     };
 
-    if (renderer.domElement) {
-        renderer.domElement.addEventListener('pointerdown', handlePointerDown);
-        renderer.domElement.addEventListener('pointerup', handlePointerUp);
-    }
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
+    // Mark Scene as Ready
+    setSceneReady(true);
+
+    // Animation Loop
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -533,12 +532,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           });
       }
       
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        // Logic for earth impacts can go here
-      }
-
-      // VITAL: This must be called to enable interactions
       if (controlsRef.current) {
         controlsRef.current.update();
       }
@@ -555,6 +548,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
         if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
         if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
+        
+        // Dispose controls
+        if (controlsRef.current && typeof controlsRef.current.dispose === 'function') {
+            controlsRef.current.dispose();
+        }
+        
         try { rendererRef.current?.dispose(); } catch {}
         cancelAnimationFrame(animationFrameId);
         sceneRef.current?.traverse((o:any) => {
@@ -820,13 +819,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 
-  return (
-    <div 
-        ref={mountRef} 
-        className="w-full h-full" 
-        style={{ touchAction: 'none' }} // CRITICAL FOR MOBILE ORBIT CONTROLS
-    />
-  );
+  return <div ref={mountRef} className="w-full h-full" style={{ touchAction: 'none' }} />;
 };
 
 export default React.forwardRef(SimulationCanvas);
