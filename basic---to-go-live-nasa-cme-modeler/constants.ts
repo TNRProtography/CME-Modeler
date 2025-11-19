@@ -1,4 +1,4 @@
-// --- START OF FILE src/constants.ts ---
+// --- START OF FILE constants.ts ---
 
 // src/constants.ts
 import { PlanetData, POIData } from './types';
@@ -199,6 +199,32 @@ void main() {
 
     gl_FragColor = vec4(color, alpha);
 }`;
+
+// --- START OF MODIFICATION: Reverting Flux Rope Shaders ---
+export const FLUX_ROPE_VERTEX_SHADER = `
+varying vec2 vUv;
+void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+export const FLUX_ROPE_FRAGMENT_SHADER = `
+uniform sampler2D uTexture;
+uniform float uTime;
+uniform vec3 uColor;
+varying vec2 vUv;
+
+void main() {
+    float speed = 0.5;
+    float pulseWidth = 0.1;
+    float wavePos = fract(uTime * speed);
+    float d = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
+    float pulse = smoothstep(pulseWidth, 0.0, d);
+    vec4 tex = texture2D(uTexture, vUv);
+    if (tex.a < 0.1 || pulse < 0.01) discard;
+    gl_FragColor = vec4(uColor, tex.a * pulse);
+}`;
+// --- END OF MODIFICATION ---
 
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha

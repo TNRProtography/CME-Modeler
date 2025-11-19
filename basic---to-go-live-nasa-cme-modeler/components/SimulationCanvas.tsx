@@ -1,4 +1,4 @@
-// --- START OF FILE src/components/SimulationCanvas.tsx ---
+// --- START OF FILE SimulationCanvas.tsx ---
 
 import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import {
@@ -9,10 +9,9 @@ import {
   PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER
+  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
+  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
-import { createFluxRopeGroup, updateFluxRope } from './FluxRope';
-
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS (Wikimedia + Wellesley)
@@ -57,6 +56,39 @@ const createParticleTexture = (THREE: any) => {
   return particleTextureCache;
 };
 
+// --- Arrow flow texture for flux rope ---
+let arrowTextureCache: any = null;
+const createArrowTexture = (THREE: any) => {
+  if (arrowTextureCache) return arrowTextureCache;
+  if (!THREE || typeof document === 'undefined') return null;
+  
+  const canvas = document.createElement('canvas');
+  const size = 256;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+  const arrowWidth = size / 6;
+  const arrowHeight = size / 4;
+  const spacing = size / 3;
+
+  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, size * 0.5);
+    ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
+    ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  
+  arrowTextureCache = new THREE.CanvasTexture(canvas);
+  arrowTextureCache.wrapS = THREE.RepeatWrapping;
+  arrowTextureCache.wrapT = THREE.RepeatWrapping;
+  return arrowTextureCache;
+};
+
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
@@ -66,7 +98,7 @@ const getCmeOpacity = (speed: number): number => {
 const getCmeParticleCount = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 4000;
-  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 7000));
+  return Math.floor(THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000));
 };
 
 const getCmeParticleSize = (speed: number, scale: number): number => {
@@ -252,7 +284,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
-    
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
@@ -273,11 +304,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-    
-    // --- THE DEFINITIVE FIX: Set Tone Mapping to handle bright lights ---
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
     setRendererDomElement(renderer.domElement);
@@ -309,9 +335,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    const ropeGroup = createFluxRopeGroup(THREE);
-    fluxRopeRef.current = ropeGroup;
-    scene.add(ropeGroup);
+    // --- START OF MODIFICATION: Reverting to original blinking ring ---
+    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    const fluxRopeMaterial = new THREE.ShaderMaterial({
+      vertexShader: FLUX_ROPE_VERTEX_SHADER,
+      fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
+      uniforms: {
+        uTime: { value: 0 },
+        uTexture: { value: createArrowTexture(THREE) },
+        uColor: { value: new THREE.Color(0xffffff) },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
+    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    fluxRopeRef.current.visible = false;
+    scene.add(fluxRopeRef.current);
+    // --- END OF MODIFICATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -505,6 +548,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
+      cmeGroupRef.current.children.forEach((c: any) => c.material.opacity = getCmeOpacity(c.userData.speed));
+
       if (timelineActive) {
         if (timelinePlaying) {
           const r = timelineMaxDate - timelineMinDate;
@@ -542,16 +587,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
+      // --- START OF MODIFICATION: Reverting Flux Rope Animation Logic ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
-            updateFluxRope(THREE, fluxRopeRef.current, cmeObject, getCmeOpacity);
+            fluxRopeRef.current.position.copy(cmeObject.position);
+            fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
+            const cme: ProcessedCME = cmeObject.userData;
+            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
+            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+            fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
         }
+        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
+      // --- END OF MODIFICATION ---
 
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
@@ -569,6 +624,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
+      if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
       sceneRef.current?.traverse((o:any) => {
@@ -583,7 +639,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [THREE, dataVersion]);
 
-  // --- MODIFICATION: Reinstated original particle effect with the critical bug fixes ---
+  // Build CME particle systems
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
@@ -591,10 +647,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
-      if (c.geometry) c.geometry.dispose();
-      if (c.material) {
-        if (Array.isArray(c.material)) c.material.forEach((m:any) => m.dispose());
-        else c.material.dispose();
+      if ((c as any).geometry) (c as any).geometry.dispose();
+      if ((c as any).material) {
+        const m = (c as any).material;
+        if (Array.isArray(m)) m.forEach((x:any)=>x.dispose());
+        else m.dispose();
       }
     }
 
@@ -605,7 +662,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pos: number[] = [];
       const colors: number[] = [];
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = Math.tan(halfAngle);
+      const coneRadius = 1 * Math.tan(halfAngle);
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
@@ -617,7 +674,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
-        pos.push(x, y, z);
+        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
 
         const relPos = y;
         const finalColor = new THREE.Color();
@@ -638,7 +695,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         transparent: true,
         opacity: getCmeOpacity(cme.speed),
         blending: THREE.AdditiveBlending,
-        depthWrite: true, // THE DEFINITIVE FIX
+        depthWrite: false,
         vertexColors: true
       });
 
@@ -649,7 +706,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
-  }, [cmeData, dataVersion, THREE]);
+  }, [cmeData, getClockElapsedTime]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
