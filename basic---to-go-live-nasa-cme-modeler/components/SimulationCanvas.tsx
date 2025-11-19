@@ -140,7 +140,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     onSunClick,
   } = props;
 
-  // Internal state for Flux Rope polarity (1 or -1)
   const [fluxRopePolarity, setFluxRopePolarity] = useState<number>(1);
 
   const mountRef = useRef<HTMLDivElement>(null);

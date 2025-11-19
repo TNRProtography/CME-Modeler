@@ -117,13 +117,6 @@ void main() {
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
-/**
- * Aurora fragment shader
- * - uAuroraMinY: sine of equatorward latitude boundary (e.g., sin(70°) ≈ 0.94)
- *   Aurora shows where abs(normal.y) >= uAuroraMinY (both poles).
- * - uAuroraIntensity: brightness multiplier (set by CPU from CME speed).
- * - uImpactTime/uTime: temporal gating for short-lived impact glow.
- */
 export const AURORA_FRAGMENT_SHADER = `
 uniform float uTime;
 uniform float uCmeSpeed;     // optional for color dynamics
@@ -200,7 +193,7 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE SHADERS (UPDATED FOR VISIBLE FIELD LINES & POLARITY) ---
+// --- FLUX ROPE SHADERS (ARROWS + STATIC FIELD LINES) ---
 
 export const FLUX_ROPE_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -219,73 +212,111 @@ export const FLUX_ROPE_FRAGMENT_SHADER = `
 uniform float uTime;
 uniform vec3 uColor;
 uniform float uOpacity;
-uniform float uPolarity; // 1.0 or -1.0 for flow direction
+uniform float uPolarity; // 1.0 (North/Forward) or -1.0 (South/Backward)
 
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vViewPosition;
 
 void main() {
-    // vUv.x is along the length (0 at Sun, 1 at Tip)
-    // vUv.y is circumference
+    // vUv.x = length of tube (0 at Sun, 1 at Tip)
+    // vUv.y = circumference
 
-    // 1. Base Helical Structure
-    // Create repeating rings (coils)
-    float coilFreq = 30.0;
-    float helix = vUv.y + vUv.x * coilFreq;
-    float coil = 0.5 + 0.5 * sin(helix * 6.28);
+    // --- 1. Static Background Field Lines ---
+    // Creates a twisted wireframe/coil look
+    float twist = 15.0; // How much it twists along the length
+    float strands = 12.0; // Number of wires
+    float coilPattern = sin(vUv.y * strands + vUv.x * twist);
     
-    // Sharpen the coil to distinct bands
-    float rings = smoothstep(0.2, 0.3, coil) - smoothstep(0.8, 0.9, coil);
+    // Create sharp lines
+    float lines = smoothstep(0.8, 0.9, coilPattern);
+    vec3 lineColor = uColor * 0.5; // Dimmer than the arrows
+
+    // --- 2. Directional Arrows (Front, Core, Back) ---
+    // We want 3 arrows placed at x ~ 0.2, 0.5, 0.8
+    float arrowZones = 3.0;
     
-    // 2. Directional Indicators (Arrows/Pulses)
-    // We create a moving pattern that looks like "comets" or arrows
-    // Flow direction depends on uPolarity
-    float flowSpeed = 5.0;
-    float flowOffset = uTime * flowSpeed * -uPolarity; 
+    // Calculate local coordinates for each of the 3 zones
+    // localX will go 0->1 three times along the length
+    float localX = fract(vUv.x * arrowZones); 
     
-    // We place directional markers along the helix
-    float markerFreq = 25.0; 
-    float markerPhase = helix + flowOffset;
-    float markerCycle = fract(markerPhase);
+    // We want the arrow centered in the zone (e.g. at localX 0.5)
+    // Shift logic based on polarity so arrows point correctly
+    // Polarity 1:  >  (Arrow points to 1.0)
+    // Polarity -1: <  (Arrow points to 0.0)
     
-    // Create a tapered shape: Sharp leading edge, soft tail
-    float markerShape = 0.0;
-    if (uPolarity > 0.0) {
-        // Forward: Sharp at 1.0, tail towards 0.0
-        markerShape = smoothstep(0.0, 1.0, markerCycle);
-        markerShape = pow(markerShape, 5.0); // Make it pointy
-        // Cut off strictly at 1.0 (wrap)
-        // Add a little gap
-        markerShape *= step(0.1, markerCycle);
+    float arrowShape = 0.0;
+    float arrowWidth = 0.15; // Thickness of the arrow line
+    
+    // To draw a chevron on a UV plane:
+    // |y - 0.5| represents distance from center line of the arrow
+    // If we relate X position to |Y|, we get a V shape.
+    
+    // Normalize Y to -0.5 to 0.5 for easier math, handling wrap around
+    float ny = fract(vUv.y + vUv.x * (twist / strands)) - 0.5; 
+    // Actually, simple planar projection for the arrow icon usually looks cleaner
+    // Let's just project "on top" of the tube in UV space.
+    // Since UV y wraps, we draw the arrow "multiple times" around the circumference 
+    // or just rely on the twist to make it look 3D.
+    // Let's draw it based on the coil pattern to sit "on" the wires.
+    
+    // Simplified Arrow Logic:
+    // Use a sawtooth wave modified by Y to create a chevron
+    
+    float direction = uPolarity; 
+    
+    // Create a chevron pattern "V"
+    // Phase shift X by Y creates a slant. 
+    // Two opposing slants create a V.
+    
+    float chevronY = fract(vUv.y * 4.0); // 4 arrows around the circumference
+    float chevronX = localX;
+    
+    // Centering the arrow in the zone (0.2 to 0.8 range)
+    float inZone = step(0.2, chevronX) * step(chevronX, 0.8);
+    
+    // Math for the V shape:
+    // We want a pulse where X relates to abs(Y-0.5)
+    float yDist = abs(chevronY - 0.5);
+    
+    float arrowFront = 0.0;
+    if (direction > 0.0) {
+        // Pointing Forward >
+        // The "tip" is at higher X. 
+        // Shape defined by: x = center - yDist
+        float tipX = 0.6;
+        // Distance from the V-shape line
+        float d = abs(chevronX - (tipX - yDist * 0.5));
+        arrowFront = 1.0 - smoothstep(0.0, 0.08, d);
     } else {
-        // Backward: Sharp at 0.0, tail towards 1.0
-        markerShape = smoothstep(1.0, 0.0, markerCycle);
-        markerShape = pow(markerShape, 5.0);
-        markerShape *= step(markerCycle, 0.9);
+        // Pointing Backward <
+        // The "tip" is at lower X.
+        float tipX = 0.4;
+        float d = abs(chevronX - (tipX + yDist * 0.5));
+        arrowFront = 1.0 - smoothstep(0.0, 0.08, d);
     }
     
-    // 3. Combine
-    // Base color is the coil (orange/red)
-    // Marker color is bright white/yellow
-    vec3 baseGlow = uColor * (0.1 + 0.4 * rings);
-    vec3 markerColor = vec3(1.0, 1.0, 0.9) * 2.0; // Overbright
+    arrowShape = arrowFront * inZone;
     
-    vec3 finalColor = mix(baseGlow, markerColor, markerShape * 0.9); // Markers dominate
+    // --- 3. Composition ---
+    vec3 finalColor = mix(vec3(0.0), lineColor, 0.3); // Weak background lines
     
-    // 4. Rim Lighting (Fresnel) for volume
-    vec3 viewDir = normalize(vViewPosition);
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
-    finalColor += uColor * fresnel * 0.5;
+    // Add the arrows (Bright)
+    finalColor = mix(finalColor, vec3(1.0, 1.0, 1.0), arrowShape);
     
-    // 5. Fade at ends (Near sun and very tip)
-    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
-    
-    // 6. Alpha
-    // Visible where there are rings OR markers, plus some base transparency
-    float alpha = (0.1 + rings * 0.3 + markerShape * 0.8) * uOpacity * endsFade;
-    alpha = max(alpha, fresnel * 0.3 * uOpacity * endsFade); // Keep edges visible
+    // Add Glow to arrows
+    finalColor += uColor * arrowShape * 2.0;
 
+    // Rim lighting
+    vec3 viewDir = normalize(vViewPosition);
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
+    finalColor += uColor * fresnel * 0.4;
+    
+    // Fade ends
+    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
+    
+    float alpha = (lines * 0.2 + arrowShape * 0.9 + fresnel * 0.3) * uOpacity * endsFade;
+    
     gl_FragColor = vec4(finalColor, alpha);
 }`;
 
