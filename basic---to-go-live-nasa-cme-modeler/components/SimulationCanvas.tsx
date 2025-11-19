@@ -290,6 +290,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.enableZoom = true; // Explicitly enable
+    controls.enableRotate = true; // Explicitly enable
+    controls.enablePan = true; // Explicitly enable
     controlsRef.current = controls;
 
     cmeGroupRef.current = new THREE.Group();
@@ -388,6 +392,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         pointerDownTime.current = Date.now();
         pointerDownPosition.current.x = event.clientX;
         pointerDownPosition.current.y = event.clientY;
+        // IMPORTANT: Do not stop propagation here, or OrbitControls won't receive the event.
     };
 
     const handlePointerUp = (event: PointerEvent) => {
@@ -397,6 +402,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const deltaY = Math.abs(event.clientY - pointerDownPosition.current.y);
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
         
+        // Only trigger sun click if it was a quick tap (not a drag)
         if (deltaTime < 200 && distance < 10) {
             if (!mountRef.current || !cameraRef.current || !raycasterRef.current || !mouseRef.current || !sceneRef.current) return;
             
@@ -416,8 +422,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
     };
 
-    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
-    renderer.domElement.addEventListener('pointerup', handlePointerUp);
+    if (renderer.domElement) {
+        renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+        renderer.domElement.addEventListener('pointerup', handlePointerUp);
+    }
 
     let animationFrameId: number;
     const animate = () => {
@@ -525,13 +533,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           });
       }
       
-      // Impact check logic simplified here but visual effects run on Earth mesh
       const earth = celestialBodiesRef.current.EARTH?.mesh;
       if (earth) {
-        // Simplified visual impact - can be expanded if calculateImpactProfile logic is run here
+        // Logic for earth impacts can go here
       }
 
-      controlsRef.current.update();
+      // VITAL: This must be called to enable interactions
+      if (controlsRef.current) {
+        controlsRef.current.update();
+      }
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     };
     animate();
@@ -810,7 +820,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 
-  return <div ref={mountRef} className="w-full h-full" />;
+  return (
+    <div 
+        ref={mountRef} 
+        className="w-full h-full" 
+        style={{ touchAction: 'none' }} // CRITICAL FOR MOBILE ORBIT CONTROLS
+    />
+  );
 };
 
 export default React.forwardRef(SimulationCanvas);
