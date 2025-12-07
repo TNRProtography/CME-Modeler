@@ -671,18 +671,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       for (let i = 0; i < pCount; i++) {
         const t = Math.pow(Math.random(), 0.7);
         const angleOnArc = THREE.MathUtils.lerp(-croissantBend / 2, croissantBend / 2, t);
+        const rotatedAngleOnArc = angleOnArc + Math.PI / 2;
         const centerRadius = baseRadius + t * 0.9;
         const thickness = 0.18 + 0.22 * (1 - Math.abs(angleOnArc) / (croissantBend / 2));
         const minorRadius = thickness * Math.sqrt(Math.random());
         const phi = Math.random() * Math.PI * 2;
 
         const cx = 0;
-        const cy = Math.cos(angleOnArc) * centerRadius;
-        const cz = Math.sin(angleOnArc) * centerRadius;
+        const cy = Math.cos(rotatedAngleOnArc) * centerRadius;
+        const cz = Math.sin(rotatedAngleOnArc) * centerRadius;
 
         const x = cx + minorRadius * Math.cos(phi);
-        const y = cy + minorRadius * Math.sin(phi) * Math.cos(angleOnArc);
-        const z = cz + minorRadius * Math.sin(phi) * Math.sin(angleOnArc);
+        const y = cy + minorRadius * Math.sin(phi) * Math.cos(rotatedAngleOnArc);
+        const z = cz + minorRadius * Math.sin(phi) * Math.sin(rotatedAngleOnArc);
         pos.push(x, y, z);
 
         const relPos = 0.2 + 0.8 * t;
@@ -713,8 +714,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      // Rotate the croissant so its width follows the flux rope orientation
-      system.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir, Math.PI / 2));
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
