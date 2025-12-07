@@ -714,7 +714,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      system.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2));
+      system.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir.clone().normalize(), Math.PI / 2));
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
