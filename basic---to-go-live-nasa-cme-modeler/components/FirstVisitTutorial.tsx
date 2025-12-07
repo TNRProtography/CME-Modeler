@@ -1,6 +1,4 @@
-// --- START OF FILE src/components/FirstVisitTutorial.tsx ---
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 interface TutorialStep {
   targetId: string;
@@ -12,34 +10,10 @@ interface TutorialStep {
 }
 
 const STEPS: TutorialStep[] = [
-  { 
-    targetId: 'nav-forecast', 
-    title: 'Your Forecast Hub', 
-    content: 'Start here. This dashboard combines real-time solar wind data with local conditions to give you a live "Spot The Aurora" score.', 
-    placement: 'bottom', 
-    widthClass: 'w-80' 
-  },
-  { 
-    targetId: 'nav-solar-activity', 
-    title: 'Solar Source', 
-    content: 'Track the sun directly. View live X-ray flux charts, proton levels, and the latest images from NASA/NOAA satellites.', 
-    placement: 'bottom', 
-    widthClass: 'w-80' 
-  },
-  { 
-    targetId: 'nav-modeler', 
-    title: '3D Visualization', 
-    content: 'Visualize space weather in 3D. Watch Coronal Mass Ejections (CMEs) travel through the solar system relative to Earth.', 
-    placement: 'bottom', 
-    widthClass: 'w-80' 
-  }, 
-  { 
-    targetId: 'nav-settings', 
-    title: 'Customize', 
-    content: 'Set up push notifications for flares and aurora alerts, configure your location settings, or install the app to your home screen.', 
-    placement: 'left', 
-    widthClass: 'w-72' 
-  },
+  { targetId: 'nav-forecast', title: 'Aurora Forecast', content: 'This is your go-to page for live aurora forecasts, substorm detection, and sighting maps. Check here to see if an aurora might be visible tonight!', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-solar-activity', title: 'Solar Activity', content: 'Dive deep into the latest solar data and active regions. See real-time solar flares and imagery directly from the Sun.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! This tool helps visualize how solar events travel toward Earth.', placement: 'bottom', widthClass: 'w-80' }, 
+  { targetId: 'nav-settings', title: 'App Settings', content: 'Finally, here you can configure app settings, manage notifications, and install the app to your device. Note: If you are in an in-app browser (like Facebook), the install button may not work. Please open this site in your phone\'s main browser (e.g., Chrome or Safari) to install.', placement: 'left', widthClass: 'w-72' },
 ];
 
 interface FirstVisitTutorialProps {
@@ -52,19 +26,23 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
+  // Effect to reset the tutorial to the first step whenever it's opened.
   useEffect(() => {
-    if (isOpen) setStepIndex(0);
+    if (isOpen) {
+      setStepIndex(0);
+    }
   }, [isOpen]);
 
+  // Effect to handle positioning and highlighting for the current step.
   useEffect(() => {
     if (!isOpen) {
-      onStepChange(null);
+      onStepChange(null); // Clear highlight when modal is not open
       return;
     }
 
     const currentStep = STEPS[stepIndex];
     if (!currentStep) {
-        onClose();
+        onClose(); // Close if we've run out of steps
         return;
     }
 
@@ -74,11 +52,13 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
       const element = document.getElementById(currentStep.targetId);
       if (element) {
         setTargetRect(element.getBoundingClientRect());
+      } else {
+        console.warn(`FirstVisitTutorial: Target element "${currentStep.targetId}" not found.`);
+        setTargetRect(null);
       }
     };
 
-    // Small delay to allow UI to settle
-    const timer = setTimeout(updatePosition, 100);
+    const timer = setTimeout(updatePosition, 50);
     window.addEventListener('resize', updatePosition);
     
     return () => {
@@ -88,68 +68,89 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
   }, [isOpen, stepIndex, onStepChange, onClose]);
 
   const handlePrevious = () => {
-    if (stepIndex > 0) setStepIndex(stepIndex - 1);
+    if (stepIndex > 0) {
+      setStepIndex(stepIndex - 1);
+    }
   };
 
   const handleNext = () => {
-    if (stepIndex < STEPS.length - 1) {
+    const currentStep = STEPS[stepIndex];
+    if (currentStep && !currentStep.disableNext && stepIndex < STEPS.length - 1) {
       setStepIndex(stepIndex + 1);
-    } else {
+    } else if (currentStep && !currentStep.disableNext) {
       onClose();
     }
   };
   
+  const handleClose = () => {
+    onClose();
+  };
+
   const currentStep = STEPS[stepIndex];
 
-  const { tooltipStyle, highlightStyle } = useMemo(() => {
+  const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { 
-          tooltipStyle: { opacity: 0, visibility: 'hidden' as const }, 
+          tooltipStyle: { opacity: 0, visibility: 'hidden' }, 
           arrowStyle: {},
           highlightStyle: { display: 'none' } 
         };
     }
 
-    const tooltipWidth = 320;
-    const margin = 12;
+    const tooltipWidth = currentStep.widthClass === 'w-80' ? 320 : (currentStep.widthClass === 'w-72' ? 288 : 256);
+    const tooltipHeight = 180;
+    const margin = 16;
     let top = 0, left = 0;
 
-    // Simple placement logic
-    if (currentStep.placement === 'bottom') {
+    switch (currentStep.placement) {
+      case 'bottom':
         top = targetRect.bottom + margin;
-        left = targetRect.left + (targetRect.width / 2) - (tooltipWidth / 2);
-    } else if (currentStep.placement === 'left') {
-        top = targetRect.top;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'left':
+        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
         left = targetRect.left - tooltipWidth - margin;
+        break;
+      default:
+        top = targetRect.bottom + margin;
+        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
     }
 
-    // Clamp to viewport
-    left = Math.max(10, Math.min(left, window.innerWidth - tooltipWidth - 10));
+    const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
+    const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
+    
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006, opacity: 1, visibility: 'visible' };
+    
+    let arStyle: React.CSSProperties = {};
+    switch (currentStep.placement) {
+        case 'bottom':
+            arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
+            break;
+        case 'left':
+            arStyle = { right: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%)', borderRight: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
+            break;
+        default:
+            arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
+    }
+    
+    const isForecastStep = currentStep.targetId === 'nav-forecast';
+    const backdropColor = isForecastStep ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.6)';
+    const PADDING = 4;
 
-    const PADDING = 6;
     const hlStyle: React.CSSProperties = {
         position: 'fixed',
         top: `${targetRect.top - PADDING}px`,
         left: `${targetRect.left - PADDING}px`,
         width: `${targetRect.width + PADDING * 2}px`,
         height: `${targetRect.height + PADDING * 2}px`,
-        borderRadius: '12px',
-        boxShadow: `0 0 0 9999px rgba(0, 0, 0, 0.75)`,
-        border: '2px solid rgba(56, 189, 248, 0.5)', // Sky blue border
+        borderRadius: '8px',
+        boxShadow: `0 0 0 9999px ${backdropColor}`,
         zIndex: 2002,
         pointerEvents: 'none',
-        transition: 'all 0.3s ease-in-out',
-    };
-    
-    const ttStyle: React.CSSProperties = { 
-        top: `${top}px`, 
-        left: `${left}px`, 
-        position: 'fixed',
-        zIndex: 2003, 
-        width: `${tooltipWidth}px`
+        transition: 'top 0.3s, left 0.3s, width 0.3s, height 0.3s',
     };
 
-    return { tooltipStyle: ttStyle, arrowStyle: {}, highlightStyle: hlStyle };
+    return { tooltipStyle: ttStyle, arrowStyle: arStyle, highlightStyle: hlStyle };
   }, [targetRect, currentStep]);
 
   if (!isOpen || !currentStep) return null;
@@ -158,26 +159,32 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     <>
       <div style={highlightStyle} />
 
-      <div className="bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl p-5 text-neutral-200 transition-all duration-300 ease-in-out" style={tooltipStyle}>
-        <div className="flex justify-between items-start mb-3">
-            <h3 className="text-lg font-bold text-white">{currentStep.title}</h3>
-            <span className="text-xs font-bold bg-neutral-800 text-neutral-400 px-2 py-1 rounded-full">{stepIndex + 1} / {STEPS.length}</span>
+      <div className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`} style={tooltipStyle} onClick={(e) => e.stopPropagation()}>
+        <div className="absolute w-0 h-0" style={arrowStyle} />
+        <div className="flex justify-between items-start mb-2">
+            <h3 className="text-lg font-bold text-sky-400">{currentStep.title}</h3>
+            <span className="text-xs text-neutral-400 font-mono">{stepIndex + 1}/{STEPS.length}</span>
         </div>
+        <p className="text-sm text-neutral-300 leading-relaxed mb-4">{currentStep.content}</p>
         
-        <p className="text-sm text-neutral-300 leading-relaxed mb-6">{currentStep.content}</p>
-        
-        <div className="flex justify-between items-center pt-2 border-t border-neutral-800">
-            <button onClick={onClose} className="text-xs font-medium text-neutral-500 hover:text-white transition-colors">Skip Tour</button>
+        {/* MODIFIED: Updated button layout */}
+        <div className="flex justify-between items-center">
+            <button onClick={handleClose} className="px-3 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">Skip Tutorial</button>
 
-            <div className="flex gap-2">
+            <div className="flex items-center gap-4">
+                {/* Conditionally render Previous button */}
                 {stepIndex > 0 && (
-                    <button onClick={handlePrevious} className="px-3 py-1.5 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-800 transition-colors">
-                        Back
+                    <button onClick={handlePrevious} className="px-4 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">
+                        Previous
                     </button>
                 )}
-                <button onClick={handleNext} className="px-4 py-1.5 rounded-lg text-sm font-medium bg-sky-600 text-white hover:bg-sky-500 shadow-lg shadow-sky-900/20 transition-all">
-                    {stepIndex === STEPS.length - 1 ? 'Get Started' : 'Next'}
-                </button>
+
+                {/* Next/Finish button */}
+                {!currentStep.disableNext && (
+                    <button onClick={handleNext} className="px-4 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-700 transition-colors text-sm font-semibold">
+                        {stepIndex === STEPS.length - 1 ? 'Finish' : 'Next'}
+                    </button>
+                )}
             </div>
         </div>
       </div>
@@ -186,4 +193,3 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
 };
 
 export default FirstVisitTutorial;
-// --- END OF FILE src/components/FirstVisitTutorial.tsx ---

@@ -353,7 +353,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
         </div>
         
         <div className="flex justify-between items-center p-4 border-t border-neutral-700/80 text-xs text-neutral-500">
-          <span>Version: v1.2</span>
+          <span>Version: v1.3</span>
           <a 
             href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" 
             target="_blank" 

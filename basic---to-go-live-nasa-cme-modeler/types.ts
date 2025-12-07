@@ -1,4 +1,4 @@
-// --- START OF FILE types.ts ---
+//--- START OF FILE types.ts ---
 
 // Assuming global THREE is available from CDN
 // import * as THREE from 'three';
@@ -45,10 +45,6 @@ export interface CMEAnalysis {
   enlilList: any[] | null;
 }
 
-export interface Instrument {
-  displayName: string;
-}
-
 export interface LinkedEvent {
   activityID: string;
 }
@@ -61,7 +57,7 @@ export interface CMEData {
   activeRegionNum: number | null;
   link: string;
   note: string;
-  instruments: Instrument[];
+  instruments: { displayName: string }[];
   cmeAnalyses: CMEAnalysis[] | null;
   linkedEvents: LinkedEvent[] | null;
 }
@@ -81,23 +77,6 @@ export interface ProcessedCME {
   instruments: string;
   sourceLocation: string;
   halfAngle: number;
-}
-
-// --- NEW: HSS (Coronal Hole High Speed Stream) Data Types ---
-
-export interface HSSData {
-  hssID: string;
-  eventTime: string; // Arrival time at Earth/Stereo
-  link: string;
-  note?: string;     // Speed info is often buried here
-  instruments?: Instrument[];
-}
-
-export interface ProcessedHSS {
-  id: string;
-  eventTime: Date; // The time the HSS is detected/peaks at Earth
-  speed: number;   // Extracted or default solar wind speed (km/s)
-  link: string;
 }
 
 export enum ViewMode {
@@ -156,7 +135,6 @@ export interface SimulationCanvasHandle {
   resetView: () => void;
   resetAnimationTimer: () => void;
   captureCanvasAsDataURL: () => string | null;
-  calculateImpactProfile: () => { time: number; speed: number; density: number }[];
 }
 
 export type SightingStatus = 
@@ -232,4 +210,4 @@ export interface WSAEnlilSimulation {
     simulationID: string;
 }
 
-//--- END OF FILE types.ts ---
+//--- END OF FILE types.ts ---```

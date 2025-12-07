@@ -1,10 +1,52 @@
-// --- START OF FILE nasaService.ts ---
+import { CMEData, ProcessedCME } from '../types';
 
-import { CMEData, ProcessedCME, HSSData, ProcessedHSS, SolarFlare, InterplanetaryShock, WSAEnlilSimulation } from '../types';
+// --- NEW TYPE DEFINITIONS ---
+// NOTE: These types are added here to contain changes to a single file.
+// Ideally, they would be moved to `types.ts` in a later step.
+
+export interface SolarFlare {
+  flrID: string;
+  startTime: string;
+  peakTime: string;
+  endTime: string | null;
+  classType: string;
+  sourceLocation: string;
+  activeRegionNum: number;
+  link: string;
+  linkedEvents?: { activityID: string }[];
+}
+
+export interface InterplanetaryShock {
+  activityID: string;
+  catalog: string;
+  eventTime: string;
+  instruments: { displayName: string }[];
+  location: string;
+  link: string;
+}
+
+export interface WSAEnlilSimulation {
+    modelCompletionTime: string;
+    au: number;
+    link: string;
+    estimatedShockArrivalTime: string | null;
+    estimatedDuration: number | null;
+    rmin_re: number | null;
+    kp_18: number | null;
+    kp_90: number | null;
+    kp_135: number | null;
+    kp_180: number | null;
+    isEarthGB: boolean;
+    cmeIDs: string[];
+    simulationID: string;
+}
+
+
+// --- DATA FETCHING FUNCTIONS ---
 
 const PROXY_BASE_URL = 'https://nasa-donki-api.thenamesrock.workers.dev';
 
-// --- DATA FETCHING FUNCTIONS ---
+const formatDateForAPI = (date: Date): string => date.toISOString().split('T')[0];
 
 export const fetchCMEData = async (days: number, apiKey: string): Promise<ProcessedCME[]> => {
   // apiKey is no longer used for the request but kept for function signature consistency.
@@ -25,6 +67,8 @@ export const fetchCMEData = async (days: number, apiKey: string): Promise<Proces
   }
 };
 
+// --- NEW FUNCTIONS ---
+
 export const fetchFlareData = async (): Promise<SolarFlare[]> => {
   const url = `${PROXY_BASE_URL}/FLR`;
   try {
@@ -40,11 +84,8 @@ export const fetchFlareData = async (): Promise<SolarFlare[]> => {
 };
 
 export const fetchIPSData = async (): Promise<InterplanetaryShock[]> => {
-  // Using the GST (Geomagnetic Storm) endpoint as the proxy for Interplanetary Shocks if IPS specific not available
-  // Or specifically the IPS/Shocks endpoint if your worker supports it. 
-  // Based on previous context, we mapped this to GST or specific IPS logic. 
-  // Assuming GST for now as per previous file state, or if you have specific IPS data:
-  const url = `${PROXY_BASE_URL}/GST`; 
+  // Using the GST (Geomagnetic Storm) endpoint as the proxy for Interplanetary Shocks
+  const url = `${PROXY_BASE_URL}/GST`;
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Proxy Worker API Error (GST/IPS): ${response.status}`);
@@ -71,22 +112,8 @@ export const fetchWSAEnlilSimulations = async (): Promise<WSAEnlilSimulation[]> 
   }
 };
 
-// --- NEW: FETCH HSS DATA ---
-export const fetchHSSData = async (): Promise<ProcessedHSS[]> => {
-    const url = `${PROXY_BASE_URL}/HSS`;
-    try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Proxy Worker API Error (HSS): ${response.status}`);
-        const data: HSSData[] = await response.json();
-        return processHSSData(data);
-    } catch (error) {
-        console.error("Failed to fetch HSS data:", error);
-        // Return empty array instead of throwing to prevent breaking the whole dashboard
-        return []; 
-    }
-}
 
-// --- DATA PROCESSING ---
+// --- DATA PROCESSING (UNCHANGED) ---
 
 const getPredictedArrivalTime = (cme: CMEData): Date | null => {
   if (!cme.linkedEvents) return null;
@@ -134,32 +161,3 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   });
   return modelableCMEs.sort((a,b) => b.startTime.getTime() - a.startTime.getTime());
 };
-
-const processHSSData = (data: HSSData[]): ProcessedHSS[] => {
-    return data.map(hss => {
-        let speed = 550; // Default average HSS speed in km/s if not found
-        
-        // Try to extract speed from the note (e.g., "speeds ... to 650km/s")
-        // Regex looks for numbers followed closely by "km/s"
-        if (hss.note) {
-            const speedMatch = hss.note.match(/(\d+)\s*km\/s/g);
-            if (speedMatch) {
-                // Extract just the numbers
-                const numbers = speedMatch.map(s => parseInt(s.replace(/\D/g, '')));
-                if (numbers.length > 0) {
-                    // If multiple speeds are mentioned (e.g., "300 to 600"), take the maximum 
-                    // as it represents the peak influence of the stream
-                    speed = Math.max(...numbers);
-                }
-            }
-        }
-
-        return {
-            id: hss.hssID,
-            eventTime: new Date(hss.eventTime),
-            speed: speed,
-            link: hss.link
-        };
-    }).sort((a,b) => b.eventTime.getTime() - a.eventTime.getTime());
-};
-// --- END OF FILE nasaService.ts ---

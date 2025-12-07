@@ -1,4 +1,4 @@
-// --- START OF FILE src/components/ControlsPanel.tsx ---
+// --- START OF FILE ControlsPanel.tsx ---
 
 import React from 'react';
 import { TimeRange, ViewMode, FocusTarget, CMEFilter } from '../types';
@@ -6,6 +6,7 @@ import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
 import GuideIcon from './icons/GuideIcon';
 
+// Re-defining ToggleSwitch to accept an ID and disabled state.
 interface ToggleSwitchProps {
   label: string;
   checked: boolean;
@@ -36,6 +37,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, checked, onChange, i
   </label>
 );
 
+
 interface ControlsPanelProps {
   activeTimeRange: TimeRange;
   onTimeRangeChange: (range: TimeRange) => void;
@@ -52,10 +54,8 @@ interface ControlsPanelProps {
   onShowExtraPlanetsChange: (show: boolean) => void;
   showMoonL1: boolean;
   onShowMoonL1Change: (show: boolean) => void;
-  showFluxRope: boolean; 
-  onShowFluxRopeChange: (show: boolean) => void;
-  showHSS: boolean;
-  onShowHSSChange: (show: boolean) => void;
+  showFluxRope: boolean; // --- NEW: Prop for Flux Rope ---
+  onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -101,8 +101,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowMoonL1Change,
   showFluxRope,
   onShowFluxRopeChange,
-  showHSS,
-  onShowHSSChange,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -181,7 +179,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <ToggleSwitch id="show-extra-planets-toggle" label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
             <ToggleSwitch id="show-moon-l1-toggle" label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
             <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
-            <ToggleSwitch id="show-hss-toggle" label="Show HSS Streams" checked={showHSS} onChange={onShowHSSChange} />
           </div>
         </div>
 
@@ -194,15 +191,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
           </div>
         </div>
         
+        {/* --- MODIFICATION: Moved CME Speed Guide inside scrollable area --- */}
         <div className="pt-2">
             <ColorScaleGuide isMobileView={true} />
         </div>
         
         <Disclaimer />
       </div>
+
     </div>
   );
 };
 
 export default ControlsPanel;
-// --- END OF FILE src/components/ControlsPanel.tsx ---
+// --- END OF FILE ControlsPanel.tsx ---

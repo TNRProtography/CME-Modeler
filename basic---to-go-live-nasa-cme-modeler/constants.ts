@@ -1,9 +1,12 @@
-// --- START OF FILE src/constants.ts ---
+// --- START OF FILE constants.ts ---
 
+// src/constants.ts
 import { PlanetData, POIData } from './types';
 
+// --- THIS IS THE CORRECTED LINE ---
 // Vite uses import.meta.env to access environment variables
 export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
+// ------------------------------------
 
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
@@ -102,6 +105,9 @@ void main() {
     gl_FragColor = vec4(finalColor, baseIntensity + impactGlow);
 }`;
 
+// ------------------------------
+// AURORA SHADERS (UPDATED)
+// ------------------------------
 export const AURORA_VERTEX_SHADER = `
 varying vec3 vNormal;
 varying vec2 vUv;
@@ -111,6 +117,13 @@ void main() {
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+/**
+ * Aurora fragment shader
+ * - uAuroraMinY: sine of equatorward latitude boundary (e.g., sin(70°) ≈ 0.94)
+ *   Aurora shows where abs(normal.y) >= uAuroraMinY (both poles).
+ * - uAuroraIntensity: brightness multiplier (set by CPU from CME speed).
+ * - uImpactTime/uTime: temporal gating for short-lived impact glow.
+ */
 export const AURORA_FRAGMENT_SHADER = `
 uniform float uTime;
 uniform float uCmeSpeed;     // optional for color dynamics
@@ -187,90 +200,34 @@ void main() {
     gl_FragColor = vec4(color, alpha);
 }`;
 
-// --- FLUX ROPE SHADERS (Original Glowing Wire) ---
+// --- START OF MODIFICATION: Reverting Flux Rope Shaders ---
 export const FLUX_ROPE_VERTEX_SHADER = `
-varying vec2 vUv;
-varying vec3 vNormal;
-varying vec3 vViewPosition;
-
-void main() {
-    vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vViewPosition = -mvPosition.xyz;
-    gl_Position = projectionMatrix * mvPosition;
-}`;
-
-export const FLUX_ROPE_FRAGMENT_SHADER = `
-uniform float uTime;
-uniform vec3 uColor;
-uniform float uOpacity;
-
-varying vec2 vUv;
-varying vec3 vNormal;
-varying vec3 vViewPosition;
-
-void main() {
-    // Helical spiral pattern
-    float frequency = 60.0; 
-    float speed = 2.0;      
-    float twist = 10.0;     
-    
-    float coil = sin(vUv.x * frequency - uTime * speed + vUv.y * twist);
-    float ring = smoothstep(0.2, 0.8, coil);
-    
-    float secondary = sin(vUv.x * (frequency * 0.5) - uTime * (speed * 0.8) - vUv.y * 5.0);
-    ring += smoothstep(0.4, 0.6, secondary) * 0.3;
-
-    vec3 viewDir = normalize(vViewPosition);
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
-    float endsFade = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
-    
-    vec3 glowColor = uColor + vec3(0.2);
-    vec3 finalColor = mix(uColor, glowColor, fresnel);
-    
-    float alpha = (ring * 0.6 + 0.1) * fresnel * endsFade * uOpacity;
-    alpha += fresnel * 0.2 * endsFade * uOpacity;
-
-    gl_FragColor = vec4(finalColor, alpha);
-}`;
-
-// --- HSS (High Speed Stream) SHADERS ---
-export const HSS_VERTEX_SHADER = `
 varying vec2 vUv;
 void main() {
     vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
-export const HSS_FRAGMENT_SHADER = `
+export const FLUX_ROPE_FRAGMENT_SHADER = `
+uniform sampler2D uTexture;
 uniform float uTime;
+uniform vec3 uColor;
 varying vec2 vUv;
 
 void main() {
-    // vUv.x is along the spiral length
-    // Flowing effect
-    float flow = fract(vUv.x * 8.0 - uTime * 1.5);
-    
-    // Create a dashed/stream line look
-    float stream = smoothstep(0.4, 0.6, sin(flow * 3.14));
-    
-    // Fade out near the sun and at the end of the stream
-    float opacity = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.5, vUv.x);
-    
-    vec3 color = vec3(0.2, 0.8, 1.0); // Cyan/Blue for HSS
-    
-    // Add a subtle core glow
-    float core = 1.0 - abs(vUv.y - 0.5) * 2.0;
-    core = pow(core, 3.0);
-
-    float alpha = (stream * 0.6 + core * 0.4) * opacity * 0.5;
-
-    gl_FragColor = vec4(color, alpha); 
+    float speed = 0.5;
+    float pulseWidth = 0.1;
+    float wavePos = fract(uTime * speed);
+    float d = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
+    float pulse = smoothstep(pulseWidth, 0.0, d);
+    vec4 tex = texture2D(uTexture, vUv);
+    if (tex.a < 0.1 || pulse < 0.01) discard;
+    gl_FragColor = vec4(uColor, tex.a * pulse);
 }`;
+// --- END OF MODIFICATION ---
 
 export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
 export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
 export const TEXT_COLOR = "#e5e5e5"; // neutral-200
 export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)"; // neutral-800
-// --- END OF FILE src/constants.ts ---
+// --- END OF FILE constants.ts ---

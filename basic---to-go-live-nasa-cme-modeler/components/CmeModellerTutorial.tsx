@@ -1,6 +1,4 @@
-// --- START OF FILE src/components/CmeModellerTutorial.tsx ---
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 interface TutorialStep {
   targetId: string;
@@ -10,34 +8,49 @@ interface TutorialStep {
   widthClass?: string;
 }
 
+// MODIFIED: Expanded tutorial steps to be more comprehensive
 const STEPS: TutorialStep[] = [
   { 
     targetId: 'simulation-canvas-main', 
     title: 'Welcome to the CME Visualization', 
-    content: 'This is a 3D representation of Coronal Mass Ejections. Use your mouse or touch to pan, zoom, and rotate the view.', 
+    content: 'This is a 3D representation of Coronal Mass Ejections. Use your mouse/touch to pan, zoom, and rotate the view.', 
     placement: 'top', 
     widthClass: 'w-80' 
   },
   { 
+    targetId: 'simulation-canvas-main', 
+    title: 'Important: This is NOT a Forecast', 
+    content: "This tool visualizes raw data of a CME's initial speed and direction. It does NOT account for interactions with solar wind, which can significantly alter its path and arrival time.", 
+    placement: 'top', 
+    widthClass: 'w-96' 
+  },
+  { 
     targetId: 'mobile-controls-button', 
     title: 'Visualization Settings', 
-    content: 'Open this panel to adjust the date range, change the camera view, and toggle visibility for planets, the Moon, and HSS (High Speed Streams).', 
+    content: 'Use this button to open the settings panel. Here you can change the date range, camera view, and toggle the visibility of planets and labels.', 
     placement: 'right', 
     widthClass: 'w-72' 
   },
   { 
     targetId: 'mobile-cme-list-button', 
     title: 'CME List', 
-    content: 'View all CMEs in the current date range. Tap any CME to model its individual trajectory and see predicted impact times.', 
+    content: 'This button opens a list of all available CMEs for the selected date range. Select any CME from the list to model it individually.', 
     placement: 'left', 
     widthClass: 'w-72' 
   },
   { 
     targetId: 'timeline-controls-container', 
     title: 'Timeline Controls', 
-    content: 'When "Show All" is selected, use this timeline to animate the CMEs. The red marker indicates the current real-world time.', 
+    content: 'When viewing "Show All", use these controls to play, pause, and scrub through the simulation over time. The red marker indicates the current real-world time.', 
     placement: 'top', 
     widthClass: 'w-96' 
+  },
+  { 
+    targetId: 'forecast-models-button', 
+    title: 'View Actual Forecasts Here', 
+    content: 'For real, predictive CME forecasts that model solar wind and potential Earth impact, please use the professional models (like HUXT and WSA-ENLIL) found here.', 
+    placement: 'right', 
+    widthClass: 'w-72' 
   },
 ];
 
@@ -72,55 +85,24 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     onStepChange(currentStep.targetId);
 
     const updatePosition = () => {
+      // Use a more robust check for mobile-specific IDs
       const isMobile = window.innerWidth < 1024;
       let finalTargetId = currentStep.targetId;
-      
-      // Handle mobile vs desktop IDs if needed
-      // If a desktop specific ID is missing, fallback to main canvas or specific panel containers
-      if (!isMobile && finalTargetId === 'mobile-controls-button') {
-          const panel = document.getElementById('controls-panel-container');
-          if(panel) {
-              setTargetRect(panel.getBoundingClientRect());
-              return;
-          }
-      }
-
-      if (!isMobile && finalTargetId === 'mobile-cme-list-button') {
-          const panel = document.getElementById('cme-list-panel-container');
-          if(panel) {
-              setTargetRect(panel.getBoundingClientRect());
-              return;
-          }
+      if (isMobile) {
+        if (finalTargetId === 'controls-panel-container') finalTargetId = 'mobile-controls-button';
+        if (finalTargetId === 'cme-list-panel-container') finalTargetId = 'mobile-cme-list-button';
       }
 
       const element = document.getElementById(finalTargetId);
       if (element) {
         setTargetRect(element.getBoundingClientRect());
       } else {
-        // Fallback for timeline if not visible (e.g., no data loaded yet)
-        if (finalTargetId === 'timeline-controls-container') {
-             const mainEl = document.getElementById('simulation-canvas-main');
-             if (mainEl) {
-                 const rect = mainEl.getBoundingClientRect();
-                 // Fake a rect at the bottom center
-                 setTargetRect({
-                     top: rect.bottom - 60,
-                     bottom: rect.bottom - 10,
-                     left: rect.left + rect.width / 2 - 150,
-                     right: rect.left + rect.width / 2 + 150,
-                     width: 300,
-                     height: 50,
-                     x: rect.left + rect.width / 2 - 150,
-                     y: rect.bottom - 60,
-                     toJSON: () => {}
-                 });
-                 return;
-             }
-        }
-
         if (finalTargetId === 'simulation-canvas-main') {
             const mainEl = document.getElementById('simulation-canvas-main');
             if (mainEl) setTargetRect(mainEl.getBoundingClientRect());
+        } else {
+            console.warn(`CmeModellerTutorial: Target element "${finalTargetId}" not found.`);
+            setTargetRect(null);
         }
       }
     };
@@ -148,61 +130,90 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     }
   };
   
-  const { tooltipStyle, highlightStyle } = useMemo(() => {
+  const { tooltipStyle, arrowStyle, highlightStyle } = useMemo(() => {
     if (!targetRect || !currentStep) {
       return { 
-          tooltipStyle: { opacity: 0, visibility: 'hidden' as const }, 
+          tooltipStyle: { opacity: 0, visibility: 'hidden', pointerEvents: 'none' }, 
+          arrowStyle: {},
           highlightStyle: { display: 'none' } 
         };
     }
 
-    const tooltipWidth = 320;
-    const margin = 12;
+    const isMobile = window.innerWidth < 768;
+    const tooltipWidth = currentStep.widthClass === 'w-96' ? 384 : (currentStep.widthClass === 'w-80' ? 320 : 288);
+    const tooltipHeight = 200; // Adjusted for potentially more content
+    const margin = 16;
     let top = 0, left = 0;
+    let placement = currentStep.placement;
 
-    // Determine position based on preference and screen boundaries
-    if (currentStep.placement === 'top') {
-        top = targetRect.top - 200; // Approx height above
-        left = targetRect.left + (targetRect.width/2) - (tooltipWidth/2);
-    } else if (currentStep.placement === 'bottom') {
-        top = targetRect.bottom + margin;
-        left = targetRect.left + (targetRect.width/2) - (tooltipWidth/2);
-    } else if (currentStep.placement === 'right') {
-        top = targetRect.top;
-        left = targetRect.right + margin;
-    } else if (currentStep.placement === 'left') {
-        top = targetRect.top;
-        left = targetRect.left - tooltipWidth - margin;
+    // On mobile, force placement to top/bottom and center it
+    if (isMobile) {
+        placement = targetRect.top < window.innerHeight / 2 ? 'bottom' : 'top';
+        left = window.innerWidth / 2 - tooltipWidth / 2;
+        if (placement === 'top') {
+            top = targetRect.top - tooltipHeight - margin;
+        } else {
+            top = targetRect.bottom + margin;
+        }
+    } else {
+        // Desktop placement logic
+        switch (placement) {
+            case 'top':
+                top = targetRect.top - tooltipHeight - margin;
+                left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+                break;
+            case 'bottom':
+                top = targetRect.bottom + margin;
+                left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2;
+                break;
+            case 'right':
+                top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+                left = targetRect.right + margin;
+                break;
+            case 'left':
+                top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2;
+                left = targetRect.left - tooltipWidth - margin;
+                break;
+        }
     }
 
-    // Clamp to viewport
-    left = Math.max(10, Math.min(left, window.innerWidth - tooltipWidth - 10));
-    top = Math.max(10, Math.min(top, window.innerHeight - 220));
-
-    const PADDING = 6;
+    // Clamp the position to stay within the viewport
+    const clampedTop = Math.max(margin, Math.min(top, window.innerHeight - tooltipHeight - margin));
+    const clampedLeft = Math.max(margin, Math.min(left, window.innerWidth - tooltipWidth - margin));
+    
+    let ttStyle: React.CSSProperties = { top: `${clampedTop}px`, left: `${clampedLeft}px`, transform: 'none', zIndex: 2006, opacity: 1, visibility: 'visible' };
+    
+    let arStyle: React.CSSProperties = {};
+    switch (placement) {
+        case 'top':
+            arStyle = { top: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderTop: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
+            break;
+        case 'bottom':
+            arStyle = { bottom: '100%', left: `${targetRect.left + targetRect.width / 2 - clampedLeft}px`, transform: 'translateX(-50%)', borderBottom: '8px solid #404040', borderLeft: '8px solid transparent', borderRight: '8px solid transparent' };
+            break;
+        case 'right':
+            arStyle = { left: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%) rotate(180deg)', borderRight: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
+            break;
+        case 'left':
+            arStyle = { right: '100%', top: `${targetRect.top + targetRect.height / 2 - clampedTop}px`, transform: 'translateY(-50%)', borderLeft: '8px solid #404040', borderTop: '8px solid transparent', borderBottom: '8px solid transparent' };
+            break;
+    }
+    
+    const PADDING = 4;
     const hlStyle: React.CSSProperties = {
         position: 'fixed',
         top: `${targetRect.top - PADDING}px`,
         left: `${targetRect.left - PADDING}px`,
         width: `${targetRect.width + PADDING * 2}px`,
         height: `${targetRect.height + PADDING * 2}px`,
-        borderRadius: '12px',
-        boxShadow: `0 0 0 9999px rgba(0, 0, 0, 0.75)`,
-        border: '2px solid rgba(56, 189, 248, 0.5)',
+        borderRadius: '8px',
+        boxShadow: `0 0 0 9999px rgba(0, 0, 0, 0.6)`,
         zIndex: 2002,
         pointerEvents: 'none',
-        transition: 'all 0.3s ease-in-out',
-    };
-    
-    const ttStyle: React.CSSProperties = { 
-        top: `${top}px`, 
-        left: `${left}px`, 
-        position: 'fixed',
-        zIndex: 2003, 
-        width: `${tooltipWidth}px`
+        transition: 'top 0.3s, left 0.3s, width 0.3s, height 0.3s',
     };
 
-    return { tooltipStyle: ttStyle, highlightStyle: hlStyle };
+    return { tooltipStyle: ttStyle, arrowStyle: arStyle, highlightStyle: hlStyle };
   }, [targetRect, currentStep]);
 
   if (!isOpen || !currentStep) return null;
@@ -211,25 +222,24 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
     <>
       <div style={highlightStyle} />
 
-      <div className="bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl p-5 text-neutral-200 transition-all duration-300 ease-in-out" style={tooltipStyle}>
-        <div className="flex justify-between items-start mb-3">
-            <h3 className="text-lg font-bold text-white">{currentStep.title}</h3>
-            <span className="text-xs font-bold bg-neutral-800 text-neutral-400 px-2 py-1 rounded-full">{stepIndex + 1} / {STEPS.length}</span>
+      <div className={`fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl p-4 text-neutral-200 transition-all duration-300 ease-in-out ${currentStep.widthClass}`} style={tooltipStyle} onClick={(e) => e.stopPropagation()}>
+        <div className="absolute w-0 h-0" style={arrowStyle} />
+        <div className="flex justify-between items-start mb-2">
+            <h3 className="text-lg font-bold text-indigo-400">{currentStep.title}</h3>
+            <span className="text-xs text-neutral-400 font-mono">{stepIndex + 1}/{STEPS.length}</span>
         </div>
+        <p className="text-sm text-neutral-300 leading-relaxed mb-4" dangerouslySetInnerHTML={{ __html: currentStep.content }} />
         
-        <p className="text-sm text-neutral-300 leading-relaxed mb-6">{currentStep.content}</p>
-        
-        <div className="flex justify-between items-center pt-2 border-t border-neutral-800">
-            <button onClick={onClose} className="text-xs font-medium text-neutral-500 hover:text-white transition-colors">Skip</button>
-
-            <div className="flex gap-2">
+        <div className="flex justify-between items-center">
+            <button onClick={onClose} className="px-3 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">Skip</button>
+            <div className="flex items-center gap-4">
                 {stepIndex > 0 && (
-                    <button onClick={handlePrevious} className="px-3 py-1.5 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-800 transition-colors">
-                        Back
+                    <button onClick={handlePrevious} className="px-4 py-1.5 bg-neutral-700 rounded-md text-neutral-200 hover:bg-neutral-600 transition-colors text-sm font-semibold">
+                        Previous
                     </button>
                 )}
-                <button onClick={handleNext} className="px-4 py-1.5 rounded-lg text-sm font-medium bg-sky-600 text-white hover:bg-sky-500 shadow-lg shadow-sky-900/20 transition-all">
-                    {stepIndex === STEPS.length - 1 ? 'Got it!' : 'Next'}
+                <button onClick={handleNext} className="px-4 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-700 transition-colors text-sm font-semibold">
+                    {stepIndex === STEPS.length - 1 ? 'Got It!' : 'Next'}
                 </button>
             </div>
         </div>
@@ -239,4 +249,3 @@ const CmeModellerTutorial: React.FC<CmeModellerTutorialProps> = ({ isOpen, onClo
 };
 
 export default CmeModellerTutorial;
-// --- END OF FILE src/components/CmeModellerTutorial.tsx ---

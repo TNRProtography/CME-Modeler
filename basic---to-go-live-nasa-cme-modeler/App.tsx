@@ -6,22 +6,22 @@ import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal';
+import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
 import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
-import { fetchCMEData, fetchHSSData } from './services/nasaService';
-import { ProcessedCME, ProcessedHSS, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
-import { SCENE_SCALE } from './constants';
+import { fetchCMEData } from './services/nasaService';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
+import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
-import ForecastIcon from './components/icons/ForecastIcon';
+import MoveIcon from './components/icons/MoveIcon';
+import SelectIcon from './components/icons/SelectIcon';
+import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
 import GlobeIcon from './components/icons/GlobeIcon';
 import SunIcon from './components/icons/SunIcon';
 import CmeIcon from './components/icons/CmeIcon';
-import MoveIcon from './components/icons/MoveIcon';
-import SelectIcon from './components/icons/SelectIcon';
 
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
@@ -35,7 +35,7 @@ import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
-import ImpactGraphModal from './components/ImpactGraphModal';
+import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -63,11 +63,13 @@ interface IpsAlertData {
     };
 }
 
+// --- NEW: Type for impact graph data points ---
 interface ImpactDataPoint {
     time: number;
     speed: number;
     density: number;
 }
+
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
@@ -75,11 +77,7 @@ const APP_VERSION = 'V1.0';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
-  
-  // Data States
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
-  const [hssData, setHssData] = useState<ProcessedHSS[]>([]); // HSS Data
-  
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
@@ -88,8 +86,6 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
-  
-  // UI States
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -101,34 +97,28 @@ const App: React.FC = () => {
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [isGameOpen, setIsGameOpen] = useState(false);
+
+  // --- NEW: State for the impact graph modal ---
   const [isImpactGraphOpen, setIsImpactGraphOpen] = useState(false);
   const [impactGraphData, setImpactGraphData] = useState<ImpactDataPoint[]>([]);
 
-  // Visual Toggle States
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
-  const [showFluxRope, setShowFluxRope] = useState(false);
-  const [showHSS, setShowHSS] = useState(true);
-  
+  const [showFluxRope, setShowFluxRope] = useState(false); 
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
-  
-  // Timeline States
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
   const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
   const [timelineSpeed, setTimelineSpeed] = useState<number>(5);
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
-  
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
   const clockRef = useRef<any>(null);
   const canvasRef = useRef<SimulationCanvasHandle>(null);
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
-  
-  // Alert States
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
@@ -215,7 +205,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
-      setTimeout(() => setShowInitialLoader(false), 1000);
+      setTimeout(() => setShowInitialLoader(false), 500);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
 
@@ -276,21 +266,14 @@ const App: React.FC = () => {
     setTimelineScrubberValue(0);
     resetClock();
     setDataVersion((v: number) => v + 1);
-    
     try {
-      const [cmeResults, hssResults] = await Promise.all([
-        fetchCMEData(days, apiKey),
-        fetchHSSData() 
-      ]);
-
-      setCmeData(cmeResults);
-      setHssData(hssResults);
-
-      if (cmeResults.length > 0) {
+      const data = await fetchCMEData(days, apiKey);
+      setCmeData(data);
+      if (data.length > 0) {
         const endDate = new Date();
         const futureDate = new Date();
         futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = cmeResults.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
+        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - days);
         setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
@@ -307,7 +290,6 @@ const App: React.FC = () => {
         setFetchError((err as Error).message || "Unknown error fetching data.");
       }
       setCmeData([]);
-      setHssData([]);
     } finally {
       setIsLoading(false);
     }
@@ -452,6 +434,7 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
+  // --- NEW: Handler for opening the impact graph modal ---
   const handleOpenImpactGraph = useCallback(() => {
     if (canvasRef.current) {
       const data = canvasRef.current.calculateImpactProfile();
@@ -463,25 +446,114 @@ const App: React.FC = () => {
   }, []);
 
   const handleDownloadImage = useCallback(() => {
-      const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
-      if (!dataUrl || !rendererDomElement || !threeCamera) return;
+    const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
+    if (!dataUrl || !rendererDomElement || !threeCamera) {
+      console.error("Could not capture canvas image: canvas, renderer, or camera is not ready.");
+      return;
+    }
+
+    const mainImage = new Image();
+    mainImage.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = mainImage.width;
+      canvas.height = mainImage.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.drawImage(mainImage, 0, 0);
+
+      if (showLabels && (window as any).THREE) {
+        const THREE = (window as any).THREE;
+        const cameraPosition = new THREE.Vector3();
+        threeCamera.getWorldPosition(cameraPosition);
+
+        planetLabelInfos.forEach(info => {
+          if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) {
+            return;
+          }
+
+          const planetWorldPos = new THREE.Vector3();
+          info.mesh.getWorldPosition(planetWorldPos);
+
+          const projectionVector = planetWorldPos.clone().project(threeCamera);
+          if (projectionVector.z > 1) return;
+
+          const dist = planetWorldPos.distanceTo(cameraPosition);
+          const minVisibleDist = SCENE_SCALE * 0.2;
+          const maxVisibleDist = SCENE_SCALE * 15;
+          if (dist < minVisibleDist || dist > maxVisibleDist) return;
+
+          if (sunInfo && info.name !== 'Sun') {
+            const sunWorldPos = new THREE.Vector3();
+            sunInfo.mesh.getWorldPosition(sunWorldPos);
+            const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
+            const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
+            if (distToPlanetSq > distToSunSq) {
+              const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
+              const vecToSun = sunWorldPos.clone().sub(cameraPosition);
+              const angle = vecToPlanet.angleTo(vecToSun);
+              const sunRadius = (sunInfo.mesh.geometry.parameters?.radius) || (0.1 * SCENE_SCALE);
+              const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
+              if (angle < sunAngularRadius) return;
+            }
+          }
+
+          const x = (projectionVector.x * 0.5 + 0.5) * canvas.width;
+          const y = (-projectionVector.y * 0.5 + 0.5) * canvas.height;
+          const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
+
+          ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+          ctx.shadowBlur = 6;
+          
+          ctx.fillText(info.name, x + 15, y - 10);
+        });
+      }
+
+      const padding = 25;
+      const fontSize = Math.max(24, mainImage.width / 65);
+      const textGap = 10;
+      ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 7;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+
+      const totalDuration = timelineMaxDate - timelineMinDate;
+      const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
+      const simulationDate = new Date(timelineMinDate + currentTimeOffset);
+      const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
       
-      const mainImage = new Image();
-      mainImage.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = mainImage.width;
-        canvas.height = mainImage.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(mainImage, 0, 0);
+      const watermarkText = "SpotTheAurora.co.nz";
+      
+      const icon = new Image();
+      icon.onload = () => {
+        const iconSize = (fontSize * 2) + textGap;
+        const iconPadding = 15;
         
+        const iconX = canvas.width - padding - iconSize;
+        const iconY = canvas.height - padding - iconSize;
+        
+        const textX = iconX - iconPadding;
+        
+        ctx.fillText(dateString, textX, canvas.height - padding - fontSize - textGap);
+        ctx.fillText(watermarkText, textX, canvas.height - padding);
+        
+        ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
+
         const link = document.createElement('a');
-        link.download = `spottheaurora-cme.png`;
+        link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
-      }
-      mainImage.src = dataUrl;
-  }, [rendererDomElement, threeCamera]);
+      };
+      icon.src = '/icons/android-chrome-192x192.png';
+    };
+    mainImage.src = dataUrl;
+  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement, threeCamera, planetLabelInfos, sunInfo]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     setActivePage('modeler');
@@ -560,36 +632,13 @@ const App: React.FC = () => {
           <div className="flex flex-grow min-h-0">
               <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel 
-                        activeTimeRange={activeTimeRange} 
-                        onTimeRangeChange={handleTimeRangeChange} 
-                        activeView={activeView} 
-                        onViewChange={handleViewChange} 
-                        activeFocus={activeFocus} 
-                        onFocusChange={handleFocusChange} 
-                        isLoading={isLoading} 
-                        onClose={() => setIsControlsOpen(false)} 
-                        onOpenGuide={() => setIsTutorialOpen(true)} 
-                        showLabels={showLabels} 
-                        onShowLabelsChange={setShowLabels} 
-                        showExtraPlanets={showExtraPlanets} 
-                        onShowExtraPlanetsChange={setShowExtraPlanets} 
-                        showMoonL1={showMoonL1} 
-                        onShowMoonL1Change={setShowMoonL1} 
-                        cmeFilter={cmeFilter} 
-                        onCmeFilterChange={setCmeFilter} 
-                        showFluxRope={showFluxRope} 
-                        onShowFluxRopeChange={setShowFluxRope}
-                        showHSS={showHSS}
-                        onShowHSSChange={setShowHSS}
-                    />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
                     <SimulationCanvas
                         ref={canvasRef}
                         cmeData={cmesToRender}
-                        hssData={hssData} 
                         activeView={activeView}
                         focusTarget={activeFocus}
                         currentlyModeledCMEId={currentlyModeledCMEId}
@@ -610,16 +659,14 @@ const App: React.FC = () => {
                         showExtraPlanets={showExtraPlanets}
                         showMoonL1={showMoonL1}
                         showFluxRope={showFluxRope}
-                        showHSS={showHSS} 
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
                     />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
-
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
                         <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                             <div className="flex flex-col items-center w-14 lg:hidden">
+                            <div className="flex flex-col items-center w-14 lg:hidden">
                                 <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
                                     <SettingsIcon className="w-6 h-6" />
                                 </button>
@@ -710,6 +757,7 @@ const App: React.FC = () => {
               setViewerMedia={setViewerMedia}
           />
 
+          {/* --- NEW: Render the ImpactGraphModal --- */}
           <ImpactGraphModal
             isOpen={isImpactGraphOpen}
             onClose={() => setIsImpactGraphOpen(false)}
@@ -719,10 +767,57 @@ const App: React.FC = () => {
           {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
 
           {showIabBanner && (
-             <div className="pointer-events-auto" style={{ position: 'fixed', bottom: '1rem', left: '1rem', right: '1rem', background: '#171717', padding: '1rem', zIndex: 9999, borderRadius: '12px' }}>
-                 <p>Install App</p>
-                 <button onClick={() => setShowIabBanner(false)}>Close</button>
-             </div>
+            <div
+              className="pointer-events-auto"
+              style={{
+                position: 'fixed',
+                left: '1rem',
+                right: '1rem',
+                bottom: '1rem',
+                zIndex: 2147483647,
+                background: '#171717',
+                color: '#fff',
+                border: '1px solid #2a2a2a',
+                borderRadius: 14,
+                boxShadow: '0 10px 30px rgba(0,0,0,.45)',
+                fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+                padding: '0.9rem 1rem 1rem 1rem'
+              }}
+            >
+              <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', marginBottom: '.5rem' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>SA</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, letterSpacing: '.2px' }}>Install Spot The Aurora</div>
+                  <div style={{ opacity: .9, fontSize: '.95rem', marginTop: '.25rem', lineHeight: 1.4 }}>
+                    {isIOSIab
+                      ? <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>•••</b> → <b>Open in Browser</b> (Safari), then Share → <b>Add to Home Screen</b>.</>
+                      : <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>⋮</b> → <b>Open in Chrome</b>, then choose <b>Install app</b>.</>}
+                  </div>
+                </div>
+                <button
+                  aria-label="Close"
+                  onClick={() => setShowIabBanner(false)}
+                  style={{ background: 'transparent', border: 0, color: '#bbb', fontSize: 20, lineHeight: 1, cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '.5rem' }}>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); handleIabOpenInBrowser(); }}
+                  style={{ flex: 1, textAlign: 'center', textDecoration: 'none', background: '#fff', color: '#111', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
+                >
+                  Open in Browser
+                </a>
+                <button
+                  onClick={handleIabCopyLink}
+                  style={{ flex: 1, background: '#262626', color: '#fff', border: '1px solid #333', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
+                >
+                  Copy Link
+                </button>
+              </div>
+            </div>
           )}
       </div>
     </>
