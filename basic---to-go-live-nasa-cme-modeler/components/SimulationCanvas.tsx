@@ -663,7 +663,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const colors: number[] = [];
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
       const croissantBend = Math.min(Math.PI * 0.9, halfAngle * 2.4);
-      const baseRadius = Math.max(0.35, Math.tan(halfAngle) * 0.9);
+      const baseRadius = Math.max(0.35, Math.tan(halfAngle));
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
