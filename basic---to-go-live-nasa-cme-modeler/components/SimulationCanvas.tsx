@@ -657,6 +657,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const particleTexture = createParticleTexture(THREE);
 
+    const getCmeDirectionFromData = (cme: ProcessedCME) => {
+      const dir = new THREE.Vector3();
+      const earth = celestialBodiesRef.current.EARTH;
+
+      if (cme.isEarthDirected && earth?.mesh) {
+        const earthPos = new THREE.Vector3();
+        earth.mesh.getWorldPosition(earthPos);
+        if (earthPos.lengthSq() > 0) return earthPos.normalize();
+      }
+
+      dir.setFromSphericalCoords(
+        1,
+        THREE.MathUtils.degToRad(90 - cme.latitude),
+        THREE.MathUtils.degToRad(cme.longitude)
+      );
+      return dir.normalize();
+    };
+
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
@@ -711,8 +729,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const system = new THREE.Points(geom, mat);
       system.userData = cme;
-      const dir = new THREE.Vector3();
-      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      const dir = getCmeDirectionFromData(cme);
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       system.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir.clone().normalize(), Math.PI / 2));
       cmeGroupRef.current.add(system);
