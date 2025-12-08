@@ -398,8 +398,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeObject.visible = true;
     const cmeLength = Math.max(0, distTraveledInSceneUnits - sunRadius);
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-    const tipPosition = direction.clone().multiplyScalar(sunRadius);
-    cmeObject.position.copy(tipPosition);
+
+    // Keep the croissant shell anchored to the sun by pushing the inner edge to the surface
+    // while allowing the rest of the shell to extend outward along the CME direction.
+    const anchorBias = 0.35; // Croissant geometry places its inner edge ~35% back from its center
+    const forwardOffset = sunRadius + Math.max(0, cmeLength * anchorBias);
+    cmeObject.position.copy(direction.clone().multiplyScalar(forwardOffset));
     cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
   }, [THREE]);
 
