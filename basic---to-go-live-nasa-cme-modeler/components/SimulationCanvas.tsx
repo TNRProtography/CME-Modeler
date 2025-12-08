@@ -618,12 +618,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
         if (shouldShowFluxRope) {
-          const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
+            const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
             const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            const ropeLength = Math.max(cmeObject.position.length(), 0.0001);
+            const ropeLength = Math.max(cmeObject.position.length() + cmeObject.scale.y, 0.0001);
             const radiusScale = coneRadius * 0.65;
             fluxRopeRef.current.scale.set(radiusScale, ropeLength, radiusScale);
             fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
