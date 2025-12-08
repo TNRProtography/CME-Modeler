@@ -10,7 +10,6 @@ import {
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
-  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
 
 /** =========================================================
@@ -56,39 +55,6 @@ const createParticleTexture = (THREE: any) => {
   return particleTextureCache;
 };
 
-// --- Arrow flow texture for flux rope ---
-let arrowTextureCache: any = null;
-const createArrowTexture = (THREE: any) => {
-  if (arrowTextureCache) return arrowTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-  
-  const canvas = document.createElement('canvas');
-  const size = 256;
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
-  const arrowWidth = size / 6;
-  const arrowHeight = size / 4;
-  const spacing = size / 3;
-
-  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
-    ctx.beginPath();
-    ctx.moveTo(x, size * 0.5);
-    ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
-    ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
-    ctx.closePath();
-    ctx.fill();
-  }
-  
-  arrowTextureCache = new THREE.CanvasTexture(canvas);
-  arrowTextureCache.wrapS = THREE.RepeatWrapping;
-  arrowTextureCache.wrapT = THREE.RepeatWrapping;
-  return arrowTextureCache;
-};
-
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
@@ -119,6 +85,58 @@ const getCmeCoreColor = (speed: number): any => {
   const grey = new THREE.Color(0x808080);
   const yellow = new THREE.Color(0xffff00);
   return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
+};
+
+const createCroissantFluxRope = (THREE: any, particleTexture: any, count: number) => {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const progress = new Float32Array(count);
+
+  const majorRadius = 1.0;
+  const minorRadius = 0.35;
+  const arcSpan = Math.PI * 0.7;
+
+  for (let i = 0; i < count; i++) {
+    const u = THREE.MathUtils.lerp(-arcSpan, arcSpan, Math.random());
+    const v = Math.random() * Math.PI * 2;
+
+    const localMinor = minorRadius + Math.random() * 0.15;
+    const x = (majorRadius + localMinor * Math.cos(v)) * Math.cos(u);
+    const y = localMinor * Math.sin(v);
+    const z = (majorRadius + localMinor * Math.cos(v)) * Math.sin(u);
+
+    const idx = i * 3;
+    positions[idx] = x;
+    positions[idx + 1] = y;
+    positions[idx + 2] = z;
+
+    colors[idx] = 1;
+    colors[idx + 1] = 1;
+    colors[idx + 2] = 1;
+
+    const arcProgress = (u + arcSpan) / (arcSpan * 2);
+    progress[i] = Math.min(1, Math.max(0, arcProgress));
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('progress', new THREE.Float32BufferAttribute(progress, 1));
+
+  const material = new THREE.PointsMaterial({
+    size: 0.05 * SCENE_SCALE,
+    sizeAttenuation: true,
+    map: particleTexture,
+    transparent: true,
+    opacity: 0.2,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    vertexColors: true
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.userData.particleCount = count;
+  return points;
 };
 
 const clamp = (v:number, a:number, b:number) => Math.max(a, Math.min(b, v));
@@ -190,6 +208,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
   const fluxRopeRef = useRef<any>(null);
+  const fluxRopeStateRef = useRef<{ lastCmeId: string | null; lastSpeed: number }>({ lastCmeId: null, lastSpeed: 0 });
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
@@ -229,6 +248,65 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [timelineValue]);
 
   const MIN_CME_SPEED_KMS = 300;
+
+  const syncFluxRopeWithCME = (cmeObject: any) => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !fluxRopeRef.current) return;
+
+    const particleTexture = createParticleTexture(THREE);
+    const cme: ProcessedCME = cmeObject.userData;
+    const targetCount = getCmeParticleCount(cme.speed);
+
+    if (fluxRopeRef.current.userData.particleCount !== targetCount) {
+      const refreshedFluxRope = createCroissantFluxRope(THREE, particleTexture, targetCount);
+      fluxRopeRef.current.geometry.dispose();
+      (fluxRopeRef.current.material as any).dispose?.();
+      fluxRopeRef.current.geometry = refreshedFluxRope.geometry;
+      fluxRopeRef.current.material = refreshedFluxRope.material;
+      fluxRopeRef.current.userData.particleCount = targetCount;
+    }
+
+    const shouldRefreshColors =
+      fluxRopeStateRef.current.lastCmeId !== cme.id ||
+      fluxRopeStateRef.current.lastSpeed !== cme.speed;
+
+    if (shouldRefreshColors) {
+      const progressAttr = fluxRopeRef.current.geometry.getAttribute('progress');
+      const colorsAttr = fluxRopeRef.current.geometry.getAttribute('color');
+
+      if (progressAttr && colorsAttr) {
+        const shockColor = new THREE.Color(0xffaaaa);
+        const wakeColor = new THREE.Color(0x8888ff);
+        const coreColor = getCmeCoreColor(cme.speed);
+        const tempColor = new THREE.Color();
+
+        for (let i = 0; i < progressAttr.count; i++) {
+          const rel = progressAttr.getX(i);
+          if (rel < 0.15) tempColor.copy(wakeColor).lerp(coreColor, rel / 0.15);
+          else if (rel < 0.55) tempColor.copy(coreColor);
+          else tempColor.copy(coreColor).lerp(shockColor, (rel - 0.55) / 0.45);
+
+          colorsAttr.setXYZ(i, tempColor.r, tempColor.g, tempColor.b);
+        }
+        colorsAttr.needsUpdate = true;
+      }
+
+      fluxRopeStateRef.current.lastCmeId = cme.id;
+      fluxRopeStateRef.current.lastSpeed = cme.speed;
+    }
+
+    const material = fluxRopeRef.current.material as any;
+    material.size = getCmeParticleSize(cme.speed, SCENE_SCALE);
+    material.opacity = getCmeOpacity(cme.speed);
+    material.map = particleTexture;
+    material.needsUpdate = true;
+
+    const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+    fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
+    const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+    fluxRopeRef.current.position.copy(cmeObject.position).add(dir.clone().multiplyScalar(cmeObject.scale.y));
+    fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
+  };
 
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const u_kms = cme.speed;
@@ -335,26 +413,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- START OF MODIFICATION: Reverting to original blinking ring ---
-    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
-    const fluxRopeMaterial = new THREE.ShaderMaterial({
-      vertexShader: FLUX_ROPE_VERTEX_SHADER,
-      fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-      uniforms: {
-        uTime: { value: 0 },
-        uTexture: { value: createArrowTexture(THREE) },
-        uColor: { value: new THREE.Color(0xffffff) },
-      },
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    const fluxRopeParticleTexture = createParticleTexture(THREE);
+    fluxRopeRef.current = createCroissantFluxRope(THREE, fluxRopeParticleTexture, 4000);
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
-    // --- END OF MODIFICATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -587,26 +649,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- START OF MODIFICATION: Reverting Flux Rope Animation Logic ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
-        fluxRopeRef.current.visible = shouldShowFluxRope;
+        fluxRopeRef.current.visible = !!shouldShowFluxRope;
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
-          if (cmeObject) {
-            fluxRopeRef.current.position.copy(cmeObject.position);
-            fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
-            const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
-            fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
-          }
+          if (cmeObject) syncFluxRopeWithCME(cmeObject);
+        } else {
+          fluxRopeStateRef.current.lastCmeId = null;
+          fluxRopeStateRef.current.lastSpeed = 0;
         }
-        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
-      // --- END OF MODIFICATION ---
 
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
@@ -624,7 +677,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
-      if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
       sceneRef.current?.traverse((o:any) => {
