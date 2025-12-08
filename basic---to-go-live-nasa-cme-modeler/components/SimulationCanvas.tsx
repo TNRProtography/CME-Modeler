@@ -92,41 +92,41 @@ const createCroissantCMEGeometry = (THREE: any, count: number, halfAngleDeg: num
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  // Build a teardrop loop: narrow at the base near the sun, widening into a thick front
-  // shell and bending back to suggest the magnetic cloud arc seen in reference imagery.
-  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.6, 110, 255));
-  const majorRadius = 1.28;
-  const baseMinor = 0.18 + THREE.MathUtils.clamp(halfAngleDeg / 120, 0, 1) * 0.22;
+  // Build a pronounced tear drop: a tight, pointed tail at the sun that swells into a broad
+  // front lobe. We bias particles toward the head and keep the curve open so it never loops
+  // back on itself.
+  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.25, 95, 220));
+  const baseMinor = 0.12 + THREE.MathUtils.clamp(halfAngleDeg / 140, 0, 1) * 0.18;
 
   for (let i = 0; i < count; i++) {
-    // Bias particles toward the head of the CME for a thicker shock/front while keeping a
-    // taut, narrow tail glued to the sun.
-    const arcLerp = Math.pow(Math.random(), 0.85);
-    const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.55, arcSpan * 0.45, arcLerp);
+    // Spine travels from the sun-facing tip (0) to the outer head (1) with most particles
+    // clustering forward to emphasize the teardrop bulge.
+    const spineT = Math.pow(Math.random(), 0.72);
     const tubeAngle = Math.random() * Math.PI * 2;
 
-    const headness = THREE.MathUtils.smoothstep(arcLerp, 0.15, 0.9);
-    const shellBias = Math.pow(Math.random(), 0.7);
-    const ringRadius = majorRadius + headness * 0.7; // flare outward toward the front
-    const localMinor = baseMinor * (0.35 + 0.95 * headness) * (0.55 + 0.45 * shellBias);
+    const headBias = THREE.MathUtils.smoothstep(spineT, 0.12, 1.0);
+    const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.25, arcSpan * 0.65, headBias);
 
-    // Taper thickness strongly toward the inner edge to leave a pointed attachment to the sun
-    // while letting the outer arc billow wide.
-    const taper = THREE.MathUtils.lerp(0.3, 1.0, headness);
-    const lift = THREE.MathUtils.lerp(0.05, 0.55, headness) + shellBias * 0.08;
+    // Increase distance from the origin toward the head to create the wide front of the drop.
+    const radialCurve = THREE.MathUtils.lerp(0.32, 1.45, THREE.MathUtils.smoothstep(spineT, 0.05, 1.0));
+    const crossSection = baseMinor
+      * (0.35 + 1.45 * THREE.MathUtils.smoothstep(spineT, 0.08, 0.95))
+      * (0.55 + 0.45 * Math.pow(Math.random(), 0.6));
 
-    const radial = ringRadius + localMinor * Math.cos(tubeAngle) * taper;
+    // Gentle lift keeps the inner tail tucked toward the sun while the head balloons upward.
+    const lift = THREE.MathUtils.lerp(0.0, 0.6, headBias) + crossSection * 0.25;
+    const radial = radialCurve + crossSection * Math.cos(tubeAngle) * (0.35 + 0.65 * headBias);
     const x = radial * Math.cos(arcAngle);
     const z = radial * Math.sin(arcAngle);
-    const y = (localMinor * Math.sin(tubeAngle) * taper * 0.65) + lift;
+    const y = spineT * 1.05 + Math.sin(tubeAngle) * crossSection * (0.25 + 0.45 * headBias) + lift;
 
     const idx = i * 3;
     positions[idx] = x;
     positions[idx + 1] = y;
     positions[idx + 2] = z;
 
-    // Progress tracks along the arc so colors transition from wake near the sun to shock at the head.
-    progress[i] = arcLerp;
+    // Progress follows the spine so the leading edge inherits the hottest part of the color ramp.
+    progress[i] = THREE.MathUtils.clamp(spineT, 0, 1);
   }
 
   const geometry = new THREE.BufferGeometry();
