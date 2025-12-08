@@ -99,14 +99,21 @@ const createCroissantFluxRopeGeometry = (THREE: any) => {
 
   const geometry = new THREE.TubeGeometry(curve, 180, 0.12, 48, false);
 
-  // Gently thicken the middle of the croissant so the leading edge feels fuller
-  const pos = geometry.attributes.position;
-  const original = pos.array as Float32Array;
-  for (let i = 0; i < original.length; i += 3) {
-    const y = original[i + 1];
-    const t = clamp((y + 1) / 2, 0, 1);
-    const bulge = 1 + 0.2 * Math.sin(Math.PI * t);
-    pos.setXYZ(i / 3, original[i] * bulge, original[i + 1], original[i + 2] * bulge);
+  // Give the croissant a teardrop profile: thick at the Sun, softly bulged in the middle,
+  // and tapered near the leading edge. We scale vertex offsets relative to the curve so the
+  // rope keeps its width even as it stretches.
+  const pos = geometry.attributes.position as any;
+  const uv = geometry.attributes.uv as any;
+  const temp = new THREE.Vector3();
+  const center = new THREE.Vector3();
+
+  for (let i = 0; i < pos.count; i++) {
+    const t = clamp(uv.getY(i), 0, 1);
+    const widthProfile = (1.2 - 0.7 * t) + 0.25 * Math.sin(Math.PI * t);
+
+    center.copy(curve.getPointAt(t));
+    temp.fromBufferAttribute(pos, i).sub(center).multiplyScalar(widthProfile).add(center);
+    pos.setXYZ(i, temp.x, temp.y, temp.z);
   }
 
   pos.needsUpdate = true;
