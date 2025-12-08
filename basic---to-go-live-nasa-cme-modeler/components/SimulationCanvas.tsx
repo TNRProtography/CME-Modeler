@@ -661,26 +661,41 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
       const colors: number[] = [];
-      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = 1 * Math.tan(halfAngle);
+
+      // Build a croissant-style torus segment using CME metadata (half angle/speed)
+      const halfAngleRad = THREE.MathUtils.degToRad(Math.max(10, cme.halfAngle));
+      const arcSpan = clamp(halfAngleRad * 2, THREE.MathUtils.degToRad(60), THREE.MathUtils.degToRad(320));
+      const baseMajorRadius = 0.55 + THREE.MathUtils.clamp(cme.speed / 3000, 0, 1) * 0.15; // faster CMEs look a bit larger
+      const baseMinorRadius = 0.18;
+
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
-        const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
-        const x = r * Math.cos(theta);
-        const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        // Parameterize a torus arc around the +Y axis so it can be rotated by quaternion later
+        const u = (Math.random() - 0.5) * arcSpan; // arc angle (croissant bite)
+        const v = Math.random() * Math.PI * 2; // around the tube
 
-        const relPos = y;
+        // Slight jitter keeps the shell organic
+        const major = baseMajorRadius + (Math.random() - 0.5) * 0.08;
+        const minor = baseMinorRadius * (0.7 + Math.random() * 0.8);
+
+        // Center the torus a bit forward so the croissant appears to erupt away from the Sun
+        const forwardOffset = 0.25;
+        const x = (major + minor * Math.cos(v)) * Math.cos(u);
+        const z = (major + minor * Math.cos(v)) * Math.sin(u);
+        const y = minor * Math.sin(v) + forwardOffset + Math.cos(u) * 0.05;
+
+        pos.push(x, y, z);
+
+        // Color by relative distance along the arc for a bright leading edge and cooler wake
+        const shellProgress = (u + arcSpan / 2) / arcSpan;
+        const heat = Math.pow(shellProgress, 1.2);
         const finalColor = new THREE.Color();
-        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
-        else if (relPos < 0.3) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
+        if (heat < 0.25) finalColor.copy(wakeColor).lerp(coreColor, heat / 0.25);
+        else if (heat < 0.6) finalColor.copy(coreColor);
+        else finalColor.copy(coreColor).lerp(shockColor, (heat - 0.6) / 0.4);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
 
