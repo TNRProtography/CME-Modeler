@@ -794,6 +794,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      // Spin the croissant shell 90° around its launch axis so the banana arc keeps orientation
+      // while still leaving position anchored to the same source point.
+      system.rotateOnAxis(new THREE.Vector3(0, 1, 0), Math.PI * 0.5);
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
