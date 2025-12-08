@@ -667,14 +667,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
+      const fluxRopeTubeRadius = 0.05 * coneRadius;
+      const fluxRopeBand = fluxRopeTubeRadius * 1.2; // 20% padding beyond flux rope width
+      const fluxRopeDepthStart = 0.75; // keep particles near the front where the flux rope sits
+
       for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
+        const y = fluxRopeDepthStart + Math.random() * (1 - fluxRopeDepthStart);
+        const targetRadius = y * coneRadius;
+        const bandInner = Math.max(0, targetRadius - fluxRopeBand);
+        const bandOuter = targetRadius + fluxRopeBand;
         const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
+        const r = Math.sqrt(Math.random() * (bandOuter * bandOuter - bandInner * bandInner) + bandInner * bandInner);
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        pos.push(x, y, z);
 
         const relPos = y;
         const finalColor = new THREE.Color();
