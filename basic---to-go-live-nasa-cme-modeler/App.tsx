@@ -75,8 +75,28 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
 
+type PageKey = 'forecast' | 'modeler' | 'solar-activity';
+
+const pageFromPath = (pathname: string): PageKey => {
+  if (pathname.startsWith('/modeler')) return 'modeler';
+  if (pathname.startsWith('/solar') || pathname.startsWith('/solar-activity')) return 'solar-activity';
+  return 'forecast';
+};
+
+const pageToPath = (page: PageKey) => {
+  switch (page) {
+    case 'modeler':
+      return '/modeler';
+    case 'solar-activity':
+      return '/solar-activity';
+    case 'forecast':
+    default:
+      return '/forecast';
+  }
+};
+
 const App: React.FC = () => {
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
+  const [activePage, setActivePage] = useState<PageKey>('forecast');
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -135,6 +155,35 @@ const App: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const cmePageLoadedOnce = useRef(false);
+  const historyNavigationRef = useRef(false);
+
+  const pageTheme = useMemo(() => {
+    const themeMap: Record<PageKey, { title: string; subtitle: string; accent: string; gradient: string; focusHint: string }> = {
+      forecast: {
+        title: 'Spot the Aurora',
+        subtitle: 'Realtime visibility, alerts, and destination guidance built for aurora chasers.',
+        accent: 'from-cyan-400/60 via-sky-500/40 to-indigo-500/20',
+        gradient: 'bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.22),transparent_35%),radial-gradient(circle_at_80%_15%,rgba(99,102,241,0.25),transparent_40%),radial-gradient(circle_at_50%_80%,rgba(34,211,238,0.18),transparent_38%)]',
+        focusHint: 'Live forecast layers, auroral oval strength, and travel-ready insights.',
+      },
+      'solar-activity': {
+        title: 'Solar Activity',
+        subtitle: 'Monitor flares, shocks, and heliophysics at a glance with cinematic clarity.',
+        accent: 'from-amber-400/60 via-orange-500/40 to-rose-500/20',
+        gradient: 'bg-[radial-gradient(circle_at_25%_25%,rgba(251,191,36,0.2),transparent_36%),radial-gradient(circle_at_70%_15%,rgba(251,146,60,0.25),transparent_40%),radial-gradient(circle_at_60%_70%,rgba(236,72,153,0.18),transparent_38%)]',
+        focusHint: 'GOES X-ray flux, interplanetary shocks, and solar wind dynamics.',
+      },
+      modeler: {
+        title: 'CME Visualizer',
+        subtitle: 'Fly through modeled CMEs with cinematic lighting and timeline choreography.',
+        accent: 'from-indigo-400/60 via-violet-500/40 to-fuchsia-500/20',
+        gradient: 'bg-[radial-gradient(circle_at_20%_30%,rgba(129,140,248,0.22),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(217,70,239,0.2),transparent_40%),radial-gradient(circle_at_50%_80%,rgba(56,189,248,0.16),transparent_40%)]',
+        focusHint: '3D simulation controls, label overlays, and impact timing.',
+      },
+    };
+
+    return themeMap[activePage];
+  }, [activePage]);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';
@@ -164,479 +213,193 @@ const App: React.FC = () => {
     return () => window.removeEventListener('beforeinstallprompt', onBip);
   }, []);
 
-  const handleIabOpenInBrowser = useCallback(() => {
-    const here = new URL(window.location.href);
-    const target =
-      here.origin === CANONICAL_ORIGIN
-        ? here.href
-        : CANONICAL_ORIGIN + here.pathname + here.search + here.hash;
-
-    if (isAndroidIab) {
-      const intent = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
-      window.location.href = intent;
-      setTimeout(() => window.open(target, '_blank', 'noopener,noreferrer'), 400);
-    } else {
-      window.open(target, '_blank', 'noopener,noreferrer');
-    }
-  }, [isAndroidIab]);
-
-  const handleIabCopyLink = useCallback(async () => {
-    const url = window.location.href.split('#')[0];
-    try {
-      await navigator.clipboard.writeText(url);
-      alert('Link copied. Open it in your browser to install.');
-    } catch {
-      prompt('Copy this URL:', url);
-    }
-  }, []);
-
-  useEffect(() => {
-    setTimeout(() => setIsMinTimeElapsed(true), 3500);
-
-    const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
-    if (!hasSeenTutorial) {
-      setIsFirstVisitTutorialOpen(true);
-    }
-    if (!clockRef.current && (window as any).THREE) {
-      clockRef.current = new (window as any).THREE.Clock();
-    }
-  }, []);
-  
-  useEffect(() => {
-    if (isDashboardReady && isMinTimeElapsed) {
-      setIsFadingOut(true);
-      setTimeout(() => setShowInitialLoader(false), 500);
-    }
-  }, [isDashboardReady, isMinTimeElapsed]);
-
-  useEffect(() => {
-    if (activePage === 'modeler' && !isLoading) {
-      const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
-      if (!hasSeenCmeTutorial) {
-        setTimeout(() => setIsCmeTutorialOpen(true), 200);
-      }
-    }
-  }, [activePage, isLoading]);
-
-  useEffect(() => {
-    if (navigationTarget) {
-      setActivePage(navigationTarget.page);
-      const scrollTimer = setTimeout(() => {
-        const element = document.getElementById(navigationTarget.elementId);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        setNavigationTarget(null);
-      }, 100);
-      return () => clearTimeout(scrollTimer);
-    }
-  }, [navigationTarget]);
-  
-  const handleCloseFirstVisitTutorial = useCallback(() => {
-    localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
-    setIsFirstVisitTutorialOpen(false);
-    setHighlightedElementId(null);
-  }, []);
-
-  const handleCloseCmeTutorial = useCallback(() => {
-    localStorage.setItem(CME_TUTORIAL_KEY, 'true');
-    setIsCmeTutorialOpen(false);
-    setHighlightedElementId(null);
-  }, []);
-
-  const handleTutorialStepChange = useCallback((id: string | null) => {
-    setHighlightedElementId(id);
-  }, []);
-
-  const handleShowTutorial = useCallback(() => {
-    setIsSettingsOpen(false);
-    setIsFirstVisitTutorialOpen(true);
-  }, []);
-
-  const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
-  const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
-
-  const loadCMEData = useCallback(async (days: TimeRange) => {
-    setIsLoading(true);
-    setFetchError(null);
-    setCurrentlyModeledCMEId(null);
-    setSelectedCMEForInfo(null);
-    setTimelineActive(false);
-    setTimelinePlaying(false);
-    setTimelineScrubberValue(0);
-    resetClock();
-    setDataVersion((v: number) => v + 1);
-    try {
-      const data = await fetchCMEData(days, apiKey);
-      setCmeData(data);
-      if (data.length > 0) {
-        const endDate = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - days);
-        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
-        setTimelineMaxDate(futureDate.getTime());
-      } else {
-        setTimelineMinDate(0);
-        setTimelineMaxDate(0);
-      }
-    } catch (err) {
-      console.error(err);
-      if (err instanceof Error && err.message.includes('429')) {
-        setFetchError('NASA API rate limit exceeded. Please wait a moment and try again.');
-      } else {
-        setFetchError((err as Error).message || "Unknown error fetching data.");
-      }
-      setCmeData([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [resetClock, apiKey]);
-
-  useEffect(() => {
-    if (activePage === 'modeler' && !cmePageLoadedOnce.current) {
-        loadCMEData(activeTimeRange);
-        cmePageLoadedOnce.current = true;
-    }
-  }, [activePage, activeTimeRange, loadCMEData]);
-
-  const handleTimeRangeChange = (range: TimeRange) => {
-      setActiveTimeRange(range);
-      loadCMEData(range);
-  };
-
-  const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
-  
-  const cmesToRender = useMemo(() => {
-    if (currentlyModeledCMEId) {
-      const singleCME = cmeData.find(c => c.id === currentlyModeledCMEId);
-      return singleCME ? [singleCME] : [];
-    }
-    return filteredCmes;
-  }, [currentlyModeledCMEId, cmeData, filteredCmes]);
-
-  useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
-  
-  const handleViewChange = (view: ViewMode) => setActiveView(view);
-  const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
-  const handleResetView = useCallback(() => { setActiveView(ViewMode.TOP); setActiveFocus(FocusTarget.EARTH); canvasRef.current?.resetView(); }, []);
-  
-  const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
-    setCurrentlyModeledCMEId(cme ? cme.id : null);
-    setSelectedCMEForInfo(cme);
-    setIsCmeListOpen(false);
-
-    if (cme) {
-      setTimelineActive(true);
-      setTimelinePlaying(true);
-      setTimelineScrubberValue(0);
-      setTimelineMinDate(cme.startTime.getTime());
-      if (cme.predictedArrivalTime) {
-        setTimelineMaxDate(cme.predictedArrivalTime.getTime() + (12 * 3600 * 1000));
-      } else {
-        const futureDate = new Date(cme.startTime);
-        futureDate.setDate(futureDate.getDate() + 4);
-        setTimelineMaxDate(futureDate.getTime());
-      }
-    } else {
-      setTimelineActive(false);
-      setTimelinePlaying(false);
-      setTimelineScrubberValue(0);
-      if (cmeData.length > 0) {
-        const endDate = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = cmeData.reduce((min: number, cme_item: ProcessedCME) => Math.min(min, cme_item.startTime.getTime()), Date.now());
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - activeTimeRange);
-        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
-        setTimelineMaxDate(futureDate.getTime());
-      } else {
-        setTimelineMinDate(0);
-        setTimelineMaxDate(0);
-      }
-    }
-  }, [cmeData, activeTimeRange]);
-
-  const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
-    handleSelectCMEForModeling(cme);
-    setIsCmeListOpen(true);
-  }, [handleSelectCMEForModeling]);
-
-  const handleOpenGame = useCallback(() => {
-    setIsGameOpen(true);
-  }, []);
-
-  const handleCloseGame = useCallback(() => {
-    setIsGameOpen(false);
-  }, []);
-
-
-  const handleTimelinePlayPause = useCallback(() => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
-    setTimelineActive(true);
-
-    const isAtEnd = timelineScrubberValue >= 999;
-    const isAtStart = timelineScrubberValue < 1;
-    const isPlaying = timelinePlaying;
-
-    if (isAtEnd) {
-      setTimelineScrubberValue(0);
-      resetClock();
-      canvasRef.current?.resetAnimationTimer();
-      setTimelinePlaying(true);
-    } else if (!isPlaying) {
-      if (isAtStart) {
-        resetClock();
-        canvasRef.current?.resetAnimationTimer();
-      }
-      setTimelinePlaying(true);
-    } else {
-      setTimelinePlaying(false);
-    }
-  }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
-
-  const handleTimelineScrub = useCallback((value: number) => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
-    setTimelineActive(true);
-    setTimelinePlaying(false);
-    setTimelineScrubberValue(value);
-  }, [filteredCmes, currentlyModeledCMEId]);
-
-  const handleTimelineStep = useCallback((direction: -1 | 1) => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
-    setTimelineActive(true);
-    setTimelinePlaying(false);
-    const timeRange = timelineMaxDate - timelineMinDate;
-    if (timeRange > 0) {
-      const oneHourInMillis = 3600_000;
-      const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000;
-      setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep)));
-    } else {
-      setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
-    }
-  }, [filteredCmes, currentlyModeledCMEId, timelineMinDate, timelineMaxDate]);
-
-  const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
-  const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
-  const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
-  const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
-  const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
-  const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
-  const flareClass = useMemo(() => { if (latestXrayFlux === null) return undefined; if (latestXrayFlux >= 1e-4) return `X${(latestXrayFlux / 1e-4).toFixed(1)}`; if (latestXrayFlux >= 1e-5) return `M${(latestXrayFlux / 1e-5).toFixed(1)}`; return undefined; }, [latestXrayFlux]);
-  const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
-
-  const isSubstormAlert = useMemo(() =>
-    substormActivityStatus?.isStretching &&
-    !substormActivityStatus?.isErupting &&
-    (substormActivityStatus.probability ?? 0) > 0,
-  [substormActivityStatus]);
-
-  // --- NEW: Handler for opening the impact graph modal ---
-  const handleOpenImpactGraph = useCallback(() => {
-    if (canvasRef.current) {
-      const data = canvasRef.current.calculateImpactProfile();
-      if (data) {
-        setImpactGraphData(data);
-        setIsImpactGraphOpen(true);
-      }
-    }
-  }, []);
-
-  const handleDownloadImage = useCallback(() => {
-    const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
-    if (!dataUrl || !rendererDomElement || !threeCamera) {
-      console.error("Could not capture canvas image: canvas, renderer, or camera is not ready.");
-      return;
-    }
-
-    const mainImage = new Image();
-    mainImage.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = mainImage.width;
-      canvas.height = mainImage.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.drawImage(mainImage, 0, 0);
-
-      if (showLabels && (window as any).THREE) {
-        const THREE = (window as any).THREE;
-        const cameraPosition = new THREE.Vector3();
-        threeCamera.getWorldPosition(cameraPosition);
-
-        planetLabelInfos.forEach(info => {
-          if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) {
-            return;
-          }
-
-          const planetWorldPos = new THREE.Vector3();
-          info.mesh.getWorldPosition(planetWorldPos);
-
-          const projectionVector = planetWorldPos.clone().project(threeCamera);
-          if (projectionVector.z > 1) return;
-
-          const dist = planetWorldPos.distanceTo(cameraPosition);
-          const minVisibleDist = SCENE_SCALE * 0.2;
-          const maxVisibleDist = SCENE_SCALE * 15;
-          if (dist < minVisibleDist || dist > maxVisibleDist) return;
-
-          if (sunInfo && info.name !== 'Sun') {
-            const sunWorldPos = new THREE.Vector3();
-            sunInfo.mesh.getWorldPosition(sunWorldPos);
-            const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
-            const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
-            if (distToPlanetSq > distToSunSq) {
-              const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
-              const vecToSun = sunWorldPos.clone().sub(cameraPosition);
-              const angle = vecToPlanet.angleTo(vecToSun);
-              const sunRadius = (sunInfo.mesh.geometry.parameters?.radius) || (0.1 * SCENE_SCALE);
-              const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
-              if (angle < sunAngularRadius) return;
-            }
-          }
-
-          const x = (projectionVector.x * 0.5 + 0.5) * canvas.width;
-          const y = (-projectionVector.y * 0.5 + 0.5) * canvas.height;
-          const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
-
-          ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-          ctx.shadowBlur = 6;
-          
-          ctx.fillText(info.name, x + 15, y - 10);
-        });
-      }
-
-      const padding = 25;
-      const fontSize = Math.max(24, mainImage.width / 65);
-      const textGap = 10;
-      ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-      ctx.shadowBlur = 7;
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-
-      const totalDuration = timelineMaxDate - timelineMinDate;
-      const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
-      const simulationDate = new Date(timelineMinDate + currentTimeOffset);
-      const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
-      
-      const watermarkText = "SpotTheAurora.co.nz";
-      
-      const icon = new Image();
-      icon.onload = () => {
-        const iconSize = (fontSize * 2) + textGap;
-        const iconPadding = 15;
-        
-        const iconX = canvas.width - padding - iconSize;
-        const iconY = canvas.height - padding - iconSize;
-        
-        const textX = iconX - iconPadding;
-        
-        ctx.fillText(dateString, textX, canvas.height - padding - fontSize - textGap);
-        ctx.fillText(watermarkText, textX, canvas.height - padding);
-        
-        ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
-
-        const link = document.createElement('a');
-        link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-      };
-      icon.src = '/icons/android-chrome-192x192.png';
-    };
-    mainImage.src = dataUrl;
-  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement, threeCamera, planetLabelInfos, sunInfo]);
-
-  const handleViewCMEInVisualization = useCallback((cmeId: string) => {
-    setActivePage('modeler');
-    const cmeToModel = cmeData.find(cme => cme.id === cmeId);
-    if (cmeToModel) {
-      handleSelectCMEForModeling(cmeToModel);
-    }
-    setIsCmeListOpen(true);
-  }, [cmeData, handleSelectCMEForModeling]);
-
-  const handleFlareAlertClick = useCallback(() => {
-    setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
-  }, []);
-
-  const handleAuroraAlertClick = useCallback(() => {
-    setNavigationTarget({ page: 'forecast', elementId: 'unified-forecast-section' });
-  }, []);
-
-  const handleSubstormAlertClick = useCallback(() => {
-    setNavigationTarget({
-      page: 'forecast',
-      elementId: 'unified-forecast-section',
-    });
-  }, []);
-
-  const handleIpsAlertClick = useCallback(() => {
-    setNavigationTarget({
-        page: 'solar-activity',
-        elementId: 'ips-shocks-section'
-    });
-  }, []);
-
-  const handleInitialLoad = useCallback(() => {
-      setIsDashboardReady(true);
-  }, []);
-  
   return (
     <>
       {showInitialLoader && <InitialLoadingScreen isFadingOut={isFadingOut} />}
-      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
-          <GlobalBanner
-              isFlareAlert={isFlareAlert}
-              flareClass={flareClass}
-              isAuroraAlert={isAuroraAlert}
-              auroraScore={currentAuroraScore ?? undefined}
-              isSubstormAlert={isSubstormAlert}
-              substormActivity={substormActivityStatus ?? undefined}
-              isIpsAlert={!!ipsAlertData}
-              ipsAlertData={ipsAlertData}
-              onFlareAlertClick={handleFlareAlertClick}
-              onAuroraAlertClick={handleAuroraAlertClick}
-              onSubstormAlertClick={handleSubstormAlertClick}
-              onIpsAlertClick={handleIpsAlertClick}
-          />
+      <div className={`min-h-screen w-full bg-[#05070a] text-neutral-200 overflow-x-hidden transition-opacity duration-500 relative ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
+        <div className="absolute inset-0 opacity-90 blur-[110px] transition-all duration-700 pointer-events-none" aria-hidden="true">
+          <div className={`absolute inset-0 ${pageTheme.gradient}`} />
+        </div>
 
-          <header className="flex-shrink-0 p-2 md:p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
-              <div className="flex items-center space-x-2">
-                  <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
-                      <ForecastIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
-                  </button>
-                  <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
-                      <SunIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
-                  </button>
-                  <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
-                      <CmeIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
-                  </button>
-              </div>
-              <div className="flex-grow flex justify-end">
-                  <button id="nav-settings" onClick={() => setIsSettingsOpen(true)} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
-              </div>
-          </header>
+        <GlobalBanner
+          isFlareAlert={isFlareAlert}
+          flareClass={flareClass}
+          isAuroraAlert={isAuroraAlert}
+          auroraScore={currentAuroraScore ?? undefined}
+          isSubstormAlert={isSubstormAlert}
+          substormActivity={substormActivityStatus ?? undefined}
+          isIpsAlert={!!ipsAlertData}
+          ipsAlertData={ipsAlertData}
+          onFlareAlertClick={handleFlareAlertClick}
+          onAuroraAlertClick={handleAuroraAlertClick}
+          onSubstormAlertClick={handleSubstormAlertClick}
+          onIpsAlertClick={handleIpsAlertClick}
+        />
 
-          <div className="flex flex-grow min-h-0">
-              <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
-                <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
+        <header className="relative z-[2001] px-4 md:px-8 pt-6 pb-4">
+          <div className="max-w-6xl mx-auto rounded-3xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-2xl shadow-black/40 overflow-hidden">
+            <div className="bg-gradient-to-r from-white/5 via-white/0 to-white/5">
+              <div className="p-6 md:p-8 space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-neutral-400">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
+                      Live heliophysics lab
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${pageTheme.accent} flex items-center justify-center shadow-xl shadow-black/40 border border-white/10`}>
+                        <span className="text-lg font-extrabold tracking-tight">CME</span>
+                      </div>
+                      <div>
+                        <h1 className="text-3xl md:text-4xl font-black text-white drop-shadow-lg">{pageTheme.title}</h1>
+                        <p className="text-neutral-300 max-w-3xl">{pageTheme.subtitle}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm min-w-[260px]">
+                    <div className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5">
+                      <p className="text-[11px] uppercase tracking-wide text-neutral-400">Aurora</p>
+                      <p className="text-lg font-semibold text-emerald-200">{currentAuroraScore ?? '—'}</p>
+                    </div>
+                    <div className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5">
+                      <p className="text-[11px] uppercase tracking-wide text-neutral-400">X-ray Flux</p>
+                      <p className="text-lg font-semibold text-amber-200">{latestXrayFlux ? `${latestXrayFlux.toFixed(2)} W/m²` : '—'}</p>
+                    </div>
+                    <div className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5">
+                      <p className="text-[11px] uppercase tracking-wide text-neutral-400">Substorms</p>
+                      <p className="text-lg font-semibold">{isSubstormAlert ? <span className="text-rose-200">Active</span> : <span className="text-neutral-100">Calm</span>}</p>
+                    </div>
+                    <div className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5">
+                      <p className="text-[11px] uppercase tracking-wide text-neutral-400">Focus</p>
+                      <p className="text-sm font-semibold text-neutral-100">{pageTheme.focusHint}</p>
+                    </div>
+                  </div>
                 </div>
 
-                <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
-                    <SimulationCanvas
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <button
+                    id="nav-forecast"
+                    onClick={() => setActivePage('forecast')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${activePage === 'forecast' ? 'bg-white/15 border-sky-400/60 text-white shadow-lg shadow-sky-500/20' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                  >
+                    <ForecastIcon className="w-4 h-4" /> Forecasts
+                  </button>
+                  <button
+                    id="nav-solar-activity"
+                    onClick={() => setActivePage('solar-activity')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${activePage === 'solar-activity' ? 'bg-white/15 border-amber-400/60 text-white shadow-lg shadow-amber-500/20' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                  >
+                    <SunIcon className="w-4 h-4" /> Solar activity
+                  </button>
+                  <button
+                    id="nav-modeler"
+                    onClick={() => setActivePage('modeler')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${activePage === 'modeler' ? 'bg-white/15 border-indigo-400/60 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                  >
+                    <CmeIcon className="w-4 h-4" /> CME visualizer
+                  </button>
+                  <button
+                    onClick={handleShowTutorial}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all"
+                  >
+                    <ListIcon className="w-4 h-4" /> Guided tour
+                  </button>
+                  <button
+                    id="nav-settings"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
+                  >
+                    <SettingsIcon className="w-4 h-4" /> Settings
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-xs text-neutral-300">
+                  <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10">Realtime layers</span>
+                  <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10">Smooth navigation</span>
+                  <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10">Dedicated routes</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="relative z-[2001] px-4 md:px-8 pb-16 space-y-8">
+          <div className="grid xl:grid-cols-12 gap-6 items-start">
+            <div className="xl:col-span-9 space-y-6">
+              <section className={`rounded-3xl border border-white/10 bg-black/65 backdrop-blur-2xl shadow-2xl shadow-black/40 p-4 md:p-6 ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
+                <ForecastDashboard
+                  setViewerMedia={setViewerMedia}
+                  setCurrentAuroraScore={setCurrentAuroraScore}
+                  setSubstormActivityStatus={setSubstormActivityStatus}
+                  setIpsAlertData={setIpsAlertData}
+                  navigationTarget={navigationTarget}
+                  onInitialLoad={handleInitialLoad}
+                />
+              </section>
+
+              <section className={`rounded-3xl border border-white/10 bg-black/65 backdrop-blur-2xl shadow-2xl shadow-black/40 p-4 md:p-6 ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
+                <SolarActivityDashboard
+                  setViewerMedia={setViewerMedia}
+                  setLatestXrayFlux={setLatestXrayFlux}
+                  onViewCMEInVisualization={handleViewCMEInVisualization}
+                  navigationTarget={navigationTarget}
+                />
+              </section>
+
+              <section className={`rounded-3xl border border-white/10 bg-black/65 backdrop-blur-2xl shadow-2xl shadow-black/40 p-4 md:p-6 space-y-4 ${activePage === 'modeler' ? 'block' : 'hidden'}`}>
+                <div className="flex flex-wrap gap-3">
+                  <button onClick={() => setIsControlsOpen(true)} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2">
+                    <SettingsIcon className="w-4 h-4" /> Controls
+                  </button>
+                  <button onClick={() => setIsCmeListOpen(true)} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2">
+                    <ListIcon className="w-4 h-4" /> CME list
+                  </button>
+                  <button onClick={handleResetView} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2">
+                    <MoveIcon className="w-4 h-4" /> Reset camera
+                  </button>
+                  <button onClick={() => setIsForecastModelsModalOpen(true)} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2">
+                    <GlobeIcon className="w-4 h-4" /> Forecast models
+                  </button>
+                  <button onClick={handleDownloadImage} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2">
+                    <DownloadIcon className="w-4 h-4" /> Download image
+                  </button>
+                  <button onClick={handleOpenImpactGraph} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center gap-2">
+                    <ForecastIcon className="w-4 h-4" /> Impact chart
+                  </button>
+                </div>
+
+                <div className="grid lg:grid-cols-12 gap-4 items-start">
+                  <div className="lg:col-span-3">
+                    <div className={`lg:sticky lg:top-6 ${isControlsOpen ? 'block' : 'hidden lg:block'}`}>
+                      <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur-xl shadow-xl">
+                        <ControlsPanel
+                          activeTimeRange={activeTimeRange}
+                          onTimeRangeChange={handleTimeRangeChange}
+                          activeView={activeView}
+                          onViewChange={handleViewChange}
+                          activeFocus={activeFocus}
+                          onFocusChange={handleFocusChange}
+                          isLoading={isLoading}
+                          onClose={() => setIsControlsOpen(false)}
+                          onOpenGuide={() => setIsTutorialOpen(true)}
+                          showLabels={showLabels}
+                          onShowLabelsChange={setShowLabels}
+                          showExtraPlanets={showExtraPlanets}
+                          onShowExtraPlanetsChange={setShowExtraPlanets}
+                          showMoonL1={showMoonL1}
+                          onShowMoonL1Change={setShowMoonL1}
+                          cmeFilter={cmeFilter}
+                          onCmeFilterChange={setCmeFilter}
+                          showFluxRope={showFluxRope}
+                          onShowFluxRopeChange={setShowFluxRope}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-6">
+                    <div className="relative rounded-2xl border border-white/10 bg-black/50 backdrop-blur-xl shadow-2xl overflow-hidden min-h-[520px]">
+                      <SimulationCanvas
                         ref={canvasRef}
                         cmeData={cmesToRender}
                         activeView={activeView}
@@ -662,163 +425,189 @@ const App: React.FC = () => {
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
-                    />
-                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
-                    <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
-                        <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                            <div className="flex flex-col items-center w-14 lg:hidden">
-                                <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
-                                    <SettingsIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1">Settings</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-                                    <CmeIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="forecast-models-button" onClick={() => setIsForecastModelsModalOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME Forecast Models">
-                                    <GlobeIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Forecast Models</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
-                                    <DownloadIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Download Image</span>
-                            </div>
-                        </div>
-                        <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                            <div className="flex flex-col items-center w-14 lg:hidden">
-                                <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME List">
-                                    <ListIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1">CME List</span>
-                            </div>
-                        </div>
+                      />
+                      {showLabels && rendererDomElement && threeCamera && planetLabelInfos
+                        .filter((info: PlanetLabelInfo) => {
+                          const name = info.name.toUpperCase();
+                          if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets;
+                          if (['MOON', 'L1'].includes(name)) return showMoonL1;
+                          return true;
+                        })
+                        .map((info: PlanetLabelInfo) => (
+                          <PlanetLabel
+                            key={info.id}
+                            planetMesh={info.mesh}
+                            camera={threeCamera}
+                            rendererDomElement={rendererDomElement}
+                            label={info.name}
+                            sunMesh={sunInfo ? sunInfo.mesh : null}
+                          />
+                        ))}
+                      <TimelineControls
+                        isVisible={!isLoading && cmesToRender.length > 0}
+                        isPlaying={timelinePlaying}
+                        onPlayPause={handleTimelinePlayPause}
+                        onScrub={handleTimelineScrub}
+                        scrubberValue={timelineScrubberValue}
+                        onStepFrame={handleTimelineStep}
+                        playbackSpeed={timelineSpeed}
+                        onSetSpeed={handleTimelineSetSpeed}
+                        minDate={timelineMinDate}
+                        maxDate={timelineMaxDate}
+                        onOpenImpactGraph={handleOpenImpactGraph}
+                      />
                     </div>
-                    <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
-                </main>
+                  </div>
 
-                <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
-                    <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
-                </div>
-                  
-                  {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
-                  {isLoading && activePage === 'modeler' && <LoadingOverlay />}
-                  <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-              </div>
-              <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
-                  <ForecastDashboard
-                      setViewerMedia={setViewerMedia}
-                      setCurrentAuroraScore={setCurrentAuroraScore}
-                      setSubstormActivityStatus={setSubstormActivityStatus}
-                      setIpsAlertData={setIpsAlertData}
-                      navigationTarget={navigationTarget}
-                      onInitialLoad={handleInitialLoad}
-                  />
-              </div>
-              <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
-                  <SolarActivityDashboard
-                      setViewerMedia={setViewerMedia}
-                      setLatestXrayFlux={setLatestXrayFlux}
-                      onViewCMEInVisualization={handleViewCMEInVisualization}
-                      navigationTarget={navigationTarget}
-                  />
-              </div>
-          </div>
-          
-          <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
-          <SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            appVersion={APP_VERSION}
-            onShowTutorial={handleShowTutorial}
-          />
-          
-          <FirstVisitTutorial
-              isOpen={isFirstVisitTutorialOpen}
-              onClose={handleCloseFirstVisitTutorial}
-              onStepChange={handleTutorialStepChange}
-          />
-
-          <CmeModellerTutorial
-              isOpen={isCmeTutorialOpen}
-              onClose={handleCloseCmeTutorial}
-              onStepChange={handleTutorialStepChange}
-          />
-
-          <ForecastModelsModal
-              isOpen={isForecastModelsModalOpen}
-              onClose={() => setIsForecastModelsModalOpen(false)}
-              setViewerMedia={setViewerMedia}
-          />
-
-          {/* --- NEW: Render the ImpactGraphModal --- */}
-          <ImpactGraphModal
-            isOpen={isImpactGraphOpen}
-            onClose={() => setIsImpactGraphOpen(false)}
-            data={impactGraphData}
-          />
-
-          {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
-
-          {showIabBanner && (
-            <div
-              className="pointer-events-auto"
-              style={{
-                position: 'fixed',
-                left: '1rem',
-                right: '1rem',
-                bottom: '1rem',
-                zIndex: 2147483647,
-                background: '#171717',
-                color: '#fff',
-                border: '1px solid #2a2a2a',
-                borderRadius: 14,
-                boxShadow: '0 10px 30px rgba(0,0,0,.45)',
-                fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-                padding: '0.9rem 1rem 1rem 1rem'
-              }}
-            >
-              <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', marginBottom: '.5rem' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>SA</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 800, letterSpacing: '.2px' }}>Install Spot The Aurora</div>
-                  <div style={{ opacity: .9, fontSize: '.95rem', marginTop: '.25rem', lineHeight: 1.4 }}>
-                    {isIOSIab
-                      ? <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>•••</b> → <b>Open in Browser</b> (Safari), then Share → <b>Add to Home Screen</b>.</>
-                      : <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>⋮</b> → <b>Open in Chrome</b>, then choose <b>Install app</b>.</>}
+                  <div className="lg:col-span-3">
+                    <div className={`lg:sticky lg:top-6 ${isCmeListOpen ? 'block' : 'hidden lg:block'}`}>
+                      <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur-xl shadow-xl">
+                        <CMEListPanel
+                          cmes={filteredCmes}
+                          onSelectCME={handleSelectCMEForModeling}
+                          selectedCMEId={currentlyModeledCMEId}
+                          selectedCMEForInfo={selectedCMEForInfo}
+                          isLoading={isLoading}
+                          fetchError={fetchError}
+                          onClose={() => setIsCmeListOpen(false)}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <button
-                  aria-label="Close"
-                  onClick={() => setShowIabBanner(false)}
-                  style={{ background: 'transparent', border: 0, color: '#bbb', fontSize: 20, lineHeight: 1, cursor: 'pointer' }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div style={{ display: 'flex', gap: '.5rem' }}>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); handleIabOpenInBrowser(); }}
-                  style={{ flex: 1, textAlign: 'center', textDecoration: 'none', background: '#fff', color: '#111', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
-                >
-                  Open in Browser
-                </a>
-                <button
-                  onClick={handleIabCopyLink}
-                  style={{ flex: 1, background: '#262626', color: '#fff', border: '1px solid #333', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
-                >
-                  Copy Link
-                </button>
-              </div>
+
+                {(isControlsOpen || isCmeListOpen) && (
+                  <div
+                    className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]"
+                    onClick={() => {
+                      setIsControlsOpen(false);
+                      setIsCmeListOpen(false);
+                    }}
+                  />
+                )}
+                {isLoading && activePage === 'modeler' && <LoadingOverlay />}
+                <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+              </section>
             </div>
-          )}
+
+            <aside className="xl:col-span-3 space-y-4">
+              <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 to-black/20 backdrop-blur-2xl shadow-2xl shadow-black/40 p-4 space-y-3">
+                <p className="text-xs uppercase tracking-wide text-neutral-400">Quick links</p>
+                <div className="flex flex-col gap-2 text-sm">
+                  <button onClick={() => setNavigationTarget({ page: 'forecast', elementId: 'unified-forecast-section' })} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Jump to aurora outlook</button>
+                  <button onClick={() => setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' })} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">View current solar flares</button>
+                  <button onClick={() => setNavigationTarget({ page: 'solar-activity', elementId: 'ips-shocks-section' })} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Inspect IPS shocks</button>
+                  <button onClick={() => setActivePage('modeler')} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Open cinematic modeler</button>
+                  <button onClick={handleDownloadImage} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Download screenshot</button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-2xl shadow-black/40 p-4 space-y-3">
+                <p className="text-xs uppercase tracking-wide text-neutral-400">Live signals</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-neutral-400">Aurora score</span><span className="font-semibold text-emerald-200">{currentAuroraScore ?? '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-neutral-400">X-Ray flux</span><span className="font-semibold text-amber-200">{latestXrayFlux ? `${latestXrayFlux.toFixed(2)} W/m²` : '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-neutral-400">Substorms</span><span className={`font-semibold ${isSubstormAlert ? 'text-rose-200' : 'text-neutral-100'}`}>{isSubstormAlert ? 'Active' : 'Calm'}</span></div>
+                </div>
+                <button
+                  onClick={() => setIsGameOpen(true)}
+                  className="w-full px-3 py-3 rounded-xl bg-gradient-to-r from-emerald-400/40 to-cyan-500/30 border border-emerald-300/50 text-sm font-semibold text-emerald-50 shadow-lg shadow-emerald-500/20"
+                >
+                  Solar Surfer break
+                </button>
+              </div>
+            </aside>
+          </div>
+        </main>
+
+        <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          appVersion={APP_VERSION}
+          onShowTutorial={handleShowTutorial}
+        />
+
+        <FirstVisitTutorial
+          isOpen={isFirstVisitTutorialOpen}
+          onClose={handleCloseFirstVisitTutorial}
+          onStepChange={handleTutorialStepChange}
+        />
+
+        <CmeModellerTutorial
+          isOpen={isCmeTutorialOpen}
+          onClose={handleCloseCmeTutorial}
+          onStepChange={handleTutorialStepChange}
+        />
+
+        <ForecastModelsModal
+          isOpen={isForecastModelsModalOpen}
+          onClose={() => setIsForecastModelsModalOpen(false)}
+          setViewerMedia={setViewerMedia}
+        />
+
+        {/* --- NEW: Render the ImpactGraphModal --- */}
+        <ImpactGraphModal
+          isOpen={isImpactGraphOpen}
+          onClose={() => setIsImpactGraphOpen(false)}
+          data={impactGraphData}
+        />
+
+        {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
+
+        {showIabBanner && (
+          <div
+            className="pointer-events-auto"
+            style={{
+              position: 'fixed',
+              left: '1rem',
+              right: '1rem',
+              bottom: '1rem',
+              zIndex: 2147483647,
+              background: '#171717',
+              color: '#fff',
+              border: '1px solid #2a2a2a',
+              borderRadius: 14,
+              boxShadow: '0 10px 30px rgba(0,0,0,.45)',
+              fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+              padding: '0.9rem 1rem 1rem 1rem'
+            }}
+          >
+            <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', marginBottom: '.5rem' }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>SA</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, letterSpacing: '.2px' }}>Install Spot The Aurora</div>
+                <div style={{ opacity: .9, fontSize: '.95rem', marginTop: '.25rem', lineHeight: 1.4 }}>
+                  {isIOSIab
+                    ? <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>•••</b> → <b>Open in Browser</b> (Safari), then Share → <b>Add to Home Screen</b>.</>
+                    : <>Facebook/Instagram’s in-app browser can’t install this app.<br />Tap <b>⋮</b> → <b>Open in Chrome</b>, then choose <b>Install app</b>.</>}
+                </div>
+              </div>
+              <button
+                aria-label="Close"
+                onClick={() => setShowIabBanner(false)}
+                style={{ background: 'transparent', border: 0, color: '#bbb', fontSize: 20, lineHeight: 1, cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '.5rem' }}>
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); handleIabOpenInBrowser(); }}
+                style={{ flex: 1, textAlign: 'center', textDecoration: 'none', background: '#fff', color: '#111', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
+              >
+                Open in Browser
+              </a>
+              <button
+                onClick={handleIabCopyLink}
+                style={{ flex: 1, background: '#262626', color: '#fff', border: '1px solid #333', padding: '.65rem .9rem', borderRadius: 10, fontWeight: 700 }}
+              >
+                Copy Link
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
