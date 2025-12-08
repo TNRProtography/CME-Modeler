@@ -664,12 +664,12 @@ const App: React.FC = () => {
   const handleInitialLoad = useCallback(() => {
       setIsDashboardReady(true);
   }, []);
-  
+
   return (
     <>
       {showInitialLoader && <InitialLoadingScreen isFadingOut={isFadingOut} />}
-      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 relative ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
-          <div className="absolute inset-0 opacity-80 blur-3xl transition-all duration-700 pointer-events-none" aria-hidden="true">
+      <div className={`w-screen h-screen bg-[#05070a] flex flex-col text-neutral-200 overflow-hidden transition-opacity duration-500 relative ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
+          <div className="absolute inset-0 opacity-90 blur-[110px] transition-all duration-700 pointer-events-none" aria-hidden="true">
             <div className={`absolute inset-0 ${pageTheme.gradient}`} />
           </div>
 
@@ -688,214 +688,254 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
 
-          <header className="flex-shrink-0 px-3 md:px-6 pt-3 pb-2 space-y-3 relative z-[2001]">
-            <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+          <div className="flex flex-1 min-h-0 relative z-[2001]">
+            <aside className="hidden lg:flex flex-col w-64 px-4 py-6 gap-4 border-r border-white/5 bg-black/30 backdrop-blur-xl shadow-2xl shadow-black/40">
               <div className="flex items-center gap-3">
                 <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${pageTheme.accent} flex items-center justify-center shadow-xl shadow-black/40 border border-white/10`}>
                   <span className="text-lg font-extrabold tracking-tight">CME</span>
                 </div>
                 <div>
-                  <p className="text-lg md:text-xl font-semibold text-white">{pageTheme.title}</p>
-                  <p className="text-sm text-neutral-400">{pageTheme.subtitle}</p>
+                  <p className="text-lg font-semibold text-white">Helio Studio</p>
+                  <p className="text-xs text-neutral-400">Realtime space weather lab</p>
                 </div>
               </div>
-              <div className="flex-1 flex flex-wrap gap-2 justify-start lg:justify-center">
+
+              <div className="flex flex-col gap-2">
                 <button
                   id="nav-forecast"
                   onClick={() => setActivePage('forecast')}
-                  aria-current={activePage === 'forecast'}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold shadow-lg shadow-black/30 transition-all duration-300 backdrop-blur-sm ${activePage === 'forecast' ? 'bg-white/10 border-sky-400/80 text-white scale-[1.02]' : 'bg-neutral-900/60 border-white/5 hover:border-white/20'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
-                  title="View Live Aurora Forecasts"
+                  className={`flex items-center justify-between px-3 py-3 rounded-2xl border text-sm font-semibold transition-all ${activePage === 'forecast' ? 'bg-white/10 border-sky-400/60 text-white shadow-lg shadow-sky-500/20' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
                 >
-                  <ForecastIcon className="w-5 h-5" />
-                  Forecasts
+                  <span className="flex items-center gap-2"><ForecastIcon className="w-5 h-5" /> Forecasts</span>
+                  <span className="text-[10px] uppercase tracking-wide text-neutral-400">Live</span>
                 </button>
                 <button
                   id="nav-solar-activity"
                   onClick={() => setActivePage('solar-activity')}
-                  aria-current={activePage === 'solar-activity'}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold shadow-lg shadow-black/30 transition-all duration-300 backdrop-blur-sm ${activePage === 'solar-activity' ? 'bg-white/10 border-amber-400/80 text-white scale-[1.02]' : 'bg-neutral-900/60 border-white/5 hover:border-white/20'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
-                  title="View Solar Activity"
+                  className={`flex items-center justify-between px-3 py-3 rounded-2xl border text-sm font-semibold transition-all ${activePage === 'solar-activity' ? 'bg-white/10 border-amber-400/60 text-white shadow-lg shadow-amber-500/20' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
                 >
-                  <SunIcon className="w-5 h-5" />
-                  Solar Activity
+                  <span className="flex items-center gap-2"><SunIcon className="w-5 h-5" /> Solar Activity</span>
+                  <span className="text-[10px] uppercase tracking-wide text-neutral-400">Watch</span>
                 </button>
                 <button
                   id="nav-modeler"
                   onClick={() => setActivePage('modeler')}
-                  aria-current={activePage === 'modeler'}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold shadow-lg shadow-black/30 transition-all duration-300 backdrop-blur-sm ${activePage === 'modeler' ? 'bg-white/10 border-indigo-400/80 text-white scale-[1.02]' : 'bg-neutral-900/60 border-white/5 hover:border-white/20'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
-                  title="View CME Visualization"
+                  className={`flex items-center justify-between px-3 py-3 rounded-2xl border text-sm font-semibold transition-all ${activePage === 'modeler' ? 'bg-white/10 border-indigo-400/60 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
                 >
-                  <CmeIcon className="w-5 h-5" />
-                  CME Visualizer
+                  <span className="flex items-center gap-2"><CmeIcon className="w-5 h-5" /> CME Visualizer</span>
+                  <span className="text-[10px] uppercase tracking-wide text-neutral-400">3D</span>
                 </button>
               </div>
-              <div className="flex items-center gap-2 justify-end">
+
+              <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-3">
+                <p className="text-xs uppercase tracking-wide text-neutral-400">Live Signals</p>
+                <div className="flex flex-col gap-2 text-sm">
+                  <div className="flex justify-between"><span className="text-neutral-400">Aurora score</span><span className="font-semibold text-emerald-200">{currentAuroraScore ?? '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-neutral-400">X-Ray flux</span><span className="font-semibold text-amber-200">{latestXrayFlux ? `${latestXrayFlux.toFixed(2)} W/m²` : '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-neutral-400">Substorms</span><span className={`font-semibold ${isSubstormAlert ? 'text-rose-200' : 'text-neutral-100'}`}>{isSubstormAlert ? 'Active' : 'Calm'}</span></div>
+                </div>
+              </div>
+
+              <div className="mt-auto flex flex-col gap-2">
                 <button
-                  onClick={handleShowTutorial}
-                  className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm font-semibold shadow-lg shadow-black/30 hover:bg-white/15 transition-all"
+                  onClick={() => setIsGameOpen(true)}
+                  className="w-full px-3 py-3 rounded-xl bg-gradient-to-r from-emerald-400/40 to-cyan-500/30 border border-emerald-300/50 text-sm font-semibold text-emerald-50 shadow-lg shadow-emerald-500/20"
                 >
-                  Guided Tour
-                </button>
-                <button
-                  onClick={() => setIsForecastModelsModalOpen(true)}
-                  className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm font-semibold shadow-lg shadow-black/30 hover:bg-white/15 transition-all"
-                >
-                  Forecast Models
+                  Take the Solar Surfer break
                 </button>
                 <button
                   id="nav-settings"
                   onClick={() => setIsSettingsOpen(true)}
-                  className={`p-2 bg-white/10 border border-white/10 rounded-full text-neutral-50 shadow-lg shadow-black/30 transition-all hover:bg-white/15 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
-                  title="Open Settings"
+                  className={`w-full px-3 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold hover:bg-white/10 transition-all ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
                 >
-                  <SettingsIcon className="w-5 h-5" />
+                  Open Settings
+                </button>
+                <button
+                  onClick={handleShowTutorial}
+                  className="w-full px-3 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold hover:bg-white/10 transition-all"
+                >
+                  Guided Tour
                 </button>
               </div>
-            </div>
-            <div className="w-full overflow-hidden">
-              <div className="flex flex-col gap-2 rounded-3xl border border-white/5 bg-neutral-900/60 backdrop-blur-md p-4 shadow-2xl shadow-black/40">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-semibold uppercase tracking-wide text-neutral-200">{pageTheme.title}</div>
-                  <div className="text-sm text-neutral-300">{pageTheme.focusHint}</div>
+            </aside>
+
+            <div className="flex-1 flex flex-col min-h-0 px-3 md:px-6 py-4 gap-4">
+              <div className="lg:hidden flex items-center gap-2 px-2 py-2 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-lg shadow-xl">
+                <div className={`h-10 w-10 rounded-2xl bg-gradient-to-br ${pageTheme.accent} flex items-center justify-center shadow-lg border border-white/10`}>
+                  <span className="text-sm font-extrabold">CME</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setIsGameOpen(true)}
-                    className="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-400/30 via-emerald-500/20 to-cyan-500/20 border border-emerald-300/40 text-sm font-semibold text-emerald-100 shadow-lg shadow-black/20 hover:translate-y-[-1px] transition-all"
-                  >
-                    Take the Solar Surfer break
-                  </button>
-                  <button
-                    onClick={() => setIsCmeListOpen(true)}
-                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-semibold shadow-lg shadow-black/20 hover:bg-white/10 transition-all"
-                  >
-                    Open CME list
-                  </button>
-                  <button
-                    onClick={() => setIsControlsOpen(true)}
-                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-semibold shadow-lg shadow-black/20 hover:bg-white/10 transition-all"
-                  >
-                    Simulation controls
-                  </button>
-                  <button
-                    onClick={() => setIsTutorialOpen(true)}
-                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-semibold shadow-lg shadow-black/20 hover:bg-white/10 transition-all"
-                  >
-                    Modeling guide
-                  </button>
+                <div className="flex-1 flex gap-2 overflow-x-auto">
+                  {(['forecast','solar-activity','modeler'] as PageKey[]).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setActivePage(page)}
+                      className={`flex-1 min-w-[120px] px-3 py-2 rounded-xl border text-sm font-semibold transition-all ${activePage === page ? 'bg-white/10 border-white/40' : 'bg-white/5 border-white/10'}`}
+                    >
+                      {page === 'forecast' && 'Forecasts'}
+                      {page === 'solar-activity' && 'Solar Activity'}
+                      {page === 'modeler' && 'CME Visualizer'}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-          </header>
 
-          <div className="flex flex-grow min-h-0 px-3 md:px-6 pb-4 gap-4">
-              <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
-                <div className="flex flex-col lg:flex-row flex-grow min-h-0 w-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
-                <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
+              <header className="rounded-3xl border border-white/5 bg-white/5 backdrop-blur-2xl shadow-2xl shadow-black/40 p-5 space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">{pageTheme.title}</p>
+                    <h1 className="text-2xl md:text-3xl font-bold text-white">{pageTheme.subtitle}</h1>
+                    <p className="text-sm text-neutral-300 mt-1">{pageTheme.focusHint}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setIsCmeListOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Open CME list</button>
+                    <button onClick={() => setIsControlsOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Simulation controls</button>
+                    <button onClick={() => setIsForecastModelsModalOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Forecast models</button>
+                    <button onClick={() => setIsTutorialOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Modeling guide</button>
+                  </div>
                 </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="p-3 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner">
+                    <p className="text-neutral-400">Aurora score</p>
+                    <p className="text-lg font-semibold text-emerald-200">{currentAuroraScore ?? '—'}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner">
+                    <p className="text-neutral-400">X-ray flux</p>
+                    <p className="text-lg font-semibold text-amber-200">{latestXrayFlux ? `${latestXrayFlux.toFixed(2)} W/m²` : '—'}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner">
+                    <p className="text-neutral-400">IPS watch</p>
+                    <p className="text-lg font-semibold text-cyan-200">{ipsAlertData ? 'Active shock' : 'Monitoring'}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 shadow-inner">
+                    <p className="text-neutral-400">Substorms</p>
+                    <p className={`text-lg font-semibold ${isSubstormAlert ? 'text-rose-200' : 'text-neutral-100'}`}>{isSubstormAlert ? 'Alert' : 'Calm'}</p>
+                  </div>
+                </div>
+              </header>
 
-                <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
-                    <SimulationCanvas
-                        ref={canvasRef}
-                        cmeData={cmesToRender}
-                        activeView={activeView}
-                        focusTarget={activeFocus}
-                        currentlyModeledCMEId={currentlyModeledCMEId}
-                        onCMEClick={handleCMEClickFromCanvas}
-                        timelineActive={timelineActive}
-                        timelinePlaying={timelinePlaying}
-                        timelineSpeed={timelineSpeed}
-                        timelineValue={timelineScrubberValue}
-                        timelineMinDate={timelineMinDate}
-                        timelineMaxDate={timelineMaxDate}
-                        setPlanetMeshesForLabels={handleSetPlanetMeshes}
-                        setRendererDomElement={setRendererDomElement}
-                        onCameraReady={setThreeCamera}
-                        getClockElapsedTime={getClockElapsedTime}
-                        resetClock={resetClock}
-                        onScrubberChangeByAnim={handleScrubberChangeByAnim}
-                        onTimelineEnd={handleTimelineEnd}
-                        showExtraPlanets={showExtraPlanets}
-                        showMoonL1={showMoonL1}
-                        showFluxRope={showFluxRope}
-                        dataVersion={dataVersion}
-                        interactionMode={InteractionMode.MOVE}
-                        onSunClick={handleOpenGame}
-                    />
-                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
-                    <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
-                        <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                            <div className="flex flex-col items-center w-14 lg:hidden">
-                                <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
-                                    <SettingsIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1">Settings</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-                                    <CmeIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="forecast-models-button" onClick={() => setIsForecastModelsModalOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME Forecast Models">
-                                    <GlobeIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Forecast Models</span>
-                            </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
-                                    <DownloadIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Download Image</span>
-                            </div>
-                        </div>
-                        <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                            <div className="flex flex-col items-center w-14 lg:hidden">
-                                <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME List">
-                                    <ListIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-400 mt-1">CME List</span>
-                            </div>
-                        </div>
+              <div className="flex-grow grid grid-cols-1 xl:grid-cols-3 gap-4 min-h-0">
+                <div className={`xl:col-span-2 h-full ${activePage === 'modeler' ? 'block' : 'hidden'}`}>
+                  <div className="flex flex-col lg:flex-row flex-grow min-h-0 w-full h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-2xl shadow-2xl shadow-black/40 overflow-hidden">
+                    <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
+                        <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                     </div>
-                    <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
-                </main>
 
-                <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
-                    <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
-                </div>
-                </div>
+                    <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
+                        <SimulationCanvas
+                            ref={canvasRef}
+                            cmeData={cmesToRender}
+                            activeView={activeView}
+                            focusTarget={activeFocus}
+                            currentlyModeledCMEId={currentlyModeledCMEId}
+                            onCMEClick={handleCMEClickFromCanvas}
+                            timelineActive={timelineActive}
+                            timelinePlaying={timelinePlaying}
+                            timelineSpeed={timelineSpeed}
+                            timelineValue={timelineScrubberValue}
+                            timelineMinDate={timelineMinDate}
+                            timelineMaxDate={timelineMaxDate}
+                            setPlanetMeshesForLabels={handleSetPlanetMeshes}
+                            setRendererDomElement={setRendererDomElement}
+                            onCameraReady={setThreeCamera}
+                            getClockElapsedTime={getClockElapsedTime}
+                            resetClock={resetClock}
+                            onScrubberChangeByAnim={handleScrubberChangeByAnim}
+                            onTimelineEnd={handleTimelineEnd}
+                            showExtraPlanets={showExtraPlanets}
+                            showMoonL1={showMoonL1}
+                            showFluxRope={showFluxRope}
+                            dataVersion={dataVersion}
+                            interactionMode={InteractionMode.MOVE}
+                            onSunClick={handleOpenGame}
+                        />
+                        {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                        <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
+                            <div className="flex items-start text-center space-x-2 pointer-events-auto">
+                                <div className="flex flex-col items-center w-14 lg:hidden">
+                                    <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
+                                        <SettingsIcon className="w-6 h-6" />
+                                    </button>
+                                    <span className="text-xs text-neutral-400 mt-1">Settings</span>
+                                </div>
+                                <div className="flex flex-col items-center w-14">
+                                    <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
+                                        <CmeIcon className="w-6 h-6" />
+                                    </button>
+                                    <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
+                                </div>
+                                <div className="flex flex-col items-center w-14">
+                                    <button id="forecast-models-button" onClick={() => setIsForecastModelsModalOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME Forecast Models">
+                                        <GlobeIcon className="w-6 h-6" />
+                                    </button>
+                                    <span className="text-xs text-neutral-400 mt-1 lg:hidden">Forecast Models</span>
+                                </div>
+                                <div className="flex flex-col items-center w-14">
+                                    <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
+                                        <DownloadIcon className="w-6 h-6" />
+                                    </button>
+                                    <span className="text-xs text-neutral-400 mt-1 lg:hidden">Download Image</span>
+                                </div>
+                            </div>
+                            <div className="flex items-start text-center space-x-2 pointer-events-auto">
+                                <div className="flex flex-col items-center w-14 lg:hidden">
+                                    <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME List">
+                                        <ListIcon className="w-6 h-6" />
+                                    </button>
+                                    <span className="text-xs text-neutral-400 mt-1">CME List</span>
+                                </div>
+                            </div>
+                        </div>
+                        <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
+                    </main>
+
+                    <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
+                        <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
+                    </div>
+                  </div>
 
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
-              </div>
-              <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
-                <div className="h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
-                  <ForecastDashboard
-                      setViewerMedia={setViewerMedia}
-                      setCurrentAuroraScore={setCurrentAuroraScore}
-                      setSubstormActivityStatus={setSubstormActivityStatus}
-                      setIpsAlertData={setIpsAlertData}
-                      navigationTarget={navigationTarget}
-                      onInitialLoad={handleInitialLoad}
-                  />
+                </div>
+
+                <div className={`xl:col-span-2 h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
+                  <div className="h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-2xl shadow-2xl shadow-black/40 overflow-hidden">
+                    <ForecastDashboard
+                        setViewerMedia={setViewerMedia}
+                        setCurrentAuroraScore={setCurrentAuroraScore}
+                        setSubstormActivityStatus={setSubstormActivityStatus}
+                        setIpsAlertData={setIpsAlertData}
+                        navigationTarget={navigationTarget}
+                        onInitialLoad={handleInitialLoad}
+                    />
+                  </div>
+                </div>
+
+                <div className={`xl:col-span-2 h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
+                  <div className="h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-2xl shadow-2xl shadow-black/40 overflow-hidden">
+                    <SolarActivityDashboard
+                        setViewerMedia={setViewerMedia}
+                        setLatestXrayFlux={setLatestXrayFlux}
+                        onViewCMEInVisualization={handleViewCMEInVisualization}
+                        navigationTarget={navigationTarget}
+                    />
+                  </div>
+                </div>
+
+                <div className="hidden xl:block h-full">
+                  <div className="h-full rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 to-black/20 backdrop-blur-2xl shadow-2xl shadow-black/40 p-4 space-y-3">
+                    <p className="text-xs uppercase tracking-wide text-neutral-400">Quick actions</p>
+                    <div className="flex flex-col gap-2 text-sm">
+                      <button onClick={() => setNavigationTarget({ page: 'forecast', elementId: 'unified-forecast-section' })} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Jump to aurora outlook</button>
+                      <button onClick={() => setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' })} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">View current solar flares</button>
+                      <button onClick={() => setNavigationTarget({ page: 'solar-activity', elementId: 'ips-shocks-section' })} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Inspect IPS shocks</button>
+                      <button onClick={() => setActivePage('modeler')} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Open cinematic modeler</button>
+                      <button onClick={handleDownloadImage} className="px-3 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-left">Download screenshot</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
-                <div className="h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
-                  <SolarActivityDashboard
-                      setViewerMedia={setViewerMedia}
-                      setLatestXrayFlux={setLatestXrayFlux}
-                      onViewCMEInVisualization={handleViewCMEInVisualization}
-                      navigationTarget={navigationTarget}
-                  />
-                </div>
-              </div>
+            </div>
           </div>
           
           <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
