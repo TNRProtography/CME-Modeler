@@ -92,31 +92,41 @@ const createCroissantCMEGeometry = (THREE: any, count: number, halfAngleDeg: num
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.45, 80, 210));
-  const majorRadius = 1.35;
-  const baseMinor = 0.24 + THREE.MathUtils.clamp(halfAngleDeg / 120, 0, 1) * 0.18;
+  // Build a teardrop loop: narrow at the base near the sun, widening into a thick front
+  // shell and bending back to suggest the magnetic cloud arc seen in reference imagery.
+  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.6, 110, 255));
+  const majorRadius = 1.28;
+  const baseMinor = 0.18 + THREE.MathUtils.clamp(halfAngleDeg / 120, 0, 1) * 0.22;
 
   for (let i = 0; i < count; i++) {
-    const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.5, arcSpan * 0.5, Math.random());
+    // Bias particles toward the head of the CME for a thicker shock/front while keeping a
+    // taut, narrow tail glued to the sun.
+    const arcLerp = Math.pow(Math.random(), 0.85);
+    const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.55, arcSpan * 0.45, arcLerp);
     const tubeAngle = Math.random() * Math.PI * 2;
 
-    const shellBias = Math.pow(Math.random(), 0.65);
-    const localMinor = baseMinor * (0.6 + 0.35 * shellBias);
-    const taper = THREE.MathUtils.lerp(0.85, 0.4, Math.abs(arcAngle) / (arcSpan * 0.5));
+    const headness = THREE.MathUtils.smoothstep(arcLerp, 0.15, 0.9);
+    const shellBias = Math.pow(Math.random(), 0.7);
+    const ringRadius = majorRadius + headness * 0.7; // flare outward toward the front
+    const localMinor = baseMinor * (0.35 + 0.95 * headness) * (0.55 + 0.45 * shellBias);
 
-    const x = (majorRadius + localMinor * Math.cos(tubeAngle)) * Math.cos(arcAngle);
-    const y = localMinor * Math.sin(tubeAngle) * taper;
-    const z = (majorRadius + localMinor * Math.cos(tubeAngle)) * Math.sin(arcAngle);
-    const arcCurve = Math.sin((Math.abs(arcAngle) / (arcSpan * 0.5)) * Math.PI * 0.5);
-    const axialOffset = 0.3 + shellBias * 0.25 + arcCurve * 0.35;
+    // Taper thickness strongly toward the inner edge to leave a pointed attachment to the sun
+    // while letting the outer arc billow wide.
+    const taper = THREE.MathUtils.lerp(0.3, 1.0, headness);
+    const lift = THREE.MathUtils.lerp(0.05, 0.55, headness) + shellBias * 0.08;
+
+    const radial = ringRadius + localMinor * Math.cos(tubeAngle) * taper;
+    const x = radial * Math.cos(arcAngle);
+    const z = radial * Math.sin(arcAngle);
+    const y = (localMinor * Math.sin(tubeAngle) * taper * 0.65) + lift;
 
     const idx = i * 3;
     positions[idx] = x;
-    positions[idx + 1] = (y * 0.85) + axialOffset;
+    positions[idx + 1] = y;
     positions[idx + 2] = z;
 
-    const rel = (arcAngle + arcSpan * 0.5) / arcSpan;
-    progress[i] = rel;
+    // Progress tracks along the arc so colors transition from wake near the sun to shock at the head.
+    progress[i] = arcLerp;
   }
 
   const geometry = new THREE.BufferGeometry();
