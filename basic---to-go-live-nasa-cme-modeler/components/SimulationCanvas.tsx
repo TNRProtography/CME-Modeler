@@ -87,45 +87,36 @@ const getCmeCoreColor = (speed: number): any => {
   return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
 };
 
-const createCroissantCMEGeometry = (THREE: any, count: number, halfAngleDeg: number) => {
+const createTearDropCMEGeometry = (THREE: any, count: number, halfAngleDeg: number) => {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  // Build a pronounced tear drop: a tight, pointed tail at the sun that swells into a broad
-  // front lobe. We bias particles toward the head and keep the curve open so it never loops
-  // back on itself.
-  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.25, 95, 220));
-  const baseMinor = 0.12 + THREE.MathUtils.clamp(halfAngleDeg / 140, 0, 1) * 0.18;
+  const spread = THREE.MathUtils.degToRad(Math.max(35, halfAngleDeg * 1.15));
 
   for (let i = 0; i < count; i++) {
-    // Spine travels from the sun-facing tip (0) to the outer head (1) with most particles
-    // clustering forward to emphasize the teardrop bulge.
-    const spineT = Math.pow(Math.random(), 0.72);
+    // Spine runs from a sharp tail at the sun to a swollen head. Bias toward the head so the
+    // front looks dense while the tail stays pointed.
+    const spineT = Math.pow(Math.random(), 0.76);
     const tubeAngle = Math.random() * Math.PI * 2;
 
-    const headBias = THREE.MathUtils.smoothstep(spineT, 0.12, 1.0);
-    const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.25, arcSpan * 0.65, headBias);
+    const arcLean = THREE.MathUtils.lerp(-spread * 0.15, spread * 0.45, spineT);
+    const arcAngle = (Math.random() - 0.5) * spread * 0.45 + arcLean;
 
-    // Increase distance from the origin toward the head to create the wide front of the drop.
-    const radialCurve = THREE.MathUtils.lerp(0.32, 1.45, THREE.MathUtils.smoothstep(spineT, 0.05, 1.0));
-    const crossSection = baseMinor
-      * (0.35 + 1.45 * THREE.MathUtils.smoothstep(spineT, 0.08, 0.95))
-      * (0.55 + 0.45 * Math.pow(Math.random(), 0.6));
+    const coreRadius = THREE.MathUtils.lerp(0.18, 1.2, THREE.MathUtils.smoothstep(spineT, 0.05, 1.0));
+    const tubeRadius = THREE.MathUtils.lerp(0.05, 0.22, THREE.MathUtils.smoothstep(spineT, 0.08, 0.9))
+      * (0.65 + 0.35 * Math.random());
 
-    // Gentle lift keeps the inner tail tucked toward the sun while the head balloons upward.
-    const lift = THREE.MathUtils.lerp(0.0, 0.6, headBias) + crossSection * 0.25;
-    const radial = radialCurve + crossSection * Math.cos(tubeAngle) * (0.35 + 0.65 * headBias);
-    const x = radial * Math.cos(arcAngle);
-    const z = radial * Math.sin(arcAngle);
-    const y = spineT * 1.05 + Math.sin(tubeAngle) * crossSection * (0.25 + 0.45 * headBias) + lift;
+    const radial = coreRadius + Math.cos(tubeAngle) * tubeRadius;
+    const y = spineT * 1.2 + Math.sin(tubeAngle) * tubeRadius * 0.65;
+    const x = radial * Math.sin(arcAngle);
+    const z = radial * Math.cos(arcAngle);
 
     const idx = i * 3;
     positions[idx] = x;
     positions[idx + 1] = y;
     positions[idx + 2] = z;
 
-    // Progress follows the spine so the leading edge inherits the hottest part of the color ramp.
     progress[i] = THREE.MathUtils.clamp(spineT, 0, 1);
   }
 
@@ -803,20 +794,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
-      const baseGeom = createCroissantCMEGeometry(THREE, pCount, cme.halfAngle);
+      const baseGeom = createTearDropCMEGeometry(THREE, pCount, cme.halfAngle);
 
-      const shockColor = new THREE.Color(0xffc45c);
-      const coreColor = new THREE.Color(0x7349ff);
-      const wakeColor = new THREE.Color(0x2c7bff);
+      const shockColor = new THREE.Color(0xf6e27f);
+      const coreColor = getCmeCoreColor(cme.speed);
+      const wakeColor = new THREE.Color(0x4ba8ff);
 
-      const makePart = (
-        geometry: any,
+      const makeLayer = (
         colorStops: { stop: number; color: any }[],
         opacity: number,
         sizeMultiplier: number,
         scale: { x: number; y: number; z: number }
       ) => {
-        const geom = geometry.clone();
+        const geom = baseGeom.clone();
         tintGeometryByStops(geom, 'progress', colorStops, THREE);
 
         const mat = new THREE.PointsMaterial({
@@ -835,40 +825,40 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         return pts;
       };
 
-      const shock = makePart(
-        baseGeom,
+      const shock = makeLayer(
         [
-          { stop: 0, color: wakeColor.clone().multiplyScalar(0.35) },
-          { stop: 0.3, color: shockColor.clone().multiplyScalar(0.75) },
-          { stop: 1, color: shockColor }
-        ],
-        0.55,
-        1.1,
-        { x: 1.18, y: 1.22, z: 1.18 }
-      );
-
-      const core = makePart(
-        baseGeom,
-        [
-          { stop: 0, color: coreColor.clone().multiplyScalar(0.7) },
-          { stop: 0.35, color: coreColor },
-          { stop: 1, color: coreColor.clone().lerp(shockColor, 0.25) }
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.4) },
+          { stop: 0.25, color: wakeColor.clone().lerp(shockColor, 0.6) },
+          { stop: 0.55, color: shockColor },
+          { stop: 1, color: shockColor.clone().lerp(coreColor, 0.2) },
         ],
         1.0,
-        0.8,
-        { x: 0.72, y: 0.8, z: 0.72 }
+        1.1,
+        { x: 1.35, y: 1.05, z: 1.35 }
       );
 
-      const wake = makePart(
-        baseGeom,
+      const core = makeLayer(
         [
-          { stop: 0, color: wakeColor.clone().multiplyScalar(0.65) },
-          { stop: 0.4, color: wakeColor },
-          { stop: 1, color: wakeColor.clone().lerp(coreColor, 0.35) }
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.35) },
+          { stop: 0.2, color: wakeColor.clone().lerp(coreColor, 0.45) },
+          { stop: 0.55, color: coreColor },
+          { stop: 0.85, color: coreColor.clone().lerp(shockColor, 0.25) },
+          { stop: 1, color: coreColor.clone().lerp(shockColor, 0.45) },
         ],
-        0.75,
         0.95,
-        { x: 0.9, y: 1.05, z: 0.9 }
+        0.9,
+        { x: 0.78, y: 0.9, z: 0.78 }
+      );
+
+      const wake = makeLayer(
+        [
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.7) },
+          { stop: 0.35, color: wakeColor },
+          { stop: 1, color: wakeColor.clone().lerp(coreColor, 0.3) }
+        ],
+        0.82,
+        0.95,
+        { x: 0.95, y: 1.08, z: 0.95 }
       );
 
       const system = new THREE.Group();
@@ -880,9 +870,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      // Spin the croissant shell 90° around its launch axis so the banana arc keeps orientation
-      // while still leaving position anchored to the same source point.
-      system.rotateOnAxis(new THREE.Vector3(0, 1, 0), Math.PI * 0.5);
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
