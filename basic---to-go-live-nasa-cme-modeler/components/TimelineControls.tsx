@@ -31,7 +31,7 @@ const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode;
     id={id}
     onClick={onClick}
     title={title}
-    className={`p-2 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors focus:outline-none focus:ring-1 focus:ring-neutral-400`}
+    className={`p-2 rounded-xl bg-gradient-to-b from-slate-900/80 to-slate-800/60 text-slate-100 hover:border-cyan-400/80 border border-slate-700/80 shadow-md transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400/60`}
   >
     {children}
   </button>
@@ -41,10 +41,10 @@ const SpeedButton: React.FC<{ onClick: () => void; isActive: boolean; children: 
  <button
     id={id}
     onClick={onClick}
-    className={`px-3 py-1 text-xs rounded border transition-colors ${
+    className={`px-3 py-1.5 text-xs rounded-full border transition-all shadow-sm ${
       isActive
-        ? `bg-neutral-200 text-neutral-900 border-neutral-200 font-semibold`
-        : `bg-transparent border-neutral-600 text-neutral-300 hover:bg-neutral-800`
+        ? `bg-gradient-to-r from-cyan-400 to-sky-500 text-slate-950 border-transparent font-semibold shadow-cyan-500/30`
+        : `bg-slate-900/60 border-slate-700 text-neutral-200 hover:border-cyan-400/70 hover:text-white`
     }`}
   >
     {children}
@@ -75,9 +75,9 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
 
   return (
-    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
+    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-gradient-to-r from-slate-950/95 via-slate-900/80 to-indigo-950/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-4 shadow-2xl text-neutral-100 space-y-3`}>
       <div className="flex items-center space-x-2 md:space-x-3">
-        <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
+        <label htmlFor="timeline-scrubber" className="hidden md:block text-xs uppercase tracking-wide text-neutral-300 whitespace-nowrap">Timeline scrubber</label>
         <PlaybackButton id="timeline-back-step-button" onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
         <PlaybackButton id="timeline-play-pause-button" onClick={onPlayPause} title={isPlaying ? "Pause" : "Play"}>
           {isPlaying ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
@@ -92,7 +92,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             max="1000"
             value={scrubberValue}
             onChange={(e) => onScrub(parseInt(e.target.value, 10))}
-            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
+            className="w-full h-1.5 bg-slate-800/80 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gradient-to-r [&::-webkit-slider-thumb]:from-cyan-400 [&::-webkit-slider-thumb]:to-sky-500 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-sky-400"
             />
             {nowPositionPercent >= 0 && (
             <>
@@ -102,10 +102,10 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
                 title={`Current Time: ${new Date(nowTimestamp).toLocaleString()}`}
                 />
                 <div
-                className="absolute top-[-10px] text-[10px] text-red-400/90 pointer-events-none font-semibold uppercase tracking-wider"
+                className="absolute top-[-10px] text-[10px] text-red-300 pointer-events-none font-semibold uppercase tracking-wider"
                 style={{ left: `calc(${nowPositionPercent}% + 6px)` }}
                 >
-                Forecast
+                Forecast edge
                 </div>
             </>
             )}
@@ -116,12 +116,12 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             <ChartIcon className="w-4 h-4" />
         </PlaybackButton>
 
-        <div className="hidden sm:block text-xs tabular-nums whitespace-nowrap min-w-[150px] text-right text-neutral-400">
+        <div className="hidden sm:block text-xs tabular-nums whitespace-nowrap min-w-[150px] text-right text-neutral-300">
           {getCurrentTimelineDate()}
         </div>
       </div>
       <div className="flex items-center space-x-2 justify-center">
-        <span className="text-sm">Speed:</span>
+        <span className="text-xs uppercase tracking-wide text-neutral-300">Playback speed</span>
         <SpeedButton id="timeline-speed-05x-button" onClick={() => onSetSpeed(0.5)} isActive={playbackSpeed === 0.5}>0.5x</SpeedButton>
         <SpeedButton id="timeline-speed-1x-button" onClick={() => onSetSpeed(1)} isActive={playbackSpeed === 1}>1x</SpeedButton>
         <SpeedButton id="timeline-speed-2x-button" onClick={() => onSetSpeed(2)} isActive={playbackSpeed === 2}>2x</SpeedButton>
