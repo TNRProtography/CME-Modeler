@@ -136,6 +136,39 @@ const createCroissantCMEGeometry = (THREE: any, count: number, halfAngleDeg: num
   return geometry;
 };
 
+const tintGeometryByStops = (
+  geometry: any,
+  progressKey: string,
+  stops: { stop: number; color: any }[],
+  THREE: any
+) => {
+  const progressAttr = geometry.getAttribute(progressKey);
+  const colorAttr = geometry.getAttribute('color');
+
+  if (!progressAttr || !colorAttr) return;
+
+  const temp = new THREE.Color();
+  for (let i = 0; i < progressAttr.count; i++) {
+    const rel = progressAttr.getX(i);
+    let lower = stops[0];
+    let upper = stops[stops.length - 1];
+
+    for (let s = 0; s < stops.length - 1; s++) {
+      if (rel >= stops[s].stop && rel <= stops[s + 1].stop) {
+        lower = stops[s];
+        upper = stops[s + 1];
+        break;
+      }
+    }
+
+    const span = Math.max(1e-5, upper.stop - lower.stop);
+    const t = Math.max(0, Math.min(1, (rel - lower.stop) / span));
+    temp.copy(lower.color).lerp(upper.color, t);
+    colorAttr.setXYZ(i, temp.r, temp.g, temp.b);
+  }
+  colorAttr.needsUpdate = true;
+};
+
 const createCroissantFluxRope = (THREE: any, particleTexture: any, count: number) => {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
@@ -756,51 +789,94 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
-      if ((c as any).geometry) (c as any).geometry.dispose();
-      if ((c as any).material) {
-        const m = (c as any).material;
-        if (Array.isArray(m)) m.forEach((x:any)=>x.dispose());
-        else m.dispose();
-      }
+      c.traverse((child: any) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const m = child.material;
+          if (Array.isArray(m)) m.forEach((x: any) => x.dispose());
+          else m.dispose();
+        }
+      });
     }
 
     const particleTexture = createParticleTexture(THREE);
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
-      const shockColor = new THREE.Color(0xffaaaa);
-      const wakeColor = new THREE.Color(0x8888ff);
-      const coreColor = getCmeCoreColor(cme.speed);
+      const baseGeom = createCroissantCMEGeometry(THREE, pCount, cme.halfAngle);
 
-      const geom = createCroissantCMEGeometry(THREE, pCount, cme.halfAngle);
-      const progressAttr = geom.getAttribute('progress');
-      const colorAttr = geom.getAttribute('color');
+      const shockColor = new THREE.Color(0xffc45c);
+      const coreColor = new THREE.Color(0x7349ff);
+      const wakeColor = new THREE.Color(0x2c7bff);
 
-      if (progressAttr && colorAttr) {
-        const temp = new THREE.Color();
-        for (let i = 0; i < progressAttr.count; i++) {
-          const rel = progressAttr.getX(i);
-          if (rel < 0.1) temp.copy(wakeColor).lerp(coreColor, rel / 0.1);
-          else if (rel < 0.3) temp.copy(coreColor);
-          else temp.copy(coreColor).lerp(shockColor, (rel - 0.3) / 0.7);
-          colorAttr.setXYZ(i, temp.r, temp.g, temp.b);
-        }
-        colorAttr.needsUpdate = true;
-      }
+      const makePart = (
+        geometry: any,
+        colorStops: { stop: number; color: any }[],
+        opacity: number,
+        sizeMultiplier: number,
+        scale: { x: number; y: number; z: number }
+      ) => {
+        const geom = geometry.clone();
+        tintGeometryByStops(geom, 'progress', colorStops, THREE);
 
-      const mat = new THREE.PointsMaterial({
-        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
-        sizeAttenuation: true,
-        map: particleTexture,
-        transparent: true,
-        opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        vertexColors: true
-      });
+        const mat = new THREE.PointsMaterial({
+          size: getCmeParticleSize(cme.speed, SCENE_SCALE) * sizeMultiplier,
+          sizeAttenuation: true,
+          map: particleTexture,
+          transparent: true,
+          opacity: getCmeOpacity(cme.speed) * opacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          vertexColors: true,
+        });
 
-      const system = new THREE.Points(geom, mat);
+        const pts = new THREE.Points(geom, mat);
+        pts.scale.set(scale.x, scale.y, scale.z);
+        return pts;
+      };
+
+      const shock = makePart(
+        baseGeom,
+        [
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.35) },
+          { stop: 0.3, color: shockColor.clone().multiplyScalar(0.75) },
+          { stop: 1, color: shockColor }
+        ],
+        0.55,
+        1.1,
+        { x: 1.18, y: 1.22, z: 1.18 }
+      );
+
+      const core = makePart(
+        baseGeom,
+        [
+          { stop: 0, color: coreColor.clone().multiplyScalar(0.7) },
+          { stop: 0.35, color: coreColor },
+          { stop: 1, color: coreColor.clone().lerp(shockColor, 0.25) }
+        ],
+        1.0,
+        0.8,
+        { x: 0.72, y: 0.8, z: 0.72 }
+      );
+
+      const wake = makePart(
+        baseGeom,
+        [
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.65) },
+          { stop: 0.4, color: wakeColor },
+          { stop: 1, color: wakeColor.clone().lerp(coreColor, 0.35) }
+        ],
+        0.75,
+        0.95,
+        { x: 0.9, y: 1.05, z: 0.9 }
+      );
+
+      const system = new THREE.Group();
       system.userData = cme;
+      system.add(shock);
+      system.add(wake);
+      system.add(core);
+
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
