@@ -92,26 +92,27 @@ const createCroissantCMEGeometry = (THREE: any, count: number, halfAngleDeg: num
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.2, 40, 160));
-  const majorRadius = 1.02;
-  const baseMinor = 0.42 + THREE.MathUtils.clamp(halfAngleDeg / 120, 0, 1) * 0.22;
+  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.45, 80, 210));
+  const majorRadius = 1.35;
+  const baseMinor = 0.24 + THREE.MathUtils.clamp(halfAngleDeg / 120, 0, 1) * 0.18;
 
   for (let i = 0; i < count; i++) {
     const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.5, arcSpan * 0.5, Math.random());
     const tubeAngle = Math.random() * Math.PI * 2;
 
-    const shellBias = Math.pow(Math.random(), 0.55);
-    const localMinor = baseMinor * (0.65 + 0.45 * shellBias);
-    const taper = THREE.MathUtils.lerp(0.95, 0.58, Math.abs(arcAngle) / (arcSpan * 0.5));
+    const shellBias = Math.pow(Math.random(), 0.65);
+    const localMinor = baseMinor * (0.6 + 0.35 * shellBias);
+    const taper = THREE.MathUtils.lerp(0.85, 0.4, Math.abs(arcAngle) / (arcSpan * 0.5));
 
     const x = (majorRadius + localMinor * Math.cos(tubeAngle)) * Math.cos(arcAngle);
     const y = localMinor * Math.sin(tubeAngle) * taper;
     const z = (majorRadius + localMinor * Math.cos(tubeAngle)) * Math.sin(arcAngle);
-    const axialOffset = 0.35 + shellBias * 0.35;
+    const arcCurve = Math.sin((Math.abs(arcAngle) / (arcSpan * 0.5)) * Math.PI * 0.5);
+    const axialOffset = 0.3 + shellBias * 0.25 + arcCurve * 0.35;
 
     const idx = i * 3;
     positions[idx] = x;
-    positions[idx + 1] = y + axialOffset;
+    positions[idx + 1] = (y * 0.85) + axialOffset;
     positions[idx + 2] = z;
 
     const rel = (arcAngle + arcSpan * 0.5) / arcSpan;
