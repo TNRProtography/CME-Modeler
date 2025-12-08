@@ -787,10 +787,26 @@ const App: React.FC = () => {
                     <p className="text-sm text-neutral-300 mt-1">{pageTheme.focusHint}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setIsCmeListOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Open CME list</button>
-                    <button onClick={() => setIsControlsOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Simulation controls</button>
-                    <button onClick={() => setIsForecastModelsModalOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Forecast models</button>
-                    <button onClick={() => setIsTutorialOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Modeling guide</button>
+                    {activePage === 'modeler' && (
+                      <>
+                        <button onClick={() => setIsCmeListOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Open CME list</button>
+                        <button onClick={() => setIsControlsOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Simulation controls</button>
+                        <button onClick={() => setIsForecastModelsModalOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Forecast models</button>
+                        <button onClick={() => setIsTutorialOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Modeling guide</button>
+                      </>
+                    )}
+                    {activePage === 'forecast' && (
+                      <>
+                        <button onClick={() => setNavigationTarget({ page: 'forecast', elementId: 'unified-forecast-section' })} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Aurora outlook</button>
+                        <button onClick={() => setIsSettingsOpen(true)} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Forecast settings</button>
+                      </>
+                    )}
+                    {activePage === 'solar-activity' && (
+                      <>
+                        <button onClick={() => setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' })} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">View X-ray flux</button>
+                        <button onClick={() => setNavigationTarget({ page: 'solar-activity', elementId: 'ips-shocks-section' })} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/15 text-sm font-semibold shadow-lg shadow-black/30 hover:-translate-y-[1px] transition-transform">Inspect IPS shocks</button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
