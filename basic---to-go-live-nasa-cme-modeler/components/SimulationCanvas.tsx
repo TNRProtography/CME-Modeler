@@ -400,12 +400,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const cmeLength = Math.max(0, distTraveledInSceneUnits - sunRadius);
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
 
-    // Keep the croissant shell anchored to the sun by pushing the inner edge to the surface
-    // while allowing the rest of the shell to extend outward along the CME direction.
-    const anchorBias = 0.35; // Croissant geometry places its inner edge ~35% back from its center
-    const forwardOffset = sunRadius + Math.max(0, cmeLength * anchorBias);
-    cmeObject.position.copy(direction.clone().multiplyScalar(forwardOffset));
-    cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
+    // Align the croissant shell so its longest, most pronounced section projects straight out
+    // from the eruption source while the trailing edge hugs the sun and follows behind.
+    const trailingFraction = THREE.MathUtils.clamp(0.14 + 0.1 * Math.exp(-cmeLength / (sunRadius * 1.2)), 0.12, 0.24);
+    const trailingDistance = sunRadius + cmeLength * trailingFraction;
+    const headDistance = sunRadius + cmeLength;
+    const radialSpan = Math.max(0.001, headDistance - trailingDistance);
+
+    const midpoint = trailingDistance + radialSpan * 0.5;
+    cmeObject.position.copy(direction.clone().multiplyScalar(midpoint));
+    cmeObject.scale.set(radialSpan * 0.72, radialSpan, radialSpan * 0.72);
   }, [THREE]);
 
   useEffect(() => {
