@@ -92,31 +92,38 @@ const createCmeEruptionGeometry = (THREE: any, count: number, halfAngleDeg: numb
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  const opening = THREE.MathUtils.degToRad(Math.max(25, halfAngleDeg * 0.85));
+  const opening = THREE.MathUtils.degToRad(Math.max(18, halfAngleDeg * 0.65));
+  const croissantBend = THREE.MathUtils.degToRad(Math.max(35, Math.min(85, halfAngleDeg * 1.1)));
 
   for (let i = 0; i < count; i++) {
-    // spine progresses from the anchored wake (0) to the shock nose (1)
-    const spineT = Math.pow(Math.random(), 0.88);
-    const noseBias = THREE.MathUtils.smoothstep(spineT, 0.25, 1.0);
+    // spine runs along the croissant arc, anchored at the tail (0) and flaring to the nose (1)
+    const spineT = Math.pow(Math.random(), 0.86);
+    const noseBias = THREE.MathUtils.smoothstep(spineT, 0.18, 0.95);
 
-    // CME spreads laterally as it leaves the surface, flaring hardest toward the shock nose
-    const latSpread = opening * THREE.MathUtils.lerp(0.18, 1.05, noseBias);
-    const lat = (Math.random() - 0.5) * latSpread;
+    // bend the croissant like a magnetic loop peeled off the surface
+    const arc = THREE.MathUtils.lerp(-croissantBend * 0.28, croissantBend, noseBias);
     const roll = Math.random() * Math.PI * 2;
 
-    // tube radius and bulge grow toward the head while the wake stays filamentary
-    const major = THREE.MathUtils.lerp(0.05, 0.75, Math.pow(noseBias, 1.35)) * (0.8 + 0.35 * Math.sin(roll * 2) * (1 - noseBias));
-    const minor = THREE.MathUtils.lerp(0.02, 0.28, Math.pow(noseBias, 1.1)) * (0.75 + 0.35 * Math.cos(roll) * noseBias);
+    // lateral spread opens with the cone while squeezing the tail into a thin ribbon
+    const latSpread = opening * THREE.MathUtils.lerp(0.08, 1.05, noseBias);
+    const lat = (Math.random() - 0.5) * latSpread;
 
-    // forward flattening to mimic the compressed shock front
-    const flatten = THREE.MathUtils.lerp(0.9, 1.4, noseBias);
-    const axial = Math.pow(spineT, 0.85) * 1.25 + Math.sin(roll + spineT * Math.PI * 1.5) * 0.05;
+    // tube radii: slim tail, thick crest, compressed inner face
+    const outerRim = THREE.MathUtils.lerp(0.06, 0.9, Math.pow(noseBias, 1.4));
+    const innerRim = THREE.MathUtils.lerp(0.015, 0.32, Math.pow(noseBias, 1.05));
+    const taper = THREE.MathUtils.lerp(1.0, 0.6, Math.abs(Math.sin(arc * 0.45)));
 
-    // wake stays tucked near the surface; nose protrudes as a broad dome
-    const radial = 0.25 + axial + Math.cos(roll) * major * flatten;
-    const y = axial * 1.1 + Math.sin(roll) * minor * (0.55 + 0.3 * noseBias) - (1 - noseBias) * 0.22;
-    const x = radial * Math.sin(lat);
-    const z = radial * Math.cos(lat);
+    const radial = THREE.MathUtils.lerp(0.18, 1.6, Math.pow(noseBias, 0.9));
+    const crestBulge = outerRim * (0.7 + 0.45 * Math.sin(roll)) * taper;
+    const tailRibbon = innerRim * (0.5 + 0.35 * Math.cos(roll + spineT * Math.PI));
+
+    const shell = radial + crestBulge;
+    const inner = radial * 0.32 - tailRibbon * (1 - noseBias);
+
+    const y = shell * Math.sin(arc) + inner;
+    const offset = shell * Math.cos(arc);
+    const x = offset * Math.sin(lat);
+    const z = offset * Math.cos(lat);
 
     const idx = i * 3;
     positions[idx] = x;
