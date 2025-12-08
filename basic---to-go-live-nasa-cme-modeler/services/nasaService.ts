@@ -1,4 +1,5 @@
 import { CMEData, ProcessedCME } from '../types';
+import { angularSeparationDeg, getCarringtonLongitude } from '../utils/carrington';
 
 // --- NEW TYPE DEFINITIONS ---
 // NOTE: These types are added here to contain changes to a single file.
@@ -140,7 +141,10 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
       if (analysis.speed != null && analysis.longitude != null && analysis.latitude != null) {
-        const isEarthDirected = Math.abs(analysis.longitude) < 45;
+        const startDate = new Date(cme.startTime);
+        const earthCarringtonLon = getCarringtonLongitude(startDate);
+        const separation = angularSeparationDeg(analysis.longitude, earthCarringtonLon);
+        const isEarthDirected = separation <= Math.max(analysis.halfAngle ?? 30, 45);
         
         modelableCMEs.push({
           id: cme.activityID,

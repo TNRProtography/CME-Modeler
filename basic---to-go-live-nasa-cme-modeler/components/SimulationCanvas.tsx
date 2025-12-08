@@ -12,6 +12,7 @@ import {
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
   FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
+import { getCarringtonLongitude } from '../utils/carrington';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS (Wikimedia + Wellesley)
@@ -373,6 +374,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     starsFarRef.current = starsFar;
 
     const computeCurrentAngle = (bodyData: PlanetData) => {
+      if (bodyData.name === 'Earth') {
+        const baseDateMs = timelineActive && timelineMinDate ? timelineMinDate : Date.now();
+        return THREE.MathUtils.degToRad(getCarringtonLongitude(new Date(baseDateMs)));
+      }
       if (!bodyData.orbitalPeriodDays) return bodyData.angle;
       const daysSinceJ2000 = (Date.now() - Date.UTC(2000, 0, 1, 12)) / (1000 * 60 * 60 * 24);
       const phase = (daysSinceJ2000 % bodyData.orbitalPeriodDays) / bodyData.orbitalPeriodDays;
@@ -518,6 +523,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         showFluxRope
       } = animPropsRef.current;
 
+      const timelineDate = new Date(
+        timelineActive
+          ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
+          : Date.now()
+      );
+
       const elapsedTime = getClockElapsedTime();
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
@@ -528,7 +539,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const ORBIT_SPEED_SCALE = 2000;
       Object.values(celestialBodiesRef.current).forEach(body => {
         const d = body.userData as PlanetData | undefined;
-        if (d?.orbitalPeriodDays) {
+        if (d?.name === 'Earth') {
+          const carringtonAngle = THREE.MathUtils.degToRad(getCarringtonLongitude(timelineDate));
+          d.angle = carringtonAngle;
+          body.mesh.position.x = d.radius * Math.sin(carringtonAngle);
+          body.mesh.position.z = d.radius * Math.cos(carringtonAngle);
+        } else if (d?.orbitalPeriodDays) {
           const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE) * elapsedTime;
           body.mesh.position.x = d.radius * Math.sin(a);
           body.mesh.position.z = d.radius * Math.cos(a);
@@ -673,9 +689,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       // Build a croissant-style torus segment using CME metadata (half angle/speed)
       const halfAngleRad = THREE.MathUtils.degToRad(Math.max(10, cme.halfAngle));
-      const arcSpan = clamp(halfAngleRad * 2, THREE.MathUtils.degToRad(60), THREE.MathUtils.degToRad(320));
-      const baseMajorRadius = 0.55 + THREE.MathUtils.clamp(cme.speed / 3000, 0, 1) * 0.15; // faster CMEs look a bit larger
-      const baseMinorRadius = 0.18;
+      const arcSpan = clamp(halfAngleRad * 2, THREE.MathUtils.degToRad(70), THREE.MathUtils.degToRad(310));
+      const baseMajorRadius = 0.6 + THREE.MathUtils.clamp(cme.speed / 3000, 0, 1) * 0.18; // faster CMEs look a bit larger
+      const baseMinorRadius = 0.12;
 
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
@@ -688,13 +704,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
         // Slight jitter keeps the shell organic
         const major = baseMajorRadius + (Math.random() - 0.5) * 0.08;
-        const minor = baseMinorRadius * (0.7 + Math.random() * 0.8);
+        const arcPinch = 0.7 + 0.3 * Math.cos(u); // slimmer near the tips
+        const minor = baseMinorRadius * (0.65 + Math.random() * 0.45) * arcPinch;
 
         // Center the torus a bit forward so the croissant appears to erupt away from the Sun
-        const forwardOffset = 0.25;
+        const forwardOffset = 0.35;
         const x = (major + minor * Math.cos(v)) * Math.cos(u);
         const z = (major + minor * Math.cos(v)) * Math.sin(u);
-        const y = minor * Math.sin(v) + forwardOffset + Math.cos(u) * 0.05;
+        const y = (minor * Math.sin(v) * 0.55) + forwardOffset + Math.cos(u) * 0.05;
 
         pos.push(x, y, z);
 
