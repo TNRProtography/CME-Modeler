@@ -68,6 +68,7 @@ export interface ProcessedCME {
   speed: number;          // km/s
   longitude: number;      // degrees
   latitude: number;       // degrees
+  fluxRopeDirection: { x: number; y: number; z: number }; // unit vector derived from CME source
   isEarthDirected: boolean;
   note: string;
   predictedArrivalTime: Date | null;

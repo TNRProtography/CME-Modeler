@@ -141,13 +141,21 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
       const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
       if (analysis.speed != null && analysis.longitude != null && analysis.latitude != null) {
         const isEarthDirected = Math.abs(analysis.longitude) < 45;
-        
+        const dirPhi = (90 - analysis.latitude) * (Math.PI / 180);
+        const dirTheta = analysis.longitude * (Math.PI / 180);
+        const fluxRopeDirection = {
+          x: Math.sin(dirPhi) * Math.cos(dirTheta),
+          y: Math.cos(dirPhi),
+          z: Math.sin(dirPhi) * Math.sin(dirTheta)
+        };
+
         modelableCMEs.push({
           id: cme.activityID,
           startTime: new Date(cme.startTime),
           speed: analysis.speed,
           longitude: analysis.longitude,
           latitude: analysis.latitude,
+          fluxRopeDirection,
           isEarthDirected,
           note: cme.note || 'No additional details.',
           predictedArrivalTime: getPredictedArrivalTime(cme),
