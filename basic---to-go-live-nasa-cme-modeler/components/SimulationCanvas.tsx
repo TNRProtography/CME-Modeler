@@ -211,29 +211,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     showFluxRope,
   });
 
-  useEffect(() => {
-    animPropsRef.current = {
-      onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
-      timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope,
-    };
-  }, [
-    onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
-    timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope,
-  ]);
-
-  const THREE = (window as any).THREE;
-  const gsap = (window as any).gsap;
-
-  useEffect(() => {
-    timelineValueRef.current = timelineValue;
-  }, [timelineValue]);
-
-  useEffect(() => {
-    updateEarthCarringtonPosition();
-  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, updateEarthCarringtonPosition]);
-
   const MIN_CME_SPEED_KMS = 300;
 
   const getTimelineDate = useCallback(() => {
@@ -266,6 +243,29 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       l1Body.mesh.lookAt(p);
     }
   }, [getTimelineDate]);
+
+  useEffect(() => {
+    animPropsRef.current = {
+      onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
+      timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
+      showFluxRope,
+    };
+  }, [
+    onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
+    timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
+    showFluxRope,
+  ]);
+
+  const THREE = (window as any).THREE;
+  const gsap = (window as any).gsap;
+
+  useEffect(() => {
+    timelineValueRef.current = timelineValue;
+  }, [timelineValue]);
+
+  useEffect(() => {
+    updateEarthCarringtonPosition();
+  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, updateEarthCarringtonPosition]);
 
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const u_kms = cme.speed;
