@@ -372,6 +372,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     starsNearRef.current = starsNear;
     starsFarRef.current = starsFar;
 
+    const computeCurrentAngle = (bodyData: PlanetData) => {
+      if (!bodyData.orbitalPeriodDays) return bodyData.angle;
+      const daysSinceJ2000 = (Date.now() - Date.UTC(2000, 0, 1, 12)) / (1000 * 60 * 60 * 24);
+      const phase = (daysSinceJ2000 % bodyData.orbitalPeriodDays) / bodyData.orbitalPeriodDays;
+      return (bodyData.angle + phase * Math.PI * 2) % (Math.PI * 2);
+    };
+
     const sunGeometry = new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64);
     const sunMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER, transparent: true });
     const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
@@ -389,31 +396,32 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
-      const planetMesh = new THREE.Mesh(new THREE.SphereGeometry(data.size, 64, 64), new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 }));
-      planetMesh.position.x = data.radius * Math.sin(data.angle);
-      planetMesh.position.z = data.radius * Math.cos(data.angle);
-      planetMesh.userData = data;
+      const planetData = { ...data, angle: computeCurrentAngle(data as PlanetData) } as PlanetData;
+      const planetMesh = new THREE.Mesh(new THREE.SphereGeometry(planetData.size, 64, 64), new THREE.MeshPhongMaterial({ color: planetData.color, shininess: 30 }));
+      planetMesh.position.x = planetData.radius * Math.sin(planetData.angle);
+      planetMesh.position.z = planetData.radius * Math.cos(planetData.angle);
+      planetMesh.userData = planetData;
       scene.add(planetMesh);
-      celestialBodiesRef.current[name] = { mesh: planetMesh, name: data.name, labelId: data.labelElementId, userData: data };
-      planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: planetMesh });
+      celestialBodiesRef.current[name] = { mesh: planetMesh, name: planetData.name, labelId: planetData.labelElementId, userData: planetData };
+      planetLabelInfos.push({ id: planetData.labelElementId, name: planetData.name, mesh: planetMesh });
 
       if (name === 'EARTH') {
         planetMesh.material = new THREE.MeshPhongMaterial({ map: tex.earthDay, normalMap: tex.earthNormal, specularMap: tex.earthSpec, specular: new THREE.Color(0x111111), shininess: 6 });
-        const clouds = new THREE.Mesh( new THREE.SphereGeometry((data as PlanetData).size * 1.01, 48, 48), new THREE.MeshLambertMaterial({ map: tex.earthClouds, transparent: true, opacity: 0.7, depthWrite: false }) );
+        const clouds = new THREE.Mesh( new THREE.SphereGeometry((planetData as PlanetData).size * 1.01, 48, 48), new THREE.MeshLambertMaterial({ map: tex.earthClouds, transparent: true, opacity: 0.7, depthWrite: false }) );
         clouds.name = 'clouds';
         planetMesh.add(clouds);
 
-        const atmosphere = new THREE.Mesh( new THREE.SphereGeometry((data as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0.0 }, uTime: { value: 0.0 } } }) );
+        const atmosphere = new THREE.Mesh( new THREE.SphereGeometry((planetData as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0.0 }, uTime: { value: 0.0 } } }) );
         atmosphere.name = 'atmosphere';
         planetMesh.add(atmosphere);
 
-        const aurora = new THREE.Mesh( new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0.0 }, uCmeSpeed: { value: 0.0 }, uImpactTime: { value: 0.0 }, uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, uAuroraIntensity: { value: 0.0 } } }) );
+        const aurora = new THREE.Mesh( new THREE.SphereGeometry((planetData as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0.0 }, uCmeSpeed: { value: 0.0 }, uImpactTime: { value: 0.0 }, uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, uAuroraIntensity: { value: 0.0 } } }) );
         aurora.name = 'aurora';
         planetMesh.add(aurora);
       }
 
       const orbitPoints = [];
-      for (let i = 0; i <= 128; i++) orbitPoints.push( new THREE.Vector3( Math.sin((i / 128) * Math.PI * 2) * data.radius, 0, Math.cos((i / 128) * Math.PI * 2) * data.radius ) );
+      for (let i = 0; i <= 128; i++) orbitPoints.push( new THREE.Vector3( Math.sin((i / 128) * Math.PI * 2) * planetData.radius, 0, Math.cos((i / 128) * Math.PI * 2) * planetData.radius ) );
       const orbitTube = new THREE.Mesh( new THREE.TubeGeometry(new THREE.CatmullRomCurve3(orbitPoints), 128, 0.005 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.6 }) );
       scene.add(orbitTube);
       orbitsRef.current[name] = orbitTube;
@@ -424,20 +432,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const parentBody = celestialBodiesRef.current[data.orbits];
       if (!parentBody) return;
 
-      const moonMesh = new THREE.Mesh( new THREE.SphereGeometry(data.size, 16, 16), new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null }) );
-      moonMesh.position.x = data.radius * Math.sin(data.angle);
-      moonMesh.position.z = data.radius * Math.cos(data.angle);
-      moonMesh.userData = data;
+      const satelliteData = { ...data, angle: computeCurrentAngle(data as PlanetData) } as PlanetData;
+      const moonMesh = new THREE.Mesh( new THREE.SphereGeometry(satelliteData.size, 16, 16), new THREE.MeshPhongMaterial({ color: satelliteData.color, shininess: 6, map: name === 'MOON' ? tex.moon : null }) );
+      moonMesh.position.x = satelliteData.radius * Math.sin(satelliteData.angle);
+      moonMesh.position.z = satelliteData.radius * Math.cos(satelliteData.angle);
+      moonMesh.userData = satelliteData;
       parentBody.mesh.add(moonMesh);
-      celestialBodiesRef.current[name] = { mesh: moonMesh, name: data.name, labelId: data.labelElementId, userData: data };
+      celestialBodiesRef.current[name] = { mesh: moonMesh, name: satelliteData.name, labelId: satelliteData.labelElementId, userData: satelliteData };
 
       if (name === 'MOON') {
         const already = planetLabelInfos.find(p => p.name === 'Moon');
-        if (!already) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: moonMesh });
+        if (!already) planetLabelInfos.push({ id: satelliteData.labelElementId, name: satelliteData.name, mesh: moonMesh });
       }
 
       const orbitPoints = [];
-      for (let i = 0; i <= 64; i++) orbitPoints.push( new THREE.Vector3( Math.sin((i / 64) * Math.PI * 2) * data.radius, 0, Math.cos((i / 64) * Math.PI * 2) * data.radius ) );
+      for (let i = 0; i <= 64; i++) orbitPoints.push( new THREE.Vector3( Math.sin((i / 64) * Math.PI * 2) * satelliteData.radius, 0, Math.cos((i / 64) * Math.PI * 2) * satelliteData.radius ) );
       const orbitTube = new THREE.Mesh( new THREE.TubeGeometry(new THREE.CatmullRomCurve3(orbitPoints), 64, 0.003 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.7 }) );
       orbitTube.name = 'moon-orbit';
       parentBody.mesh.add(orbitTube);
@@ -869,7 +878,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   useEffect(() => {
     if (!celestialBodiesRef.current || !orbitsRef.current) return;
-    ['MERCURY', 'VENUS', 'MARS'].forEach(n => {
+    ['MERCURY', 'VENUS', 'MARS', 'JUPITER', 'SATURN', 'URANUS', 'NEPTUNE'].forEach(n => {
       const b = celestialBodiesRef.current[n];
       const o = orbitsRef.current[n];
       if (b) b.mesh.visible = showExtraPlanets;
