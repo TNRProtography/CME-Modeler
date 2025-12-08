@@ -87,32 +87,34 @@ const getCmeCoreColor = (speed: number): any => {
   return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
 };
 
-const createSolarOutburstGeometry = (THREE: any, count: number, halfAngleDeg: number) => {
+const createCmeEruptionGeometry = (THREE: any, count: number, halfAngleDeg: number) => {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  const spread = THREE.MathUtils.degToRad(Math.max(30, halfAngleDeg * 0.9));
+  const opening = THREE.MathUtils.degToRad(Math.max(25, halfAngleDeg * 0.85));
 
   for (let i = 0; i < count; i++) {
-    // sample along an expanding magnetic shell: compact, filament-like tail near the sun and a bulbous nose
-    // that is slightly flattened like a forward shock front
-    const spineT = Math.pow(Math.random(), 0.62);
-    const noseBias = THREE.MathUtils.smoothstep(spineT, 0.1, 1.0);
+    // spine progresses from the anchored wake (0) to the shock nose (1)
+    const spineT = Math.pow(Math.random(), 0.88);
+    const noseBias = THREE.MathUtils.smoothstep(spineT, 0.25, 1.0);
 
-    // latitudinal spread widens toward the front, giving the shock a halo while keeping the tail narrow
-    const lat = (Math.random() - 0.5) * spread * THREE.MathUtils.lerp(0.35, 1.25, noseBias);
-    const roll = (Math.random() - 0.5) * Math.PI * 2;
+    // CME spreads laterally as it leaves the surface, flaring hardest toward the shock nose
+    const latSpread = opening * THREE.MathUtils.lerp(0.18, 1.05, noseBias);
+    const lat = (Math.random() - 0.5) * latSpread;
+    const roll = Math.random() * Math.PI * 2;
 
-    // axial radius fattens toward the head but stays filamentary near the tail
-    const coreRadius = THREE.MathUtils.lerp(0.12, 1.4, noseBias * noseBias);
-    const tubeRadius = THREE.MathUtils.lerp(0.03, 0.28, THREE.MathUtils.smoothstep(spineT, 0.05, 0.95))
-      * (0.55 + 0.5 * Math.random());
+    // tube radius and bulge grow toward the head while the wake stays filamentary
+    const major = THREE.MathUtils.lerp(0.05, 0.75, Math.pow(noseBias, 1.35)) * (0.8 + 0.35 * Math.sin(roll * 2) * (1 - noseBias));
+    const minor = THREE.MathUtils.lerp(0.02, 0.28, Math.pow(noseBias, 1.1)) * (0.75 + 0.35 * Math.cos(roll) * noseBias);
 
-    // subtle forward flattening to hint at the bow-shock and sheath
-    const flatten = THREE.MathUtils.lerp(0.1, 0.55, noseBias);
-    const radial = coreRadius + Math.cos(roll) * tubeRadius * (0.6 + 0.4 * flatten);
-    const y = spineT * 1.32 + Math.sin(roll) * tubeRadius * 0.55;
+    // forward flattening to mimic the compressed shock front
+    const flatten = THREE.MathUtils.lerp(0.9, 1.4, noseBias);
+    const axial = Math.pow(spineT, 0.85) * 1.25 + Math.sin(roll + spineT * Math.PI * 1.5) * 0.05;
+
+    // wake stays tucked near the surface; nose protrudes as a broad dome
+    const radial = 0.25 + axial + Math.cos(roll) * major * flatten;
+    const y = axial * 1.1 + Math.sin(roll) * minor * (0.55 + 0.3 * noseBias) - (1 - noseBias) * 0.22;
     const x = radial * Math.sin(lat);
     const z = radial * Math.cos(lat);
 
@@ -438,19 +440,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeObject.visible = true;
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
 
-    // keep the root tethered to the solar surface while letting the shock nose race outward
-    const availableLength = Math.max(0, distTraveledInSceneUnits - sunRadius * 0.65);
-    const shockNose = sunRadius + availableLength;
-    const anchoredRoot = sunRadius * 0.55 + availableLength * 0.22;
-    const sheathDepth = Math.max(0.001, shockNose - anchoredRoot);
+    // maintain a tethered wake on the surface while the shock nose pushes outward
+    const nose = sunRadius + Math.max(0, distTraveledInSceneUnits - sunRadius * 0.2);
+    const anchoredRoot = sunRadius * 0.9;
+    const sheathDepth = Math.max(0.001, nose - anchoredRoot);
 
-    // radial expansion grows with distance and the reported half-angle, flaring slightly more than a cone
-    const baseCone = Math.tan(THREE.MathUtils.degToRad(Math.max(8, cmeObject.userData.halfAngle * 0.85)));
-    const expansion = (sunRadius * 0.35 + sheathDepth * baseCone * 1.35) * THREE.MathUtils.clamp(1 + availableLength / (SCENE_SCALE * 4), 1, 1.75);
+    // flare laterally with half-angle while keeping a flattened, magnetically draped head
+    const cone = Math.tan(THREE.MathUtils.degToRad(Math.max(10, cmeObject.userData.halfAngle * 0.75)));
+    const expansionGrow = 1 + Math.min(1, sheathDepth / (SCENE_SCALE * 3.2)) * 0.8;
+    const lateral = (sunRadius * 0.28 + sheathDepth * cone * 1.25) * expansionGrow;
 
-    const midpoint = anchoredRoot + sheathDepth * 0.52;
+    const midpoint = anchoredRoot + sheathDepth * 0.55;
     cmeObject.position.copy(direction.clone().multiplyScalar(midpoint));
-    cmeObject.scale.set(expansion, sheathDepth, expansion * 0.78);
+    cmeObject.scale.set(lateral, sheathDepth, lateral * 0.82);
   }, [THREE]);
 
   useEffect(() => {
@@ -809,12 +811,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
-      const baseGeom = createSolarOutburstGeometry(THREE, pCount, cme.halfAngle);
+      const baseGeom = createCmeEruptionGeometry(THREE, pCount, cme.halfAngle);
 
-      const shockColor = new THREE.Color(0xfff4d1);
+      const shockColor = new THREE.Color(0xfff3d6);
       const coreColor = getCmeCoreColor(cme.speed);
-      const wakeColor = new THREE.Color(0x3c9bff);
-      const sheathColor = new THREE.Color(0xffb347);
+      const wakeColor = new THREE.Color(0x46a0ff);
+      const sheathColor = new THREE.Color(0xffb86a);
 
       const makeLayer = (
         colorStops: { stop: number; color: any }[],
@@ -844,40 +846,40 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const shock = makeLayer(
         [
-          { stop: 0, color: wakeColor.clone().multiplyScalar(0.25) },
-          { stop: 0.2, color: wakeColor.clone().lerp(sheathColor, 0.55) },
-          { stop: 0.55, color: sheathColor.clone().lerp(shockColor, 0.5) },
-          { stop: 0.85, color: shockColor },
-          { stop: 1, color: shockColor.clone().lerp(coreColor, 0.18) },
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.2) },
+          { stop: 0.18, color: wakeColor.clone().lerp(sheathColor, 0.5) },
+          { stop: 0.45, color: sheathColor },
+          { stop: 0.7, color: shockColor },
+          { stop: 1, color: shockColor.clone().lerp(coreColor, 0.15) },
         ],
-        1.05,
-        1.1,
-        { x: 1.42, y: 1.08, z: 1.38 }
+        1.08,
+        1.08,
+        { x: 1.5, y: 1.05, z: 1.42 }
       );
 
       const core = makeLayer(
         [
-          { stop: 0, color: wakeColor.clone().multiplyScalar(0.25) },
-          { stop: 0.18, color: wakeColor.clone().lerp(coreColor, 0.55) },
-          { stop: 0.52, color: coreColor },
-          { stop: 0.78, color: coreColor.clone().lerp(sheathColor, 0.35) },
-          { stop: 1, color: coreColor.clone().lerp(shockColor, 0.35) },
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.2) },
+          { stop: 0.25, color: wakeColor.clone().multiplyScalar(0.8) },
+          { stop: 0.55, color: coreColor },
+          { stop: 0.82, color: coreColor.clone().lerp(sheathColor, 0.35) },
+          { stop: 1, color: sheathColor.clone().lerp(shockColor, 0.35) },
         ],
-        0.92,
-        0.92,
-        { x: 0.8, y: 0.92, z: 0.8 }
+        0.95,
+        0.95,
+        { x: 0.85, y: 0.95, z: 0.85 }
       );
 
       const wake = makeLayer(
         [
-          { stop: 0, color: wakeColor.clone().multiplyScalar(0.65) },
-          { stop: 0.3, color: wakeColor },
-          { stop: 0.65, color: wakeColor.clone().lerp(coreColor, 0.28) },
-          { stop: 1, color: coreColor.clone().multiplyScalar(0.6) }
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.75) },
+          { stop: 0.35, color: wakeColor },
+          { stop: 0.65, color: wakeColor.clone().lerp(coreColor, 0.3) },
+          { stop: 1, color: coreColor.clone().multiplyScalar(0.55) }
         ],
-        0.8,
-        0.98,
-        { x: 0.98, y: 1.1, z: 0.98 }
+        0.82,
+        0.96,
+        { x: 0.92, y: 1.12, z: 0.92 }
       );
 
       const system = new THREE.Group();
