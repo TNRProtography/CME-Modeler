@@ -691,7 +691,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => c.material.opacity = getCmeOpacity(c.userData.speed));
+      cmeGroupRef.current.children.forEach((system: any) => {
+        const baseOpacity = getCmeOpacity(system.userData.speed);
+        system.traverse((child: any) => {
+          if (child.material && typeof child.material.opacity === 'number') {
+            const scale = child.userData?.opacityScale ?? 1;
+            child.material.opacity = baseOpacity * scale;
+          }
+        });
+      });
 
       if (timelineActive) {
         if (timelinePlaying) {
@@ -821,6 +829,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
 
         const pts = new THREE.Points(geom, mat);
+        pts.userData.opacityScale = opacity;
         pts.scale.set(scale.x, scale.y, scale.z);
         return pts;
       };
