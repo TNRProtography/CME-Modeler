@@ -75,8 +75,28 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
 
+type PageKey = 'forecast' | 'modeler' | 'solar-activity';
+
+const pageFromPath = (pathname: string): PageKey => {
+  if (pathname.startsWith('/modeler')) return 'modeler';
+  if (pathname.startsWith('/solar') || pathname.startsWith('/solar-activity')) return 'solar-activity';
+  return 'forecast';
+};
+
+const pageToPath = (page: PageKey) => {
+  switch (page) {
+    case 'modeler':
+      return '/modeler';
+    case 'solar-activity':
+      return '/solar-activity';
+    case 'forecast':
+    default:
+      return '/forecast';
+  }
+};
+
 const App: React.FC = () => {
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
+  const [activePage, setActivePage] = useState<PageKey>('forecast');
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -135,6 +155,35 @@ const App: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const cmePageLoadedOnce = useRef(false);
+  const historyNavigationRef = useRef(false);
+
+  const pageTheme = useMemo(() => {
+    const themeMap: Record<PageKey, { title: string; subtitle: string; accent: string; gradient: string; focusHint: string }> = {
+      forecast: {
+        title: 'Spot the Aurora',
+        subtitle: 'Realtime visibility, alerts, and destination guidance built for aurora chasers.',
+        accent: 'from-cyan-400/60 via-sky-500/40 to-indigo-500/20',
+        gradient: 'bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.22),transparent_35%),radial-gradient(circle_at_80%_15%,rgba(99,102,241,0.25),transparent_40%),radial-gradient(circle_at_50%_80%,rgba(34,211,238,0.18),transparent_38%)]',
+        focusHint: 'Live forecast layers, auroral oval strength, and travel-ready insights.',
+      },
+      'solar-activity': {
+        title: 'Solar Activity',
+        subtitle: 'Monitor flares, shocks, and heliophysics at a glance with cinematic clarity.',
+        accent: 'from-amber-400/60 via-orange-500/40 to-rose-500/20',
+        gradient: 'bg-[radial-gradient(circle_at_25%_25%,rgba(251,191,36,0.2),transparent_36%),radial-gradient(circle_at_70%_15%,rgba(251,146,60,0.25),transparent_40%),radial-gradient(circle_at_60%_70%,rgba(236,72,153,0.18),transparent_38%)]',
+        focusHint: 'GOES X-ray flux, interplanetary shocks, and solar wind dynamics.',
+      },
+      modeler: {
+        title: 'CME Visualizer',
+        subtitle: 'Fly through modeled CMEs with cinematic lighting and timeline choreography.',
+        accent: 'from-indigo-400/60 via-violet-500/40 to-fuchsia-500/20',
+        gradient: 'bg-[radial-gradient(circle_at_20%_30%,rgba(129,140,248,0.22),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(217,70,239,0.2),transparent_40%),radial-gradient(circle_at_50%_80%,rgba(56,189,248,0.16),transparent_40%)]',
+        focusHint: '3D simulation controls, label overlays, and impact timing.',
+      },
+    };
+
+    return themeMap[activePage];
+  }, [activePage]);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';
@@ -163,6 +212,32 @@ const App: React.FC = () => {
     window.addEventListener('beforeinstallprompt', onBip);
     return () => window.removeEventListener('beforeinstallprompt', onBip);
   }, []);
+
+  useEffect(() => {
+    const initialPage = pageFromPath(window.location.pathname);
+    if (initialPage !== activePage) {
+      setActivePage(initialPage);
+    }
+
+    const handlePopState = () => {
+      historyNavigationRef.current = true;
+      setActivePage(pageFromPath(window.location.pathname));
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const desiredPath = pageToPath(activePage);
+    if (window.location.pathname !== desiredPath) {
+      if (historyNavigationRef.current) {
+        historyNavigationRef.current = false;
+      } else {
+        window.history.pushState({ page: activePage }, '', desiredPath + window.location.search + window.location.hash);
+      }
+    }
+  }, [activePage]);
 
   const handleIabOpenInBrowser = useCallback(() => {
     const here = new URL(window.location.href);
@@ -593,7 +668,11 @@ const App: React.FC = () => {
   return (
     <>
       {showInitialLoader && <InitialLoadingScreen isFadingOut={isFadingOut} />}
-      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 relative ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
+          <div className="absolute inset-0 opacity-80 blur-3xl transition-all duration-700 pointer-events-none" aria-hidden="true">
+            <div className={`absolute inset-0 ${pageTheme.gradient}`} />
+          </div>
+
           <GlobalBanner
               isFlareAlert={isFlareAlert}
               flareClass={flareClass}
@@ -609,28 +688,111 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
 
-          <header className="flex-shrink-0 p-2 md:p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
-              <div className="flex items-center space-x-2">
-                  <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
-                      <ForecastIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
-                  </button>
-                  <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
-                      <SunIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
-                  </button>
-                  <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
-                      <CmeIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
-                  </button>
+          <header className="flex-shrink-0 px-3 md:px-6 pt-3 pb-2 space-y-3 relative z-[2001]">
+            <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+              <div className="flex items-center gap-3">
+                <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${pageTheme.accent} flex items-center justify-center shadow-xl shadow-black/40 border border-white/10`}>
+                  <span className="text-lg font-extrabold tracking-tight">CME</span>
+                </div>
+                <div>
+                  <p className="text-lg md:text-xl font-semibold text-white">{pageTheme.title}</p>
+                  <p className="text-sm text-neutral-400">{pageTheme.subtitle}</p>
+                </div>
               </div>
-              <div className="flex-grow flex justify-end">
-                  <button id="nav-settings" onClick={() => setIsSettingsOpen(true)} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
+              <div className="flex-1 flex flex-wrap gap-2 justify-start lg:justify-center">
+                <button
+                  id="nav-forecast"
+                  onClick={() => setActivePage('forecast')}
+                  aria-current={activePage === 'forecast'}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold shadow-lg shadow-black/30 transition-all duration-300 backdrop-blur-sm ${activePage === 'forecast' ? 'bg-white/10 border-sky-400/80 text-white scale-[1.02]' : 'bg-neutral-900/60 border-white/5 hover:border-white/20'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                  title="View Live Aurora Forecasts"
+                >
+                  <ForecastIcon className="w-5 h-5" />
+                  Forecasts
+                </button>
+                <button
+                  id="nav-solar-activity"
+                  onClick={() => setActivePage('solar-activity')}
+                  aria-current={activePage === 'solar-activity'}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold shadow-lg shadow-black/30 transition-all duration-300 backdrop-blur-sm ${activePage === 'solar-activity' ? 'bg-white/10 border-amber-400/80 text-white scale-[1.02]' : 'bg-neutral-900/60 border-white/5 hover:border-white/20'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                  title="View Solar Activity"
+                >
+                  <SunIcon className="w-5 h-5" />
+                  Solar Activity
+                </button>
+                <button
+                  id="nav-modeler"
+                  onClick={() => setActivePage('modeler')}
+                  aria-current={activePage === 'modeler'}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold shadow-lg shadow-black/30 transition-all duration-300 backdrop-blur-sm ${activePage === 'modeler' ? 'bg-white/10 border-indigo-400/80 text-white scale-[1.02]' : 'bg-neutral-900/60 border-white/5 hover:border-white/20'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                  title="View CME Visualization"
+                >
+                  <CmeIcon className="w-5 h-5" />
+                  CME Visualizer
+                </button>
               </div>
+              <div className="flex items-center gap-2 justify-end">
+                <button
+                  onClick={handleShowTutorial}
+                  className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm font-semibold shadow-lg shadow-black/30 hover:bg-white/15 transition-all"
+                >
+                  Guided Tour
+                </button>
+                <button
+                  onClick={() => setIsForecastModelsModalOpen(true)}
+                  className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm font-semibold shadow-lg shadow-black/30 hover:bg-white/15 transition-all"
+                >
+                  Forecast Models
+                </button>
+                <button
+                  id="nav-settings"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className={`p-2 bg-white/10 border border-white/10 rounded-full text-neutral-50 shadow-lg shadow-black/30 transition-all hover:bg-white/15 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
+                  title="Open Settings"
+                >
+                  <SettingsIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="w-full overflow-hidden">
+              <div className="flex flex-col gap-2 rounded-3xl border border-white/5 bg-neutral-900/60 backdrop-blur-md p-4 shadow-2xl shadow-black/40">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-semibold uppercase tracking-wide text-neutral-200">{pageTheme.title}</div>
+                  <div className="text-sm text-neutral-300">{pageTheme.focusHint}</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setIsGameOpen(true)}
+                    className="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-400/30 via-emerald-500/20 to-cyan-500/20 border border-emerald-300/40 text-sm font-semibold text-emerald-100 shadow-lg shadow-black/20 hover:translate-y-[-1px] transition-all"
+                  >
+                    Take the Solar Surfer break
+                  </button>
+                  <button
+                    onClick={() => setIsCmeListOpen(true)}
+                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-semibold shadow-lg shadow-black/20 hover:bg-white/10 transition-all"
+                  >
+                    Open CME list
+                  </button>
+                  <button
+                    onClick={() => setIsControlsOpen(true)}
+                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-semibold shadow-lg shadow-black/20 hover:bg-white/10 transition-all"
+                  >
+                    Simulation controls
+                  </button>
+                  <button
+                    onClick={() => setIsTutorialOpen(true)}
+                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-semibold shadow-lg shadow-black/20 hover:bg-white/10 transition-all"
+                  >
+                    Modeling guide
+                  </button>
+                </div>
+              </div>
+            </div>
           </header>
 
-          <div className="flex flex-grow min-h-0">
+          <div className="flex flex-grow min-h-0 px-3 md:px-6 pb-4 gap-4">
               <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
+                <div className="flex flex-col lg:flex-row flex-grow min-h-0 w-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
@@ -706,12 +868,14 @@ const App: React.FC = () => {
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
                     <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
                 </div>
-                  
+                </div>
+
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
               </div>
               <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
+                <div className="h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
                   <ForecastDashboard
                       setViewerMedia={setViewerMedia}
                       setCurrentAuroraScore={setCurrentAuroraScore}
@@ -720,14 +884,17 @@ const App: React.FC = () => {
                       navigationTarget={navigationTarget}
                       onInitialLoad={handleInitialLoad}
                   />
+                </div>
               </div>
               <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
+                <div className="h-full rounded-3xl border border-white/5 bg-black/60 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden">
                   <SolarActivityDashboard
                       setViewerMedia={setViewerMedia}
                       setLatestXrayFlux={setLatestXrayFlux}
                       onViewCMEInVisualization={handleViewCMEInVisualization}
                       navigationTarget={navigationTarget}
                   />
+                </div>
               </div>
           </div>
           
