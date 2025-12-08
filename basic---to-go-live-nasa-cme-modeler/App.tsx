@@ -593,7 +593,7 @@ const App: React.FC = () => {
   return (
     <>
       {showInitialLoader && <InitialLoadingScreen isFadingOut={isFadingOut} />}
-      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`w-screen h-screen bg-gradient-to-b from-slate-950 via-black to-[#0b1021] flex flex-col text-neutral-100 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
           <GlobalBanner
               isFlareAlert={isFlareAlert}
               flareClass={flareClass}
@@ -609,23 +609,84 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
 
-          <header className="flex-shrink-0 p-2 md:p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
-              <div className="flex items-center space-x-2">
-                  <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
-                      <ForecastIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
-                  </button>
-                  <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
-                      <SunIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
-                  </button>
-                  <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
-                      <CmeIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
-                  </button>
-              </div>
-              <div className="flex-grow flex justify-end">
-                  <button id="nav-settings" onClick={() => setIsSettingsOpen(true)} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
+          <header className="flex-shrink-0 p-3 md:p-6 bg-neutral-950/60 backdrop-blur-xl border-b border-neutral-800/60 shadow-lg">
+              <div className="max-w-6xl mx-auto space-y-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                      <div>
+                          <p className="uppercase tracking-[0.2em] text-xs text-sky-300">Spot the Aurora · Live space weather cockpit</p>
+                          <h1 className="text-2xl md:text-3xl font-black text-white mt-1">Solar Storm Control Room</h1>
+                          <p className="text-sm md:text-base text-neutral-300 mt-1 max-w-2xl">Navigate between real-time aurora guidance, the solar watch desk, and the 3D CME lab without losing context or data fidelity.</p>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full lg:w-auto">
+                          <div className="rounded-2xl bg-sky-900/40 border border-sky-700/60 px-4 py-3 shadow-lg">
+                              <p className="text-[11px] uppercase tracking-wide text-sky-200 font-semibold">Active CMEs</p>
+                              <p className="text-2xl font-bold text-white">{cmesToRender.length || cmeData.length}</p>
+                              <p className="text-[11px] text-sky-100/80">Filtered to your current focus</p>
+                          </div>
+                          <div className="rounded-2xl bg-emerald-900/30 border border-emerald-700/60 px-4 py-3 shadow-lg">
+                              <p className="text-[11px] uppercase tracking-wide text-emerald-200 font-semibold">Timeline</p>
+                              <p className="text-2xl font-bold text-white">{timelinePlaying ? 'Playing' : timelineActive ? 'Scrubbing' : 'Ready'}</p>
+                              <p className="text-[11px] text-emerald-100/80">{activeFocus ? `Focused on ${activeFocus}` : 'Free orbit'}</p>
+                          </div>
+                          <div className="rounded-2xl bg-indigo-900/30 border border-indigo-700/60 px-4 py-3 shadow-lg col-span-2 md:col-span-1">
+                              <p className="text-[11px] uppercase tracking-wide text-indigo-200 font-semibold">Alerts</p>
+                              <p className="text-2xl font-bold text-white">{isFlareAlert || isAuroraAlert || isSubstormAlert ? 'Live' : 'Calm'}</p>
+                              <p className="text-[11px] text-indigo-100/80">Flare, aurora, and substorm triggers</p>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                      <button
+                          id="nav-forecast"
+                          onClick={() => setActivePage('forecast')}
+                          className={`group flex items-center gap-3 px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-lg border ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500 to-cyan-400 text-neutral-900 border-transparent' : 'bg-neutral-900/80 text-neutral-200 border-neutral-700 hover:border-sky-500/60 hover:text-white'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                          title="Jump to the live aurora desk"
+                      >
+                          <span className="p-2 rounded-full bg-black/30 border border-white/10 group-hover:bg-white/10">
+                              <ForecastIcon className="w-5 h-5" />
+                          </span>
+                          <span>Aurora Desk</span>
+                      </button>
+                      <button
+                          id="nav-solar-activity"
+                          onClick={() => setActivePage('solar-activity')}
+                          className={`group flex items-center gap-3 px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-lg border ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-neutral-900 border-transparent' : 'bg-neutral-900/80 text-neutral-200 border-neutral-700 hover:border-amber-500/60 hover:text-white'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                          title="Watch solar activity and flare risk"
+                      >
+                          <span className="p-2 rounded-full bg-black/30 border border-white/10 group-hover:bg-white/10">
+                              <SunIcon className="w-5 h-5" />
+                          </span>
+                          <span>Solar Watch</span>
+                      </button>
+                      <button
+                          id="nav-modeler"
+                          onClick={() => setActivePage('modeler')}
+                          className={`group flex items-center gap-3 px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-lg border ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-400 to-fuchsia-500 text-neutral-900 border-transparent' : 'bg-neutral-900/80 text-neutral-200 border-neutral-700 hover:border-indigo-500/60 hover:text-white'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                          title="Open the 3D CME lab"
+                      >
+                          <span className="p-2 rounded-full bg-black/30 border border-white/10 group-hover:bg-white/10">
+                              <CmeIcon className="w-5 h-5" />
+                          </span>
+                          <span>3D CME Lab</span>
+                      </button>
+                      <div className="flex items-center gap-2 ml-auto">
+                          <button
+                              id="nav-settings"
+                              onClick={() => setIsSettingsOpen(true)}
+                              className={`p-2 rounded-full bg-neutral-900/80 border border-neutral-700 text-neutral-200 hover:border-cyan-400 hover:text-white transition-all shadow-lg ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
+                              title="Open preferences"
+                          >
+                              <SettingsIcon className="w-6 h-6" />
+                          </button>
+                          <button
+                              onClick={() => setIsTutorialOpen(true)}
+                              className="px-3 py-2 rounded-full text-sm font-semibold bg-white/10 border border-white/10 hover:border-white/40 hover:bg-white/20 transition-all shadow-lg"
+                          >
+                              Quick tour
+                          </button>
+                      </div>
+                  </div>
               </div>
           </header>
 

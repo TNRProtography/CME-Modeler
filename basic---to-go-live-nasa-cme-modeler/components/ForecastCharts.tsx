@@ -73,11 +73,42 @@ const createVerticalThresholdGradient = (ctx: ScriptableContext<'line'>, thresho
 };
 
 const baseChartOptions: ChartOptions<'line'> = {
-    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' },
-    plugins: { legend: { display: false, labels: {color: '#a1a1aa'} }, tooltip: { mode: 'index', intersect: false } },
-    scales: { 
-        x: { type: 'time', ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
-        y: { position: 'left', ticks: { color: '#a3a3a3' }, grid: { color: '#3f3f46' }, title: { display: true, color: '#a3a3a3' } }
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false, axis: 'x' },
+    animation: { duration: 600, easing: 'easeOutQuart' },
+    elements: {
+        line: { borderJoinStyle: 'round', borderCapStyle: 'round' },
+        point: { radius: 0, hitRadius: 12, hoverRadius: 5 }
+    },
+    layout: { padding: { top: 8, right: 12, left: 8, bottom: 4 } },
+    plugins: {
+        legend: { display: true, labels: { color: '#e2e8f0', font: { size: 12, weight: '600' }, usePointStyle: true, padding: 16 } },
+        tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: '#0b1324',
+            titleColor: '#e2e8f0',
+            bodyColor: '#cbd5e1',
+            borderColor: '#1f2937',
+            borderWidth: 1,
+            padding: 12,
+            displayColors: false,
+        }
+    },
+    scales: {
+        x: {
+            type: 'time',
+            ticks: { color: '#a5b4fc', source: 'auto', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.06)', drawBorder: false },
+            title: { display: true, text: 'Time', color: '#cbd5e1', font: { weight: '600' } }
+        },
+        y: {
+            position: 'left',
+            ticks: { color: '#cbd5e1', font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.06)', drawBorder: false },
+            title: { display: true, color: '#cbd5e1', font: { weight: '700' } }
+        }
     }
 };
 
@@ -151,9 +182,13 @@ const createDynamicChartOptions = (
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
     const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '3 Hr', hours: 3 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
     return (
-        <div className="flex justify-center gap-2 my-2 flex-wrap">
+        <div className="flex justify-center gap-2 my-3 flex-wrap">
             {timeRanges.map(({ label, hours }) => (
-                <button key={hours} onClick={() => onSelect(hours * 3600000)} className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+                <button
+                    key={hours}
+                    onClick={() => onSelect(hours * 3600000)}
+                    className={`px-3 py-1.5 text-xs rounded-full border shadow-sm transition-all ${selected === hours * 3600000 ? 'bg-gradient-to-r from-sky-500 to-cyan-400 text-neutral-900 border-transparent shadow-cyan-500/30' : 'bg-neutral-900/80 text-neutral-200 border-neutral-700 hover:border-sky-500/60 hover:text-white'}`}
+                >
                     {label}
                 </button>
             ))}
