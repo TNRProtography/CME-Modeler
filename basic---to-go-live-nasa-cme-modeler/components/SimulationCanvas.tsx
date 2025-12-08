@@ -727,7 +727,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.userData = cme;
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
-      system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      const baseQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      const rollQuat = new THREE.Quaternion().setFromAxisAngle(dir, Math.PI / 2); // croissant rotated 90° around its travel axis
+      system.quaternion.copy(rollQuat.multiply(baseQuat));
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
