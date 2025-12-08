@@ -91,13 +91,22 @@ const createArrowTexture = (THREE: any) => {
 
 // Curved "croissant" geometry for the flux rope that always starts at the Sun (origin)
 const createCroissantFluxRopeGeometry = (THREE: any) => {
-  const curve = new THREE.QuadraticBezierCurve3(
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0.0, 0.55, -0.4),
-    new THREE.Vector3(0, 1, 0)
+  const curve = new THREE.CatmullRomCurve3(
+    [
+      new THREE.Vector3(0, 0, 0),
+      // Early lift away from the Sun and slight lean so the back hugs the surface
+      new THREE.Vector3(0.14, 0.24, -0.18),
+      // Broad mid-body to capture the croissant belly
+      new THREE.Vector3(-0.16, 0.56, -0.08),
+      // Tip that points straight down the original CME axis
+      new THREE.Vector3(0, 1, 0),
+    ],
+    false,
+    'catmullrom',
+    0.6
   );
 
-  const geometry = new THREE.TubeGeometry(curve, 180, 0.12, 48, false);
+  const geometry = new THREE.TubeGeometry(curve, 240, 0.12, 56, false);
 
   // Give the croissant a teardrop profile: thick at the Sun, softly bulged in the middle,
   // and tapered near the leading edge. We scale vertex offsets relative to the curve so the
@@ -109,7 +118,7 @@ const createCroissantFluxRopeGeometry = (THREE: any) => {
 
   for (let i = 0; i < pos.count; i++) {
     const t = clamp(uv.getY(i), 0, 1);
-    const widthProfile = (1.2 - 0.7 * t) + 0.25 * Math.sin(Math.PI * t);
+    const widthProfile = 1.35 - 0.9 * t + 0.38 * Math.sin(Math.PI * t);
 
     center.copy(curve.getPointAt(t));
     temp.fromBufferAttribute(pos, i).sub(center).multiplyScalar(widthProfile).add(center);
@@ -629,9 +638,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           if (cmeObject) {
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+            const halfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
             const ropeLength = Math.max(cmeObject.position.length() + cmeObject.scale.y, 0.0001);
-            const radiusScale = coneRadius * 0.65;
+            const angularRadius = ropeLength * Math.tan(halfAngleRad);
+            const radiusScale = angularRadius * 0.65;
             fluxRopeRef.current.scale.set(radiusScale, ropeLength, radiusScale);
             fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
