@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { CMEMilestone } from '../types';
 
@@ -6,39 +7,46 @@ interface Props {
 }
 
 export function PropagationChart({ milestones }: Props) {
-  const data = {
+  const data = useMemo(() => ({
     labels: milestones.map((m) => `${m.timeHours.toFixed(1)} h`),
     datasets: [
       {
         type: 'line' as const,
         label: 'Distance (AU)',
         data: milestones.map((m) => m.distanceAU),
-        borderColor: 'rgba(102, 224, 255, 0.9)',
-        backgroundColor: 'rgba(102, 224, 255, 0.2)',
-        tension: 0.35,
+        borderColor: 'rgba(255, 179, 71, 0.9)',
+        backgroundColor: 'rgba(255, 179, 71, 0.2)',
+        tension: 0.4,
         fill: true,
         yAxisID: 'y',
+        pointRadius: 4,
       },
       {
         type: 'line' as const,
         label: 'Speed (km/s)',
         data: milestones.map((m) => m.speed),
-        borderColor: 'rgba(132, 240, 200, 0.9)',
-        backgroundColor: 'rgba(132, 240, 200, 0.2)',
-        tension: 0.35,
+        borderColor: 'rgba(128, 222, 255, 0.95)',
+        backgroundColor: 'rgba(128, 222, 255, 0.15)',
+        tension: 0.4,
         fill: true,
         yAxisID: 'y1',
+        pointRadius: 4,
       },
     ],
-  };
+  }), [milestones]);
 
   const options = {
     responsive: true,
+    maintainAspectRatio: false,
     interaction: { mode: 'index' as const, intersect: false },
     plugins: {
       legend: {
         labels: {
-          color: '#e8f1ff',
+          color: '#e0e6ff',
+          boxWidth: 14,
+          font: {
+            family: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          },
         },
       },
       tooltip: {
@@ -56,31 +64,39 @@ export function PropagationChart({ milestones }: Props) {
     },
     scales: {
       x: {
-        ticks: { color: '#99a9c2' },
-        grid: { color: 'rgba(255,255,255,0.05)' },
+        ticks: { color: '#8aa0c2' },
+        grid: { color: 'rgba(255,255,255,0.04)' },
       },
       y: {
         position: 'left' as const,
-        ticks: { color: '#99a9c2' },
-        grid: { color: 'rgba(255,255,255,0.05)' },
-        title: { display: true, text: 'Distance (AU)', color: '#99a9c2' },
+        ticks: { color: '#8aa0c2' },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        title: { display: true, text: 'Distance (AU)', color: '#8aa0c2' },
         min: 0,
         max: 1,
       },
       y1: {
         position: 'right' as const,
-        ticks: { color: '#99a9c2' },
+        ticks: { color: '#8aa0c2' },
         grid: { drawOnChartArea: false },
-        title: { display: true, text: 'Speed (km/s)', color: '#99a9c2' },
+        title: { display: true, text: 'Speed (km/s)', color: '#8aa0c2' },
         min: 0,
       },
     },
   };
 
   return (
-    <div className="panel">
-      <h2>Propagation profile</h2>
-      <Line data={data} options={options} />
+    <div className="panel tall">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Propagation lab</p>
+          <h2>Distance & deceleration</h2>
+        </div>
+        <div className="legend-note">Dual-scale chart of heliocentric distance and plasma speed.</div>
+      </div>
+      <div className="chart-wrap">
+        <Line data={data} options={options} />
+      </div>
     </div>
   );
 }

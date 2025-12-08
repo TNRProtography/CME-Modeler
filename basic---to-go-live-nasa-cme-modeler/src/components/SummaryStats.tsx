@@ -6,7 +6,7 @@ interface StatCardProps {
 
 function StatCard({ label, value, detail }: StatCardProps) {
   return (
-    <div className="stat-card">
+    <div className="stat-card ribbon">
       <div className="label">{label}</div>
       <div className="value">{value}</div>
       {detail && <div className="helper" style={{ marginTop: 4 }}>{detail}</div>}
@@ -19,11 +19,18 @@ interface SummaryStatsProps {
 }
 
 export function SummaryStats({ stats }: SummaryStatsProps) {
+  const [primary, ...rest] = stats;
+
   return (
-    <div className="panel">
-      <h2>Forecast summary</h2>
-      <div className="card-grid">
-        {stats.map((stat) => (
+    <div className="stat-stack">
+      {primary && (
+        <div className="stat-primary">
+          <div className="stack-heading">Arrival window</div>
+          <StatCard {...primary} />
+        </div>
+      )}
+      <div className="stack-grid">
+        {rest.map((stat) => (
           <StatCard key={stat.label} {...stat} />
         ))}
       </div>
