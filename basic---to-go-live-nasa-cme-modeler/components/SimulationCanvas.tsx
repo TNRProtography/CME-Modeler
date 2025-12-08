@@ -670,13 +670,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const fluxRopeTubeRadius = 0.05 * coneRadius;
       const fluxRopeBand = fluxRopeTubeRadius * 1.2; // 20% padding beyond flux rope width
       const fluxRopeDepthStart = 0.75; // keep particles near the front where the flux rope sits
+      const fluxRopeThetaCenter = Math.PI / 2; // rotate slice laterally by 90 degrees
 
       for (let i = 0; i < pCount; i++) {
         const y = fluxRopeDepthStart + Math.random() * (1 - fluxRopeDepthStart);
         const targetRadius = y * coneRadius;
         const bandInner = Math.max(0, targetRadius - fluxRopeBand);
         const bandOuter = targetRadius + fluxRopeBand;
-        const theta = Math.random() * 2 * Math.PI;
+        const angularPadding = Math.min(Math.PI / 6, fluxRopeBand / Math.max(targetRadius, 0.0001));
+        const theta = fluxRopeThetaCenter + (Math.random() - 0.5) * 2 * angularPadding;
         const r = Math.sqrt(Math.random() * (bandOuter * bandOuter - bandInner * bandInner) + bandInner * bandInner);
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
