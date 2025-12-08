@@ -87,6 +87,44 @@ const getCmeCoreColor = (speed: number): any => {
   return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
 };
 
+const createCroissantCMEGeometry = (THREE: any, count: number, halfAngleDeg: number) => {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const progress = new Float32Array(count);
+
+  const arcSpan = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(halfAngleDeg * 1.2, 40, 160));
+  const majorRadius = 1.02;
+  const baseMinor = 0.42 + THREE.MathUtils.clamp(halfAngleDeg / 120, 0, 1) * 0.22;
+
+  for (let i = 0; i < count; i++) {
+    const arcAngle = THREE.MathUtils.lerp(-arcSpan * 0.5, arcSpan * 0.5, Math.random());
+    const tubeAngle = Math.random() * Math.PI * 2;
+
+    const shellBias = Math.pow(Math.random(), 0.55);
+    const localMinor = baseMinor * (0.65 + 0.45 * shellBias);
+    const taper = THREE.MathUtils.lerp(0.95, 0.58, Math.abs(arcAngle) / (arcSpan * 0.5));
+
+    const x = (majorRadius + localMinor * Math.cos(tubeAngle)) * Math.cos(arcAngle);
+    const y = localMinor * Math.sin(tubeAngle) * taper;
+    const z = (majorRadius + localMinor * Math.cos(tubeAngle)) * Math.sin(arcAngle);
+    const axialOffset = 0.35 + shellBias * 0.35;
+
+    const idx = i * 3;
+    positions[idx] = x;
+    positions[idx + 1] = y + axialOffset;
+    positions[idx + 2] = z;
+
+    const rel = (arcAngle + arcSpan * 0.5) / arcSpan;
+    progress[i] = rel;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('progress', new THREE.Float32BufferAttribute(progress, 1));
+  return geometry;
+};
+
 const createCroissantFluxRope = (THREE: any, particleTexture: any, count: number) => {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
@@ -711,34 +749,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
-      const pos: number[] = [];
-      const colors: number[] = [];
-      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = 1 * Math.tan(halfAngle);
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
-      for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
-        const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
-        const x = r * Math.cos(theta);
-        const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+      const geom = createCroissantCMEGeometry(THREE, pCount, cme.halfAngle);
+      const progressAttr = geom.getAttribute('progress');
+      const colorAttr = geom.getAttribute('color');
 
-        const relPos = y;
-        const finalColor = new THREE.Color();
-        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
-        else if (relPos < 0.3) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
-        colors.push(finalColor.r, finalColor.g, finalColor.b);
+      if (progressAttr && colorAttr) {
+        const temp = new THREE.Color();
+        for (let i = 0; i < progressAttr.count; i++) {
+          const rel = progressAttr.getX(i);
+          if (rel < 0.1) temp.copy(wakeColor).lerp(coreColor, rel / 0.1);
+          else if (rel < 0.3) temp.copy(coreColor);
+          else temp.copy(coreColor).lerp(shockColor, (rel - 0.3) / 0.7);
+          colorAttr.setXYZ(i, temp.r, temp.g, temp.b);
+        }
+        colorAttr.needsUpdate = true;
       }
-
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
       const mat = new THREE.PointsMaterial({
         size: getCmeParticleSize(cme.speed, SCENE_SCALE),
