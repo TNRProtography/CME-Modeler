@@ -92,45 +92,39 @@ const createCmeEruptionGeometry = (THREE: any, count: number, halfAngleDeg: numb
   const colors = new Float32Array(count * 3);
   const progress = new Float32Array(count);
 
-  const opening = THREE.MathUtils.degToRad(Math.max(18, halfAngleDeg * 0.65));
-  const croissantBend = THREE.MathUtils.degToRad(Math.max(35, Math.min(85, halfAngleDeg * 1.1)));
+  const arcSpan = THREE.MathUtils.degToRad(Math.max(150, Math.min(240, halfAngleDeg * 2.2)));
+  const majorBase = 1.15;
+  const minorBase = 0.22;
 
   for (let i = 0; i < count; i++) {
-    // spine runs along the croissant arc, anchored at the tail (0) and flaring to the nose (1)
-    const spineT = Math.pow(Math.random(), 0.86);
-    const noseBias = THREE.MathUtils.smoothstep(spineT, 0.18, 0.95);
+    const arcT = Math.pow(Math.random(), 0.9);
+    const theta = THREE.MathUtils.lerp(-arcSpan * 0.5, arcSpan * 0.5, arcT + (Math.random() - 0.5) * 0.025);
+    const noseBias = THREE.MathUtils.smoothstep(arcT, 0.08, 0.92);
 
-    // bend the croissant like a magnetic loop peeled off the surface
-    const arc = THREE.MathUtils.lerp(-croissantBend * 0.28, croissantBend, noseBias);
-    const roll = Math.random() * Math.PI * 2;
+    const majorRadius = majorBase * THREE.MathUtils.lerp(0.72, 1.25, noseBias);
+    const minorRadius = minorBase * THREE.MathUtils.lerp(0.45, 1.35, noseBias);
+    const wobble = (Math.random() - 0.5) * 0.18;
+    const phi = Math.random() * Math.PI * 2;
 
-    // lateral spread opens with the cone while squeezing the tail into a thin ribbon
-    const latSpread = opening * THREE.MathUtils.lerp(0.08, 1.05, noseBias);
-    const lat = (Math.random() - 0.5) * latSpread;
+    const center = new THREE.Vector3(0, Math.sin(theta) * majorRadius, Math.cos(theta) * majorRadius);
+    const tangent = new THREE.Vector3(0, Math.cos(theta), -Math.sin(theta)).normalize();
+    const radial = center.clone().normalize();
+    const binormal = new THREE.Vector3().crossVectors(tangent, radial).normalize();
+    if (binormal.lengthSq() < 1e-5) binormal.set(1, 0, 0);
+    const normal = new THREE.Vector3().crossVectors(binormal, tangent).normalize();
 
-    // tube radii: slim tail, thick crest, compressed inner face
-    const outerRim = THREE.MathUtils.lerp(0.06, 0.9, Math.pow(noseBias, 1.4));
-    const innerRim = THREE.MathUtils.lerp(0.015, 0.32, Math.pow(noseBias, 1.05));
-    const taper = THREE.MathUtils.lerp(1.0, 0.6, Math.abs(Math.sin(arc * 0.45)));
+    const squish = THREE.MathUtils.lerp(0.35, 1.08, noseBias);
+    const rim = minorRadius * (0.72 + 0.55 * Math.sin(phi + wobble));
+    const offset = normal.multiplyScalar(rim * Math.cos(phi) * squish)
+      .add(binormal.multiplyScalar(rim * 0.88 * Math.sin(phi)));
 
-    const radial = THREE.MathUtils.lerp(0.18, 1.6, Math.pow(noseBias, 0.9));
-    const crestBulge = outerRim * (0.7 + 0.45 * Math.sin(roll)) * taper;
-    const tailRibbon = innerRim * (0.5 + 0.35 * Math.cos(roll + spineT * Math.PI));
-
-    const shell = radial + crestBulge;
-    const inner = radial * 0.32 - tailRibbon * (1 - noseBias);
-
-    const y = shell * Math.sin(arc) + inner;
-    const offset = shell * Math.cos(arc);
-    const x = offset * Math.sin(lat);
-    const z = offset * Math.cos(lat);
-
+    const pt = center.add(offset);
     const idx = i * 3;
-    positions[idx] = x;
-    positions[idx + 1] = y;
-    positions[idx + 2] = z;
+    positions[idx] = pt.x;
+    positions[idx + 1] = pt.y;
+    positions[idx + 2] = pt.z;
 
-    progress[i] = THREE.MathUtils.clamp(spineT, 0, 1);
+    progress[i] = THREE.MathUtils.clamp(arcT, 0, 1);
   }
 
   const geometry = new THREE.BufferGeometry();
