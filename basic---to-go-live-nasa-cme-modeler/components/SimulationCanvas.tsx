@@ -336,7 +336,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(cmeGroupRef.current);
 
     // --- START OF MODIFICATION: Reverting to original blinking ring ---
-    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.07, 64, 200);
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
       fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
