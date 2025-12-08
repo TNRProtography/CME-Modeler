@@ -1,6 +1,0 @@
-{
-  "name": "Basic - To go Live NASA CME Modeler",
-  "description": "A React and Three.js application to visualize Coronal Mass Ejections (CMEs) from NASA's DONKI API, displaying their trajectory and potential impact on Earth in a 3D solar system model.",
-  "requestFramePermissions": [],
-  "prompt": ""
-}

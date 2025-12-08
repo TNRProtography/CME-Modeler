@@ -1,145 +1,19 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Let Cloudflare handle caching; removing no-cache meta improves repeat visits -->
-  <!-- (Cache-Control/Pragma/Expires meta removed) -->
-
-  <!-- Canonical & robots (kept from SEO step) -->
-  <link rel="canonical" href="https://spottheaurora.co.nz/">
-  <meta name="robots" content="index,follow,max-image-preview:large">
-
-  <!-- Basic meta -->
-  <title>Spot The Aurora – Live Aurora Forecasts & Space Weather for NZ</title>
-  <meta name="description" content="Real-time aurora forecasts, space weather alerts, solar wind and flare tracking for New Zealand and the Southern Hemisphere.">
-  <meta name="author" content="Spot The Aurora">
-  <meta name="application-name" content="Spot The Aurora">
-
-  <!-- PWA -->
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#171717">
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
-  <link rel="shortcut icon" href="/favicon.ico">
-
-  <!-- Open Graph -->
-  <meta property="og:locale" content="en_NZ">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Spot The Aurora">
-  <meta property="og:title" content="Spot The Aurora – Live Aurora Forecasts & Space Weather for NZ">
-  <meta property="og:description" content="Get live aurora forecasts, solar flare alerts, and substorm signals with NZ-focused visibility guidance.">
-  <meta property="og:url" content="https://spottheaurora.co.nz/">
-  <meta property="og:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
-  <meta property="og:image:alt" content="Aurora forecast and live space weather dashboard">
-
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Spot The Aurora – Live Aurora Forecasts & Space Weather for NZ">
-  <meta name="twitter:description" content="Real-time aurora forecasts and space weather alerts for New Zealand.">
-  <meta name="twitter:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
-
-  <!-- JSON-LD -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "Spot The Aurora",
-    "url": "https://spottheaurora.co.nz",
-    "description": "Real-time aurora forecasts, space weather alerts, and solar activity tracking for New Zealand and the Southern Hemisphere.",
-    "inLanguage": "en-NZ",
-    "potentialAction": {
-      "@type": "SearchAction",
-      "target": "https://spottheaurora.co.nz/?q={search_term_string}",
-      "query-input": "required name=search_term_string"
-    }
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "Spot The Aurora",
-    "operatingSystem": "Web",
-    "applicationCategory": "WeatherApplication",
-    "url": "https://spottheaurora.co.nz",
-    "image": "https://spottheaurora.co.nz/background-aurora.jpg",
-    "description": "PWA providing live aurora forecasts, alerts for solar flares and substorms, and NZ visibility guidance."
-  }
-  </script>
-
-  <!-- Perf hints -->
-  <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-
-  <!-- Make Leaflet CSS non-blocking: preload then apply -->
-  <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        as="style" crossorigin
-        onload="this.onload=null;this.rel='stylesheet'">
-  <noscript>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
-  </noscript>
-
-  <!-- Tailwind CDN (kept for now; later we’ll switch to build-time Tailwind) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Heavy libs set to defer so they don't block parsing -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js" defer></script>
-
-  <style>
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #171717; color: #d4d4d4; overflow: hidden; }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: #737373; }
-
-    .leaflet-container { background-color: #1a1a1a !important; }
-    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
-      background: #262626;
-      color: #d4d4d4;
-      box-shadow: 0 3px 14px rgba(0,0,0,0.4);
-    }
-    .emoji-marker { background-color: transparent !important; border: none !important; }
-    .emoji-marker div {
-      width: 32px; height: 32px; line-height: 32px; text-align: center;
-      font-size: 28px; text-shadow: 0 0 5px black;
-    }
-    :root {
-      --solar-flare-ab-rgb: 34, 197, 94;
-      --solar-flare-c-rgb: 245, 158, 11;
-      --solar-flare-m-rgb: 255, 69, 0;
-      --solar-flare-x-rgb: 147, 112, 219;
-      --solar-flare-x5plus-rgb: 255, 105, 180;
-      --proton-s0-rgb: 34, 197, 94;
-      --proton-s1-rgb: 255, 215, 0;
-      --proton-s2-rgb: 255, 165, 0;
-      --proton-s3-rgb: 255, 69, 0;
-      --proton-s4-rgb: 128, 0, 128;
-      --proton-s5-rgb: 255, 20, 147;
-    }
-    .styled-scrollbar::-webkit-scrollbar { width: 8px; }
-    .styled-scrollbar::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-    .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
-  </style>
-
-  <script type="importmap">
-  {
-    "imports": {
-      "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
-      "react": "https://esm.sh/react@^19.1.0",
-      "react/": "https://esm.sh/react@^19.1.0/"
-    }
-  }
-  </script>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CME Modeler</title>
+    <meta
+      name="description"
+      content="Model coronal mass ejections, explore launch parameters, and visualize predicted arrival timelines."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
