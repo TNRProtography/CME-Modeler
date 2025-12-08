@@ -196,6 +196,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const starsFarRef = useRef<any>(null);
 
   const timelineValueRef = useRef(timelineValue);
+  const staticNowRef = useRef(Date.now());
   const lastTimeRef = useRef(0);
 
   const raycasterRef = useRef<any>(null);
@@ -229,7 +230,42 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
+  useEffect(() => {
+    updateEarthCarringtonPosition();
+  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, updateEarthCarringtonPosition]);
+
   const MIN_CME_SPEED_KMS = 300;
+
+  const getTimelineDate = useCallback(() => {
+    if (timelineActive && timelineMinDate && timelineMaxDate) {
+      return new Date(timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000));
+    }
+    if (timelineMinDate) return new Date(timelineMinDate);
+    return new Date(staticNowRef.current);
+  }, [timelineActive, timelineMinDate, timelineMaxDate]);
+
+  const updateEarthCarringtonPosition = useCallback(() => {
+    const THREE = (window as any).THREE;
+    const earth = celestialBodiesRef.current['EARTH'];
+    if (!THREE || !earth) return;
+
+    const date = getTimelineDate();
+    const angle = THREE.MathUtils.degToRad(getCarringtonLongitude(date));
+    const data = earth.userData as PlanetData;
+    data.angle = angle;
+    earth.mesh.position.x = data.radius * Math.sin(angle);
+    earth.mesh.position.z = data.radius * Math.cos(angle);
+
+    const l1Body = celestialBodiesRef.current['L1'];
+    if (l1Body) {
+      const p = new THREE.Vector3();
+      earth.mesh.getWorldPosition(p);
+      const d = p.clone().normalize();
+      const l1Pos = p.clone().sub(d.multiplyScalar((l1Body.userData as POIData).distanceFromParent));
+      l1Body.mesh.position.copy(l1Pos);
+      l1Body.mesh.lookAt(p);
+    }
+  }, [getTimelineDate]);
 
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const u_kms = cme.speed;
@@ -375,8 +411,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const computeCurrentAngle = (bodyData: PlanetData) => {
       if (bodyData.name === 'Earth') {
-        const baseDateMs = timelineActive && timelineMinDate ? timelineMinDate : Date.now();
-        return THREE.MathUtils.degToRad(getCarringtonLongitude(new Date(baseDateMs)));
+        return THREE.MathUtils.degToRad(getCarringtonLongitude(getTimelineDate()));
       }
       if (!bodyData.orbitalPeriodDays) return bodyData.angle;
       const daysSinceJ2000 = (Date.now() - Date.UTC(2000, 0, 1, 12)) / (1000 * 60 * 60 * 24);
@@ -523,12 +558,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         showFluxRope
       } = animPropsRef.current;
 
-      const timelineDate = new Date(
-        timelineActive
-          ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
-          : Date.now()
-      );
-
       const elapsedTime = getClockElapsedTime();
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
@@ -539,12 +568,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const ORBIT_SPEED_SCALE = 2000;
       Object.values(celestialBodiesRef.current).forEach(body => {
         const d = body.userData as PlanetData | undefined;
-        if (d?.name === 'Earth') {
-          const carringtonAngle = THREE.MathUtils.degToRad(getCarringtonLongitude(timelineDate));
-          d.angle = carringtonAngle;
-          body.mesh.position.x = d.radius * Math.sin(carringtonAngle);
-          body.mesh.position.z = d.radius * Math.cos(carringtonAngle);
-        } else if (d?.orbitalPeriodDays) {
+        if (d?.orbitalPeriodDays && d.name !== 'Earth') {
           const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE) * elapsedTime;
           body.mesh.position.x = d.radius * Math.sin(a);
           body.mesh.position.z = d.radius * Math.cos(a);
@@ -687,41 +711,45 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pos: number[] = [];
       const colors: number[] = [];
 
-      // Build a croissant-style torus segment using CME metadata (half angle/speed)
-      const halfAngleRad = THREE.MathUtils.degToRad(Math.max(10, cme.halfAngle));
-      const arcSpan = clamp(halfAngleRad * 2, THREE.MathUtils.degToRad(70), THREE.MathUtils.degToRad(310));
-      const baseMajorRadius = 0.6 + THREE.MathUtils.clamp(cme.speed / 3000, 0, 1) * 0.18; // faster CMEs look a bit larger
-      const baseMinorRadius = 0.12;
+      const halfAngleRad = THREE.MathUtils.degToRad(Math.max(8, cme.halfAngle));
+      const coneRadius = Math.tan(halfAngleRad);
+      const arcSpan = clamp(halfAngleRad * 2.1, THREE.MathUtils.degToRad(70), THREE.MathUtils.degToRad(260));
+      const baseMajorRadius = 0.65 + THREE.MathUtils.clamp(cme.speed / 3000, 0, 1) * 0.15;
+      const baseMinorRadius = 0.1;
 
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < pCount; i++) {
-        // Parameterize a torus arc around the +Y axis so it can be rotated by quaternion later
-        const u = (Math.random() - 0.5) * arcSpan; // arc angle (croissant bite)
-        const v = Math.random() * Math.PI * 2; // around the tube
+        // Sample like the original cone distribution for authentic spread
+        const y = Math.cbrt(Math.random());
+        const rAtY = y * coneRadius;
+        const theta = Math.random() * 2 * Math.PI;
+        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
 
-        // Slight jitter keeps the shell organic
-        const major = baseMajorRadius + (Math.random() - 0.5) * 0.08;
-        const arcPinch = 0.7 + 0.3 * Math.cos(u); // slimmer near the tips
-        const minor = baseMinorRadius * (0.65 + Math.random() * 0.45) * arcPinch;
+        // Bend that cone into a croissant arc
+        const u = (y - 0.5) * arcSpan;
+        const v = theta;
+        const arcPinch = 0.7 + 0.3 * Math.cos(u);
+        const minorScale = (r / (coneRadius || 1)) * arcPinch;
+        const minor = baseMinorRadius * (0.55 + 0.45 * (1 - y)) * (0.6 + 0.4 * Math.random());
+        const radial = minor * (0.3 + 0.7 * minorScale);
+        const major = baseMajorRadius + 0.12 * (y - 0.5);
+        const forwardOffset = 0.28 + 0.08 * y;
 
-        // Center the torus a bit forward so the croissant appears to erupt away from the Sun
-        const forwardOffset = 0.35;
-        const x = (major + minor * Math.cos(v)) * Math.cos(u);
-        const z = (major + minor * Math.cos(v)) * Math.sin(u);
-        const y = (minor * Math.sin(v) * 0.55) + forwardOffset + Math.cos(u) * 0.05;
+        const x = (major + radial * Math.cos(v)) * Math.cos(u);
+        const z = (major + radial * Math.cos(v)) * Math.sin(u);
+        const yPos = (radial * Math.sin(v) * 0.5) + forwardOffset + Math.cos(u) * 0.04;
 
-        pos.push(x, y, z);
+        pos.push(x, yPos, z);
 
-        // Color by relative distance along the arc for a bright leading edge and cooler wake
-        const shellProgress = (u + arcSpan / 2) / arcSpan;
-        const heat = Math.pow(shellProgress, 1.2);
+        // Use the legacy color ramp keyed to the original radial distance
+        const relPos = y;
         const finalColor = new THREE.Color();
-        if (heat < 0.25) finalColor.copy(wakeColor).lerp(coreColor, heat / 0.25);
-        else if (heat < 0.6) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (heat - 0.6) / 0.4);
+        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
+        else if (relPos < 0.3) finalColor.copy(coreColor);
+        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
 
