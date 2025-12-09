@@ -36,6 +36,7 @@ import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
 import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
+import WsaEnlilBuilderPage from './components/WsaEnlilBuilderPage';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -76,7 +77,7 @@ const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
 
 const App: React.FC = () => {
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
+  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity' | 'wsa-enlil'>('forecast');
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -296,7 +297,7 @@ const App: React.FC = () => {
   }, [resetClock, apiKey]);
 
   useEffect(() => {
-    if (activePage === 'modeler' && !cmePageLoadedOnce.current) {
+    if ((activePage === 'modeler' || activePage === 'wsa-enlil') && !cmePageLoadedOnce.current) {
         loadCMEData(activeTimeRange);
         cmePageLoadedOnce.current = true;
     }
@@ -623,6 +624,10 @@ const App: React.FC = () => {
                       <CmeIcon className="w-5 h-5" />
                       <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
                   </button>
+                  <button id="nav-wsa-enlil" onClick={() => setActivePage('wsa-enlil')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'wsa-enlil' ? 'bg-emerald-500/25 border border-emerald-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'}`} title="Build WSA-ENLIL Runs">
+                      <GlobeIcon className="w-5 h-5" />
+                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">WSA-ENLIL</span>
+                  </button>
               </div>
               <div className="flex-grow flex justify-end">
                   <button id="nav-settings" onClick={() => setIsSettingsOpen(true)} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
@@ -727,6 +732,15 @@ const App: React.FC = () => {
                       setLatestXrayFlux={setLatestXrayFlux}
                       onViewCMEInVisualization={handleViewCMEInVisualization}
                       navigationTarget={navigationTarget}
+                  />
+              </div>
+              <div className={`w-full h-full ${activePage === 'wsa-enlil' ? 'block' : 'hidden'}`}>
+                  <WsaEnlilBuilderPage
+                      cmes={cmeData}
+                      isLoading={isLoading}
+                      fetchError={fetchError}
+                      onViewCMEInVisualization={handleViewCMEInVisualization}
+                      onReload={() => loadCMEData(activeTimeRange)}
                   />
               </div>
           </div>
