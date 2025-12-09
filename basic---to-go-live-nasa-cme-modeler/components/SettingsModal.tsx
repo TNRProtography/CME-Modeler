@@ -15,8 +15,12 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  appVersion: string; 
+  appVersion: string;
   onShowTutorial: () => void;
+  defaultMainPage: 'forecast' | 'solar-activity' | 'modeler';
+  defaultForecastView: 'simple' | 'advanced';
+  onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
+  onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -60,7 +64,16 @@ const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  appVersion,
+  onShowTutorial,
+  defaultMainPage,
+  defaultForecastView,
+  onDefaultMainPageChange,
+  onDefaultForecastViewChange,
+}) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
@@ -262,6 +275,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 <p className="text-neutral-400">App installation is not currently available.</p>
               </div>
             )}
+          </section>
+
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Default start view</h3>
+            <p className="text-sm text-neutral-400 mb-4">
+              Choose the page the app opens to by default and which forecast layout loads first when you visit Spot the Aurora.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-300" htmlFor="default-main-page">
+                  Landing page
+                </label>
+                <select
+                  id="default-main-page"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={defaultMainPage}
+                  onChange={e => onDefaultMainPageChange(e.target.value as 'forecast' | 'solar-activity' | 'modeler')}
+                >
+                  <option value="forecast">Spot the Aurora Forecast</option>
+                  <option value="solar-activity">Solar Activity Dashboard</option>
+                  <option value="modeler">CME Visualization</option>
+                </select>
+                <p className="text-xs text-neutral-500">
+                  Your default landing page is stored on this device so it opens straight to your preferred dashboard.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-300" htmlFor="default-forecast-view">
+                  Forecast view mode
+                </label>
+                <select
+                  id="default-forecast-view"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={defaultForecastView}
+                  onChange={e => onDefaultForecastViewChange(e.target.value as 'simple' | 'advanced')}
+                >
+                  <option value="simple">Simple view (at-a-glance)</option>
+                  <option value="advanced">Advanced view (full detail)</option>
+                </select>
+                <p className="text-xs text-neutral-500">
+                  The selected layout is saved locally and applied whenever you load the forecast page without a shared link.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section>

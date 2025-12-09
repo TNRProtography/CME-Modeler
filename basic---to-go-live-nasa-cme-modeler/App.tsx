@@ -83,10 +83,14 @@ const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
 
 const SETTINGS_PATH = '/settings';
 const TUTORIAL_PATH = '/tutorial';
+const DEFAULT_MAIN_PAGE_KEY = 'sta_default_main_page';
+const DEFAULT_FORECAST_VIEW_KEY = 'sta_default_forecast_view';
 
-const getForecastViewFromSearch = (search: string): 'simple' | 'advanced' => {
+const getForecastViewFromSearch = (search: string): 'simple' | 'advanced' | null => {
   const params = new URLSearchParams(search);
-  return params.get('view') === 'advanced' ? 'advanced' : 'simple';
+  const viewParam = params.get('view');
+  if (viewParam === 'advanced' || viewParam === 'simple') return viewParam;
+  return null;
 };
 
 const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 'modeler' | null => {
@@ -97,8 +101,26 @@ const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 
 };
 
 const App: React.FC = () => {
+  const getStoredMainPage = () => {
+    const stored = localStorage.getItem(DEFAULT_MAIN_PAGE_KEY);
+    return stored === 'solar-activity' || stored === 'modeler' ? stored : 'forecast';
+  };
+
+  const getStoredForecastView = () => {
+    const stored = localStorage.getItem(DEFAULT_FORECAST_VIEW_KEY);
+    return stored === 'advanced' ? 'advanced' : 'simple';
+  };
+
+  const [defaultMainPage, setDefaultMainPage] = useState<'forecast' | 'modeler' | 'solar-activity'>(() =>
+    getStoredMainPage()
+  );
+
+  const [defaultForecastView, setDefaultForecastView] = useState<'simple' | 'advanced'>(() =>
+    getStoredForecastView()
+  );
+
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
-    () => getPageFromPathname(window.location.pathname) ?? 'forecast'
+    () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
   );
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -159,9 +181,11 @@ const App: React.FC = () => {
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const cmePageLoadedOnce = useRef(false);
   const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
-  const [forecastViewMode, setForecastViewMode] = useState<'simple' | 'advanced'>(() =>
-    getForecastViewFromSearch(window.location.search)
-  );
+  const [forecastViewMode, setForecastViewMode] = useState<'simple' | 'advanced'>(() => {
+    const viewFromSearch = getForecastViewFromSearch(window.location.search);
+    if (viewFromSearch) return viewFromSearch;
+    return getStoredForecastView();
+  });
 
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
@@ -174,7 +198,19 @@ const App: React.FC = () => {
         lastMainPageRef.current = mainPage;
         setActivePage(mainPage);
         if (mainPage === 'forecast') {
-          setForecastViewMode(getForecastViewFromSearch(url.search));
+          const viewFromUrl = getForecastViewFromSearch(url.search);
+          const targetView = viewFromUrl ?? defaultForecastView;
+          setForecastViewMode(targetView);
+
+          if (!viewFromUrl) {
+            const updated = new URL(url.href);
+            updated.searchParams.set('view', targetView);
+            const updatedPath = updated.pathname + updated.search;
+            const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
+            if (updatedPath !== path) {
+              window.history[method]({}, '', updatedPath);
+            }
+          }
         }
       } else if (!isSettingsPath && !isTutorialPath) {
         const fallbackPath =
@@ -194,7 +230,7 @@ const App: React.FC = () => {
       setIsSettingsOpen(isSettingsPath);
       setIsTutorialOpen(isTutorialPath);
     },
-    [forecastViewMode]
+    [defaultForecastView, forecastViewMode]
   );
 
   const navigateToPath = useCallback(
@@ -362,6 +398,16 @@ const App: React.FC = () => {
     },
     [navigateToPath]
   );
+
+  const handleDefaultMainPageChange = useCallback((page: 'forecast' | 'solar-activity' | 'modeler') => {
+    setDefaultMainPage(page);
+    localStorage.setItem(DEFAULT_MAIN_PAGE_KEY, page);
+  }, []);
+
+  const handleDefaultForecastViewChange = useCallback((view: 'simple' | 'advanced') => {
+    setDefaultForecastView(view);
+    localStorage.setItem(DEFAULT_FORECAST_VIEW_KEY, view);
+  }, []);
 
   const handleOpenSettings = useCallback(() => {
     navigateToPath(SETTINGS_PATH);
@@ -893,6 +939,10 @@ const App: React.FC = () => {
             onClose={handleCloseSettings}
             appVersion={APP_VERSION}
             onShowTutorial={handleShowTutorial}
+            defaultMainPage={defaultMainPage}
+            defaultForecastView={defaultForecastView}
+            onDefaultMainPageChange={handleDefaultMainPageChange}
+            onDefaultForecastViewChange={handleDefaultForecastViewChange}
           />
           
           <FirstVisitTutorial
