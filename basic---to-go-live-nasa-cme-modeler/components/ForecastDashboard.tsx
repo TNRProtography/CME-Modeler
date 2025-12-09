@@ -45,7 +45,6 @@ interface ForecastDashboardProps {
   onInitialLoad?: () => void;
   viewMode: 'simple' | 'advanced';
   onViewModeChange: (mode: 'simple' | 'advanced') => void;
-  refreshSignal: number;
 }
 
 interface Camera {
@@ -190,7 +189,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
@@ -219,10 +218,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
       return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    useEffect(() => {
-      fetchAllData(false, getGaugeStyle);
-    }, [fetchAllData, refreshSignal]);
 
     useEffect(() => {
         const latestShock = interplanetaryShockData?.[0];
@@ -489,21 +484,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
-                     <div className="flex justify-center items-center gap-2 mb-6">
-                        <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 shadow-inner p-1 backdrop-blur-md">
-                          <button
-                            onClick={() => onViewModeChange('simple')}
-                            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}
-                          >
+                     <div className="flex justify-center items-center gap-4 mb-6">
+                        <button onClick={() => onViewModeChange('simple')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'simple' ? 'bg-sky-500/30 border border-sky-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
                             Simple View
-                          </button>
-                          <button
-                            onClick={() => onViewModeChange('advanced')}
-                            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'advanced' ? 'bg-gradient-to-r from-purple-500/80 to-fuchsia-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}
-                          >
+                        </button>
+                        <button onClick={() => onViewModeChange('advanced')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'advanced' ? 'bg-purple-500/30 border border-purple-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
                             Advanced View
-                          </button>
-                        </div>
+                        </button>
                     </div>
 
                     {viewMode === 'simple' ? (

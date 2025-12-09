@@ -22,8 +22,6 @@ interface SettingsModalProps {
   defaultForecastView: 'simple' | 'advanced';
   onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
-  pageViewStats: PageViewStats;
-  pageViewStorageMode: 'server' | 'local';
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -76,8 +74,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   defaultForecastView,
   onDefaultMainPageChange,
   onDefaultForecastViewChange,
-  pageViewStats,
-  pageViewStorageMode,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -86,10 +82,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-
-  const primaryActionClass = 'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95';
-  const subtleActionClass = 'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-200 font-semibold hover:bg-white/10 transition-all active:scale-95';
-  const chipActionClass = 'flex-shrink-0 px-3 py-1.5 text-xs rounded-full bg-white/10 border border-white/15 text-sky-200 hover:bg-white/20 transition-colors';
 
   useEffect(() => {
     if (isOpen) {
@@ -274,7 +266,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             ) : isAppInstallable ? (
               <div className="space-y-3">
                 <p className="text-sm text-neutral-400">Install this app for quick home-screen access and notifications.</p>
-                <button onClick={handleInstallApp} className={primaryActionClass}>
+                <button onClick={handleInstallApp} className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 border border-blue-500/50 rounded-md text-blue-300 hover:bg-blue-500/30 hover:border-blue-400 transition-colors">
                   <DownloadIcon className="w-4 h-4" />
                   <span>Install App</span>
                 </button>
@@ -328,23 +320,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   The selected layout is saved locally and applied whenever you load the forecast page without a shared link.
                 </p>
               </div>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Your page views</h3>
-            <p className="text-sm text-neutral-400 mb-4">
-              {pageViewStorageMode === 'server'
-                ? 'These numbers are stored on the server so they stay in sync across devices.'
-                : 'These numbers are stored only on this device so you can see how often you check in.'}
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[{ label: 'Today', value: pageViewStats.daily }, { label: 'This week', value: pageViewStats.weekly }, { label: 'This year', value: pageViewStats.yearly }, { label: 'Lifetime', value: pageViewStats.lifetime }].map(stat => (
-                <div key={stat.label} className="bg-neutral-900/60 border border-neutral-800 rounded-lg p-3 text-center shadow-inner">
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">{stat.label}</p>
-                  <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
-                </div>
-              ))}
             </div>
           </section>
 
