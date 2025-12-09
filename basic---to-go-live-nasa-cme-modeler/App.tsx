@@ -457,20 +457,6 @@ const App: React.FC = () => {
     }
   }, [navigateToPage]);
 
-  const handleRefreshAppData = useCallback(async () => {
-    setIsRefreshing(true);
-    setManualRefreshKey((v) => v + 1);
-    await Promise.allSettled([
-      loadCMEData(activeTimeRange, { silent: true }),
-    ]);
-    setIsRefreshing(false);
-  }, [activeTimeRange, loadCMEData]);
-
-  const handleShowTutorial = useCallback(() => {
-    setIsFirstVisitTutorialOpen(true);
-    navigateToPath(TUTORIAL_PATH);
-  }, [navigateToPath]);
-
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
@@ -517,6 +503,20 @@ const App: React.FC = () => {
       }
     }
   }, [resetClock, apiKey]);
+
+  const handleRefreshAppData = useCallback(async () => {
+    setIsRefreshing(true);
+    setManualRefreshKey((v) => v + 1);
+    await Promise.allSettled([
+      loadCMEData(activeTimeRange, { silent: true }),
+    ]);
+    setIsRefreshing(false);
+  }, [activeTimeRange, loadCMEData]);
+
+  const handleShowTutorial = useCallback(() => {
+    setIsFirstVisitTutorialOpen(true);
+    navigateToPath(TUTORIAL_PATH);
+  }, [navigateToPath]);
 
   useEffect(() => {
     if (activePage !== 'modeler') return;
