@@ -213,7 +213,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
-      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 60 * 1000);
+      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 30 * 1000);
       return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

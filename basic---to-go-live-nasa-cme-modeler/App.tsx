@@ -75,8 +75,26 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.0';
 
+const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
+  forecast: '/spot-the-aurora-forecast',
+  'solar-activity': '/solar-dashboard',
+  modeler: '/cme-visualization',
+};
+
+const SETTINGS_PATH = '/settings';
+const TUTORIAL_PATH = '/tutorial';
+
+const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 'modeler' | null => {
+  if (pathname.startsWith(PAGE_PATHS['solar-activity'])) return 'solar-activity';
+  if (pathname.startsWith(PAGE_PATHS['modeler'])) return 'modeler';
+  if (pathname.startsWith(PAGE_PATHS['forecast'])) return 'forecast';
+  return null;
+};
+
 const App: React.FC = () => {
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>('forecast');
+  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
+    () => getPageFromPathname(window.location.pathname) ?? 'forecast'
+  );
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -135,6 +153,55 @@ const App: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const cmePageLoadedOnce = useRef(false);
+  const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
+
+  const syncStateWithPath = useCallback((path: string, replaceHistory = false) => {
+    const mainPage = getPageFromPathname(path);
+    const isSettingsPath = path === SETTINGS_PATH;
+    const isTutorialPath = path === TUTORIAL_PATH;
+
+    if (mainPage) {
+      lastMainPageRef.current = mainPage;
+      setActivePage(mainPage);
+    } else if (!isSettingsPath && !isTutorialPath) {
+      const fallbackPath = PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast;
+      if (path !== fallbackPath) {
+        const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
+        window.history[method]({}, '', fallbackPath);
+      }
+      lastMainPageRef.current = getPageFromPathname(fallbackPath) ?? lastMainPageRef.current;
+      setActivePage(lastMainPageRef.current);
+    } else {
+      setActivePage(lastMainPageRef.current);
+    }
+
+    setIsSettingsOpen(isSettingsPath);
+    setIsTutorialOpen(isTutorialPath);
+  }, []);
+
+  const navigateToPath = useCallback((path: string, replaceHistory = false) => {
+    const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
+    const currentPath = window.location.pathname;
+    if (currentPath !== path) {
+      window.history[method]({}, '', path);
+    }
+    syncStateWithPath(path, true);
+  }, [syncStateWithPath]);
+
+  const navigateToPage = useCallback((page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
+    navigateToPath(PAGE_PATHS[page], replaceHistory);
+  }, [navigateToPath]);
+
+  useEffect(() => {
+    syncStateWithPath(window.location.pathname, true);
+    const onPopState = () => syncStateWithPath(window.location.pathname, true);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [syncStateWithPath]);
+
+  useEffect(() => {
+    lastMainPageRef.current = activePage;
+  }, [activePage]);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';
@@ -220,7 +287,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (navigationTarget) {
-      setActivePage(navigationTarget.page);
+      navigateToPage(navigationTarget.page);
       const scrollTimer = setTimeout(() => {
         const element = document.getElementById(navigationTarget.elementId);
         if (element) {
@@ -230,13 +297,16 @@ const App: React.FC = () => {
       }, 100);
       return () => clearTimeout(scrollTimer);
     }
-  }, [navigationTarget]);
+  }, [navigateToPage, navigationTarget]);
   
   const handleCloseFirstVisitTutorial = useCallback(() => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
     setIsFirstVisitTutorialOpen(false);
     setHighlightedElementId(null);
-  }, []);
+    if (window.location.pathname === TUTORIAL_PATH) {
+      navigateToPage(lastMainPageRef.current);
+    }
+  }, [navigateToPage]);
 
   const handleCloseCmeTutorial = useCallback(() => {
     localStorage.setItem(CME_TUTORIAL_KEY, 'true');
@@ -248,23 +318,47 @@ const App: React.FC = () => {
     setHighlightedElementId(id);
   }, []);
 
-  const handleShowTutorial = useCallback(() => {
+  const handleOpenSettings = useCallback(() => {
+    navigateToPath(SETTINGS_PATH);
+  }, [navigateToPath]);
+
+  const handleCloseSettings = useCallback(() => {
     setIsSettingsOpen(false);
+    navigateToPage(lastMainPageRef.current);
+  }, [navigateToPage]);
+
+  const handleOpenTutorial = useCallback(() => {
+    navigateToPath(TUTORIAL_PATH);
+    setIsTutorialOpen(true);
+  }, [navigateToPath]);
+
+  const handleCloseTutorial = useCallback(() => {
+    setIsTutorialOpen(false);
+    if (window.location.pathname === TUTORIAL_PATH) {
+      navigateToPage(lastMainPageRef.current);
+    }
+  }, [navigateToPage]);
+
+  const handleShowTutorial = useCallback(() => {
     setIsFirstVisitTutorialOpen(true);
-  }, []);
+    navigateToPath(TUTORIAL_PATH);
+  }, [navigateToPath]);
 
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
-  const loadCMEData = useCallback(async (days: TimeRange) => {
-    setIsLoading(true);
+  const loadCMEData = useCallback(async (days: TimeRange, options: { silent?: boolean } = {}) => {
+    const { silent = false } = options;
+    if (!silent) {
+      setIsLoading(true);
+      setCurrentlyModeledCMEId(null);
+      setSelectedCMEForInfo(null);
+      setTimelineActive(false);
+      setTimelinePlaying(false);
+      setTimelineScrubberValue(0);
+      resetClock();
+    }
     setFetchError(null);
-    setCurrentlyModeledCMEId(null);
-    setSelectedCMEForInfo(null);
-    setTimelineActive(false);
-    setTimelinePlaying(false);
-    setTimelineScrubberValue(0);
-    resetClock();
     setDataVersion((v: number) => v + 1);
     try {
       const data = await fetchCMEData(days, apiKey);
@@ -291,15 +385,30 @@ const App: React.FC = () => {
       }
       setCmeData([]);
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, [resetClock, apiKey]);
 
   useEffect(() => {
-    if (activePage === 'modeler' && !cmePageLoadedOnce.current) {
-        loadCMEData(activeTimeRange);
+    if (activePage !== 'modeler') return;
+
+    const ensureInitialLoad = async () => {
+      if (!cmePageLoadedOnce.current) {
+        await loadCMEData(activeTimeRange);
         cmePageLoadedOnce.current = true;
-    }
+      }
+    };
+
+    ensureInitialLoad();
+    const interval = setInterval(() => {
+      if (cmePageLoadedOnce.current) {
+        loadCMEData(activeTimeRange, { silent: true });
+      }
+    }, 30 * 1000);
+
+    return () => clearInterval(interval);
   }, [activePage, activeTimeRange, loadCMEData]);
 
   const handleTimeRangeChange = (range: TimeRange) => {
@@ -556,13 +665,13 @@ const App: React.FC = () => {
   }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement, threeCamera, planetLabelInfos, sunInfo]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
-    setActivePage('modeler');
+    navigateToPage('modeler');
     const cmeToModel = cmeData.find(cme => cme.id === cmeId);
     if (cmeToModel) {
       handleSelectCMEForModeling(cmeToModel);
     }
     setIsCmeListOpen(true);
-  }, [cmeData, handleSelectCMEForModeling]);
+  }, [cmeData, handleSelectCMEForModeling, navigateToPage]);
 
   const handleFlareAlertClick = useCallback(() => {
     setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
@@ -611,28 +720,28 @@ const App: React.FC = () => {
 
           <header className="flex-shrink-0 p-2 md:p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
               <div className="flex items-center space-x-2">
-                  <button id="nav-forecast" onClick={() => setActivePage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
+                  <button id="nav-forecast" onClick={() => navigateToPage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
                       <ForecastIcon className="w-5 h-5" />
                       <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
                   </button>
-                  <button id="nav-solar-activity" onClick={() => setActivePage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
+                  <button id="nav-solar-activity" onClick={() => navigateToPage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
                       <SunIcon className="w-5 h-5" />
                       <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
                   </button>
-                  <button id="nav-modeler" onClick={() => setActivePage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
+                  <button id="nav-modeler" onClick={() => navigateToPage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
                       <CmeIcon className="w-5 h-5" />
                       <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
                   </button>
               </div>
               <div className="flex-grow flex justify-end">
-                  <button id="nav-settings" onClick={() => setIsSettingsOpen(true)} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
+                  <button id="nav-settings" onClick={handleOpenSettings} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
               </div>
           </header>
 
           <div className="flex flex-grow min-h-0">
               <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={() => setIsTutorialOpen(true)} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
@@ -709,7 +818,7 @@ const App: React.FC = () => {
                   
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
-                  <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+                  <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
               <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
                   <ForecastDashboard
@@ -734,7 +843,7 @@ const App: React.FC = () => {
           <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
           <SettingsModal
             isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
+            onClose={handleCloseSettings}
             appVersion={APP_VERSION}
             onShowTutorial={handleShowTutorial}
           />
