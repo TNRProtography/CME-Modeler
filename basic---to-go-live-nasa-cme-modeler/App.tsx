@@ -36,7 +36,7 @@ import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
 import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
-import { calculateStats, PageViewStats, recordPageView } from './utils/pageViews';
+import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -151,7 +151,7 @@ const App: React.FC = () => {
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
-  const [showFluxRope, setShowFluxRope] = useState(false); 
+  const [showFluxRope, setShowFluxRope] = useState(false);
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
@@ -188,6 +188,7 @@ const App: React.FC = () => {
     return getStoredForecastView();
   });
   const [pageViewStats, setPageViewStats] = useState<PageViewStats>(() => calculateStats());
+  const [pageViewStorageMode] = useState<'server' | 'local'>(() => getPageViewStorageMode());
 
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
@@ -275,7 +276,19 @@ const App: React.FC = () => {
   }, [activePage]);
 
   useEffect(() => {
-    setPageViewStats(recordPageView());
+    let isCancelled = false;
+    loadPageViewStats().then(stats => {
+      if (!isCancelled) setPageViewStats(stats);
+    });
+    return () => { isCancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    recordPageView().then(stats => {
+      if (!isCancelled) setPageViewStats(stats);
+    });
+    return () => { isCancelled = true; };
   }, [activePage]);
 
   useEffect(() => {
@@ -997,6 +1010,7 @@ const App: React.FC = () => {
             onDefaultMainPageChange={handleDefaultMainPageChange}
             onDefaultForecastViewChange={handleDefaultForecastViewChange}
             pageViewStats={pageViewStats}
+            pageViewStorageMode={pageViewStorageMode}
           />
           
           <FirstVisitTutorial

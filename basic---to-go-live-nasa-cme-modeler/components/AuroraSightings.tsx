@@ -56,6 +56,16 @@ const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
 
+const computeSunsetWindowStart = () => {
+    const now = new Date();
+    const sunset = new Date();
+    sunset.setHours(18, 0, 0, 0);
+    if (now.getTime() < sunset.getTime()) {
+        sunset.setDate(sunset.getDate() - 1);
+    }
+    return sunset.getTime();
+};
+
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; category: 'visible' | 'nothing' | 'other' }[] = [
     { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.', category: 'visible' },
     { status: 'phone', emoji: '📱', label: 'Phone Camera', description: 'Not visible to your eyes, but shows up clearly in a modern smartphone photo (e.g., a 3-second night mode shot).', category: 'visible' },
@@ -186,6 +196,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     const [lastReportInfo, setLastReportInfo] = useState<{timestamp: number, key: string} | null>(null);
 
     const [selectedSightingIdForMap, setSelectedSightingIdForMap] = useState<string | null>(null);
+    const [sunsetWindowStart, setSunsetWindowStart] = useState<number>(() => computeSunsetWindowStart());
 
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
@@ -241,6 +252,11 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             markerRefs.current.clear();
         }
     }, [fetchSightings, requestGpsFix]);
+
+    useEffect(() => {
+        const timer = setInterval(() => setSunsetWindowStart(computeSunsetWindowStart()), 5 * 60 * 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     const cooldownRemaining = useMemo(() => {
         if (!lastReportInfo) return 0;
@@ -334,7 +350,10 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
         });
     };
 
-    const totalReports = sightings.length;
+    const reportsSinceSunset = useMemo(
+        () => sightings.filter(sighting => sighting.timestamp >= sunsetWindowStart).length,
+        [sightings, sunsetWindowStart]
+    );
 
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
@@ -349,12 +368,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 <div className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/40 rounded-full text-amber-200 text-sm font-semibold">
                     <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
                     GPS is required to submit a report. Enable location services before you report.
-                </div>
-                <div className="flex justify-center">
-                    <div className="mt-2 inline-flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-white/90">
-                        <span className="inline-flex h-2 w-2 bg-emerald-300 rounded-full" aria-hidden="true" />
-                        Total reports in the last 24 hours: {isLoading ? '…' : totalReports}
-                    </div>
                 </div>
             </div>
 
@@ -483,7 +496,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                         <table className="w-full text-sm text-left text-neutral-400">
                             <thead className="text-xs text-neutral-300 uppercase bg-neutral-800"><tr><th scope="col" className="px-4 py-2">Time</th><th scope="col" className="px-4 py-2">Name</th><th scope="col" className="px-4 py-2">Report</th></tr></thead>
                             <tbody>
-                                {isLoading ? ( <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr> ) : sightings.length === 0 ? ( <tr><td colSpan={3} className="text-center p-4 italic">No reports in the last 24 hours.</td></tr> ) : sightings.slice(0, 5).map(s => (
+                                {isLoading ? ( <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr> ) : sightings.length === 0 ? ( <tr><td colSpan={3} className="text-center p-4 italic">No reports since sunset today.</td></tr> ) : sightings.slice(0, 5).map(s => (
                                     <tr
                                         key={s.timestamp + s.name}
                                         className="bg-neutral-900 border-b border-neutral-800 cursor-pointer hover:bg-neutral-800"
@@ -500,6 +513,13 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                      </div>
                 </div>
             </div>
+            <div className="flex justify-center pt-2">
+                <div className="mt-2 inline-flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-white/90">
+                    <span className="inline-flex h-2 w-2 bg-emerald-300 rounded-full" aria-hidden="true" />
+                    Reports since sunset today: {isLoading ? '…' : reportsSinceSunset}
+                </div>
+            </div>
+            <p className="text-xs text-neutral-400 text-center">This count refreshes as new reports arrive after today's sunset.</p>
             <InfoModal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} />
         </div>
     );

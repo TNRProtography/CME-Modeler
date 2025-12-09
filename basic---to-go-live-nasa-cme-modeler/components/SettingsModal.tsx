@@ -23,6 +23,7 @@ interface SettingsModalProps {
   onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
   pageViewStats: PageViewStats;
+  pageViewStorageMode: 'server' | 'local';
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -76,6 +77,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onDefaultMainPageChange,
   onDefaultForecastViewChange,
   pageViewStats,
+  pageViewStorageMode,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -332,7 +334,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Your page views</h3>
             <p className="text-sm text-neutral-400 mb-4">
-              These numbers are stored only on this device so you can see how often you check in.
+              {pageViewStorageMode === 'server'
+                ? 'These numbers are stored on the server so they stay in sync across devices.'
+                : 'These numbers are stored only on this device so you can see how often you check in.'}
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[{ label: 'Today', value: pageViewStats.daily }, { label: 'This week', value: pageViewStats.weekly }, { label: 'This year', value: pageViewStats.yearly }, { label: 'Lifetime', value: pageViewStats.lifetime }].map(stat => (

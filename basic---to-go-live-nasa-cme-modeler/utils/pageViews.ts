@@ -11,6 +11,8 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * ONE_DAY_MS;
 const ONE_YEAR_MS = 365 * ONE_DAY_MS;
 
+const PAGE_VIEW_API_BASE = import.meta.env.VITE_PAGE_VIEWS_ENDPOINT || '';
+
 const loadEvents = (): number[] => {
   try {
     const raw = localStorage.getItem(PAGE_VIEW_EVENTS_KEY);
@@ -53,7 +55,14 @@ const saveLifetimeCount = (count: number) => {
   }
 };
 
-export const recordPageView = (): PageViewStats => {
+const normalizeStats = (stats: any): PageViewStats => ({
+  daily: Number(stats?.daily) || 0,
+  weekly: Number(stats?.weekly) || 0,
+  yearly: Number(stats?.yearly) || 0,
+  lifetime: Number(stats?.lifetime) || 0,
+});
+
+const recordLocalPageView = (): PageViewStats => {
   const now = Date.now();
   const events = loadEvents();
   const lifetime = loadLifetimeCount() + 1;
@@ -81,4 +90,56 @@ export const calculateStats = (
     yearly: withinYear,
     lifetime,
   };
+};
+
+const recordServerPageView = async (): Promise<PageViewStats | null> => {
+  if (!PAGE_VIEW_API_BASE) return null;
+
+  try {
+    const response = await fetch(`${PAGE_VIEW_API_BASE}/page-views`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ occurredAt: new Date().toISOString() }),
+    });
+
+    if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+
+    const stats = await response.json();
+    return normalizeStats(stats);
+  } catch (err) {
+    console.warn('Falling back to local page view tracking; server request failed', err);
+    return null;
+  }
+};
+
+const fetchServerStats = async (): Promise<PageViewStats | null> => {
+  if (!PAGE_VIEW_API_BASE) return null;
+
+  try {
+    const response = await fetch(`${PAGE_VIEW_API_BASE}/page-views`, {
+      method: 'GET',
+    });
+
+    if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+
+    const stats = await response.json();
+    return normalizeStats(stats);
+  } catch (err) {
+    console.warn('Falling back to local page view stats; server request failed', err);
+    return null;
+  }
+};
+
+export const getPageViewStorageMode = () => (PAGE_VIEW_API_BASE ? 'server' : 'local');
+
+export const recordPageView = async (): Promise<PageViewStats> => {
+  const serverStats = await recordServerPageView();
+  if (serverStats) return serverStats;
+  return recordLocalPageView();
+};
+
+export const loadPageViewStats = async (): Promise<PageViewStats> => {
+  const serverStats = await fetchServerStats();
+  if (serverStats) return serverStats;
+  return calculateStats();
 };
