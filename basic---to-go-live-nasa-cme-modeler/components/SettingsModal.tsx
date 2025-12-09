@@ -15,8 +15,12 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  appVersion: string; 
+  appVersion: string;
   onShowTutorial: () => void;
+  defaultMainPage: 'forecast' | 'solar-activity' | 'modeler';
+  defaultForecastView: 'simple' | 'advanced';
+  onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
+  onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -60,7 +64,16 @@ const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  appVersion,
+  onShowTutorial,
+  defaultMainPage,
+  defaultForecastView,
+  onDefaultMainPageChange,
+  onDefaultForecastViewChange,
+}) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
@@ -68,6 +81,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
+
+  const primaryActionClass = 'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95';
+  const subtleActionClass = 'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-200 font-semibold hover:bg-white/10 transition-all active:scale-95';
+  const chipActionClass = 'flex-shrink-0 px-3 py-1.5 text-xs rounded-full bg-white/10 border border-white/15 text-sky-200 hover:bg-white/20 transition-colors';
 
   useEffect(() => {
     if (isOpen) {
@@ -252,7 +269,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             ) : isAppInstallable ? (
               <div className="space-y-3">
                 <p className="text-sm text-neutral-400">Install this app for quick home-screen access and notifications.</p>
-                <button onClick={handleInstallApp} className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 border border-blue-500/50 rounded-md text-blue-300 hover:bg-blue-500/30 hover:border-blue-400 transition-colors">
+                <button onClick={handleInstallApp} className={primaryActionClass}>
                   <DownloadIcon className="w-4 h-4" />
                   <span>Install App</span>
                 </button>
@@ -262,6 +279,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 <p className="text-neutral-400">App installation is not currently available.</p>
               </div>
             )}
+          </section>
+
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Default start view</h3>
+            <p className="text-sm text-neutral-400 mb-4">
+              Choose the page the app opens to by default and which forecast layout loads first when you visit Spot the Aurora.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-300" htmlFor="default-main-page">
+                  Landing page
+                </label>
+                <select
+                  id="default-main-page"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={defaultMainPage}
+                  onChange={e => onDefaultMainPageChange(e.target.value as 'forecast' | 'solar-activity' | 'modeler')}
+                >
+                  <option value="forecast">Spot the Aurora Forecast</option>
+                  <option value="solar-activity">Solar Activity Dashboard</option>
+                  <option value="modeler">CME Visualization</option>
+                </select>
+                <p className="text-xs text-neutral-500">
+                  Your default landing page is stored on this device so it opens straight to your preferred dashboard.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-neutral-300" htmlFor="default-forecast-view">
+                  Forecast view mode
+                </label>
+                <select
+                  id="default-forecast-view"
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={defaultForecastView}
+                  onChange={e => onDefaultForecastViewChange(e.target.value as 'simple' | 'advanced')}
+                >
+                  <option value="simple">Simple view (at-a-glance)</option>
+                  <option value="advanced">Advanced view (full detail)</option>
+                </select>
+                <p className="text-xs text-neutral-500">
+                  The selected layout is saved locally and applied whenever you load the forecast page without a shared link.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section>
@@ -277,10 +339,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
                 <p className="text-orange-300 mb-3">Enable push notifications to be alerted of major space weather events, even when the app is closed.</p>
-                <button 
-                  onClick={handleEnableNotifications} 
+                <button
+                  onClick={handleEnableNotifications}
                   disabled={isSubscribing}
-                  className="px-4 py-2 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 disabled:opacity-50 disabled:cursor-wait"
+                  className={`${primaryActionClass} disabled:opacity-50 disabled:cursor-wait`}
                 >
                   {isSubscribing ? 'Subscribing...' : 'Enable Notifications'}
                 </button>
@@ -302,7 +364,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                       />
                       <button
                         onClick={() => handleTestCategory(category.id)}
-                        className="flex-shrink-0 px-3 py-1 text-xs bg-sky-600/20 border border-sky-500/50 rounded-md text-sky-300 hover:bg-sky-500/30 transition-colors"
+                        className={chipActionClass}
                       >
                         Test
                       </button>
@@ -312,7 +374,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
                 <div className="mt-4 flex justify-center">
                     <button
                         onClick={() => sendTestNotification()} // Sends a generic test
-                        className="px-4 py-2 text-sm bg-neutral-700 border border-neutral-600 rounded-md text-neutral-300 hover:bg-neutral-600 transition-colors"
+                        className={subtleActionClass}
                     >
                         Send Generic Test Notification
                     </button>
@@ -334,16 +396,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
               Have feedback, a feature request, or need support? Restart the welcome tutorial or send an email.
             </p>
             <div className="flex flex-wrap items-center gap-4">
-              <button 
-                onClick={onShowTutorial} 
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+              <button
+                onClick={onShowTutorial}
+                className={subtleActionClass}
               >
                 <GuideIcon className="w-5 h-5" />
                 <span>Show App Tutorial</span>
               </button>
-              <a 
+              <a
                 href="mailto:help@spottheaurora.co.nz?subject=Spot%20The%20Aurora%20Support"
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+                className={`${subtleActionClass} no-underline`}
               >
                 <MailIcon className="w-5 h-5" />
                 <span>Email for Support</span>
