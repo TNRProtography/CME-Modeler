@@ -45,6 +45,7 @@ interface ForecastDashboardProps {
   onInitialLoad?: () => void;
   viewMode: 'simple' | 'advanced';
   onViewModeChange: (mode: 'simple' | 'advanced') => void;
+  refreshSignal: number;
 }
 
 interface Camera {
@@ -189,7 +190,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
@@ -218,6 +219,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
       return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      fetchAllData(false, getGaugeStyle);
+    }, [fetchAllData, refreshSignal]);
 
     useEffect(() => {
         const latestShock = interplanetaryShockData?.[0];
@@ -526,7 +531,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             </div>
                             
-                            <AuroraSightings isDaylight={isDaylight} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
 
                             <ActivitySummaryDisplay summary={activitySummary} />
 
@@ -589,7 +594,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </button>
                             </div>
                             
-                            <AuroraSightings isDaylight={isDaylight} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             
                             <ActivitySummaryDisplay summary={activitySummary} />
 

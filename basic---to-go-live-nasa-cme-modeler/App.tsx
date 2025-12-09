@@ -43,6 +43,13 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 9a7 7 0 0112-4.9M20 15a7 7 0 01-12 4.9" />
+    </svg>
+);
+
 type ViewerMedia =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
@@ -188,6 +195,8 @@ const App: React.FC = () => {
   });
   const [pageViewStats, setPageViewStats] = useState<PageViewStats>(() => calculateStats());
   const [pageViewStorageMode] = useState<'server' | 'local'>(() => getPageViewStorageMode());
+  const [manualRefreshKey, setManualRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
@@ -447,6 +456,15 @@ const App: React.FC = () => {
       navigateToPage(lastMainPageRef.current);
     }
   }, [navigateToPage]);
+
+  const handleRefreshAppData = useCallback(async () => {
+    setIsRefreshing(true);
+    setManualRefreshKey((v) => v + 1);
+    await Promise.allSettled([
+      loadCMEData(activeTimeRange, { silent: true }),
+    ]);
+    setIsRefreshing(false);
+  }, [activeTimeRange, loadCMEData]);
 
   const handleShowTutorial = useCallback(() => {
     setIsFirstVisitTutorialOpen(true);
@@ -827,52 +845,62 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
 
-          <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex justify-center items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl">
-              <div className="flex flex-wrap items-stretch justify-center gap-1.5 sm:gap-2.5">
-                  <button
-                    id="nav-forecast"
-                    onClick={() => navigateToPage('forecast')}
-                    className={`flex items-center space-x-1 sm:space-x-2 px-1.5 py-1 sm:px-2 sm:py-1.5 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
-                    title="View Live Aurora Forecasts"
-                  >
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
-                        <AuroraBadgeIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                      </div>
-                      <div className="flex flex-col items-start leading-tight">
-                        <span className="text-[9px] sm:text-[11px] uppercase tracking-widest text-white/70">Forecast</span>
-                        <span className="text-[11px] sm:text-xs font-semibold text-white">Spot The Aurora</span>
-                      </div>
-                  </button>
-                  <button
-                    id="nav-solar-activity"
-                    onClick={() => navigateToPage('solar-activity')}
-                    className={`flex items-center space-x-1 sm:space-x-2 px-1.5 py-1 sm:px-2 sm:py-1.5 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
-                    title="View Solar Activity"
-                  >
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
-                        <SolarBadgeIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                      </div>
-                      <div className="flex flex-col items-start leading-tight">
-                        <span className="text-[9px] sm:text-[11px] uppercase tracking-widest text-white/70">Dashboard</span>
-                        <span className="text-[11px] sm:text-xs font-semibold text-white">Solar Activity</span>
-                      </div>
-                  </button>
-                  <button
-                    id="nav-modeler"
-                    onClick={() => navigateToPage('modeler')}
-                    className={`flex items-center space-x-1 sm:space-x-2 px-1.5 py-1 sm:px-2 sm:py-1.5 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
-                    title="View CME Visualization"
-                  >
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
-                        <ModelerBadgeIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                      </div>
-                      <div className="flex flex-col items-start leading-tight">
-                        <span className="text-[9px] sm:text-[11px] uppercase tracking-widest text-white/70">3D Lab</span>
-                        <span className="text-[11px] sm:text-xs font-semibold text-white">CME Visualization</span>
-                      </div>
-                  </button>
+          <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl">
+              <div className="flex-1 min-w-0">
+                  <div className="flex flex-nowrap items-stretch justify-start gap-1 sm:gap-2 max-w-full overflow-hidden">
+                      <button
+                        id="nav-forecast"
+                        onClick={() => navigateToPage('forecast')}
+                        className={`min-w-0 flex items-center space-x-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                        title="View Live Aurora Forecasts"
+                      >
+                          <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
+                            <AuroraBadgeIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-tight min-w-0">
+                            <span className="text-[8px] sm:text-[10px] uppercase tracking-widest text-white/70">Forecast</span>
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-white truncate">Spot The Aurora</span>
+                          </div>
+                      </button>
+                      <button
+                        id="nav-solar-activity"
+                        onClick={() => navigateToPage('solar-activity')}
+                        className={`min-w-0 flex items-center space-x-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                        title="View Solar Activity"
+                      >
+                          <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
+                            <SolarBadgeIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-tight min-w-0">
+                            <span className="text-[8px] sm:text-[10px] uppercase tracking-widest text-white/70">Dashboard</span>
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-white truncate">Solar Activity</span>
+                          </div>
+                      </button>
+                      <button
+                        id="nav-modeler"
+                        onClick={() => navigateToPage('modeler')}
+                        className={`min-w-0 flex items-center space-x-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                        title="View CME Visualization"
+                      >
+                          <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
+                            <ModelerBadgeIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-tight min-w-0">
+                            <span className="text-[8px] sm:text-[10px] uppercase tracking-widest text-white/70">3D Lab</span>
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-white truncate">CME Visualization</span>
+                          </div>
+                      </button>
+                  </div>
               </div>
-              <div className="flex-grow flex justify-end">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                  <button
+                    onClick={handleRefreshAppData}
+                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 ${isRefreshing ? 'opacity-80' : ''}`}
+                    title="Refresh data"
+                    aria-label="Refresh data"
+                  >
+                    <RefreshIcon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
                   <button
                     id="nav-settings"
                     onClick={handleOpenSettings}
@@ -1001,6 +1029,7 @@ const App: React.FC = () => {
                       onInitialLoad={handleInitialLoad}
                       viewMode={forecastViewMode}
                       onViewModeChange={handleForecastViewChange}
+                      refreshSignal={manualRefreshKey}
                   />
               </div>
               <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
@@ -1009,6 +1038,7 @@ const App: React.FC = () => {
                       setLatestXrayFlux={setLatestXrayFlux}
                       onViewCMEInVisualization={handleViewCMEInVisualization}
                       navigationTarget={navigationTarget}
+                      refreshSignal={manualRefreshKey}
                   />
               </div>
           </div>

@@ -87,6 +87,7 @@ const getEmojiForStatus = (status: SightingStatus) => {
 
 interface AuroraSightingsProps {
   isDaylight: boolean;
+  refreshSignal?: number;
 }
 
 interface SightingMapControllerProps {
@@ -180,7 +181,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
     );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -252,6 +253,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             markerRefs.current.clear();
         }
     }, [fetchSightings, requestGpsFix]);
+
+    useEffect(() => {
+        if (refreshSignal !== undefined) {
+            fetchSightings();
+        }
+    }, [fetchSightings, refreshSignal]);
 
     useEffect(() => {
         const timer = setInterval(() => setSunsetWindowStart(computeSunsetWindowStart()), 5 * 60 * 1000);
