@@ -462,6 +462,25 @@ export const useForecastData = (
                 .filter((p): p is NonNullable<typeof p> => p !== null);
             const sortedForCharts = [...processed].sort((a, b) => a.time - b.time);
             setAllMagneticData(sortedForCharts);
+
+            const latestMagneticPoint = sortedForCharts.at(-1);
+            if (latestMagneticPoint) {
+              setGaugeData(prev => ({
+                ...prev,
+                bt: {
+                  ...prev.bt,
+                  value: latestMagneticPoint.bt.toFixed(1),
+                  ...getGaugeStyle(latestMagneticPoint.bt, 'bt'),
+                  lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`
+                },
+                bz: {
+                  ...prev.bz,
+                  value: latestMagneticPoint.bz.toFixed(1),
+                  ...getGaugeStyle(latestMagneticPoint.bz, 'bz'),
+                  lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`
+                }
+              }));
+            }
         }
     }
 

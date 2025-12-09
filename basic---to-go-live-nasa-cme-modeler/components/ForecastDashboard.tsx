@@ -43,6 +43,9 @@ interface ForecastDashboardProps {
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
   onInitialLoad?: () => void;
+  viewMode: 'simple' | 'advanced';
+  onViewModeChange: (mode: 'simple' | 'advanced') => void;
+  refreshSignal: number;
 }
 
 interface Camera {
@@ -187,7 +190,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
@@ -201,7 +204,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
     const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
     const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
-    const [viewMode, setViewMode] = useState<'simple' | 'advanced'>('simple');
     const initialLoadCalled = useRef(false);
 
     useEffect(() => {
@@ -213,10 +215,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
-      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 60 * 1000);
+      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 30 * 1000);
       return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      fetchAllData(false, getGaugeStyle);
+    }, [fetchAllData, refreshSignal]);
 
     useEffect(() => {
         const latestShock = interplanetaryShockData?.[0];
@@ -388,38 +394,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, [auroraScore, substormForecast, gaugeData, celestialTimes]);
 
     const tooltipContent = useMemo(() => ({
-        'unified-forecast': `<strong>About the Spot The Aurora Forecast</strong><br>This panel is your primary guide, combining the general aurora visibility potential with a specific, short-term forecast for intense bursts of activity called substorms.<br><br>
-            <strong>Spot The Aurora Score (Left Side)</strong><br>
-            This percentage score indicates the general likelihood of seeing an aurora based on live space weather data.
-            <ul class='space-y-2 mt-2'>
-                <li><strong>Below 10% (😞):</strong> Little to no auroral activity.</li>
-                <li><strong>10% - 25% (😐):</strong> Minimal activity, likely camera-only.</li>
-                <li><strong>25% - 40% (😊):</strong> Visible in photos, maybe faint to the naked eye.</li>
-                <li><strong>40% - 50% (🙂):</strong> Faint naked-eye glow possible.</li>
-                <li><strong>50% - 80% (😀):</strong> Good chance of visible color and movement.</li>
-                <li><strong>80%+ (🤩):</strong> High probability of a significant, dynamic display.</li>
-            </ul>
-            <br>
-            <strong>Substorm Forecast (Right Side)</strong><br>
-            This section activates when conditions are right for a substorm. It's a predictive model for short, powerful bursts of aurora.
-            <ul class='space-y-2 mt-2'>
-                <li><strong>Status:</strong> Shows the current phase, from QUIET (low energy) to WATCH (building energy) to ONSET (erupting now).</li>
-                <li><strong>Recommended Action:</strong> Plain-English advice on what to do. This is your key takeaway.</li>
-                <li><strong>Window & Likelihood:</strong> The model's best guess for when a substorm might begin and its probability in the next hour.</li>
-            </ul>
-            <br>
-            The <strong>Overall Status</strong> at the top-right summarizes the most important current condition.`,
-        'power': `<strong>What it is:</strong> Think of this as the 'volume knob' for the aurora's brightness. It measures the total amount of energy the Sun's particles are dumping into Earth's atmosphere.<br><br><strong>Effect on Aurora:</strong> The higher the power, the more energy is available to light up the sky. High power can lead to a brighter and more widespread aurora.`,
-        'speed': `<strong>What it is:</strong> The Sun constantly streams out a flow of particles called the solar wind. This measures how fast that stream is moving.<br><br><strong>Effect on Aurora:</strong> Faster particles hit our atmosphere with more energy, like a faster pitch. This can create more vibrant colors (like pinks and purples) and cause the aurora to dance and move more quickly.`,
-        'density': `<strong>What it is:</strong> This measures how 'crowded' or 'thick' the stream of solar wind particles is.<br><br><strong>Effect on Aurora:</strong> Higher density is like using a wider paintbrush. More particles are hitting the atmosphere at once, which can make the aurora appear brighter and cover a larger area of the sky.`,
-        'bt': `<strong>What it is:</strong> The stream of particles from the Sun has its own magnetic field. 'Bt' measures the total strength of that magnetic field.<br><br><strong>Effect on Aurora:</strong> A high Bt value means the magnetic field is strong and carrying a lot of energy. By itself, it doesn't do much, but if the 'Bz' direction is right, this stored energy can be unleashed to create a powerful display.`,
-        'bz': `<strong>What it is:</strong> This is the most important ingredient for an aurora. Earth is protected by a magnetic shield. The 'Bz' value tells us the North-South direction of the Sun's magnetic field.<br><br><strong>Effect on Aurora:</strong> Think of Bz as the 'master switch'. When Bz points **South (a negative number)**, it's like a key turning in a lock. It opens a door in Earth's shield, allowing energy and particles to pour in. When Bz is North (positive), the door is closed. **The more negative the Bz, the better the aurora!**`,
-        'epam': `<strong>What it is:</strong> A sensor on a satellite far away that acts as an early-warning system. It counts very fast, high-energy particles that are often pushed ahead of a major solar eruption.<br><br><strong>Effect on Aurora:</strong> A sudden, sharp spike on this chart is a strong clue that a 'shockwave' from a solar eruption (a CME) is about to hit Earth, which can trigger a major aurora storm.`,
-        'moon': `<strong>What it is:</strong> The percentage of the moon that is lit up by the Sun, and its projected path in the sky for the next 24 hours.<br><br><strong>Effect on Aurora:</strong> The moon is like a giant natural street light. A bright, full moon (100%) will wash out all but the most intense auroras. A new moon (0%) provides the darkest skies, making it much easier to see faint glows. The chart helps you plan around when the moon will be below the horizon.`,
-        'ips': `<strong>What it is:</strong> The 'shockwave' at the front of a large cloud of solar particles (a CME) travelling from the Sun. This table shows when these shockwaves have recently hit our satellites.<br><br><strong>Effect on Aurora:</strong> The arrival of a shockwave is a major event. It can cause a sudden and dramatic change in all the other conditions (speed, density, Bz) and often triggers a strong auroral display very soon after it arrives.`,
-        'live-cameras': `<strong>What are these?</strong><br>These are public webcams from around New Zealand. They are a reality check for the forecast data.<br><br><strong>How do they help?</strong><br>You can use them to:<br><ul class="list-disc list-inside space-y-2 mt-2"><li><strong>Check for Clouds:</strong> The number one enemy of aurora spotting. Use the cloud map on this dashboard to check for clear skies.</li><li><strong>Spot Faint Aurora:</strong> These cameras are often more sensitive than our eyes and can pick up glows we might miss.</li><li><strong>Verify Conditions:</strong> If the forecast is high and a southern camera shows a clear sky, your chances are good!</li></ul>`,
-        'substorm': 'This chart shows data from the GOES satellite in geostationary orbit. The "Hp" component measures the magnetic field parallel to Earth\'s rotation axis. A slow decrease ("stretching phase") followed by a sharp increase ("dipolarization" or "jump") is a classic signature of a substorm onset, which often corresponds with a bright auroral display.',
-        'nz-mag': '<strong>What it is:</strong> This chart displays real-time data from a ground-based magnetometer located at West Melton, New Zealand. It measures the rate of change of the horizontal component (dH/dt) of Earth\'s magnetic field.<br><br><strong>Effect on Aurora:</strong> During a substorm, the reconfiguration of the magnetic field causes rapid fluctuations, seen as high volatility (large spikes) on this chart. This is the most definitive, localized proof that an auroral event is happening directly over our region. It serves as a high-confidence confirmation of the forecasts from satellite data.'
+        'unified-forecast': `<strong>Spot The Aurora Forecast</strong><br>This panel blends the overall aurora chance with a short-term substorm outlook.<br><br>
+            <strong>Spot The Aurora Score</strong><br>This percentage is calculated from live space-weather data. Higher numbers mean better odds of seeing the aurora from New Zealand.<br><ul class='space-y-2 mt-2'>
+                <li><strong>Under 10%:</strong> Very little activity expected.</li>
+                <li><strong>10% - 25%:</strong> Mostly camera-only chances.</li>
+                <li><strong>25% - 40%:</strong> Usually visible in photos; faint to the eye.</li>
+                <li><strong>40% - 80%:</strong> Good chance of visible glow and colour.</li>
+                <li><strong>80%+:</strong> Strong, dynamic displays likely.</li>
+            </ul><br>
+            <strong>Substorm Forecast</strong><br>Shows the likelihood and timing of a short, bright burst. Check the status, action note, and time window for the next likely eruption.`,
+        'power': `<strong>Total power into the aurora.</strong><br>This sums up how much energy is flowing into Earth's atmosphere. Rising power usually means brighter, wider auroras are possible.`,
+        'speed': `<strong>Solar wind speed.</strong><br>How fast the solar wind is moving. Faster wind delivers more energy and can make aurora curtains move quickly.`,
+        'density': `<strong>Solar wind density.</strong><br>How many particles are in the solar wind. Higher density can make the aurora brighter because more particles hit our atmosphere at once.`,
+        'bt': `<strong>IMF strength (Bt).</strong><br>The total strength of the interplanetary magnetic field carried by the solar wind. Strong Bt means more energy is available, especially when Bz turns south.`,
+        'bz': `<strong>IMF direction (Bz).</strong><br>The north/south direction of that field. Negative (south) Bz opens Earth's magnetic shield so energy can flow in. The more negative, the better for aurora.`,
+        'epam': `<strong>ACE EPAM alert.</strong><br>Counts fast particles ahead of a solar shock. A sharp spike often means a CME shockwave is minutes to hours away.`,
+        'moon': `<strong>Moon light and path.</strong><br>Shows how bright the moon is and when it rises or sets. A dim or below-horizon moon keeps the sky dark for easier aurora viewing.`,
+        'ips': `<strong>Interplanetary shocks.</strong><br>Records recent solar wind shock arrivals at satellites. A fresh shock can rapidly change speed, density, and Bz and often kick off strong aurora.`,
+        'live-cameras': `<strong>Live cameras.</strong><br>Quick reality check from around New Zealand. Use them to see cloud cover and spot early aurora glows before you head out.`,
+        'substorm': '<strong>GOES magnetometer.</strong><br>The Hp line shows how the magnetic field near Earth is stretching and snapping back. A sudden jump is a classic substorm signature and often lines up with bright aurora.',
+        'nz-mag': '<strong>NZ magnetometer.</strong><br>Local ground data from West Melton. Rapid spikes mean the magnetic field above New Zealand is being disturbed right now—a strong confirmation that aurora is overhead.'
     }), []);
     
     const openModal = useCallback((id: string) => {
@@ -495,13 +489,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
-                     <div className="flex justify-center items-center gap-4 mb-6">
-                        <button onClick={() => setViewMode('simple')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'simple' ? 'bg-sky-500/30 border border-sky-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
+                     <div className="flex justify-center items-center gap-2 mb-6">
+                        <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 shadow-inner p-1 backdrop-blur-md">
+                          <button
+                            onClick={() => onViewModeChange('simple')}
+                            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}
+                          >
                             Simple View
-                        </button>
-                        <button onClick={() => setViewMode('advanced')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'advanced' ? 'bg-purple-500/30 border border-purple-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
+                          </button>
+                          <button
+                            onClick={() => onViewModeChange('advanced')}
+                            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'advanced' ? 'bg-gradient-to-r from-purple-500/80 to-fuchsia-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}
+                          >
                             Advanced View
-                        </button>
+                          </button>
+                        </div>
                     </div>
 
                     {viewMode === 'simple' ? (
@@ -529,7 +531,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             </div>
                             
-                            <AuroraSightings isDaylight={isDaylight} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
 
                             <ActivitySummaryDisplay summary={activitySummary} />
 
@@ -568,7 +570,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            
+
                             <UnifiedForecastPanel
                               score={auroraScore}
                               blurb={auroraBlurb}
@@ -582,28 +584,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                               substormForecast={substormForecast}
                             />
 
-                            <div className="col-span-12">
-                                <button 
-                                    onClick={handleDownloadForecastImage}
-                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"
-                                >
-                                    <DownloadIcon className="w-6 h-6" />
-                                    <span>Download The Aurora Forecast For The Next Two Hours!</span>
-                                </button>
-                            </div>
-                            
-                            <AuroraSightings isDaylight={isDaylight} />
-                            
                             <ActivitySummaryDisplay summary={activitySummary} />
 
-                            {/* --- CHART PANELS --- */}
-                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
-                                <SolarWindSpeedChart data={allSpeedData} />
-                            </ForecastChartPanel>
+                            <ForecastTrendChart
+                                auroraScoreHistory={auroraScoreHistory}
+                                dailyCelestialHistory={dailyCelestialHistory}
+                                owmDailyForecast={owmDailyForecast}
+                                onOpenModal={() => openModal('forecast')}
+                            />
 
-                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
-                                <SolarWindDensityChart data={allDensityData} />
-                            </ForecastChartPanel>
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
 
                             <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}>
                                 <MagneticFieldChart data={allMagneticData} />
@@ -612,98 +602,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}>
                                 <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
                             </ForecastChartPanel>
-                            
-                            <ForecastChartPanel 
-                                title="Substorm Activity"
-                                currentValue={
-                                    substormForecast.status === 'ONSET' 
-                                        ? `ONSET DETECTED` 
-                                        : substormForecast.status.replace('_', ' ')
-                                } 
-                                emoji="⚡" 
-                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
-                            >
-                               <div className="flex justify-center items-center gap-4 mb-2">
-                                    <button
-                                        onClick={() => setActiveMagnetometer('nz')}
-                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    >
-                                        Ground Confirmation (NZ)
-                                    </button>
-                                    <button
-                                        onClick={() => setActiveMagnetometer('goes')}
-                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    >
-                                        Satellite Forecast (GOES)
-                                    </button>
-                               </div>
-                               
-                               <div className="min-h-[350px]">
-                                    {activeMagnetometer === 'goes' ? (
-                                        <div className="h-full">
-                                            <SubstormChart 
-                                                goes18Data={goes18Data} 
-                                                goes19Data={goes19Data} 
-                                                annotations={getMagnetometerAnnotations()} 
-                                                loadingMessage={loadingMagnetometer} 
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className={`flex flex-col md:flex-row gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
-                                            <div className="w-full md:w-2/3 h-full">
-                                                <NzMagnetometerChart 
-                                                    data={nzMagData} 
-                                                    events={nzMagSubstormEvents} 
-                                                    selectedEvent={selectedNzMagEvent} 
-                                                    loadingMessage={loadingNzMag} 
-                                                />
-                                            </div>
-                                            <div className="w-full md:w-1/3 h-full flex flex-col mt-4 md:mt-0 bg-neutral-900/50 p-3 rounded-lg">
-                                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
-                                                <div className="flex-grow overflow-y-auto styled-scrollbar pr-2 min-h-[100px]">
-                                                    {nzMagSubstormEvents.length > 0 ? (
-                                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                                            <div 
-                                                                key={index}
-                                                                onClick={() => setSelectedNzMagEvent(event)}
-                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors mb-2 ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                                            >
-                                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                       </div>
-                                   )}
-                               </div>
+
+                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
+                                <SolarWindSpeedChart data={allSpeedData} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
+                                <SolarWindDensityChart data={allDensityData} />
                             </ForecastChartPanel>
 
                             <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
                                 <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
                             </ForecastChartPanel>
 
-
-                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <TipsSection />
-                                <CameraSettingsSection settings={cameraSettings} />
-                            </div>
-                            
-                            <ForecastTrendChart 
-                                auroraScoreHistory={auroraScoreHistory}
-                                dailyCelestialHistory={dailyCelestialHistory}
-                                owmDailyForecast={owmDailyForecast}
-                                onOpenModal={() => openModal('forecast')}
-                            />
-
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
                                 <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
                             </div>
-                            
+
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <div className="flex justify-center items-center mb-4">
                                     <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
@@ -730,9 +646,93 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             </div>
 
+                            <ForecastChartPanel
+                                title="Substorm Activity"
+                                currentValue={
+                                    substormForecast.status === 'ONSET'
+                                        ? `ONSET DETECTED`
+                                        : substormForecast.status.replace('_', ' ')
+                                }
+                                emoji="⚡"
+                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
+                            >
+                               <div className="flex justify-center items-center gap-4 mb-2">
+                                    <button
+                                        onClick={() => setActiveMagnetometer('nz')}
+                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    >
+                                        Ground Confirmation (NZ)
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveMagnetometer('goes')}
+                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    >
+                                        Satellite Forecast (GOES)
+                                    </button>
+                               </div>
+
+                               <div className="min-h-[350px]">
+                                    {activeMagnetometer === 'goes' ? (
+                                        <div className="h-full">
+                                            <SubstormChart
+                                                goes18Data={goes18Data}
+                                                goes19Data={goes19Data}
+                                                annotations={getMagnetometerAnnotations()}
+                                                loadingMessage={loadingMagnetometer}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className={`flex flex-col md:flex-row gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
+                                            <div className="w-full md:w-2/3 h-full">
+                                                <NzMagnetometerChart
+                                                    data={nzMagData}
+                                                    events={nzMagSubstormEvents}
+                                                    selectedEvent={selectedNzMagEvent}
+                                                    loadingMessage={loadingNzMag}
+                                                />
+                                            </div>
+                                            <div className="w-full md:w-1/3 h-full flex flex-col mt-4 md:mt-0 bg-neutral-900/50 p-3 rounded-lg">
+                                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
+                                                <div className="flex-grow overflow-y-auto styled-scrollbar pr-2 min-h-[100px]">
+                                                    {nzMagSubstormEvents.length > 0 ? (
+                                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                            <div
+                                                                key={index}
+                                                                onClick={() => setSelectedNzMagEvent(event)}
+                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors mb-2 ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                            >
+                                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                       </div>
+                                   )}
+                               </div>
+                            </ForecastChartPanel>
+
+                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <TipsSection />
+                                <CameraSettingsSection settings={cameraSettings} />
+                            </div>
+
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                  <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
+                            </div>
+
+                            <div className="col-span-12">
+                                <button
+                                    onClick={handleDownloadForecastImage}
+                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"
+                                >
+                                    <DownloadIcon className="w-6 h-6" />
+                                    <span>Download The Aurora Forecast For The Next Two Hours!</span>
+                                </button>
                             </div>
                         </main>
                     )}
