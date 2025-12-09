@@ -33,6 +33,23 @@ const PROFANITY_PATTERNS = [
     /d\s*\W*\s*a\s*\W*\s*m\s*\W*\s*n/i,
     /a\s*\W*\s*s\s*\W*\s*s\s*\W*h\s*\W*\s*o\s*\W*\s*l\s*\W*\s*e/i,
     /d\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
+    /c\s*\W*\s*o\s*\W*\s*c\s*\W*\s*k/i,
+    /p\s*\W*\s*u\s*\W*\s*s\s*\W*\s*s\s*\W*\s*y/i,
+    /b\s*\W*\s*a\s*\W*\s*l\s*\W*\s*l\s*\W*\s*s/i,
+    /t\s*\W*\s*e\s*\W*\s*s\s*\W*\s*t\s*\W*\s*i\s*\W*\s*c\s*\W*\s*l\s*\W*\s*e/i,
+    /b\s*\W*\s*o\s*\W*\s*l\s*\W*\s*l\s*\W*\s*o\s*\W*\s*c\s*\W*\s*k\s*\W*\s*s/i,
+    /p\s*\W*\s*e\s*\W*\s*n\s*\W*\s*i\s*\W*\s*s/i,
+    /v\s*\W*\s*a\s*\W*\s*g\s*\W*\s*i\s*\W*\s*n\s*\W*\s*a/i,
+    /t\s*\W*\s*i\s*\W*\s*t\s*\W*\s*s/i,
+    /m\s*\W*\s*o\s*\W*\s*t\s*\W*\s*h\s*\W*\s*e\s*\W*\s*r\s*\W*\s*f\s*\W*\s*u\s*\W*\s*c\s*\W*\s*k/i,
+    /s\s*\W*\s*l\s*\W*\s*u\s*\W*\s*t/i,
+    /b\s*\W*\s*i\s*\W*\s*t\s*\W*\s*c\s*\W*\s*h\s*\W*\s*e\s*\W*\s*a\s*\W*\s*d/i,
+    /w\s*\W*\s*h\s*\W*\s*o\s*\W*\s*r\s*\W*\s*e/i,
+    /t\s*\W*\s*w\s*\W*\s*a\s*\W*\s*t/i,
+    /p\s*\W*\s*r\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
+    /c\s*\W*\s*u\s*\W*\s*m/i,
+    /j\s*\W*\s*i\s*\W*\s*z\s*\W*\s*z/i,
+    /d\s*\W*\s*o\s*\W*\s*u\s*\W*\s*c\s*\W*\s*h/i,
 ];
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
