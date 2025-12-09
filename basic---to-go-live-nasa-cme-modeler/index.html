@@ -138,6 +138,122 @@
     .styled-scrollbar::-webkit-scrollbar { width: 8px; }
     .styled-scrollbar::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
     .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
+
+    /* Modern micro-interactions and animated chrome */
+    @keyframes auroraFlow {
+      0% { transform: translateX(-30%) translateY(0); opacity: 0.18; }
+      50% { transform: translateX(10%) translateY(-8%); opacity: 0.32; }
+      100% { transform: translateX(40%) translateY(6%); opacity: 0.18; }
+    }
+
+    @keyframes sheenSweep {
+      0% { transform: translateX(-120%); opacity: 0; }
+      35% { opacity: 0.25; }
+      50% { transform: translateX(20%); opacity: 0.4; }
+      65% { opacity: 0.2; }
+      100% { transform: translateX(160%); opacity: 0; }
+    }
+
+    @keyframes cardFloat {
+      0% { transform: translateY(0px); box-shadow: 0 14px 36px rgba(0,0,0,0.36); }
+      50% { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(0,0,0,0.32); }
+      100% { transform: translateY(0px); box-shadow: 0 14px 36px rgba(0,0,0,0.36); }
+    }
+
+    @keyframes fadeUpSoft {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .modern-cta {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .modern-cta::before {
+      content: "";
+      position: absolute;
+      inset: -40%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.24), rgba(255,255,255,0));
+      animation: auroraFlow 14s ease-in-out infinite;
+      filter: blur(12px);
+      z-index: 0;
+      pointer-events: none;
+    }
+    .modern-cta::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%);
+      animation: sheenSweep 6s ease-in-out infinite;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .modern-cta > * { position: relative; z-index: 1; }
+
+    .floating-panel {
+      position: relative;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.28);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.08);
+      animation: cardFloat 18s ease-in-out infinite;
+      transition: transform 180ms ease, box-shadow 180ms ease;
+    }
+    .floating-panel:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 20px 44px rgba(0,0,0,0.32);
+    }
+
+    .soft-appear { animation: fadeUpSoft 420ms ease forwards; }
+
+    .aurora-banner {
+      position: relative;
+      overflow: hidden;
+    }
+    .aurora-banner::before {
+      content: "";
+      position: absolute;
+      inset: -30% -60%;
+      background: radial-gradient(circle at 20% 60%, rgba(255,255,255,0.18), transparent 55%),
+                  radial-gradient(circle at 80% 30%, rgba(125,211,252,0.18), transparent 55%);
+      animation: auroraFlow 16s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 14px 28px rgba(0,0,0,0.25);
+      backdrop-filter: blur(14px);
+      transform-origin: center;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: -45% -20%;
+      background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.08), transparent 55%),
+                  radial-gradient(circle at 80% 40%, rgba(56,189,248,0.12), transparent 55%);
+      animation: auroraFlow 20s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .card > * { position: relative; z-index: 1; }
+    .card:hover { transform: translateY(-1px); box-shadow: 0 18px 36px rgba(0,0,0,0.28); }
+    .aurora-banner > * { position: relative; z-index: 1; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .modern-cta::before,
+      .modern-cta::after,
+      .floating-panel,
+      .aurora-banner::before,
+      .card::before { animation: none !important; }
+      .floating-panel:hover { transform: none; }
+      .soft-appear { animation: none; }
+      .card { transition: none; box-shadow: 0 10px 24px rgba(0,0,0,0.22); }
+    }
   </style>
 
   <script type="importmap">

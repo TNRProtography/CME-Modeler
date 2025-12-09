@@ -845,13 +845,13 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
 
-          <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl">
+          <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
               <div className="flex-1 min-w-0">
                   <div className="flex flex-nowrap items-stretch justify-start gap-1 sm:gap-2 max-w-full overflow-hidden">
                       <button
                         id="nav-forecast"
                         onClick={() => navigateToPage('forecast')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
                         title="View Live Aurora Forecasts"
                       >
                           <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -865,7 +865,7 @@ const App: React.FC = () => {
                       <button
                         id="nav-solar-activity"
                         onClick={() => navigateToPage('solar-activity')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
                         title="View Solar Activity"
                       >
                           <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -879,7 +879,7 @@ const App: React.FC = () => {
                       <button
                         id="nav-modeler"
                         onClick={() => navigateToPage('modeler')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
                         title="View CME Visualization"
                       >
                           <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -895,7 +895,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-1.5 sm:gap-2">
                   <button
                     onClick={handleRefreshAppData}
-                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 ${isRefreshing ? 'opacity-80' : ''}`}
+                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${isRefreshing ? 'opacity-80' : ''}`}
                     title="Refresh data"
                     aria-label="Refresh data"
                   >
@@ -904,7 +904,7 @@ const App: React.FC = () => {
                   <button
                     id="nav-settings"
                     onClick={handleOpenSettings}
-                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
+                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
                     title="Open Settings"
                   >
                     <SettingsIcon className="w-3 h-3 sm:w-4 sm:h-4" />
