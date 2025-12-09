@@ -18,8 +18,6 @@ const CameraResetIcon: React.FC<IconProps> = ({ className }) => (
     <rect x="2" y="7" width="13" height="10" rx="2.5" ry="2.5" />
     <path d="M6.5 7l1.1-2.2A1 1 0 018.4 4h2.2a1 1 0 01.9.6L12.5 7" />
     <circle cx="8.5" cy="12" r="2.6" />
-    <path d="M14.5 9.2c1.8.1 3.4 1.6 3.4 3.5 0 1.1-.5 2.1-1.2 2.8" />
-    <path d="M14.5 9.2h3.3V6" />
   </svg>
 );
 
