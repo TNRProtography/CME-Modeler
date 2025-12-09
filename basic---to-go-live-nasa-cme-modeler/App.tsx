@@ -19,7 +19,7 @@ import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
 import GlobeIcon from './components/icons/GlobeIcon';
-import CmeIcon from './components/icons/CmeIcon';
+import CameraResetIcon from './components/icons/CameraResetIcon';
 import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/icons/NavBadgeIcons';
 
 // Dashboard and Banner Imports
@@ -967,7 +967,7 @@ const App: React.FC = () => {
                                   className="p-3 rounded-2xl bg-gradient-to-br from-indigo-500/70 via-purple-500/70 to-fuchsia-500/70 border border-white/20 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
                                   title="Reset View"
                                 >
-                                    <CmeIcon className="w-6 h-6" />
+                                    <CameraResetIcon className="w-6 h-6" />
                                 </button>
                                 <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Reset Camera</span>
                             </div>

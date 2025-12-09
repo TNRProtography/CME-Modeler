@@ -33,7 +33,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
           <TutorialSection title="Main Viewport">
             <p>This is the 3D simulation area. You can pan, zoom, and rotate the camera using your mouse or touch gestures.</p>
             <ul className="list-disc list-inside pl-2">
-              <li><strong>Reset View:</strong> The button with the CME icon in the top-left resets the camera to a default top-down view of Earth.</li>
+              <li><strong>Reset View:</strong> The button with the camera-and-arrow icon in the top-left resets the camera to a default top-down view of Earth.</li>
               <li><strong>Interaction Mode:</strong> The button in the top-right toggles between "Move Mode" (camera control) and "Select Mode" (clicking on CMEs for info).</li>
             </ul>
           </TutorialSection>
