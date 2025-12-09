@@ -84,6 +84,11 @@ const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
 const SETTINGS_PATH = '/settings';
 const TUTORIAL_PATH = '/tutorial';
 
+const getForecastViewFromSearch = (search: string): 'simple' | 'advanced' => {
+  const params = new URLSearchParams(search);
+  return params.get('view') === 'advanced' ? 'advanced' : 'simple';
+};
+
 const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 'modeler' | null => {
   if (pathname.startsWith(PAGE_PATHS['solar-activity'])) return 'solar-activity';
   if (pathname.startsWith(PAGE_PATHS['modeler'])) return 'modeler';
@@ -154,47 +159,75 @@ const App: React.FC = () => {
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const cmePageLoadedOnce = useRef(false);
   const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
+  const [forecastViewMode, setForecastViewMode] = useState<'simple' | 'advanced'>(() =>
+    getForecastViewFromSearch(window.location.search)
+  );
 
-  const syncStateWithPath = useCallback((path: string, replaceHistory = false) => {
-    const mainPage = getPageFromPathname(path);
-    const isSettingsPath = path === SETTINGS_PATH;
-    const isTutorialPath = path === TUTORIAL_PATH;
+  const syncStateWithPath = useCallback(
+    (path: string, replaceHistory = false) => {
+      const url = new URL(path, window.location.origin);
+      const mainPage = getPageFromPathname(url.pathname);
+      const isSettingsPath = url.pathname === SETTINGS_PATH;
+      const isTutorialPath = url.pathname === TUTORIAL_PATH;
 
-    if (mainPage) {
-      lastMainPageRef.current = mainPage;
-      setActivePage(mainPage);
-    } else if (!isSettingsPath && !isTutorialPath) {
-      const fallbackPath = PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast;
-      if (path !== fallbackPath) {
-        const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
-        window.history[method]({}, '', fallbackPath);
+      if (mainPage) {
+        lastMainPageRef.current = mainPage;
+        setActivePage(mainPage);
+        if (mainPage === 'forecast') {
+          setForecastViewMode(getForecastViewFromSearch(url.search));
+        }
+      } else if (!isSettingsPath && !isTutorialPath) {
+        const fallbackPath =
+          lastMainPageRef.current === 'forecast'
+            ? `${PAGE_PATHS.forecast}?view=${forecastViewMode}`
+            : PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast;
+        if (path !== fallbackPath) {
+          const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
+          window.history[method]({}, '', fallbackPath);
+        }
+        lastMainPageRef.current = getPageFromPathname(fallbackPath) ?? lastMainPageRef.current;
+        setActivePage(lastMainPageRef.current);
+      } else {
+        setActivePage(lastMainPageRef.current);
       }
-      lastMainPageRef.current = getPageFromPathname(fallbackPath) ?? lastMainPageRef.current;
-      setActivePage(lastMainPageRef.current);
-    } else {
-      setActivePage(lastMainPageRef.current);
-    }
 
-    setIsSettingsOpen(isSettingsPath);
-    setIsTutorialOpen(isTutorialPath);
-  }, []);
+      setIsSettingsOpen(isSettingsPath);
+      setIsTutorialOpen(isTutorialPath);
+    },
+    [forecastViewMode]
+  );
 
-  const navigateToPath = useCallback((path: string, replaceHistory = false) => {
-    const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
-    const currentPath = window.location.pathname;
-    if (currentPath !== path) {
-      window.history[method]({}, '', path);
-    }
-    syncStateWithPath(path, true);
-  }, [syncStateWithPath]);
+  const navigateToPath = useCallback(
+    (path: string, replaceHistory = false) => {
+      const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
+      const currentPath = window.location.pathname + window.location.search;
+      if (currentPath !== path) {
+        window.history[method]({}, '', path);
+      }
+      syncStateWithPath(path, true);
+    },
+    [syncStateWithPath]
+  );
 
-  const navigateToPage = useCallback((page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
-    navigateToPath(PAGE_PATHS[page], replaceHistory);
-  }, [navigateToPath]);
+  const navigateToPage = useCallback(
+    (page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
+      if (page === 'forecast') {
+        const url = new URL(window.location.href);
+        url.pathname = PAGE_PATHS.forecast;
+        url.search = '';
+        url.searchParams.set('view', forecastViewMode);
+        navigateToPath(url.pathname + url.search, replaceHistory);
+        return;
+      }
+
+      navigateToPath(PAGE_PATHS[page], replaceHistory);
+    },
+    [forecastViewMode, navigateToPath]
+  );
 
   useEffect(() => {
-    syncStateWithPath(window.location.pathname, true);
-    const onPopState = () => syncStateWithPath(window.location.pathname, true);
+    syncStateWithPath(window.location.href, true);
+    const onPopState = () => syncStateWithPath(window.location.href, true);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [syncStateWithPath]);
@@ -317,6 +350,18 @@ const App: React.FC = () => {
   const handleTutorialStepChange = useCallback((id: string | null) => {
     setHighlightedElementId(id);
   }, []);
+
+  const handleForecastViewChange = useCallback(
+    (mode: 'simple' | 'advanced') => {
+      setForecastViewMode(mode);
+      const url = new URL(window.location.href);
+      url.pathname = PAGE_PATHS.forecast;
+      url.search = '';
+      url.searchParams.set('view', mode);
+      navigateToPath(url.pathname + url.search);
+    },
+    [navigateToPath]
+  );
 
   const handleOpenSettings = useCallback(() => {
     navigateToPath(SETTINGS_PATH);
@@ -828,6 +873,8 @@ const App: React.FC = () => {
                       setIpsAlertData={setIpsAlertData}
                       navigationTarget={navigationTarget}
                       onInitialLoad={handleInitialLoad}
+                      viewMode={forecastViewMode}
+                      onViewModeChange={handleForecastViewChange}
                   />
               </div>
               <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
