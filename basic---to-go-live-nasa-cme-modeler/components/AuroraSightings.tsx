@@ -326,13 +326,15 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             iconHtml = `<div class="relative">${sendingAnimation}<div>${fullEmojiString}</div></div>`;
         }
 
-        return L.divIcon({ 
-            html: iconHtml, 
-            className: 'emoji-marker', 
-            iconSize: [32, 32], 
-            iconAnchor: [16, 16] 
+        return L.divIcon({
+            html: iconHtml,
+            className: 'emoji-marker',
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
         });
     };
+
+    const totalReports = sightings.length;
 
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
@@ -347,6 +349,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 <div className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/40 rounded-full text-amber-200 text-sm font-semibold">
                     <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
                     GPS is required to submit a report. Enable location services before you report.
+                </div>
+                <div className="flex justify-center">
+                    <div className="mt-2 inline-flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-white/90">
+                        <span className="inline-flex h-2 w-2 bg-emerald-300 rounded-full" aria-hidden="true" />
+                        Total reports in the last 24 hours: {isLoading ? '…' : totalReports}
+                    </div>
                 </div>
             </div>
 

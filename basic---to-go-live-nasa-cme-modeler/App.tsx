@@ -36,6 +36,7 @@ import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
 import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
+import { calculateStats, PageViewStats, recordPageView } from './utils/pageViews';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -186,6 +187,7 @@ const App: React.FC = () => {
     if (viewFromSearch) return viewFromSearch;
     return getStoredForecastView();
   });
+  const [pageViewStats, setPageViewStats] = useState<PageViewStats>(() => calculateStats());
 
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
@@ -270,6 +272,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     lastMainPageRef.current = activePage;
+  }, [activePage]);
+
+  useEffect(() => {
+    setPageViewStats(recordPageView());
   }, [activePage]);
 
   useEffect(() => {
@@ -990,6 +996,7 @@ const App: React.FC = () => {
             defaultForecastView={defaultForecastView}
             onDefaultMainPageChange={handleDefaultMainPageChange}
             onDefaultForecastViewChange={handleDefaultForecastViewChange}
+            pageViewStats={pageViewStats}
           />
           
           <FirstVisitTutorial

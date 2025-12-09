@@ -3,14 +3,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch';
-import { 
-  getNotificationPreference, 
+import {
+  getNotificationPreference,
   setNotificationPreference,
   requestNotificationPermission,
   sendTestNotification,
   subscribeUserToPush,
   updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
+import { PageViewStats } from '../utils/pageViews';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ interface SettingsModalProps {
   defaultForecastView: 'simple' | 'advanced';
   onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
+  pageViewStats: PageViewStats;
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -73,6 +75,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   defaultForecastView,
   onDefaultMainPageChange,
   onDefaultForecastViewChange,
+  pageViewStats,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -323,6 +326,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   The selected layout is saved locally and applied whenever you load the forecast page without a shared link.
                 </p>
               </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Your page views</h3>
+            <p className="text-sm text-neutral-400 mb-4">
+              These numbers are stored only on this device so you can see how often you check in.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[{ label: 'Today', value: pageViewStats.daily }, { label: 'This week', value: pageViewStats.weekly }, { label: 'This year', value: pageViewStats.yearly }, { label: 'Lifetime', value: pageViewStats.lifetime }].map(stat => (
+                <div key={stat.label} className="bg-neutral-900/60 border border-neutral-800 rounded-lg p-3 text-center shadow-inner">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">{stat.label}</p>
+                  <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+                </div>
+              ))}
             </div>
           </section>
 
