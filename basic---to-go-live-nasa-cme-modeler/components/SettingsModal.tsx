@@ -3,14 +3,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import ToggleSwitch from './ToggleSwitch';
-import { 
-  getNotificationPreference, 
+import {
+  getNotificationPreference,
   setNotificationPreference,
   requestNotificationPermission,
   sendTestNotification,
   subscribeUserToPush,
   updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
+import { PageViewStats } from '../utils/pageViews';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -236,7 +237,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
                 <p>
-                    This application is a passion project, built and maintained by one person with over <strong>400 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                    This application is a passion project, built and maintained by one person with over <strong>450 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
                 </p>
                 <p>
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
@@ -335,10 +336,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
                 <p className="text-orange-300 mb-3">Enable push notifications to be alerted of major space weather events, even when the app is closed.</p>
-                <button 
-                  onClick={handleEnableNotifications} 
+                <button
+                  onClick={handleEnableNotifications}
                   disabled={isSubscribing}
-                  className="px-4 py-2 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 disabled:opacity-50 disabled:cursor-wait"
+                  className={`${primaryActionClass} disabled:opacity-50 disabled:cursor-wait`}
                 >
                   {isSubscribing ? 'Subscribing...' : 'Enable Notifications'}
                 </button>
@@ -360,7 +361,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       />
                       <button
                         onClick={() => handleTestCategory(category.id)}
-                        className="flex-shrink-0 px-3 py-1 text-xs bg-sky-600/20 border border-sky-500/50 rounded-md text-sky-300 hover:bg-sky-500/30 transition-colors"
+                        className={chipActionClass}
                       >
                         Test
                       </button>
@@ -370,7 +371,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="mt-4 flex justify-center">
                     <button
                         onClick={() => sendTestNotification()} // Sends a generic test
-                        className="px-4 py-2 text-sm bg-neutral-700 border border-neutral-600 rounded-md text-neutral-300 hover:bg-neutral-600 transition-colors"
+                        className={subtleActionClass}
                     >
                         Send Generic Test Notification
                     </button>
@@ -392,16 +393,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               Have feedback, a feature request, or need support? Restart the welcome tutorial or send an email.
             </p>
             <div className="flex flex-wrap items-center gap-4">
-              <button 
-                onClick={onShowTutorial} 
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+              <button
+                onClick={onShowTutorial}
+                className={subtleActionClass}
               >
                 <GuideIcon className="w-5 h-5" />
                 <span>Show App Tutorial</span>
               </button>
-              <a 
+              <a
                 href="mailto:help@spottheaurora.co.nz?subject=Spot%20The%20Aurora%20Support"
-                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+                className={`${subtleActionClass} no-underline`}
               >
                 <MailIcon className="w-5 h-5" />
                 <span>Email for Support</span>
