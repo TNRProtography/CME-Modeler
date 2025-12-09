@@ -515,7 +515,7 @@ const App: React.FC = () => {
       if (cmePageLoadedOnce.current) {
         loadCMEData(activeTimeRange, { silent: true });
       }
-    }, 30 * 1000);
+    }, 60 * 60 * 1000);
 
     return () => clearInterval(interval);
   }, [activePage, activeTimeRange, loadCMEData]);
