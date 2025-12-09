@@ -851,43 +851,43 @@ const App: React.FC = () => {
                       <button
                         id="nav-forecast"
                         onClick={() => navigateToPage('forecast')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center space-x-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
                         title="View Live Aurora Forecasts"
                       >
-                          <div className="w-4 h-4 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
-                            <AuroraBadgeIcon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <AuroraBadgeIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
                           </div>
-                          <div className="flex flex-col items-start leading-tight min-w-0">
-                            <span className="text-[7px] sm:text-[9px] uppercase tracking-widest text-white/70">Forecast</span>
-                            <span className="text-[9px] sm:text-[11px] font-semibold text-white truncate">Spot The Aurora</span>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">Forecast</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">Spot The Aurora</span>
                           </div>
                       </button>
                       <button
                         id="nav-solar-activity"
                         onClick={() => navigateToPage('solar-activity')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center space-x-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
                         title="View Solar Activity"
                       >
-                          <div className="w-4 h-4 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
-                            <SolarBadgeIcon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <SolarBadgeIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
                           </div>
-                          <div className="flex flex-col items-start leading-tight min-w-0">
-                            <span className="text-[7px] sm:text-[9px] uppercase tracking-widest text-white/70">Dashboard</span>
-                            <span className="text-[9px] sm:text-[11px] font-semibold text-white truncate">Solar Activity</span>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">Dashboard</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">Solar Activity</span>
                           </div>
                       </button>
                       <button
                         id="nav-modeler"
                         onClick={() => navigateToPage('modeler')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center space-x-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
                         title="View CME Visualization"
                       >
-                          <div className="w-4 h-4 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden">
-                            <ModelerBadgeIcon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <ModelerBadgeIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
                           </div>
-                          <div className="flex flex-col items-start leading-tight min-w-0">
-                            <span className="text-[7px] sm:text-[9px] uppercase tracking-widest text-white/70">3D Lab</span>
-                            <span className="text-[9px] sm:text-[11px] font-semibold text-white truncate">CME Visualization</span>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">3D Lab</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">CME Visualization</span>
                           </div>
                       </button>
                   </div>

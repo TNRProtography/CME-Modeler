@@ -15,11 +15,11 @@ const CameraResetIcon: React.FC<IconProps> = ({ className }) => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <rect x="3" y="7" width="18" height="12" rx="3" ry="3" />
-    <path d="M9 7l1.2-2.4A1 1 0 0111.09 4h1.82a1 1 0 01.89.6L15 7" />
-    <circle cx="12" cy="13" r="3" />
-    <path d="M15.5 9.5a4 4 0 11-1-2.5" />
-    <path d="M16.5 10.5h-2v-2" />
+    <rect x="2" y="7" width="13" height="10" rx="2.5" ry="2.5" />
+    <path d="M6.5 7l1.1-2.2A1 1 0 018.4 4h2.2a1 1 0 01.9.6L12.5 7" />
+    <circle cx="8.5" cy="12" r="2.6" />
+    <path d="M14.5 9.2c1.8.1 3.4 1.6 3.4 3.5 0 1.1-.5 2.1-1.2 2.8" />
+    <path d="M14.5 9.2h3.3V6" />
   </svg>
 );
 
