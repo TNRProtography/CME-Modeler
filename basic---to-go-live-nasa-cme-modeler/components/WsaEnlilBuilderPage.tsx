@@ -3,6 +3,7 @@ import { ProcessedCME } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 import CmeIcon from './icons/CmeIcon';
 import GlobeIcon from './icons/GlobeIcon';
+import WsaEnlil2DModel from './WsaEnlil2DModel';
 
 interface WsaEnlilBuilderPageProps {
   cmes: ProcessedCME[];
@@ -150,6 +151,22 @@ const WsaEnlilBuilderPage: React.FC<WsaEnlilBuilderPageProps> = ({
             </div>
           )}
         </section>
+
+        {!isLoading && !fetchError && earthDirectedCmes.length > 0 && (
+          <section className="bg-neutral-900/70 border border-neutral-800 rounded-xl p-5 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-neutral-100">2D WSA-ENLIL Model</h2>
+                <p className="text-sm text-neutral-400 max-w-3xl">
+                  Top-down and side profiles illustrating shock, core, and wake envelopes for each Earth-directed CME, scaled by
+                  elapsed travel distance.
+                </p>
+              </div>
+            </div>
+
+            <WsaEnlil2DModel cmes={earthDirectedCmes} />
+          </section>
+        )}
       </div>
     </div>
   );
