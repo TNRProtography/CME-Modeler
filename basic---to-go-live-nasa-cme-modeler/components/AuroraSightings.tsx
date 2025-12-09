@@ -25,6 +25,15 @@ const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
+const PROFANITY_PATTERNS = [
+    /f\s*\W*\s*u\s*\W*\s*c\s*\W*\s*k/i,
+    /s\s*\W*\s*h\s*\W*\s*i\s*\W*\s*t/i,
+    /b\s*\W*\s*i\s*\W*\s*t\s*\W*\s*c\s*\W*\s*h/i,
+    /c\s*\W*\s*u\s*\W*\s*n\s*\W*\s*t/i,
+    /d\s*\W*\s*a\s*\W*\s*m\s*\W*\s*n/i,
+    /a\s*\W*\s*s\s*\W*\s*s\s*\W*h\s*\W*\s*o\s*\W*\s*l\s*\W*\s*e/i,
+    /d\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
+];
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
@@ -115,7 +124,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                 <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-5 text-sm">
                     <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">Placing Your Pin</h4>
-                        <p>The app will try to use your device's GPS for an accurate location. If your pin isn't correct or doesn't appear, simply click or tap anywhere on the map to place it manually. To move the map, use two fingers on touch devices, or hold down the Ctrl/Cmd key while dragging/scrolling with a mouse.</p>
+                        <p>Enable your device GPS to place your pin and submit a report. You can fine-tune the location by tapping the map after GPS locks. To move the map, use two fingers on touch devices, or hold down the Ctrl/Cmd key while dragging/scrolling with a mouse.</p>
                     </section>
                      <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
@@ -151,6 +160,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
     const [userName, setUserName] = useState<string>('');
     const [userPosition, setUserPosition] = useState<L.LatLng | null>(null);
+    const [hasGpsLock, setHasGpsLock] = useState(false);
+    const [gpsError, setGpsError] = useState<string | null>(null);
+    const [nameError, setNameError] = useState<string | null>(null);
     const [selectedStatus, setSelectedStatus] = useState<SightingStatus | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
@@ -159,6 +171,32 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     const [selectedSightingIdForMap, setSelectedSightingIdForMap] = useState<string | null>(null);
 
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
+
+    const containsProfanity = useCallback((value: string) => {
+        return PROFANITY_PATTERNS.some(pattern => pattern.test(value));
+    }, []);
+
+    const requestGpsFix = useCallback(() => {
+        if (!navigator.geolocation) {
+            setGpsError('GPS is required, but your device does not support geolocation.');
+            setHasGpsLock(false);
+            return;
+        }
+
+        setGpsError(null);
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setUserPosition(new L.LatLng(position.coords.latitude, position.coords.longitude));
+                setHasGpsLock(true);
+            },
+            (err) => {
+                setGpsError(`GPS is required to report sightings. Enable location and try again. (${err.message})`);
+                setHasGpsLock(false);
+                console.warn(`Geolocation error: ${err.message}.`);
+            },
+            { timeout: 15000, enableHighAccuracy: true }
+        );
+    }, []);
 
     const fetchSightings = useCallback(async () => {
         try {
@@ -179,17 +217,13 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
         const lastReportString = localStorage.getItem(LOCAL_STORAGE_LAST_REPORT_KEY);
         if (lastReportString) setLastReportInfo(JSON.parse(lastReportString));
         fetchSightings();
-        navigator.geolocation.getCurrentPosition(
-            (position) => setUserPosition(new L.LatLng(position.coords.latitude, position.coords.longitude)),
-            (err) => console.warn(`Geolocation error: ${err.message}. Please click map to set location.`),
-            { timeout: 10000, enableHighAccuracy: false }
-        );
+        requestGpsFix();
         const intervalId = setInterval(fetchSightings, 2 * 60 * 1000);
         return () => {
             clearInterval(intervalId);
             markerRefs.current.clear();
         }
-    }, [fetchSightings]);
+    }, [fetchSightings, requestGpsFix]);
 
     const cooldownRemaining = useMemo(() => {
         if (!lastReportInfo) return 0;
@@ -197,19 +231,29 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
         return Math.max(0, REPORTING_COOLDOWN_MS - timePassed);
     }, [lastReportInfo]);
 
-    const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight;
+    const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight && hasGpsLock;
 
     const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newName = e.target.value;
+        const hasProfanity = containsProfanity(newName);
+        setNameError(hasProfanity ? 'Please remove profanity from your name before submitting.' : null);
         setUserName(newName);
-        localStorage.setItem(LOCAL_STORAGE_USERNAME_KEY, newName);
+        if (!hasProfanity) {
+            localStorage.setItem(LOCAL_STORAGE_USERNAME_KEY, newName);
+        }
     };
 
     const handleSubmit = async () => {
+        if (containsProfanity(userName)) {
+            alert('Profanity is not allowed in the name field.');
+            return;
+        }
+
         if (!userPosition || !selectedStatus || !userName.trim() || !canSubmit) {
             const alertMsg = [
                 !userName.trim() && 'Please enter your name.',
-                !userPosition && 'Please set your location by clicking the map or enabling GPS.',
+                !hasGpsLock && 'GPS is required to submit. Please enable location services to continue.',
+                !userPosition && 'Please set your location by enabling GPS. Tap "Try GPS again" if needed.',
                 !selectedStatus && 'Please select your sighting status.',
                 !canSubmit && (isDaylight ? 'Sighting reports are disabled during daylight hours.' : `You can only report once every ${REPORTING_COOLDOWN_MS / 60000} minutes.`)
             ].filter(Boolean).join('\n');
@@ -275,7 +319,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
 
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
-            <div className="text-center">
+            <div className="text-center space-y-2">
                 <div className="flex justify-center items-center gap-2">
                      <h2 className="text-2xl font-bold text-white">Spotting The Aurora</h2>
                      <button onClick={() => setIsInfoModalOpen(true)} className="p-1 text-neutral-400 hover:text-neutral-100" title="How to use the sightings map">
@@ -283,6 +327,10 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                      </button>
                 </div>
                 <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
+                <div className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/40 rounded-full text-amber-200 text-sm font-semibold">
+                    <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
+                    GPS is required to submit a report. Enable location services before you report.
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-neutral-900 p-4 rounded-lg relative">
@@ -291,8 +339,11 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                         <p className="text-amber-400 font-semibold text-lg text-center p-4">Reporting is disabled during daylight hours</p>
                     </div>
                 )}
-                <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-12 md:col-span-3 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                
+                <div className="col-span-12 md:col-span-3 space-y-2">
+                    <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="w-full bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
+                    {nameError && <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">{nameError}</p>}
+                </div>
+
                 <div className="col-span-12 md:col-span-9 space-y-4">
                     <div>
                         <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
@@ -334,9 +385,19 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                                 ))}
                             </div>
                         </div>
-                        <button onClick={handleSubmit} disabled={!canSubmit || isSubmitting} className="w-full sm:w-auto px-6 py-3 rounded-lg text-white font-semibold transition-colors disabled:bg-neutral-600 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 mt-4 sm:mt-0">
-                            {isSubmitting ? <LoadingSpinner /> : 'Submit Report'}
-                        </button>
+                        <div className="w-full sm:w-auto flex flex-col gap-2">
+                            {!hasGpsLock && (
+                                <div className="flex items-center gap-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">
+                                    <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
+                                    Enable GPS to submit. Tap "Try GPS again" if you just turned it on.
+                                </div>
+                            )}
+                            <button onClick={requestGpsFix} className="w-full sm:w-auto px-6 py-2 rounded-lg text-sm font-semibold border border-sky-400/60 text-sky-100 bg-sky-500/10 hover:bg-sky-500/20 transition-colors">Try GPS again</button>
+                            {gpsError && <p className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">{gpsError}</p>}
+                            <button onClick={handleSubmit} disabled={!canSubmit || isSubmitting} className="w-full sm:w-auto px-6 py-3 rounded-lg text-white font-semibold transition-colors disabled:bg-neutral-600 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500">
+                                {isSubmitting ? <LoadingSpinner /> : 'Submit Report'}
+                            </button>
+                        </div>
                     </div>
                 </div>
                 {cooldownRemaining > 0 && !isDaylight && <p className="col-span-12 text-center text-xs text-amber-400 mt-2">You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.</p>}
