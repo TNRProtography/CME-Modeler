@@ -80,7 +80,7 @@ interface ImpactDataPoint {
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'V1.0';
+const APP_VERSION = 'V1.4';
 
 const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
   forecast: '/spot-the-aurora-forecast',

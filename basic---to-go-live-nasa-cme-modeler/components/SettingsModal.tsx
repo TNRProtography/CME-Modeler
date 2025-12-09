@@ -245,7 +245,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
                 <p>
-                    This application is a passion project, built and maintained by one person with over <strong>400 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                    This application is a passion project, built and maintained by one person with over <strong>450 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
                 </p>
                 <p>
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
