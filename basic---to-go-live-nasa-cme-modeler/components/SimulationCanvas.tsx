@@ -10,7 +10,6 @@ import {
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
-  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
 
 /** =========================================================
@@ -56,39 +55,6 @@ const createParticleTexture = (THREE: any) => {
   return particleTextureCache;
 };
 
-// --- Arrow flow texture for flux rope ---
-let arrowTextureCache: any = null;
-const createArrowTexture = (THREE: any) => {
-  if (arrowTextureCache) return arrowTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-  
-  const canvas = document.createElement('canvas');
-  const size = 256;
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
-  const arrowWidth = size / 6;
-  const arrowHeight = size / 4;
-  const spacing = size / 3;
-
-  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
-    ctx.beginPath();
-    ctx.moveTo(x, size * 0.5);
-    ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
-    ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
-    ctx.closePath();
-    ctx.fill();
-  }
-  
-  arrowTextureCache = new THREE.CanvasTexture(canvas);
-  arrowTextureCache.wrapS = THREE.RepeatWrapping;
-  arrowTextureCache.wrapT = THREE.RepeatWrapping;
-  return arrowTextureCache;
-};
-
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
@@ -119,6 +85,138 @@ const getCmeCoreColor = (speed: number): any => {
   const grey = new THREE.Color(0x808080);
   const yellow = new THREE.Color(0xffff00);
   return grey.lerp(yellow, THREE.MathUtils.mapLinear(speed, 350, 500, 0, 1));
+};
+
+const createCmeEruptionGeometry = (THREE: any, count: number, halfAngleDeg: number) => {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const progress = new Float32Array(count);
+
+  const arcSpan = THREE.MathUtils.degToRad(Math.max(150, Math.min(240, halfAngleDeg * 2.2)));
+  const majorBase = 1.15;
+  const minorBase = 0.22;
+
+  for (let i = 0; i < count; i++) {
+    const arcT = Math.pow(Math.random(), 0.9);
+    const theta = THREE.MathUtils.lerp(-arcSpan * 0.5, arcSpan * 0.5, arcT + (Math.random() - 0.5) * 0.025);
+    const noseBias = THREE.MathUtils.smoothstep(arcT, 0.08, 0.92);
+
+    const majorRadius = majorBase * THREE.MathUtils.lerp(0.72, 1.25, noseBias);
+    const minorRadius = minorBase * THREE.MathUtils.lerp(0.45, 1.35, noseBias);
+    const wobble = (Math.random() - 0.5) * 0.18;
+    const phi = Math.random() * Math.PI * 2;
+
+    const center = new THREE.Vector3(0, Math.sin(theta) * majorRadius, Math.cos(theta) * majorRadius);
+    const tangent = new THREE.Vector3(0, Math.cos(theta), -Math.sin(theta)).normalize();
+    const radial = center.clone().normalize();
+    const binormal = new THREE.Vector3().crossVectors(tangent, radial).normalize();
+    if (binormal.lengthSq() < 1e-5) binormal.set(1, 0, 0);
+    const normal = new THREE.Vector3().crossVectors(binormal, tangent).normalize();
+
+    const squish = THREE.MathUtils.lerp(0.35, 1.08, noseBias);
+    const rim = minorRadius * (0.72 + 0.55 * Math.sin(phi + wobble));
+    const offset = normal.multiplyScalar(rim * Math.cos(phi) * squish)
+      .add(binormal.multiplyScalar(rim * 0.88 * Math.sin(phi)));
+
+    const pt = center.add(offset);
+    const idx = i * 3;
+    positions[idx] = pt.x;
+    positions[idx + 1] = pt.y;
+    positions[idx + 2] = pt.z;
+
+    progress[i] = THREE.MathUtils.clamp(arcT, 0, 1);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('progress', new THREE.Float32BufferAttribute(progress, 1));
+  return geometry;
+};
+
+const tintGeometryByStops = (
+  geometry: any,
+  progressKey: string,
+  stops: { stop: number; color: any }[],
+  THREE: any
+) => {
+  const progressAttr = geometry.getAttribute(progressKey);
+  const colorAttr = geometry.getAttribute('color');
+
+  if (!progressAttr || !colorAttr) return;
+
+  const temp = new THREE.Color();
+  for (let i = 0; i < progressAttr.count; i++) {
+    const rel = progressAttr.getX(i);
+    let lower = stops[0];
+    let upper = stops[stops.length - 1];
+
+    for (let s = 0; s < stops.length - 1; s++) {
+      if (rel >= stops[s].stop && rel <= stops[s + 1].stop) {
+        lower = stops[s];
+        upper = stops[s + 1];
+        break;
+      }
+    }
+
+    const span = Math.max(1e-5, upper.stop - lower.stop);
+    const t = Math.max(0, Math.min(1, (rel - lower.stop) / span));
+    temp.copy(lower.color).lerp(upper.color, t);
+    colorAttr.setXYZ(i, temp.r, temp.g, temp.b);
+  }
+  colorAttr.needsUpdate = true;
+};
+
+const createCroissantFluxRope = (THREE: any, particleTexture: any, count: number) => {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const progress = new Float32Array(count);
+
+  const majorRadius = 1.0;
+  const minorRadius = 0.35;
+  const arcSpan = Math.PI * 0.7;
+
+  for (let i = 0; i < count; i++) {
+    const u = THREE.MathUtils.lerp(-arcSpan, arcSpan, Math.random());
+    const v = Math.random() * Math.PI * 2;
+
+    const localMinor = minorRadius + Math.random() * 0.15;
+    const x = (majorRadius + localMinor * Math.cos(v)) * Math.cos(u);
+    const y = localMinor * Math.sin(v);
+    const z = (majorRadius + localMinor * Math.cos(v)) * Math.sin(u);
+
+    const idx = i * 3;
+    positions[idx] = x;
+    positions[idx + 1] = y;
+    positions[idx + 2] = z;
+
+    colors[idx] = 1;
+    colors[idx + 1] = 1;
+    colors[idx + 2] = 1;
+
+    const arcProgress = (u + arcSpan) / (arcSpan * 2);
+    progress[i] = Math.min(1, Math.max(0, arcProgress));
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('progress', new THREE.Float32BufferAttribute(progress, 1));
+
+  const material = new THREE.PointsMaterial({
+    size: 0.05 * SCENE_SCALE,
+    sizeAttenuation: true,
+    map: particleTexture,
+    transparent: true,
+    opacity: 0.2,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    vertexColors: true
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.userData.particleCount = count;
+  return points;
 };
 
 const clamp = (v:number, a:number, b:number) => Math.max(a, Math.min(b, v));
@@ -190,6 +288,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
   const fluxRopeRef = useRef<any>(null);
+  const fluxRopeStateRef = useRef<{ lastCmeId: string | null; lastSpeed: number }>({ lastCmeId: null, lastSpeed: 0 });
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
@@ -229,6 +328,65 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [timelineValue]);
 
   const MIN_CME_SPEED_KMS = 300;
+
+  const syncFluxRopeWithCME = (cmeObject: any) => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !fluxRopeRef.current) return;
+
+    const particleTexture = createParticleTexture(THREE);
+    const cme: ProcessedCME = cmeObject.userData;
+    const targetCount = getCmeParticleCount(cme.speed);
+
+    if (fluxRopeRef.current.userData.particleCount !== targetCount) {
+      const refreshedFluxRope = createCroissantFluxRope(THREE, particleTexture, targetCount);
+      fluxRopeRef.current.geometry.dispose();
+      (fluxRopeRef.current.material as any).dispose?.();
+      fluxRopeRef.current.geometry = refreshedFluxRope.geometry;
+      fluxRopeRef.current.material = refreshedFluxRope.material;
+      fluxRopeRef.current.userData.particleCount = targetCount;
+    }
+
+    const shouldRefreshColors =
+      fluxRopeStateRef.current.lastCmeId !== cme.id ||
+      fluxRopeStateRef.current.lastSpeed !== cme.speed;
+
+    if (shouldRefreshColors) {
+      const progressAttr = fluxRopeRef.current.geometry.getAttribute('progress');
+      const colorsAttr = fluxRopeRef.current.geometry.getAttribute('color');
+
+      if (progressAttr && colorsAttr) {
+        const shockColor = new THREE.Color(0xffaaaa);
+        const wakeColor = new THREE.Color(0x8888ff);
+        const coreColor = getCmeCoreColor(cme.speed);
+        const tempColor = new THREE.Color();
+
+        for (let i = 0; i < progressAttr.count; i++) {
+          const rel = progressAttr.getX(i);
+          if (rel < 0.15) tempColor.copy(wakeColor).lerp(coreColor, rel / 0.15);
+          else if (rel < 0.55) tempColor.copy(coreColor);
+          else tempColor.copy(coreColor).lerp(shockColor, (rel - 0.55) / 0.45);
+
+          colorsAttr.setXYZ(i, tempColor.r, tempColor.g, tempColor.b);
+        }
+        colorsAttr.needsUpdate = true;
+      }
+
+      fluxRopeStateRef.current.lastCmeId = cme.id;
+      fluxRopeStateRef.current.lastSpeed = cme.speed;
+    }
+
+    const material = fluxRopeRef.current.material as any;
+    material.size = getCmeParticleSize(cme.speed, SCENE_SCALE);
+    material.opacity = getCmeOpacity(cme.speed);
+    material.map = particleTexture;
+    material.needsUpdate = true;
+
+    const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+    fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
+    const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
+    fluxRopeRef.current.position.copy(cmeObject.position).add(dir.clone().multiplyScalar(cmeObject.scale.y));
+    fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
+  };
 
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
     const u_kms = cme.speed;
@@ -279,12 +437,23 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeObject.visible = false;
       return;
     }
+
     cmeObject.visible = true;
-    const cmeLength = Math.max(0, distTraveledInSceneUnits - sunRadius);
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-    const tipPosition = direction.clone().multiplyScalar(sunRadius);
-    cmeObject.position.copy(tipPosition);
-    cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
+
+    // maintain a tethered wake on the surface while the shock nose pushes outward
+    const nose = sunRadius + Math.max(0, distTraveledInSceneUnits - sunRadius * 0.2);
+    const anchoredRoot = sunRadius * 0.9;
+    const sheathDepth = Math.max(0.001, nose - anchoredRoot);
+
+    // flare laterally with half-angle while keeping a flattened, magnetically draped head
+    const cone = Math.tan(THREE.MathUtils.degToRad(Math.max(10, cmeObject.userData.halfAngle * 0.75)));
+    const expansionGrow = 1 + Math.min(1, sheathDepth / (SCENE_SCALE * 3.2)) * 0.8;
+    const lateral = (sunRadius * 0.28 + sheathDepth * cone * 1.25) * expansionGrow;
+
+    const midpoint = anchoredRoot + sheathDepth * 0.55;
+    cmeObject.position.copy(direction.clone().multiplyScalar(midpoint));
+    cmeObject.scale.set(lateral, sheathDepth, lateral * 0.82);
   }, [THREE]);
 
   useEffect(() => {
@@ -335,26 +504,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- START OF MODIFICATION: Reverting to original blinking ring ---
-    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
-    const fluxRopeMaterial = new THREE.ShaderMaterial({
-      vertexShader: FLUX_ROPE_VERTEX_SHADER,
-      fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-      uniforms: {
-        uTime: { value: 0 },
-        uTexture: { value: createArrowTexture(THREE) },
-        uColor: { value: new THREE.Color(0xffffff) },
-      },
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    const fluxRopeParticleTexture = createParticleTexture(THREE);
+    fluxRopeRef.current = createCroissantFluxRope(THREE, fluxRopeParticleTexture, 4000);
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
-    // --- END OF MODIFICATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -548,7 +701,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => c.material.opacity = getCmeOpacity(c.userData.speed));
+      cmeGroupRef.current.children.forEach((system: any) => {
+        const baseOpacity = getCmeOpacity(system.userData.speed);
+        system.traverse((child: any) => {
+          if (child.material && typeof child.material.opacity === 'number') {
+            const scale = child.userData?.opacityScale ?? 1;
+            child.material.opacity = baseOpacity * scale;
+          }
+        });
+      });
 
       if (timelineActive) {
         if (timelinePlaying) {
@@ -587,26 +748,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- START OF MODIFICATION: Reverting Flux Rope Animation Logic ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
-        fluxRopeRef.current.visible = shouldShowFluxRope;
+        fluxRopeRef.current.visible = !!shouldShowFluxRope;
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
-          if (cmeObject) {
-            fluxRopeRef.current.position.copy(cmeObject.position);
-            fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
-            const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
-            fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
-          }
+          if (cmeObject) syncFluxRopeWithCME(cmeObject);
+        } else {
+          fluxRopeStateRef.current.lastCmeId = null;
+          fluxRopeStateRef.current.lastSpeed = 0;
         }
-        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
-      // --- END OF MODIFICATION ---
 
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
@@ -624,7 +776,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
-      if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
       sceneRef.current?.traverse((o:any) => {
@@ -647,60 +798,97 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     while (cmeGroupRef.current.children.length > 0) {
       const c = cmeGroupRef.current.children[0];
       cmeGroupRef.current.remove(c);
-      if ((c as any).geometry) (c as any).geometry.dispose();
-      if ((c as any).material) {
-        const m = (c as any).material;
-        if (Array.isArray(m)) m.forEach((x:any)=>x.dispose());
-        else m.dispose();
-      }
+      c.traverse((child: any) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const m = child.material;
+          if (Array.isArray(m)) m.forEach((x: any) => x.dispose());
+          else m.dispose();
+        }
+      });
     }
 
     const particleTexture = createParticleTexture(THREE);
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
-      const pos: number[] = [];
-      const colors: number[] = [];
-      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = 1 * Math.tan(halfAngle);
-      const shockColor = new THREE.Color(0xffaaaa);
-      const wakeColor = new THREE.Color(0x8888ff);
+      const baseGeom = createCmeEruptionGeometry(THREE, pCount, cme.halfAngle);
+
+      const shockColor = new THREE.Color(0xfff3d6);
       const coreColor = getCmeCoreColor(cme.speed);
+      const wakeColor = new THREE.Color(0x46a0ff);
+      const sheathColor = new THREE.Color(0xffb86a);
 
-      for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
-        const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
-        const x = r * Math.cos(theta);
-        const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+      const makeLayer = (
+        colorStops: { stop: number; color: any }[],
+        opacity: number,
+        sizeMultiplier: number,
+        scale: { x: number; y: number; z: number }
+      ) => {
+        const geom = baseGeom.clone();
+        tintGeometryByStops(geom, 'progress', colorStops, THREE);
 
-        const relPos = y;
-        const finalColor = new THREE.Color();
-        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
-        else if (relPos < 0.3) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
-        colors.push(finalColor.r, finalColor.g, finalColor.b);
-      }
+        const mat = new THREE.PointsMaterial({
+          size: getCmeParticleSize(cme.speed, SCENE_SCALE) * sizeMultiplier,
+          sizeAttenuation: true,
+          map: particleTexture,
+          transparent: true,
+          opacity: getCmeOpacity(cme.speed) * opacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          vertexColors: true,
+        });
 
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        const pts = new THREE.Points(geom, mat);
+        pts.userData.opacityScale = opacity;
+        pts.scale.set(scale.x, scale.y, scale.z);
+        return pts;
+      };
 
-      const mat = new THREE.PointsMaterial({
-        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
-        sizeAttenuation: true,
-        map: particleTexture,
-        transparent: true,
-        opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        vertexColors: true
-      });
+      const shock = makeLayer(
+        [
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.2) },
+          { stop: 0.18, color: wakeColor.clone().lerp(sheathColor, 0.5) },
+          { stop: 0.45, color: sheathColor },
+          { stop: 0.7, color: shockColor },
+          { stop: 1, color: shockColor.clone().lerp(coreColor, 0.15) },
+        ],
+        1.08,
+        1.08,
+        { x: 1.5, y: 1.05, z: 1.42 }
+      );
 
-      const system = new THREE.Points(geom, mat);
+      const core = makeLayer(
+        [
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.2) },
+          { stop: 0.25, color: wakeColor.clone().multiplyScalar(0.8) },
+          { stop: 0.55, color: coreColor },
+          { stop: 0.82, color: coreColor.clone().lerp(sheathColor, 0.35) },
+          { stop: 1, color: sheathColor.clone().lerp(shockColor, 0.35) },
+        ],
+        0.95,
+        0.95,
+        { x: 0.85, y: 0.95, z: 0.85 }
+      );
+
+      const wake = makeLayer(
+        [
+          { stop: 0, color: wakeColor.clone().multiplyScalar(0.75) },
+          { stop: 0.35, color: wakeColor },
+          { stop: 0.65, color: wakeColor.clone().lerp(coreColor, 0.3) },
+          { stop: 1, color: coreColor.clone().multiplyScalar(0.55) }
+        ],
+        0.82,
+        0.96,
+        { x: 0.92, y: 1.12, z: 0.92 }
+      );
+
+      const system = new THREE.Group();
       system.userData = cme;
+      system.add(shock);
+      system.add(wake);
+      system.add(core);
+
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
