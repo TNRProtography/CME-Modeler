@@ -202,10 +202,21 @@ void main() {
 
 // --- START OF MODIFICATION: Reverting Flux Rope Shaders ---
 export const FLUX_ROPE_VERTEX_SHADER = `
+uniform float uTime;
 varying vec2 vUv;
+varying float vTwist;
+
 void main() {
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+    // Subtle breathing and twisting to keep the structure alive
+    float wobble = sin((uv.x * 6.2831 * 2.0) + uTime * 1.5) * 0.04;
+    vec3 displaced = position + normal * wobble;
+
+    // Feed a twist factor into the fragment shader for color modulation
+    vTwist = sin((uv.x * 6.2831 * 3.0) + uTime * 2.0);
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
 }`;
 
 export const FLUX_ROPE_FRAGMENT_SHADER = `
@@ -213,16 +224,29 @@ uniform sampler2D uTexture;
 uniform float uTime;
 uniform vec3 uColor;
 varying vec2 vUv;
+varying float vTwist;
 
 void main() {
-    float speed = 0.5;
-    float pulseWidth = 0.1;
-    float wavePos = fract(uTime * speed);
-    float d = min(abs(vUv.x - wavePos), 1.0 - abs(vUv.x - wavePos));
-    float pulse = smoothstep(pulseWidth, 0.0, d);
-    vec4 tex = texture2D(uTexture, vUv);
-    if (tex.a < 0.1 || pulse < 0.01) discard;
-    gl_FragColor = vec4(uColor, tex.a * pulse);
+    // Two opposing flows to suggest braided magnetic field lines
+    float forward = texture2D(uTexture, vec2(vUv.x * 3.0 - uTime * 0.65, vUv.y * 2.0)).a;
+    float reverse = texture2D(uTexture, vec2(-vUv.x * 3.0 - uTime * 0.4, 1.0 - vUv.y * 2.0)).a * 0.7;
+
+    // A slow ribbon-like weave
+    float braid = 0.5 + 0.5 * sin(vUv.x * 6.2831 * 4.0 + vUv.y * 6.2831 * 1.5 + uTime * 2.2);
+    float filaments = mix(forward, reverse, 0.45) * (0.35 + 0.65 * braid);
+
+    // Radial glow to keep the rope readable from a distance
+    float radial = 1.0 - smoothstep(0.0, 0.32, abs(vUv.y - 0.5));
+    float glow = smoothstep(0.4, 1.0, radial) + 0.25 * (0.5 + 0.5 * vTwist);
+
+    float alpha = (filaments * 1.2 + glow * 0.45) * 0.9;
+    if (alpha < 0.01) discard;
+
+    vec3 highlight = mix(vec3(0.2, 0.9, 1.0), vec3(1.0, 0.6, 0.2), clamp(vTwist * 0.5 + 0.5, 0.0, 1.0));
+    vec3 base = mix(uColor * 0.8, highlight, braid * 0.6);
+    base += uColor * glow * 0.5;
+
+    gl_FragColor = vec4(base, alpha);
 }`;
 // --- END OF MODIFICATION ---
 
