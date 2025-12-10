@@ -701,8 +701,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const system = new THREE.Points(geom, mat);
       system.userData = cme;
-      const dir = new THREE.Vector3();
-      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      const dir = new THREE.Vector3(cme.fluxRopeDirection.x, cme.fluxRopeDirection.y, cme.fluxRopeDirection.z).normalize();
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
