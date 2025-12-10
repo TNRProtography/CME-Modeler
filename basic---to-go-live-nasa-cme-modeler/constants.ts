@@ -13,11 +13,15 @@ export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs 
 export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day synodic period)
 
 export const PLANET_DATA_MAP: Record<string, PlanetData> = {
-  MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 1.2, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
-  VENUS:   { name: 'Venus',   radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 3.5, labelElementId: 'venus-label',   orbitalPeriodDays: 225 },
-  EARTH:   { name: 'Earth',   radius: 1.0   * SCENE_SCALE, size: 0.02  * SCENE_SCALE, color: 0x2a6a9c, angle: 0,   labelElementId: 'earth-label',   orbitalPeriodDays: 365.25 },
+  MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 4.4036, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
+  VENUS:   { name: 'Venus',   radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 3.1761, labelElementId: 'venus-label',   orbitalPeriodDays: 225 },
+  EARTH:   { name: 'Earth',   radius: 1.0   * SCENE_SCALE, size: 0.02  * SCENE_SCALE, color: 0x2a6a9c, angle: 1.7547, labelElementId: 'earth-label',   orbitalPeriodDays: 365.25 },
   MOON:    { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
-  MARS:    { name: 'Mars',    radius: 1.52  * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 5.1, labelElementId: 'mars-label',    orbitalPeriodDays: 687 },
+  MARS:    { name: 'Mars',    radius: 1.52  * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 6.2035, labelElementId: 'mars-label',    orbitalPeriodDays: 687 },
+  JUPITER: { name: 'Jupiter', radius: 5.204 * SCENE_SCALE, size: 0.22  * SCENE_SCALE, color: 0xffe0b3, angle: 0.5995, labelElementId: 'jupiter-label', orbitalPeriodDays: 4332.59 },
+  SATURN:  { name: 'Saturn',  radius: 9.582 * SCENE_SCALE, size: 0.19  * SCENE_SCALE, color: 0xf6d6a8, angle: 0.8738, labelElementId: 'saturn-label',  orbitalPeriodDays: 10759 },
+  URANUS:  { name: 'Uranus',  radius: 19.201 * SCENE_SCALE, size: 0.16  * SCENE_SCALE, color: 0xa7d8ff, angle: 5.4819, labelElementId: 'uranus-label',  orbitalPeriodDays: 30687 },
+  NEPTUNE: { name: 'Neptune', radius: 30.047 * SCENE_SCALE, size: 0.155 * SCENE_SCALE, color: 0x5f8cff, angle: 5.3119, labelElementId: 'neptune-label', orbitalPeriodDays: 60190 },
   SUN:     { name: 'Sun',     radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' } // Sun data for consistency
 };
 
