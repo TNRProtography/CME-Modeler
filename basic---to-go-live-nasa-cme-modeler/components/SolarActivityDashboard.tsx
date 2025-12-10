@@ -16,6 +16,7 @@ interface SolarActivityDashboardProps {
   setLatestXrayFlux: (flux: number | null) => void;
   onViewCMEInVisualization: (cmeId: string) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
+  refreshSignal: number;
 }
 
 interface SolarActivitySummary {
@@ -238,7 +239,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal }) => {
   const isInitialLoad = useRef(true);
   // Imagery state
   const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -430,23 +431,28 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
   }, []);
 
+  const runAllUpdates = useCallback(() => {
+    fetchImage(SUVI_131_URL, setSuvi131);
+    fetchImage(SUVI_304_URL, setSuvi304);
+    fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
+    fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
+    fetchImage(SDO_AIA_193_2048_URL, setSdoAia193_2048);
+    fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
+    fetchXrayFlux();
+    fetchProtonFlux();
+    fetchFlares();
+  }, [fetchFlares, fetchImage, fetchProtonFlux, fetchXrayFlux]);
+
   useEffect(() => {
-    const runAllUpdates = () => {
-      fetchImage(SUVI_131_URL, setSuvi131);
-      fetchImage(SUVI_304_URL, setSuvi304);
-      fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
-      fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
-      fetchImage(SDO_AIA_193_2048_URL, setSdoAia193_2048);
-      fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
-      fetchXrayFlux();
-      fetchProtonFlux();
-      fetchFlares();
-    };
     runAllUpdates();
     isInitialLoad.current = false; // Mark initial load as done after the first run
     const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchImage, fetchXrayFlux, fetchProtonFlux, fetchFlares]);
+  }, [runAllUpdates]);
+
+  useEffect(() => {
+    runAllUpdates();
+  }, [refreshSignal, runAllUpdates]);
 
   useEffect(() => {
     setOverallActivityStatus(getOverallActivityStatus(currentXraySummary.class || 'N/A', currentProtonSummary.class || 'N/A'));

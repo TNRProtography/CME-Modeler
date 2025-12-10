@@ -18,10 +18,9 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import ListIcon from './components/icons/ListIcon';
 import MoveIcon from './components/icons/MoveIcon';
 import SelectIcon from './components/icons/SelectIcon';
-import ForecastIcon from './components/icons/ForecastIcon'; // Now points to your custom file
 import GlobeIcon from './components/icons/GlobeIcon';
-import SunIcon from './components/icons/SunIcon';
-import CmeIcon from './components/icons/CmeIcon';
+import CameraResetIcon from './components/icons/CameraResetIcon';
+import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/icons/NavBadgeIcons';
 
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
@@ -36,10 +35,27 @@ import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
 import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
+import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
+import {
+  DEFAULT_FORECAST_VIEW_KEY,
+  DEFAULT_MAIN_PAGE_KEY,
+  getForecastViewFromSearch,
+  getPageFromPathname,
+  PAGE_PATHS,
+  SETTINGS_PATH,
+  TUTORIAL_PATH,
+} from './utils/navigation';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
+const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 9a7 7 0 0112-4.9M20 15a7 7 0 01-12 4.9" />
     </svg>
 );
 
@@ -73,7 +89,7 @@ interface ImpactDataPoint {
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'V1.0';
+const APP_VERSION = 'V1.4';
 
 const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
   forecast: '/spot-the-aurora-forecast',
@@ -150,7 +166,7 @@ const App: React.FC = () => {
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
-  const [showFluxRope, setShowFluxRope] = useState(false); 
+  const [showFluxRope, setShowFluxRope] = useState(false);
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
@@ -186,6 +202,10 @@ const App: React.FC = () => {
     if (viewFromSearch) return viewFromSearch;
     return getStoredForecastView();
   });
+  const [pageViewStats, setPageViewStats] = useState<PageViewStats>(() => calculateStats());
+  const [pageViewStorageMode] = useState<'server' | 'local'>(() => getPageViewStorageMode());
+  const [manualRefreshKey, setManualRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
@@ -270,6 +290,22 @@ const App: React.FC = () => {
 
   useEffect(() => {
     lastMainPageRef.current = activePage;
+  }, [activePage]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    loadPageViewStats().then(stats => {
+      if (!isCancelled) setPageViewStats(stats);
+    });
+    return () => { isCancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    recordPageView().then(stats => {
+      if (!isCancelled) setPageViewStats(stats);
+    });
+    return () => { isCancelled = true; };
   }, [activePage]);
 
   useEffect(() => {
@@ -430,11 +466,6 @@ const App: React.FC = () => {
     }
   }, [navigateToPage]);
 
-  const handleShowTutorial = useCallback(() => {
-    setIsFirstVisitTutorialOpen(true);
-    navigateToPath(TUTORIAL_PATH);
-  }, [navigateToPath]);
-
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
@@ -482,6 +513,20 @@ const App: React.FC = () => {
     }
   }, [resetClock, apiKey]);
 
+  const handleRefreshAppData = useCallback(async () => {
+    setIsRefreshing(true);
+    setManualRefreshKey((v) => v + 1);
+    await Promise.allSettled([
+      loadCMEData(activeTimeRange, { silent: true }),
+    ]);
+    setIsRefreshing(false);
+  }, [activeTimeRange, loadCMEData]);
+
+  const handleShowTutorial = useCallback(() => {
+    setIsFirstVisitTutorialOpen(true);
+    navigateToPath(TUTORIAL_PATH);
+  }, [navigateToPath]);
+
   useEffect(() => {
     if (activePage !== 'modeler') return;
 
@@ -497,7 +542,7 @@ const App: React.FC = () => {
       if (cmePageLoadedOnce.current) {
         loadCMEData(activeTimeRange, { silent: true });
       }
-    }, 30 * 1000);
+    }, 60 * 60 * 1000);
 
     return () => clearInterval(interval);
   }, [activePage, activeTimeRange, loadCMEData]);
@@ -809,23 +854,70 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
 
-          <header className="flex-shrink-0 p-2 md:p-4 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-700/60 flex justify-center items-center gap-4 relative z-[2001]">
-              <div className="flex items-center space-x-2">
-                  <button id="nav-forecast" onClick={() => navigateToPage('forecast')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'forecast' ? 'bg-sky-500/30 border border-sky-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`} title="View Live Aurora Forecasts">
-                      <ForecastIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Spot The Aurora</span>
-                  </button>
-                  <button id="nav-solar-activity" onClick={() => navigateToPage('solar-activity')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'solar-activity' ? 'bg-amber-500/30 border border-amber-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`} title="View Solar Activity">
-                      <SunIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">Solar Activity</span>
-                  </button>
-                  <button id="nav-modeler" onClick={() => navigateToPage('modeler')} className={`flex flex-col md:flex-row items-center justify-center md:space-x-2 px-3 py-1 md:px-4 md:py-2 rounded-lg text-neutral-200 shadow-lg transition-all ${activePage === 'modeler' ? 'bg-indigo-500/30 border border-indigo-400' : 'bg-neutral-800/80 border border-neutral-700/60 hover:bg-neutral-700/90'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`} title="View CME Visualization">
-                      <CmeIcon className="w-5 h-5" />
-                      <span className="text-xs md:text-sm font-semibold mt-1 md:mt-0">CME Visualization</span>
-                  </button>
+          <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
+              <div className="flex-1 min-w-0">
+                  <div className="flex flex-nowrap items-stretch justify-start gap-1 sm:gap-2 max-w-full overflow-hidden">
+                      <button
+                        id="nav-forecast"
+                        onClick={() => navigateToPage('forecast')}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                        title="View Live Aurora Forecasts"
+                      >
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <AuroraBadgeIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">Forecast</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">Spot The Aurora</span>
+                          </div>
+                      </button>
+                      <button
+                        id="nav-solar-activity"
+                        onClick={() => navigateToPage('solar-activity')}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                        title="View Solar Activity"
+                      >
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <SolarBadgeIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">Dashboard</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">Solar Activity</span>
+                          </div>
+                      </button>
+                      <button
+                        id="nav-modeler"
+                        onClick={() => navigateToPage('modeler')}
+                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                        title="View CME Visualization"
+                      >
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <ModelerBadgeIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">3D Lab</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">CME Visualization</span>
+                          </div>
+                      </button>
+                  </div>
               </div>
-              <div className="flex-grow flex justify-end">
-                  <button id="nav-settings" onClick={handleOpenSettings} className={`p-2 bg-neutral-800/80 border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg transition-all hover:bg-neutral-700/90 ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`} title="Open Settings"><SettingsIcon className="w-6 h-6" /></button>
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                  <button
+                    onClick={handleRefreshAppData}
+                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${isRefreshing ? 'opacity-80' : ''}`}
+                    title="Refresh data"
+                    aria-label="Refresh data"
+                  >
+                    <RefreshIcon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                  <button
+                    id="nav-settings"
+                    onClick={handleOpenSettings}
+                    className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${highlightedElementId === 'nav-settings' ? 'tutorial-highlight' : ''}`}
+                    title="Open Settings"
+                  >
+                    <SettingsIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                  </button>
               </div>
           </header>
 
@@ -865,38 +957,63 @@ const App: React.FC = () => {
                     />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
-                        <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                            <div className="flex flex-col items-center w-14 lg:hidden">
-                                <button id="mobile-controls-button" onClick={() => setIsControlsOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open Settings">
+                        <div className="flex items-start text-center space-x-3 pointer-events-auto">
+                            <div className="flex flex-col items-center w-16 lg:hidden">
+                                <button
+                                  id="mobile-controls-button"
+                                  onClick={() => setIsControlsOpen(true)}
+                                  className="p-3 rounded-2xl bg-white/10 border border-white/15 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
+                                  title="Open Settings"
+                                >
                                     <SettingsIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1">Settings</span>
+                                <span className="text-xs text-neutral-200/80 mt-1">Settings</span>
                             </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="reset-view-button" onClick={handleResetView} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Reset View">
-                                    <CmeIcon className="w-6 h-6" />
+                            <div className="flex flex-col items-center w-16">
+                                <button
+                                  id="reset-view-button"
+                                  onClick={handleResetView}
+                                  className="p-3 rounded-2xl bg-gradient-to-br from-indigo-500/70 via-purple-500/70 to-fuchsia-500/70 border border-white/20 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
+                                  title="Reset View"
+                                >
+                                    <CameraResetIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Reset Camera</span>
+                                <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Reset Camera</span>
                             </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="forecast-models-button" onClick={() => setIsForecastModelsModalOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME Forecast Models">
+                            <div className="flex flex-col items-center w-16">
+                                <button
+                                  id="forecast-models-button"
+                                  onClick={() => setIsForecastModelsModalOpen(true)}
+                                  className="p-3 rounded-2xl bg-gradient-to-br from-sky-500/70 via-cyan-500/70 to-emerald-500/70 border border-white/20 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
+                                  title="Open CME Forecast Models"
+                                >
                                     <GlobeIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Forecast Models</span>
+                                <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Forecast Models</span>
                             </div>
-                            <div className="flex flex-col items-center w-14">
-                                <button id="download-image-button" onClick={handleDownloadImage} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Download Screenshot">
+                            <div className="flex flex-col items-center w-16">
+                                <button
+                                  id="download-image-button"
+                                  onClick={handleDownloadImage}
+                                  className="p-3 rounded-2xl bg-white/10 border border-white/20 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
+                                  title="Download Screenshot"
+                                >
                                     <DownloadIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1 lg:hidden">Download Image</span>
+                                <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Download Image</span>
                             </div>
                         </div>
-                        <div className="flex items-start text-center space-x-2 pointer-events-auto">
-                            <div className="flex flex-col items-center w-14 lg:hidden">
-                                <button id="mobile-cme-list-button" onClick={() => setIsCmeListOpen(true)} className="p-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700/60 rounded-full text-neutral-300 shadow-lg active:scale-95 transition-transform" title="Open CME List">
+                        <div className="flex items-start text-center space-x-3 pointer-events-auto">
+                            <div className="flex flex-col items-center w-16 lg:hidden">
+                                <button
+                                  id="mobile-cme-list-button"
+                                  onClick={() => setIsCmeListOpen(true)}
+                                  className="p-3 rounded-2xl bg-white/10 border border-white/15 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
+                                  title="Open CME List"
+                                >
                                     <ListIcon className="w-6 h-6" />
                                 </button>
-                                <span className="text-xs text-neutral-400 mt-1">CME List</span>
+                                <span className="text-xs text-neutral-200/80 mt-1">CME List</span>
                             </div>
                         </div>
                     </div>
@@ -921,6 +1038,7 @@ const App: React.FC = () => {
                       onInitialLoad={handleInitialLoad}
                       viewMode={forecastViewMode}
                       onViewModeChange={handleForecastViewChange}
+                      refreshSignal={manualRefreshKey}
                   />
               </div>
               <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
@@ -929,6 +1047,7 @@ const App: React.FC = () => {
                       setLatestXrayFlux={setLatestXrayFlux}
                       onViewCMEInVisualization={handleViewCMEInVisualization}
                       navigationTarget={navigationTarget}
+                      refreshSignal={manualRefreshKey}
                   />
               </div>
           </div>
@@ -943,6 +1062,8 @@ const App: React.FC = () => {
             defaultForecastView={defaultForecastView}
             onDefaultMainPageChange={handleDefaultMainPageChange}
             onDefaultForecastViewChange={handleDefaultForecastViewChange}
+            pageViewStats={pageViewStats}
+            pageViewStorageMode={pageViewStorageMode}
           />
           
           <FirstVisitTutorial

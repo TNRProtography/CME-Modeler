@@ -60,7 +60,12 @@ export const fetchCMEData = async (days: number, apiKey: string): Promise<Proces
       throw new Error(`Proxy Worker API Error: ${response.status} ${response.statusText}`);
     }
     const data: CMEData[] = await response.json();
-    return processCMEData(data);
+    const processed = processCMEData(data);
+
+    // Filter to the requested window (24 hours, 3 days, 7 days, etc.)
+    const now = Date.now();
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    return processed.filter((cme) => cme.startTime.getTime() >= cutoff);
   } catch (error) {
     console.error("Failed to fetch or process CME data from the proxy worker:", error);
     throw error;

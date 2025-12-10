@@ -45,6 +45,7 @@ interface ForecastDashboardProps {
   onInitialLoad?: () => void;
   viewMode: 'simple' | 'advanced';
   onViewModeChange: (mode: 'simple' | 'advanced') => void;
+  refreshSignal: number;
 }
 
 interface Camera {
@@ -189,7 +190,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
 };
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
@@ -218,6 +219,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
       return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      fetchAllData(false, getGaugeStyle);
+    }, [fetchAllData, refreshSignal]);
 
     useEffect(() => {
         const latestShock = interplanetaryShockData?.[0];
@@ -484,13 +489,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/></a>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
-                     <div className="flex justify-center items-center gap-4 mb-6">
-                        <button onClick={() => onViewModeChange('simple')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'simple' ? 'bg-sky-500/30 border border-sky-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
+                     <div className="flex justify-center items-center gap-2 mb-6">
+                        <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 shadow-inner p-1 backdrop-blur-md">
+                          <button
+                            onClick={() => onViewModeChange('simple')}
+                            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}
+                          >
                             Simple View
-                        </button>
-                        <button onClick={() => onViewModeChange('advanced')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'advanced' ? 'bg-purple-500/30 border border-purple-400 text-white' : 'bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:bg-neutral-700'}`}>
+                          </button>
+                          <button
+                            onClick={() => onViewModeChange('advanced')}
+                            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'advanced' ? 'bg-gradient-to-r from-purple-500/80 to-fuchsia-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}
+                          >
                             Advanced View
-                        </button>
+                          </button>
+                        </div>
                     </div>
 
                     {viewMode === 'simple' ? (
@@ -518,7 +531,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             </div>
                             
-                            <AuroraSightings isDaylight={isDaylight} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
 
                             <ActivitySummaryDisplay summary={activitySummary} />
 
@@ -557,7 +570,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            
+
                             <UnifiedForecastPanel
                               score={auroraScore}
                               blurb={auroraBlurb}
@@ -571,28 +584,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                               substormForecast={substormForecast}
                             />
 
-                            <div className="col-span-12">
-                                <button 
-                                    onClick={handleDownloadForecastImage}
-                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"
-                                >
-                                    <DownloadIcon className="w-6 h-6" />
-                                    <span>Download The Aurora Forecast For The Next Two Hours!</span>
-                                </button>
-                            </div>
-                            
-                            <AuroraSightings isDaylight={isDaylight} />
-                            
                             <ActivitySummaryDisplay summary={activitySummary} />
 
-                            {/* --- CHART PANELS --- */}
-                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
-                                <SolarWindSpeedChart data={allSpeedData} />
-                            </ForecastChartPanel>
+                            <ForecastTrendChart
+                                auroraScoreHistory={auroraScoreHistory}
+                                dailyCelestialHistory={dailyCelestialHistory}
+                                owmDailyForecast={owmDailyForecast}
+                                onOpenModal={() => openModal('forecast')}
+                            />
 
-                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
-                                <SolarWindDensityChart data={allDensityData} />
-                            </ForecastChartPanel>
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
 
                             <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}>
                                 <MagneticFieldChart data={allMagneticData} />
@@ -601,98 +602,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}>
                                 <HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} />
                             </ForecastChartPanel>
-                            
-                            <ForecastChartPanel 
-                                title="Substorm Activity"
-                                currentValue={
-                                    substormForecast.status === 'ONSET' 
-                                        ? `ONSET DETECTED` 
-                                        : substormForecast.status.replace('_', ' ')
-                                } 
-                                emoji="⚡" 
-                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
-                            >
-                               <div className="flex justify-center items-center gap-4 mb-2">
-                                    <button
-                                        onClick={() => setActiveMagnetometer('nz')}
-                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    >
-                                        Ground Confirmation (NZ)
-                                    </button>
-                                    <button
-                                        onClick={() => setActiveMagnetometer('goes')}
-                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-                                    >
-                                        Satellite Forecast (GOES)
-                                    </button>
-                               </div>
-                               
-                               <div className="min-h-[350px]">
-                                    {activeMagnetometer === 'goes' ? (
-                                        <div className="h-full">
-                                            <SubstormChart 
-                                                goes18Data={goes18Data} 
-                                                goes19Data={goes19Data} 
-                                                annotations={getMagnetometerAnnotations()} 
-                                                loadingMessage={loadingMagnetometer} 
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className={`flex flex-col md:flex-row gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
-                                            <div className="w-full md:w-2/3 h-full">
-                                                <NzMagnetometerChart 
-                                                    data={nzMagData} 
-                                                    events={nzMagSubstormEvents} 
-                                                    selectedEvent={selectedNzMagEvent} 
-                                                    loadingMessage={loadingNzMag} 
-                                                />
-                                            </div>
-                                            <div className="w-full md:w-1/3 h-full flex flex-col mt-4 md:mt-0 bg-neutral-900/50 p-3 rounded-lg">
-                                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
-                                                <div className="flex-grow overflow-y-auto styled-scrollbar pr-2 min-h-[100px]">
-                                                    {nzMagSubstormEvents.length > 0 ? (
-                                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
-                                                            <div 
-                                                                key={index}
-                                                                onClick={() => setSelectedNzMagEvent(event)}
-                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors mb-2 ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
-                                                            >
-                                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                       </div>
-                                   )}
-                               </div>
+
+                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}>
+                                <SolarWindSpeedChart data={allSpeedData} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}>
+                                <SolarWindDensityChart data={allDensityData} />
                             </ForecastChartPanel>
 
                             <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}>
                                 <MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} />
                             </ForecastChartPanel>
 
-
-                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <TipsSection />
-                                <CameraSettingsSection settings={cameraSettings} />
-                            </div>
-                            
-                            <ForecastTrendChart 
-                                auroraScoreHistory={auroraScoreHistory}
-                                dailyCelestialHistory={dailyCelestialHistory}
-                                owmDailyForecast={owmDailyForecast}
-                                onOpenModal={() => openModal('forecast')}
-                            />
-
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3>
                                 <div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div>
                             </div>
-                            
+
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <div className="flex justify-center items-center mb-4">
                                     <h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3>
@@ -719,9 +646,93 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             </div>
 
+                            <ForecastChartPanel
+                                title="Substorm Activity"
+                                currentValue={
+                                    substormForecast.status === 'ONSET'
+                                        ? `ONSET DETECTED`
+                                        : substormForecast.status.replace('_', ' ')
+                                }
+                                emoji="⚡"
+                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
+                            >
+                               <div className="flex justify-center items-center gap-4 mb-2">
+                                    <button
+                                        onClick={() => setActiveMagnetometer('nz')}
+                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    >
+                                        Ground Confirmation (NZ)
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveMagnetometer('goes')}
+                                        className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                                    >
+                                        Satellite Forecast (GOES)
+                                    </button>
+                               </div>
+
+                               <div className="min-h-[350px]">
+                                    {activeMagnetometer === 'goes' ? (
+                                        <div className="h-full">
+                                            <SubstormChart
+                                                goes18Data={goes18Data}
+                                                goes19Data={goes19Data}
+                                                annotations={getMagnetometerAnnotations()}
+                                                loadingMessage={loadingMagnetometer}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className={`flex flex-col md:flex-row gap-4 h-full transition-all duration-300 rounded-lg ${substormForecast.status === 'ONSET' ? 'border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.6)] p-2' : 'border-2 border-transparent p-2'}`}>
+                                            <div className="w-full md:w-2/3 h-full">
+                                                <NzMagnetometerChart
+                                                    data={nzMagData}
+                                                    events={nzMagSubstormEvents}
+                                                    selectedEvent={selectedNzMagEvent}
+                                                    loadingMessage={loadingNzMag}
+                                                />
+                                            </div>
+                                            <div className="w-full md:w-1/3 h-full flex flex-col mt-4 md:mt-0 bg-neutral-900/50 p-3 rounded-lg">
+                                                <h4 className="text-sm font-semibold text-neutral-300 mb-2 text-center flex-shrink-0">Past 24h Events</h4>
+                                                <div className="flex-grow overflow-y-auto styled-scrollbar pr-2 min-h-[100px]">
+                                                    {nzMagSubstormEvents.length > 0 ? (
+                                                        nzMagSubstormEvents.slice().reverse().map((event, index) => (
+                                                            <div
+                                                                key={index}
+                                                                onClick={() => setSelectedNzMagEvent(event)}
+                                                                className={`p-2 rounded-md text-xs cursor-pointer transition-colors mb-2 ${selectedNzMagEvent?.start === event.start ? 'bg-sky-700/50' : 'bg-neutral-800/70 hover:bg-neutral-700/70'}`}
+                                                            >
+                                                                <p><strong>Time:</strong> {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                                                <p><strong>Max Delta:</strong> {event.maxDelta.toFixed(1)} nT/min</p>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <p className="text-xs text-neutral-500 italic text-center pt-4">No significant local events detected in the past 24 hours.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                       </div>
+                                   )}
+                               </div>
+                            </ForecastChartPanel>
+
+                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <TipsSection />
+                                <CameraSettingsSection settings={cameraSettings} />
+                            </div>
+
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div>
                                  <div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div>
+                            </div>
+
+                            <div className="col-span-12">
+                                <button
+                                    onClick={handleDownloadForecastImage}
+                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"
+                                >
+                                    <DownloadIcon className="w-6 h-6" />
+                                    <span>Download The Aurora Forecast For The Next Two Hours!</span>
+                                </button>
                             </div>
                         </main>
                     )}

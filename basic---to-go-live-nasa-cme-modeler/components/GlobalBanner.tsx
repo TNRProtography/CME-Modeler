@@ -1,7 +1,6 @@
 // --- START OF FILE src/components/GlobalBanner.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import CloseIcon from './icons/CloseIcon';
 import { SubstormActivity, InterplanetaryShock } from '../types';
 
 // Define the shape of the banner object returned by your worker
@@ -36,6 +35,14 @@ interface GlobalBannerProps {
   onSubstormAlertClick: () => void;
   onIpsAlertClick: () => void;
 }
+
+type AlertSlide = {
+  id: string;
+  content: React.ReactNode;
+  backgroundClass: string;
+  textClass?: string;
+  style?: React.CSSProperties;
+};
 
 // Helper to format timestamp to HH:mm (NZ local time, no TZ label)
 const formatTime = (timestamp?: number | string): string => {
@@ -78,10 +85,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   const [globalBanner, setGlobalBanner] = useState<BannerData | null>(null);
   const [isGlobalBannerDismissed, setIsGlobalBannerDismissed] = useState(false);
   const lastProcessedBannerUniqueIdRef = useRef<string | undefined>(undefined);
-
-  const [isInternalAlertVisible, setIsInternalAlertVisible] = useState(
-    isFlareAlert || isAuroraAlert || isSubstormAlert || isIpsAlert
-  );
+  const [activeAlertIndex, setActiveAlertIndex] = useState(0);
 
   useEffect(() => {
     const fetchGlobalBanner = async () => {
@@ -111,96 +115,163 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   }, []);
 
   useEffect(() => {
-    setIsInternalAlertVisible(isFlareAlert || isAuroraAlert || isSubstormAlert || isIpsAlert);
-  }, [isFlareAlert, isAuroraAlert, isSubstormAlert, isIpsAlert]);
+    setActiveAlertIndex(0);
+  }, [isFlareAlert, isAuroraAlert, isSubstormAlert, isIpsAlert, globalBanner?.id]);
+
+  const alerts: AlertSlide[] = [];
 
   if (globalBanner && globalBanner.isActive && !isGlobalBannerDismissed) {
     const isCustom = globalBanner.type === 'custom';
-    const bgColor = globalBanner.backgroundColor;
-    const textColor = globalBanner.textColor;
-    let predefinedClass = '';
-    if (!isCustom) {
-      if (globalBanner.type === 'info') predefinedClass = 'bg-gradient-to-r from-blue-600 via-sky-500 to-sky-600';
-      else if (globalBanner.type === 'warning') predefinedClass = 'bg-gradient-to-r from-yellow-500 via-orange-400 to-orange-500';
-      else if (globalBanner.type === 'alert') predefinedClass = 'bg-gradient-to-r from-red-600 via-pink-500 to-pink-600';
-    }
-    const finalTextColorClass = globalBanner.type === 'warning' && !isCustom ? 'text-gray-900' : 'text-white';
-    return (
-      <div
-        className={`text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center ${predefinedClass} ${finalTextColorClass}`}
-        style={isCustom ? { backgroundColor: bgColor || '#000000', color: textColor || '#ffffff' } : {}}
-      >
-        <div className="container mx-auto flex items-center justify-center gap-2">
+    const bgClass = isCustom
+      ? ''
+      : globalBanner.type === 'info'
+        ? 'bg-gradient-to-r from-blue-600 via-sky-500 to-sky-600'
+        : globalBanner.type === 'warning'
+          ? 'bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-500'
+          : 'bg-gradient-to-r from-red-600 via-pink-500 to-pink-600';
+
+    const textClass = globalBanner.type === 'warning' && !isCustom ? 'text-gray-900' : 'text-white';
+    const style = isCustom
+      ? { backgroundColor: globalBanner.backgroundColor || '#000000', color: globalBanner.textColor || '#ffffff' }
+      : undefined;
+
+    alerts.push({
+      id: globalBanner.id || globalBanner.message,
+      backgroundClass: bgClass,
+      textClass,
+      style,
+      content: (
+        <div className="flex items-center justify-center gap-2 flex-wrap">
           {globalBanner.emojis && <span role="img" aria-label="Emoji">{globalBanner.emojis}</span>}
           <span>{globalBanner.message}</span>
           {globalBanner.link && globalBanner.link.url && globalBanner.link.text && (
-            <a href={globalBanner.link.url} target="_blank" rel="noopener noreferrer" className={`underline ml-2 ${isCustom ? '' : (globalBanner.type === 'warning' ? 'text-blue-800' : 'text-blue-200 hover:text-blue-50')}`} style={isCustom ? { color: textColor || '#ffffff' } : {}} >
+            <a
+              href={globalBanner.link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`underline ml-1 ${isCustom ? '' : (globalBanner.type === 'warning' ? 'text-blue-800' : 'text-blue-100 hover:text-white')}`}
+              style={isCustom ? { color: globalBanner.textColor || '#ffffff' } : {}}
+            >
               {globalBanner.link.text}
             </a>
           )}
         </div>
-      </div>
-    );
+      ),
+    });
   }
 
-  // --- MODIFICATION: Render IPS Alert with high priority ---
   if (isIpsAlert && ipsAlertData) {
-    return (
-        <div className="bg-gradient-to-r from-red-600 via-pink-500 to-pink-600 text-white text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center animate-pulse">
-            <button onClick={onIpsAlertClick} className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-x-4 gap-y-1 hover:bg-white/10 p-1 rounded-md transition-colors">
-                <div className="flex items-center gap-2">
-                    <span role="img" aria-label="Impact">💥</span>
-                    <strong>Interplanetary Shock Arrived at {formatTime(ipsAlertData.shock.eventTime)}!</strong>
-                </div>
-                <div className="flex items-center gap-x-3 gap-y-1 flex-wrap justify-center">
-                    <span>Speed: <strong>{ipsAlertData.solarWind.speed}</strong> km/s</span>
-                    <span>Bt: <strong>{ipsAlertData.solarWind.bt}</strong> nT</span>
-                    <span>Bz: <strong>{ipsAlertData.solarWind.bz}</strong> nT</span>
-                </div>
-            </button>
-        </div>
-    );
+    alerts.push({
+      id: 'ips-alert',
+      backgroundClass: 'bg-gradient-to-r from-red-600 via-pink-500 to-pink-600 animate-pulse',
+      textClass: 'text-white',
+      content: (
+        <button onClick={onIpsAlertClick} className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-x-4 gap-y-1 hover:bg-white/10 p-1 rounded-md transition-colors">
+          <div className="flex items-center gap-2">
+            <span role="img" aria-label="Impact">💥</span>
+            <strong>Interplanetary Shock Arrived at {formatTime(ipsAlertData.shock.eventTime)}!</strong>
+          </div>
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap justify-center">
+            <span>Speed: <strong>{ipsAlertData.solarWind.speed}</strong> km/s</span>
+            <span>Bt: <strong>{ipsAlertData.solarWind.bt}</strong> nT</span>
+            <span>Bz: <strong>{ipsAlertData.solarWind.bz}</strong> nT</span>
+          </div>
+        </button>
+      ),
+    });
   }
 
-  if (isInternalAlertVisible) {
-    return (
-      <div className="bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-600 text-white text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center">
-        <div className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-x-4 gap-y-2">
-          {isFlareAlert && (
-            <button onClick={onFlareAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors">
-              <span role="img" aria-label="Solar Flare">💥</span>
-              <strong>Solar Flare Alert:</strong> An active {flareClass} flare is in progress.
-            </button>
-          )}
-          {isAuroraAlert && (
-            <button onClick={onAuroraAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors">
-              {isFlareAlert && <span className="hidden sm:inline">|</span>}
-              <span role="img" aria-label="Aurora">✨</span>
-              <strong>Aurora Forecast:</strong> Spot The Aurora Forecast is at {auroraScore?.toFixed(1)}%!
-            </button>
-          )}
-          {isSubstormAlert && substormActivity && (
-            <button onClick={onSubstormAlertClick} className="flex items-center gap-1 hover:bg-white/10 p-1 rounded-md transition-colors text-left">
-              {(isFlareAlert || isAuroraAlert) && <span className="hidden sm:inline">|</span>}
-              <span role="img" aria-label="Magnetic Field" className="self-start mt-1 sm:self-center">⚡</span>
-              <div>
-                <strong>Substorm Watch:</strong> There is a&nbsp;
-                <strong>~{substormActivity.probability?.toFixed(0) ?? '...'}% chance</strong> of activity between&nbsp;
-                <strong>{formatTime(substormActivity.predictedStartTime)}</strong> and&nbsp;
-                <strong>{formatTime(substormActivity.predictedEndTime)}</strong>.
-                <br className="sm:hidden" />
-                <span className="opacity-80 ml-1 sm:ml-0">
-                  Expected visibility: <strong>{getVisibilityLevel(auroraScore)}</strong>.
-                </span>
-              </div>
-            </button>
-          )}
-        </div>
-      </div>
-    );
+  if (isFlareAlert) {
+    alerts.push({
+      id: 'flare-alert',
+      backgroundClass: 'bg-gradient-to-r from-orange-600 via-amber-500 to-yellow-400',
+      textClass: 'text-black',
+      content: (
+        <button onClick={onFlareAlertClick} className="flex items-center gap-2 hover:bg-black/10 px-2 py-1 rounded-md transition-colors text-sm sm:text-base">
+          <span role="img" aria-label="Solar Flare">💥</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 text-center sm:text-left">
+            <strong>Solar Flare Alert</strong>
+            <span className="font-medium">An active {flareClass} flare is in progress.</span>
+          </div>
+        </button>
+      ),
+    });
   }
-  
-  return null;
+
+  if (isAuroraAlert) {
+    alerts.push({
+      id: 'aurora-alert',
+      backgroundClass: 'bg-gradient-to-r from-green-600 via-emerald-500 to-sky-500',
+      textClass: 'text-white',
+      content: (
+        <button onClick={onAuroraAlertClick} className="flex items-center gap-2 hover:bg-white/10 px-2 py-1 rounded-md transition-colors text-sm sm:text-base">
+          <span role="img" aria-label="Aurora">✨</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 text-center sm:text-left">
+            <strong>Aurora Forecast</strong>
+            <span className="font-medium">Spot The Aurora Forecast is at {auroraScore?.toFixed(1)}%.</span>
+          </div>
+        </button>
+      ),
+    });
+  }
+
+  if (isSubstormAlert && substormActivity) {
+    alerts.push({
+      id: 'substorm-alert',
+      backgroundClass: 'bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-600',
+      textClass: 'text-white',
+      content: (
+        <button onClick={onSubstormAlertClick} className="flex items-center gap-2 hover:bg-white/10 px-2 py-1 rounded-md transition-colors text-left">
+          <span role="img" aria-label="Magnetic Field" className="self-start mt-0.5 sm:self-center">⚡</span>
+          <div className="flex flex-col gap-0.5">
+            <strong>Substorm Watch</strong>
+            <span className="font-medium">
+              ~{substormActivity.probability?.toFixed(0) ?? '...'}% chance between {formatTime(substormActivity.predictedStartTime)} and {formatTime(substormActivity.predictedEndTime)}.
+            </span>
+            <span className="opacity-90 text-xs sm:text-sm">Expected visibility: {getVisibilityLevel(auroraScore)}.</span>
+          </div>
+        </button>
+      ),
+    });
+  }
+
+  const activeSlide = alerts[activeAlertIndex];
+
+  useEffect(() => {
+    if (activeAlertIndex > alerts.length - 1) {
+      setActiveAlertIndex(0);
+    }
+  }, [activeAlertIndex, alerts.length]);
+
+  if (!activeSlide) return null;
+
+  const goPrev = () => setActiveAlertIndex((idx) => (idx - 1 + alerts.length) % alerts.length);
+  const goNext = () => setActiveAlertIndex((idx) => (idx + 1) % alerts.length);
+  const hasMultiple = alerts.length > 1;
+
+  return (
+    <div
+      className={`text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
+      style={activeSlide.style}
+    >
+      <div className="container mx-auto flex items-center justify-center gap-3 relative">
+        <div className="flex-1 flex items-center justify-center sm:justify-center text-center sm:text-center">
+          {activeSlide.content}
+        </div>
+        {hasMultiple && (
+          <div className="flex items-center gap-1 absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 sm:translate-y-0 sm:static">
+            <span className="px-2 py-1 rounded-full bg-black/20 text-white/90 text-xs tracking-tight">
+              {activeAlertIndex + 1}/{alerts.length} alerts
+            </span>
+            <div className="flex overflow-hidden rounded-lg border border-white/30 shadow-sm">
+              <button onClick={goPrev} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">◀</button>
+              <button onClick={goNext} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">▶</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export default GlobalBanner;
