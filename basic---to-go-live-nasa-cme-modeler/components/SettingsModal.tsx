@@ -18,9 +18,11 @@ interface SettingsModalProps {
   onClose: () => void;
   appVersion: string;
   onShowTutorial: () => void;
-  defaultMainPage: 'forecast' | 'solar-activity' | 'modeler';
+  defaultMainPage: 'forecast' | 'solar-activity' | 'modeler' | 'pinwheel';
   defaultForecastView: 'simple' | 'advanced';
-  onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
+  onDefaultMainPageChange: (
+    page: 'forecast' | 'solar-activity' | 'modeler' | 'pinwheel'
+  ) => void;
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
   pageViewStats: PageViewStats;
   pageViewStorageMode: 'server' | 'local';
@@ -300,11 +302,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   id="default-main-page"
                   className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   value={defaultMainPage}
-                  onChange={e => onDefaultMainPageChange(e.target.value as 'forecast' | 'solar-activity' | 'modeler')}
+                  onChange={e =>
+                    onDefaultMainPageChange(
+                      e.target.value as 'forecast' | 'solar-activity' | 'modeler' | 'pinwheel'
+                    )
+                  }
                 >
                   <option value="forecast">Spot the Aurora Forecast</option>
                   <option value="solar-activity">Solar Activity Dashboard</option>
                   <option value="modeler">CME Visualization</option>
+                  <option value="pinwheel">WSA-ENLIL Pinwheel</option>
                 </select>
                 <p className="text-xs text-neutral-500">
                   Your default landing page is stored on this device so it opens straight to your preferred dashboard.

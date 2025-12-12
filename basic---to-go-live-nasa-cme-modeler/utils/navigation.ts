@@ -1,9 +1,10 @@
 // Centralized navigation helpers and keys used across the app shell.
 
-export const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
+export const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler' | 'pinwheel', string> = {
   forecast: '/spot-the-aurora-forecast',
   'solar-activity': '/solar-dashboard',
   modeler: '/cme-visualization',
+  pinwheel: '/wsa-enlil-pinwheel',
 };
 
 export const SETTINGS_PATH = '/settings';
@@ -22,9 +23,10 @@ export const getForecastViewFromSearch = (
 
 export const getPageFromPathname = (
   pathname: string
-): 'forecast' | 'solar-activity' | 'modeler' | null => {
+): 'forecast' | 'solar-activity' | 'modeler' | 'pinwheel' | null => {
   if (pathname.startsWith(PAGE_PATHS['solar-activity'])) return 'solar-activity';
   if (pathname.startsWith(PAGE_PATHS['modeler'])) return 'modeler';
+  if (pathname.startsWith(PAGE_PATHS['pinwheel'])) return 'pinwheel';
   if (pathname.startsWith(PAGE_PATHS['forecast'])) return 'forecast';
   return null;
 };
