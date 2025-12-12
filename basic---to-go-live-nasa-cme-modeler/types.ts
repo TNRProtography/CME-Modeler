@@ -210,4 +210,13 @@ export interface WSAEnlilSimulation {
     simulationID: string;
 }
 
+export interface CoronalHolePoint {
+  x: number;
+  y: number;
+}
+
+export interface CHData {
+  coronal_holes_polygons: CoronalHolePoint[];
+}
+
 //--- END OF FILE types.ts ---```
