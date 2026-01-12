@@ -714,6 +714,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                </div>
                             </ForecastChartPanel>
 
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+                                <div className="flex justify-center items-center mb-4">
+                                    <h3 className="text-xl font-semibold text-center text-white">NZ Substorm Index (NZ-ASI)</h3>
+                                </div>
+                                <div className="relative w-full min-h-[720px] rounded-lg overflow-hidden border border-white/10">
+                                    <iframe
+                                        title="NZ Substorm Index"
+                                        className="absolute top-0 left-0 w-full h-full"
+                                        src="https://spottheaurora.thenamesrock.workers.dev/v1/nzasi/page"
+                                    />
+                                </div>
+                                <p className="text-xs text-neutral-400 mt-3 text-center">
+                                    Powered by GeoNet Tilde API and NOAA SWPC for real-time substorm visibility guidance.
+                                </p>
+                            </div>
+
                             <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <TipsSection />
                                 <CameraSettingsSection settings={cameraSettings} />
