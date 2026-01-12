@@ -245,6 +245,56 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     };
 };
 
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({ summary }) => {
+    if (!summary) {
+        return (
+            <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
+                Calculating 24-hour summary...
+            </div>
+        );
+    }
+
+    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+    const peakScore = summary.highestScore.finalScore;
+    const peakColor = GAUGE_COLORS[getForecastScoreColorKey(peakScore)].solid;
+    const latestEvent = summary.substormEvents.at(-1);
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+            <h2 className="text-2xl font-bold text-white text-center">24-Hour Aurora Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak Forecast Score</h3>
+                    <p className="text-5xl font-bold" style={{ color: peakColor }}>
+                        {peakScore.toFixed(1)}%
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">at {formatTime(summary.highestScore.timestamp)}</p>
+                </div>
+
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Substorm Events</h3>
+                    <p className="text-5xl font-bold text-sky-300">{summary.substormEvents.length}</p>
+                    <p className="text-sm text-neutral-400 mt-1">Detected in the last 24 hours</p>
+                </div>
+
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Latest Substorm</h3>
+                    {latestEvent ? (
+                        <>
+                            <p className="text-4xl font-bold text-amber-300">{getAuroraEmoji(latestEvent.peakProbability * 100)}</p>
+                            <p className="text-sm text-neutral-400 mt-1">
+                                {formatTime(latestEvent.start)} - {formatTime(latestEvent.end)}
+                            </p>
+                        </>
+                    ) : (
+                        <p className="text-sm text-neutral-400 mt-6">No recent substorms</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- NZ Substorm Index Logic ---
 const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
     if (strengthNt >= 0) return -65.0;
