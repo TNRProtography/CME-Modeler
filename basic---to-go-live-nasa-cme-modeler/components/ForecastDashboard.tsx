@@ -7,6 +7,7 @@ import GuideIcon from './icons/GuideIcon';
 import { useForecastData, NzMagEvent } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
+import NzAsiEmbed from './NzAsiEmbed';
 
 import {
     TipsSection,
@@ -880,11 +881,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     <h3 className="text-xl font-semibold text-center text-white">NZ Substorm Index (NZ-ASI)</h3>
                                 </div>
                                 <div className="relative w-full min-h-[720px] rounded-lg overflow-hidden border border-white/10">
-                                    <iframe
-                                        title="NZ Substorm Index"
-                                        className="absolute top-0 left-0 w-full h-full"
-                                        src="https://spottheaurora.thenamesrock.workers.dev/v1/nzasi/page"
-                                    />
+                                    <NzAsiEmbed />
                                 </div>
                                 <p className="text-xs text-neutral-400 mt-3 text-center">
                                     Powered by GeoNet Tilde API and NOAA SWPC for real-time substorm visibility guidance.
