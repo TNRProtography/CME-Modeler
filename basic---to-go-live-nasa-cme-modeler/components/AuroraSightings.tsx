@@ -589,7 +589,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         {visibilityLines?.camera != null && (
                             <Polyline
                                 positions={[[visibilityLines.camera, NZ_BOUNDS[0][1]], [visibilityLines.camera, NZ_BOUNDS[1][1]]]}
-                                pathOptions={{ color: '#22c55e', weight: 2, dashArray: '6 6' }}
+                                pathOptions={{ color: '#22c55e', weight: 3, opacity: 0.85 }}
                             >
                                 <Tooltip permanent direction="right" className="text-xs">
                                     Camera line
@@ -599,7 +599,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         {visibilityLines?.phone != null && (
                             <Polyline
                                 positions={[[visibilityLines.phone, NZ_BOUNDS[0][1]], [visibilityLines.phone, NZ_BOUNDS[1][1]]]}
-                                pathOptions={{ color: '#38bdf8', weight: 2, dashArray: '6 6' }}
+                                pathOptions={{ color: '#facc15', weight: 3, opacity: 0.85 }}
                             >
                                 <Tooltip permanent direction="right" className="text-xs">
                                     Phone line
@@ -609,7 +609,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         {visibilityLines?.eye != null && (
                             <Polyline
                                 positions={[[visibilityLines.eye, NZ_BOUNDS[0][1]], [visibilityLines.eye, NZ_BOUNDS[1][1]]]}
-                                pathOptions={{ color: '#facc15', weight: 2, dashArray: '6 6' }}
+                                pathOptions={{ color: '#ef4444', weight: 3, opacity: 0.85 }}
                             >
                                 <Tooltip permanent direction="right" className="text-xs">
                                     Eye line
