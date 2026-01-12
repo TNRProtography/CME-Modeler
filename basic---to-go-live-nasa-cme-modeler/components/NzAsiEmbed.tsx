@@ -7,20 +7,19 @@ const buildNzAsiHtml = () => `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spot The Aurora | NZ Substorm Index</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root { --bg: #171717; --text: #e5e5e5; --muted: #a3a3a3; --card-bg: rgba(10, 10, 10, 0.8); --border: rgba(64, 64, 64, 0.6); --chart-h: 320px; }
+    :root { --bg: #171717; --text: #e5e5e5; --muted: #a3a3a3; --card-bg: rgba(10, 10, 10, 0.8); --border: rgba(64, 64, 64, 0.6); --chart-h: 240px; }
     *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: var(--bg); background-image: url('https://spottheaurora.thenamesrock.workers.dev/background-aurora.jpg'); background-size: cover; background-attachment: fixed; color: var(--text); line-height: 1.5; }
+    html, body { height: 100%; overflow: hidden; }
+    body { margin: 0; padding: 0; font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; background-color: var(--bg); background-image: url('https://spottheaurora.thenamesrock.workers.dev/background-aurora.jpg'); background-size: cover; background-attachment: fixed; color: var(--text); line-height: 1.5; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: -1; }
-    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
-    header { text-align: center; margin-bottom: 30px; }
-    h1 { font-size: 1.5rem; font-weight: 800; color: #fff; margin: 0; text-transform: uppercase; }
-    .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 5px; font-weight: 500; }
-    .grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+    .container { max-width: 100%; margin: 0 auto; padding: 12px; height: 100%; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 12px; height: 100%; align-content: start; }
     @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } .col-span-2 { grid-column: span 2; } }
-    .card { background-color: var(--card-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; }
-    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; }
-    .card-title { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: 12px;}
+    .card { background-color: var(--card-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; }
+    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; }
+    .card-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: 8px;}
     .hero-val { font-size: 4.5rem; font-weight: 900; line-height: 1; text-shadow: 0 0 20px #ffffff40; transition: color 0.3s; }
     .badges { margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
     .badge { padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
@@ -53,18 +52,12 @@ const buildNzAsiHtml = () => `
     .dot-green { background: #4ade80; box-shadow: 0 0 5px #4ade80; }
     .dot-yellow { background: #facc15; box-shadow: 0 0 5px #facc15; }
     .dot-red { background: #f87171; box-shadow: 0 0 5px #f87171; }
-    footer { margin-top: 40px; text-align: center; font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 20px; }
     code { font-family: monospace; background: rgba(255,255,255,0.1); padding: 2px 4px; rounded: 4px; }
   </style>
 </head>
 <body>
   <div class="overlay"></div>
   <div class="container">
-    <header>
-      <h1>Spot The Aurora <span style="color:var(--muted)">/</span> NZ Substorm Index</h1>
-      <div class="subtitle">Live Ground Magnetometer Analysis (<span id="station-id">-</span>)</div>
-    </header>
-
     <div class="grid">
       <div class="card">
         <div class="card-title">Current Activity</div>
@@ -136,7 +129,6 @@ const buildNzAsiHtml = () => `
         </div>
       </div>
     </div>
-    <footer>Data sourced from <strong>GeoNet Tilde API</strong> and <strong>NOAA SWPC</strong>.<br/>API: <code>/v1/nzasi?station=<span id="station-footer">-</span></code></footer>
   </div>
 
   <script>
@@ -567,10 +559,8 @@ const buildNzAsiHtml = () => `
 
     const init = async () => {
       try {
-        const station = DEFAULT_STATION;
-        document.getElementById('station-id').innerText = station;
-        document.getElementById('station-name').innerText = station;
-        document.getElementById('station-footer').innerText = station;
+      const station = DEFAULT_STATION;
+      document.getElementById('station-name').innerText = station;
         const [seriesInfo, solarWind] = await Promise.all([discoverSeries(station), fetchNoaaData()]);
         const { samples } = await fetchSeriesData(seriesInfo.key, "2d");
         const nowResult = processNow(samples, DEFAULT_THRESHOLDS, false, solarWind);
