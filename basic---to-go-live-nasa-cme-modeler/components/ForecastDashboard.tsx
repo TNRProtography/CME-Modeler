@@ -142,6 +142,37 @@ const parseIso = (ts: string | number) => {
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
+const getGaugeStyle = (value: number | null, type: 'power' | 'speed' | 'density' | 'bt' | 'bz') => {
+    if (value == null || !Number.isFinite(value)) {
+        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+    }
+
+    const thresholds = GAUGE_THRESHOLDS[type];
+    const getColorKey = () => {
+        if (type === 'bz') {
+            if (value <= thresholds.pink) return 'pink';
+            if (value <= thresholds.purple) return 'purple';
+            if (value <= thresholds.red) return 'red';
+            if (value <= thresholds.orange) return 'orange';
+            if (value <= thresholds.yellow) return 'yellow';
+            return 'gray';
+        }
+        if (value >= thresholds.pink) return 'pink';
+        if (value >= thresholds.purple) return 'purple';
+        if (value >= thresholds.red) return 'red';
+        if (value >= thresholds.orange) return 'orange';
+        if (value >= thresholds.yellow) return 'yellow';
+        return 'gray';
+    };
+
+    const colorKey = getColorKey();
+    const percentage = type === 'bz'
+        ? clamp((Math.abs(Math.min(value, 0)) / Math.abs(thresholds.maxNegativeExpected)) * 100, 0, 100)
+        : clamp((value / thresholds.maxExpected) * 100, 0, 100);
+
+    return { color: GAUGE_COLORS[colorKey].solid, emoji: GAUGE_EMOJIS[colorKey], percentage };
+};
+
 const getAuroraBlurb = (score: number | null) => {
     const value = score ?? 0;
     if (value >= 80) {
