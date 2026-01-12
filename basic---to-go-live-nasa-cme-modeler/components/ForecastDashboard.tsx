@@ -95,13 +95,141 @@ const getForecastScoreColorKey = (score: number) => {
     return 'gray';
 };
 
-// ... (Rest of original ForecastDashboard.tsx: getSuggestedCameraSettings, ActivitySummaryDisplay, ForecastDashboard main component, etc) ...
-// The rest of the file should be exactly as it was, ensuring the `ForecastDashboard` function below uses <NzSubstormIndex /> 
-// inside the "UnifiedForecastPanel" or where the old "Ground Confirmation" button logic was.
+const getGaugeStyle = (
+    value: number | null,
+    type: 'power' | 'speed' | 'density' | 'bt' | 'bz'
+) => {
+    if (value === null || !Number.isFinite(value)) {
+        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.gray, percentage: 0 };
+    }
 
-// [NOTE: Because this file is massive, I am assuming you will place the `NzSubstormIndex` component 
-// I wrote above BEFORE the `ForecastDashboard` main component, and then inside `ForecastDashboard`, 
-// you will replace the old `NzMagnetometerChart` section with `<NzSubstormIndex />`]
+    const thresholds = GAUGE_THRESHOLDS[type];
+    let key: keyof typeof GAUGE_COLORS = 'gray';
+
+    if (type === 'bz') {
+        if (value <= thresholds.pink) key = 'pink';
+        else if (value <= thresholds.purple) key = 'purple';
+        else if (value <= thresholds.red) key = 'red';
+        else if (value <= thresholds.orange) key = 'orange';
+        else if (value <= thresholds.yellow) key = 'yellow';
+    } else {
+        if (value >= thresholds.pink) key = 'pink';
+        else if (value >= thresholds.purple) key = 'purple';
+        else if (value >= thresholds.red) key = 'red';
+        else if (value >= thresholds.orange) key = 'orange';
+        else if (value >= thresholds.yellow) key = 'yellow';
+    }
+
+    const maxExpected =
+        type === 'bz'
+            ? Math.abs(thresholds.maxNegativeExpected ?? thresholds.pink)
+            : thresholds.maxExpected ?? Math.abs(thresholds.pink);
+    const percentage = Math.max(0, Math.min(100, (Math.abs(value) / maxExpected) * 100));
+
+    return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
+};
+
+const getAuroraEmoji = (score: number | null) => {
+    if (score === null) return '❓';
+    if (score >= 80) return '🤩';
+    if (score >= 50) return '🌌';
+    if (score >= 35) return '📱';
+    if (score >= 20) return '📷';
+    if (score >= 10) return '😐';
+    return '😴';
+};
+
+const getAuroraBlurb = (score: number | null) => {
+    if (score === null) return 'Forecast data is loading. Please wait a moment.';
+    if (score >= 80) return 'Expect a strong display. Visible aurora is highly likely in clear skies.';
+    if (score >= 50) return 'Conditions are favorable. Naked-eye viewing is possible in dark locations.';
+    if (score >= 35) return 'Phone cameras may capture faint aurora. Head to a dark southern view.';
+    if (score >= 20) return 'Camera-only conditions. Long exposure shots may reveal a glow.';
+    return 'Low activity. Aurora is unlikely tonight.';
+};
+
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) {
+        return {
+            overall: 'It is currently daylight. Camera settings are not applicable until after sunset.',
+            phone: {
+                android: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+                apple: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+            },
+            dslr: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+        };
+    }
+
+    const strength = score ?? 0;
+    const strong = strength >= 50;
+    const moderate = strength >= 25;
+
+    return {
+        overall: strong
+            ? 'Strong activity expected. Shorter exposures reduce blowout.'
+            : moderate
+            ? 'Moderate activity. Start with a balanced exposure and adjust as needed.'
+            : 'Low activity. Longer exposures and higher ISO may be required.',
+        phone: {
+            android: {
+                iso: strong ? '800-1600' : moderate ? '1600-3200' : '3200-6400',
+                shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
+                aperture: 'Wide open',
+                focus: 'Infinity',
+                wb: '3500-4200K',
+            },
+            apple: {
+                iso: strong ? 'Auto' : moderate ? 'Auto' : 'Auto',
+                shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
+                aperture: 'Wide open',
+                focus: 'Infinity',
+                wb: '3500-4200K',
+            },
+        },
+        dslr: {
+            iso: strong ? '1600-3200' : moderate ? '3200-6400' : '6400+',
+            shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
+            aperture: 'f/1.4 – f/2.8',
+            focus: 'Infinity',
+            wb: '3500-4200K',
+        },
+    };
+};
+
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summary }) => {
+    if (!summary) return null;
+    const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-4">
+            <h3 className="text-xl font-semibold text-white mb-2">Recent Activity Summary</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-neutral-300">
+                <div className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
+                    <div className="text-neutral-400 text-xs uppercase">Peak Score</div>
+                    <div className="text-lg font-semibold text-white">
+                        {summary.highestScore?.finalScore?.toFixed(1) ?? 'N/A'}%
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                        {summary.highestScore?.timestamp ? new Date(summary.highestScore.timestamp).toLocaleString() : '—'}
+                    </div>
+                </div>
+                <div className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
+                    <div className="text-neutral-400 text-xs uppercase">Latest Substorm Window</div>
+                    {latestEvent ? (
+                        <>
+                            <div className="text-lg font-semibold text-white">{latestEvent.peakStatus}</div>
+                            <div className="text-xs text-neutral-500">
+                                {new Date(latestEvent.start).toLocaleTimeString()} – {new Date(latestEvent.end).toLocaleTimeString()}
+                            </div>
+                            <div className="text-xs text-neutral-400">Peak probability: {latestEvent.peakProbability}%</div>
+                        </>
+                    ) : (
+                        <div className="text-neutral-500 text-sm">No substorm events recorded.</div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
