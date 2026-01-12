@@ -2,6 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
+import {
+    SCALE_FACTOR,
+    clamp,
+    getProjectedBaseline,
+    getTownStatus,
+    NZ_TOWNS,
+} from '../utils/nzAsi';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
@@ -55,33 +62,6 @@ const PROFANITY_PATTERNS = [
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
-const SCALE_FACTOR = 100;
-const OBAN_LAT = -46.90;
-const AKL_LAT = -36.85;
-const LAT_DELTA = AKL_LAT - OBAN_LAT;
-const REQ_CAM = { start: -300, end: -800 };
-const REQ_PHN = { start: -350, end: -900 };
-const REQ_EYE = { start: -500, end: -1200 };
-const ASI_TOWNS = [
-    { name: "Oban", lat: -46.90 },
-    { name: "Invercargill", lat: -46.41 },
-    { name: "Dunedin", lat: -45.87 },
-    { name: "Queenstown", lat: -45.03 },
-    { name: "Wānaka", lat: -44.70 },
-    { name: "Twizel/Tekapo", lat: -44.26 },
-    { name: "Timaru", lat: -44.39 },
-    { name: "Christchurch", lat: -43.53 },
-    { name: "Kaikōura", lat: -42.40 },
-    { name: "Greymouth", lat: -42.45 },
-    { name: "Nelson", lat: -41.27 },
-    { name: "Wellington", lat: -41.29 },
-    { name: "Palmerston Nth", lat: -40.35 },
-    { name: "Napier", lat: -39.49 },
-    { name: "Taupō", lat: -38.68 },
-    { name: "Tauranga", lat: -37.68 },
-    { name: "Auckland", lat: -36.85 },
-    { name: "Whangārei", lat: -35.72 }
-];
 
 const computeSunsetWindowStart = () => {
     const now = new Date();
@@ -91,40 +71,6 @@ const computeSunsetWindowStart = () => {
         sunset.setDate(sunset.getDate() - 1);
     }
     return sunset.getTime();
-};
-
-const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-
-const getProjectedBaseline = (samples: { t: number; val: number }[], targetTime: number) => {
-    const endWindow = targetTime - 5 * 60000;
-    const startWindow = targetTime - 185 * 60000;
-    const windowPoints: { t: number; val: number }[] = [];
-    for (let i = samples.length - 1; i >= 0; i--) {
-        const t = samples[i].t;
-        if (t > endWindow) continue;
-        if (t < startWindow) break;
-        windowPoints.push(samples[i]);
-    }
-    if (windowPoints.length < 10) return null;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    const n = windowPoints.length;
-    for (let i = 0; i < n; i++) {
-        const x = (windowPoints[i].t - startWindow) / 60000;
-        const y = windowPoints[i].val;
-        sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
-    }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    const targetX = (targetTime - startWindow) / 60000;
-    return slope * targetX + intercept;
-};
-
-const getTownStatus = (town: { lat: number }, currentStrength: number, category: 'camera' | 'phone' | 'eye') => {
-    if (currentStrength >= 0) return false;
-    const reqs = category === 'phone' ? REQ_PHN : category === 'eye' ? REQ_EYE : REQ_CAM;
-    const slope = (reqs.end - reqs.start) / LAT_DELTA;
-    const required = reqs.start + (town.lat - OBAN_LAT) * slope;
-    return currentStrength <= required;
 };
 
 const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; category: 'visible' | 'nothing' | 'other' }[] = [
@@ -443,7 +389,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     const visibilityLines = useMemo(() => {
         if (asiStrength == null) return null;
         const highestFor = (mode: 'camera' | 'phone' | 'eye') => {
-            const candidates = ASI_TOWNS.filter(town => getTownStatus(town, asiStrength, mode));
+            const candidates = NZ_TOWNS.filter(town => getTownStatus(town, asiStrength, mode));
             if (candidates.length === 0) return null;
             return Math.max(...candidates.map(town => town.lat));
         };

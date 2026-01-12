@@ -7,7 +7,7 @@ import GuideIcon from './icons/GuideIcon';
 import { useForecastData, NzMagEvent } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
-import NzAsiEmbed from './NzAsiEmbed';
+import { SCALE_FACTOR, clamp, getProjectedBaseline, getVisibleTowns, parseIso } from '../utils/nzAsi';
 
 import {
     TipsSection,
@@ -39,6 +39,11 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- ORIGINAL CONSTANTS (Moved to top to fix ReferenceError) ---
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
+const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
+const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json';
+const NOAA_RTSW_WIND = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
+const DOMAIN = 'geomag';
+const STATION = 'EYWM';
 
 const CAMERAS: Camera[] = [
   { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
@@ -68,46 +73,6 @@ const GAUGE_EMOJIS = {
     purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}'
 };
 
-// --- NZ SUBSTORM INDEX CONSTANTS ---
-const TILDE_BASE = "https://tilde.geonet.org.nz/v4";
-const NOAA_RTSW_MAG = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json";
-const NOAA_RTSW_WIND = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json";
-const DOMAIN = "geomag";
-const STATION = "EYWM"; // West Melton
-const SCALE_FACTOR = 100;
-
-// Geographic Config
-const OBAN_LAT = -46.90;
-const AKL_LAT = -36.85;
-const LAT_DELTA = AKL_LAT - OBAN_LAT;
-
-// Thresholds (Display Units)
-const REQ_CAM = { start: -300, end: -800 };
-const REQ_PHN = { start: -350, end: -900 };
-const REQ_EYE = { start: -500, end: -1200 };
-
-interface NzTown { name: string; lat: number; lon: number; cam?: string; phone?: string; eye?: string; }
-
-const NZ_TOWNS: NzTown[] = [
-    { name: "Oban", lat: -46.90, lon: 168.12 },
-    { name: "Invercargill", lat: -46.41, lon: 168.35 },
-    { name: "Dunedin", lat: -45.87, lon: 170.50 },
-    { name: "Queenstown", lat: -45.03, lon: 168.66 },
-    { name: "Wānaka", lat: -44.70, lon: 169.12 },
-    { name: "Twizel", lat: -44.26, lon: 170.10 },
-    { name: "Timaru", lat: -44.39, lon: 171.25 },
-    { name: "Christchurch", lat: -43.53, lon: 172.63 },
-    { name: "Kaikōura", lat: -42.40, lon: 173.68 },
-    { name: "Greymouth", lat: -42.45, lon: 171.20 },
-    { name: "Nelson", lat: -41.27, lon: 173.28 },
-    { name: "Wellington", lat: -41.29, lon: 174.77 },
-    { name: "Palmerston Nth", lat: -40.35, lon: 175.60 },
-    { name: "Napier", lat: -39.49, lon: 176.91 },
-    { name: "Taupō", lat: -38.68, lon: 176.07 },
-    { name: "Tauranga", lat: -37.68, lon: 176.16 },
-    { name: "Auckland", lat: -36.85, lon: 174.76 },
-    { name: "Whangārei", lat: -35.72, lon: 174.32 }
-];
 
 // --- TYPES ---
 interface ForecastDashboardProps {
@@ -136,12 +101,6 @@ const getForecastScoreColorKey = (score: number) => {
     return 'gray';
 };
 
-const parseIso = (ts: string | number) => {
-    const t = new Date(ts).getTime();
-    return Number.isFinite(t) ? t : null;
-};
-
-const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
 const getGaugeStyle = (value: number | null, type: 'power' | 'speed' | 'density' | 'bt' | 'bz') => {
     if (value == null || !Number.isFinite(value)) {
@@ -315,64 +274,6 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null; nzMagD
     );
 };
 
-// --- NZ Substorm Index Logic ---
-const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
-    if (strengthNt >= 0) return -65.0;
-    const curve = (mode === 'phone' ? REQ_PHN : (mode === 'eye' ? REQ_EYE : REQ_CAM));
-    const slope = (curve.end - curve.start) / LAT_DELTA;
-    const lat = OBAN_LAT + (strengthNt - curve.start) / slope;
-    return Math.max(-48, Math.min(-34, lat));
-};
-
-const getTownStatus = (town: NzTown, currentStrength: number, category: 'camera'|'phone'|'eye') => {
-    if (currentStrength >= 0) return undefined;
-    const reqs = (category === 'phone' ? REQ_PHN : (category === 'eye' ? REQ_EYE : REQ_CAM));
-    const slope = (reqs.end - reqs.start) / LAT_DELTA;
-    const required = reqs.start + (town.lat - OBAN_LAT) * slope;
-
-    if (currentStrength <= required) {
-        const excess = Math.abs(currentStrength) - Math.abs(required);
-        if (excess < 50) return 'red';
-        if (excess < 100) return 'yellow';
-        return 'green';
-    }
-    return undefined;
-};
-
-const getVisibleTowns = (strength: number): NzTown[] => {
-    return NZ_TOWNS.map(town => ({
-        ...town,
-        cam: getTownStatus(town, strength, 'camera'),
-        phone: getTownStatus(town, strength, 'phone'),
-        eye: getTownStatus(town, strength, 'eye')
-    }));
-};
-
-const getProjectedBaseline = (samples: any[], targetTime: number) => {
-    const endWindow = targetTime - 5 * 60000;
-    const startWindow = targetTime - 185 * 60000;
-    const windowPoints: any[] = [];
-    for (let i = samples.length - 1; i >= 0; i--) {
-        const t = samples[i].t;
-        if (t > endWindow) continue;
-        if (t < startWindow) break;
-        windowPoints.push(samples[i]);
-    }
-    if (windowPoints.length < 10) return null;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    const n = windowPoints.length;
-    for (let i = 0; i < n; i++) {
-        const x = (windowPoints[i].t - startWindow) / 60000;
-        const y = windowPoints[i].val;
-        sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
-    }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    const targetX = (targetTime - startWindow) / 60000;
-    return slope * targetX + intercept;
-};
-
-// --- Sub-Component: NZ Substorm Index Panel ---
 const NzSubstormIndex: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
@@ -693,14 +594,6 @@ const NzSubstormIndex: React.FC = () => {
     );
 };
 
-// ... (Rest of original ForecastDashboard.tsx: getSuggestedCameraSettings, ActivitySummaryDisplay, ForecastDashboard main component, etc) ...
-// The rest of the file should be exactly as it was, ensuring the `ForecastDashboard` function below uses <NzSubstormIndex /> 
-// inside the "UnifiedForecastPanel" or where the old "Ground Confirmation" button logic was.
-
-// [NOTE: Because this file is massive, I am assuming you will place the `NzSubstormIndex` component 
-// I wrote above BEFORE the `ForecastDashboard` main component, and then inside `ForecastDashboard`, 
-// you will replace the old `NzMagnetometerChart` section with `<NzSubstormIndex />`]
-
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
@@ -859,7 +752,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 gaugeColors={GAUGE_COLORS}
                                 onOpenModal={() => openModal('unified-forecast')}
                                 substormForecast={substormForecast}
-                                asiSection={<NzAsiEmbed />}
+                                asiSection={<NzSubstormIndex />}
                             />
                             <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
