@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
+import {
+    SCALE_FACTOR,
+    clamp,
+    getProjectedBaseline,
+    getTownStatus,
+    NZ_TOWNS,
+} from '../utils/nzAsi';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
@@ -88,6 +95,7 @@ const getEmojiForStatus = (status: SightingStatus) => {
 interface AuroraSightingsProps {
   isDaylight: boolean;
   refreshSignal?: number;
+  nzMagData?: any[];
 }
 
 interface SightingMapControllerProps {
@@ -181,7 +189,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
     );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, nzMagData }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -362,6 +370,36 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
         [sightings, sunsetWindowStart]
     );
 
+    const asiStrength = useMemo(() => {
+        if (!nzMagData || nzMagData.length === 0) return null;
+        const series = nzMagData[0]?.data;
+        if (!Array.isArray(series) || series.length < 10) return null;
+        const samples = series
+            .map((point: any) => ({ t: point.x, val: point.y }))
+            .filter((point: any) => Number.isFinite(point.t) && Number.isFinite(point.val))
+            .sort((a: any, b: any) => a.t - b.t);
+        const last = samples[samples.length - 1];
+        const base = getProjectedBaseline(samples, last.t);
+        if (base === null) return null;
+        let strength = (last.val - base) * SCALE_FACTOR;
+        if (strength > 0 && strength < 1500) strength *= 0.1;
+        return clamp(strength, -250000, 250000);
+    }, [nzMagData]);
+
+    const visibilityLines = useMemo(() => {
+        if (asiStrength == null) return null;
+        const highestFor = (mode: 'camera' | 'phone' | 'eye') => {
+            const candidates = NZ_TOWNS.filter(town => getTownStatus(town, asiStrength, mode));
+            if (candidates.length === 0) return null;
+            return Math.max(...candidates.map(town => town.lat));
+        };
+        return {
+            camera: highestFor('camera'),
+            phone: highestFor('phone'),
+            eye: highestFor('eye')
+        };
+    }, [asiStrength]);
+
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-6">
             <div className="text-center space-y-2">
@@ -494,6 +532,36 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                             })}
                         </>
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
+                        {visibilityLines?.camera != null && (
+                            <Polyline
+                                positions={[[visibilityLines.camera, NZ_BOUNDS[0][1]], [visibilityLines.camera, NZ_BOUNDS[1][1]]]}
+                                pathOptions={{ color: '#22c55e', weight: 3, opacity: 0.85 }}
+                            >
+                                <Tooltip permanent direction="right" className="text-xs">
+                                    Camera line
+                                </Tooltip>
+                            </Polyline>
+                        )}
+                        {visibilityLines?.phone != null && (
+                            <Polyline
+                                positions={[[visibilityLines.phone, NZ_BOUNDS[0][1]], [visibilityLines.phone, NZ_BOUNDS[1][1]]]}
+                                pathOptions={{ color: '#facc15', weight: 3, opacity: 0.85 }}
+                            >
+                                <Tooltip permanent direction="right" className="text-xs">
+                                    Phone line
+                                </Tooltip>
+                            </Polyline>
+                        )}
+                        {visibilityLines?.eye != null && (
+                            <Polyline
+                                positions={[[visibilityLines.eye, NZ_BOUNDS[0][1]], [visibilityLines.eye, NZ_BOUNDS[1][1]]]}
+                                pathOptions={{ color: '#ef4444', weight: 3, opacity: 0.85 }}
+                            >
+                                <Tooltip permanent direction="right" className="text-xs">
+                                    Eye line
+                                </Tooltip>
+                            </Polyline>
+                        )}
                     </MapContainer>
                 </div>
 

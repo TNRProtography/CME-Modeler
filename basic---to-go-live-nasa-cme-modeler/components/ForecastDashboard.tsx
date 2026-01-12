@@ -7,6 +7,7 @@ import GuideIcon from './icons/GuideIcon';
 import { useForecastData, NzMagEvent } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
+import { SCALE_FACTOR, clamp, getProjectedBaseline, getVisibleTowns, parseIso } from '../utils/nzAsi';
 
 import {
     TipsSection,
@@ -38,6 +39,11 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- ORIGINAL CONSTANTS (Moved to top to fix ReferenceError) ---
 const ACE_EPAM_URL = 'https://services.swpc.noaa.gov/images/ace-epam-24-hour.gif';
+const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
+const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json';
+const NOAA_RTSW_WIND = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
+const DOMAIN = 'geomag';
+const STATION = 'EYWM';
 
 const CAMERAS: Camera[] = [
   { name: 'Oban', url: 'https://weathercam.southloop.net.nz/Oban/ObanOldA001.jpg', type: 'image', sourceUrl: 'weathercam.southloop.net.nz' },
@@ -67,46 +73,6 @@ const GAUGE_EMOJIS = {
     purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}'
 };
 
-// --- NZ SUBSTORM INDEX CONSTANTS ---
-const TILDE_BASE = "https://tilde.geonet.org.nz/v4";
-const NOAA_RTSW_MAG = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json";
-const NOAA_RTSW_WIND = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json";
-const DOMAIN = "geomag";
-const STATION = "EYWM"; // West Melton
-const SCALE_FACTOR = 100;
-
-// Geographic Config
-const OBAN_LAT = -46.90;
-const AKL_LAT = -36.85;
-const LAT_DELTA = AKL_LAT - OBAN_LAT;
-
-// Thresholds (Display Units)
-const REQ_CAM = { start: -300, end: -800 };
-const REQ_PHN = { start: -350, end: -900 };
-const REQ_EYE = { start: -500, end: -1200 };
-
-interface NzTown { name: string; lat: number; lon: number; cam?: string; phone?: string; eye?: string; }
-
-const NZ_TOWNS: NzTown[] = [
-    { name: "Oban", lat: -46.90, lon: 168.12 },
-    { name: "Invercargill", lat: -46.41, lon: 168.35 },
-    { name: "Dunedin", lat: -45.87, lon: 170.50 },
-    { name: "Queenstown", lat: -45.03, lon: 168.66 },
-    { name: "Wānaka", lat: -44.70, lon: 169.12 },
-    { name: "Twizel", lat: -44.26, lon: 170.10 },
-    { name: "Timaru", lat: -44.39, lon: 171.25 },
-    { name: "Christchurch", lat: -43.53, lon: 172.63 },
-    { name: "Kaikōura", lat: -42.40, lon: 173.68 },
-    { name: "Greymouth", lat: -42.45, lon: 171.20 },
-    { name: "Nelson", lat: -41.27, lon: 173.28 },
-    { name: "Wellington", lat: -41.29, lon: 174.77 },
-    { name: "Palmerston Nth", lat: -40.35, lon: 175.60 },
-    { name: "Napier", lat: -39.49, lon: 176.91 },
-    { name: "Taupō", lat: -38.68, lon: 176.07 },
-    { name: "Tauranga", lat: -37.68, lon: 176.16 },
-    { name: "Auckland", lat: -36.85, lon: 174.76 },
-    { name: "Whangārei", lat: -35.72, lon: 174.32 }
-];
 
 // --- TYPES ---
 interface ForecastDashboardProps {
@@ -135,71 +101,179 @@ const getForecastScoreColorKey = (score: number) => {
     return 'gray';
 };
 
-const parseIso = (ts: string | number) => {
-    const t = new Date(ts).getTime();
-    return Number.isFinite(t) ? t : null;
-};
 
-const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-
-// --- NZ Substorm Index Logic ---
-const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
-    if (strengthNt >= 0) return -65.0;
-    const curve = (mode === 'phone' ? REQ_PHN : (mode === 'eye' ? REQ_EYE : REQ_CAM));
-    const slope = (curve.end - curve.start) / LAT_DELTA;
-    const lat = OBAN_LAT + (strengthNt - curve.start) / slope;
-    return Math.max(-48, Math.min(-34, lat));
-};
-
-const getTownStatus = (town: NzTown, currentStrength: number, category: 'camera'|'phone'|'eye') => {
-    if (currentStrength >= 0) return undefined;
-    const reqs = (category === 'phone' ? REQ_PHN : (category === 'eye' ? REQ_EYE : REQ_CAM));
-    const slope = (reqs.end - reqs.start) / LAT_DELTA;
-    const required = reqs.start + (town.lat - OBAN_LAT) * slope;
-
-    if (currentStrength <= required) {
-        const excess = Math.abs(currentStrength) - Math.abs(required);
-        if (excess < 50) return 'red';
-        if (excess < 100) return 'yellow';
-        return 'green';
+const getGaugeStyle = (value: number | null, type: 'power' | 'speed' | 'density' | 'bt' | 'bz') => {
+    if (value == null || !Number.isFinite(value)) {
+        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
     }
-    return undefined;
+
+    const thresholds = GAUGE_THRESHOLDS[type];
+    const getColorKey = () => {
+        if (type === 'bz') {
+            if (value <= thresholds.pink) return 'pink';
+            if (value <= thresholds.purple) return 'purple';
+            if (value <= thresholds.red) return 'red';
+            if (value <= thresholds.orange) return 'orange';
+            if (value <= thresholds.yellow) return 'yellow';
+            return 'gray';
+        }
+        if (value >= thresholds.pink) return 'pink';
+        if (value >= thresholds.purple) return 'purple';
+        if (value >= thresholds.red) return 'red';
+        if (value >= thresholds.orange) return 'orange';
+        if (value >= thresholds.yellow) return 'yellow';
+        return 'gray';
+    };
+
+    const colorKey = getColorKey();
+    const percentage = type === 'bz'
+        ? clamp((Math.abs(Math.min(value, 0)) / Math.abs(thresholds.maxNegativeExpected)) * 100, 0, 100)
+        : clamp((value / thresholds.maxExpected) * 100, 0, 100);
+
+    return { color: GAUGE_COLORS[colorKey].solid, emoji: GAUGE_EMOJIS[colorKey], percentage };
 };
 
-const getVisibleTowns = (strength: number): NzTown[] => {
-    return NZ_TOWNS.map(town => ({
-        ...town,
-        cam: getTownStatus(town, strength, 'camera'),
-        phone: getTownStatus(town, strength, 'phone'),
-        eye: getTownStatus(town, strength, 'eye')
-    }));
+const getAuroraEmoji = (score: number | null) => {
+    const value = score ?? 0;
+    if (value >= 80) return '🤩';
+    if (value >= 50) return '😍';
+    if (value >= 35) return '😄';
+    if (value >= 20) return '🙂';
+    if (value >= 10) return '😐';
+    return '😞';
 };
 
-const getProjectedBaseline = (samples: any[], targetTime: number) => {
-    const endWindow = targetTime - 5 * 60000;
-    const startWindow = targetTime - 185 * 60000;
-    const windowPoints: any[] = [];
-    for (let i = samples.length - 1; i >= 0; i--) {
-        const t = samples[i].t;
-        if (t > endWindow) continue;
-        if (t < startWindow) break;
-        windowPoints.push(samples[i]);
+const getAuroraBlurb = (score: number | null) => {
+    const value = score ?? 0;
+    if (value >= 80) {
+        return "Extreme activity possible. Bright aurora could be visible well north of the usual regions.";
     }
-    if (windowPoints.length < 10) return null;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    const n = windowPoints.length;
-    for (let i = 0; i < n; i++) {
-        const x = (windowPoints[i].t - startWindow) / 60000;
-        const y = windowPoints[i].val;
-        sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
+    if (value >= 50) {
+        return "Good conditions. A visible aurora is possible if skies are clear and dark.";
     }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    const targetX = (targetTime - startWindow) / 60000;
-    return slope * targetX + intercept;
+    if (value >= 35) {
+        return "Moderate activity. Modern phones may capture faint aurora with a dark southern view.";
+    }
+    if (value >= 20) {
+        return "Low activity. Long-exposure cameras might pick up a faint glow in the deep south.";
+    }
+    return "Very quiet conditions. Aurora is unlikely without a sudden substorm.";
 };
 
-// --- Sub-Component: NZ Substorm Index Panel ---
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) {
+        return {
+            overall: 'It is currently daytime. Wait until after sunset for aurora photography settings.',
+            phone: {
+                android: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+                apple: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+            },
+            dslr: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+        };
+    }
+
+    const scoreValue = score ?? 0;
+    if (scoreValue >= 60) {
+        return {
+            overall: 'Strong display possible. Shorter exposures will preserve structure.',
+            phone: {
+                android: { iso: '800-1600', shutter: '5-10s', aperture: 'f/1.6-f/2.8', focus: 'Manual ∞', wb: '3500-4000K' },
+                apple: { iso: 'Auto', shutter: 'Night Mode 3-5s', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+            },
+            dslr: { iso: '800-1600', shutter: '2-6s', aperture: 'f/1.4-f/2.8', focus: 'Manual ∞', wb: '3500-4000K' }
+        };
+    }
+
+    if (scoreValue >= 35) {
+        return {
+            overall: 'Moderate activity. Use longer exposures and higher ISO.',
+            phone: {
+                android: { iso: '1600-3200', shutter: '10-15s', aperture: 'f/1.6-f/2.8', focus: 'Manual ∞', wb: '3500-4500K' },
+                apple: { iso: 'Auto', shutter: 'Night Mode 5-10s', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+            },
+            dslr: { iso: '1600-3200', shutter: '8-15s', aperture: 'f/1.4-f/2.8', focus: 'Manual ∞', wb: '3500-4500K' }
+        };
+    }
+
+    return {
+        overall: 'Quiet conditions. Use long exposures and a stable tripod.',
+        phone: {
+            android: { iso: '3200-6400', shutter: '15-20s', aperture: 'f/1.6-f/2.8', focus: 'Manual ∞', wb: '4000-4500K' },
+            apple: { iso: 'Auto', shutter: 'Night Mode 10s', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+        },
+        dslr: { iso: '3200-6400', shutter: '15-25s', aperture: 'f/1.4-f/2.8', focus: 'Manual ∞', wb: '4000-4500K' }
+    };
+};
+
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null; nzMagData: any[] }> = ({ summary, nzMagData }) => {
+    if (!summary) {
+        return (
+            <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
+                Calculating 24-hour summary...
+            </div>
+        );
+    }
+
+    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+    const peakScore = summary.highestScore.finalScore;
+    const peakColor = GAUGE_COLORS[getForecastScoreColorKey(peakScore)].solid;
+    const series = Array.isArray(nzMagData) && nzMagData.length > 0 ? nzMagData[0]?.data : null;
+    const samplePoints = Array.isArray(series)
+        ? series
+            .map((point: any) => ({ t: point.x, val: point.y }))
+            .filter((point: any) => Number.isFinite(point.t) && Number.isFinite(point.val))
+            .sort((a: any, b: any) => a.t - b.t)
+        : [];
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    let minStrength: number | null = null;
+    for (const point of samplePoints) {
+        if (point.t < cutoff) continue;
+        const base = getProjectedBaseline(samplePoints, point.t);
+        if (base === null) continue;
+        let strength = (point.val - base) * SCALE_FACTOR;
+        if (strength > 0 && strength < 1500) strength *= 0.1;
+        strength = clamp(strength, -250000, 250000);
+        if (minStrength === null || strength < minStrength) minStrength = strength;
+    }
+    const visibleTowns = minStrength !== null ? getVisibleTowns(minStrength) : [];
+    const highestTown = visibleTowns
+        .filter(town => town.cam || town.phone || town.eye)
+        .sort((a, b) => b.lat - a.lat)[0];
+    const highestTownLabel = highestTown
+        ? `${highestTown.name} (${highestTown.eye ? 'eye' : highestTown.phone ? 'phone' : 'camera'})`
+        : 'None detected';
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+            <h2 className="text-2xl font-bold text-white text-center">24-Hour Aurora Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak Forecast Score</h3>
+                    <p className="text-5xl font-bold" style={{ color: peakColor }}>
+                        {peakScore.toFixed(1)}%
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">at {formatTime(summary.highestScore.timestamp)}</p>
+                </div>
+
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Highest Town Reached</h3>
+                    <p className="text-2xl font-bold text-sky-200">{highestTownLabel}</p>
+                    <p className="text-sm text-neutral-400 mt-3">Northernmost town with visibility</p>
+                </div>
+
+                <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Lowest ASI (24h)</h3>
+                    <p className="text-5xl font-bold text-amber-300">
+                        {minStrength !== null ? `${Math.round(minStrength)}` : '--'}
+                        <span className="text-base text-neutral-400 ml-2">nT</span>
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">Most negative 24h strength</p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const NzSubstormIndex: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
@@ -520,14 +594,6 @@ const NzSubstormIndex: React.FC = () => {
     );
 };
 
-// ... (Rest of original ForecastDashboard.tsx: getSuggestedCameraSettings, ActivitySummaryDisplay, ForecastDashboard main component, etc) ...
-// The rest of the file should be exactly as it was, ensuring the `ForecastDashboard` function below uses <NzSubstormIndex /> 
-// inside the "UnifiedForecastPanel" or where the old "Ground Confirmation" button logic was.
-
-// [NOTE: Because this file is massive, I am assuming you will place the `NzSubstormIndex` component 
-// I wrote above BEFORE the `ForecastDashboard` main component, and then inside `ForecastDashboard`, 
-// you will replace the old `NzMagnetometerChart` section with `<NzSubstormIndex />`]
-
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
@@ -665,8 +731,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
                                 <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto"><p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p></div>
                             </div>
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
-                            <ActivitySummaryDisplay summary={activitySummary} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} nzMagData={nzMagData} />
+                            <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
@@ -675,10 +741,22 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            <UnifiedForecastPanel score={auroraScore} blurb={auroraBlurb} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
-                            <ActivitySummaryDisplay summary={activitySummary} />
+                            <UnifiedForecastPanel
+                                score={auroraScore}
+                                blurb={auroraBlurb}
+                                lastUpdated={lastUpdated}
+                                locationBlurb={locationBlurb}
+                                getGaugeStyle={getGaugeStyle}
+                                getScoreColorKey={getForecastScoreColorKey}
+                                getAuroraEmoji={getAuroraEmoji}
+                                gaugeColors={GAUGE_COLORS}
+                                onOpenModal={() => openModal('unified-forecast')}
+                                substormForecast={substormForecast}
+                                asiSection={<NzSubstormIndex />}
+                            />
+                            <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} nzMagData={nzMagData} />
                             
                             <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}><MagneticFieldChart data={allMagneticData} /></ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
@@ -721,6 +799,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div></div>
                             <div className="col-span-12"><button onClick={handleDownloadForecastImage} className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"><DownloadIcon className="w-6 h-6" /><span>Download The Aurora Forecast For The Next Two Hours!</span></button></div>
+
                         </main>
                     )}
 
