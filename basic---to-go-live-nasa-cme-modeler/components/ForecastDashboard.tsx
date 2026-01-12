@@ -179,6 +179,150 @@ const getPhaseForPoint = (value: number, slope: number): SubstormPhase => {
     return 'growth';
 };
 
+interface CameraSettings {
+    overall: string;
+    phone: { android: Record<string, string>; apple: Record<string, string> };
+    dslr: Record<string, string>;
+}
+
+const getGaugeStyle = (
+    value: number | null,
+    type: 'power' | 'speed' | 'density' | 'bt' | 'bz'
+) => {
+    if (value === null || Number.isNaN(value)) {
+        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+    }
+
+    const thresholds = GAUGE_THRESHOLDS[type];
+    let key: keyof typeof GAUGE_COLORS = 'gray';
+    if (type === 'bz') {
+        if (value <= thresholds.purple) key = 'purple';
+        else if (value <= thresholds.red) key = 'red';
+        else if (value <= thresholds.orange) key = 'orange';
+        else if (value <= thresholds.yellow) key = 'yellow';
+        else if (value <= thresholds.gray) key = 'gray';
+    } else {
+        if (value >= thresholds.pink) key = 'pink';
+        else if (value >= thresholds.purple) key = 'purple';
+        else if (value >= thresholds.red) key = 'red';
+        else if (value >= thresholds.orange) key = 'orange';
+        else if (value >= thresholds.yellow) key = 'yellow';
+    }
+
+    const maxExpected = type === 'bz' ? Math.abs(thresholds.maxNegativeExpected) : thresholds.maxExpected;
+    const rawValue = type === 'bz' ? Math.max(0, Math.abs(Math.min(0, value))) : Math.max(0, value);
+    const percentage = Math.min(100, Math.round((rawValue / maxExpected) * 100));
+    return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
+};
+
+const getAuroraEmoji = (score: number | null) => {
+    if (score === null) return GAUGE_EMOJIS.error;
+    if (score >= 80) return '🤩';
+    if (score >= 50) return '👁️';
+    if (score >= 35) return '📱';
+    if (score >= 20) return '📷';
+    if (score >= 10) return '😐';
+    return '😞';
+};
+
+const getAuroraBlurb = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) return 'The sun is currently up. Aurora visibility is not possible until after sunset.';
+    if (score === null) return 'Gathering live data for the latest aurora forecast.';
+    if (score >= 80) return 'Huge aurora potential. Strong displays are possible if skies are clear.';
+    if (score >= 50) return 'Good conditions. A visible aurora is possible from darker locations.';
+    if (score >= 35) return 'Moderate conditions. Phones may capture aurora with night mode in dark skies.';
+    if (score >= 20) return 'Camera-only conditions. Long exposures may detect faint glow.';
+    return 'Very quiet conditions. Aurora is unlikely right now.';
+};
+
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean): CameraSettings => {
+    if (isDaylight) {
+        return {
+            overall: 'Daylight detected. Camera settings are for nighttime use only.',
+            phone: {
+                android: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+            },
+            dslr: { exposure: '10-15s', iso: '800-1600', aperture: 'f/2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    if (score === null) {
+        return {
+            overall: 'Waiting for forecast data to provide tailored settings.',
+            phone: {
+                android: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+            },
+            dslr: { exposure: '10-20s', iso: '800-1600', aperture: 'f/2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    if (score >= 50) {
+        return {
+            overall: 'Strong aurora possible. Shorter exposures to capture movement.',
+            phone: {
+                android: { mode: 'Night mode', exposure: '3-5s', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: '3-5s', focus: 'Infinity' },
+            },
+            dslr: { exposure: '3-8s', iso: '800-1600', aperture: 'f/2.0-2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    if (score >= 20) {
+        return {
+            overall: 'Faint aurora likely. Use longer exposures and stable tripod.',
+            phone: {
+                android: { mode: 'Night mode', exposure: '8-10s', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: '8-10s', focus: 'Infinity' },
+            },
+            dslr: { exposure: '10-20s', iso: '1600-3200', aperture: 'f/2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    return {
+        overall: 'Very quiet conditions. Use maximum exposure to capture faint glow.',
+        phone: {
+            android: { mode: 'Night mode', exposure: '10s', focus: 'Infinity' },
+            apple: { mode: 'Night mode', exposure: '10s', focus: 'Infinity' },
+        },
+        dslr: { exposure: '15-25s', iso: '3200', aperture: 'f/2.8', focus: 'Manual infinity' },
+    };
+};
+
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({ summary }) => {
+    if (!summary) return null;
+    const peak = summary.highestScore;
+    const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-4">
+            <h3 className="text-xl font-semibold text-center text-white mb-4">Activity Summary</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-neutral-300">
+                <div className="bg-neutral-900/70 rounded-lg p-4 border border-neutral-700/60">
+                    <div className="text-xs text-neutral-400 uppercase">Peak Forecast (24h)</div>
+                    <div className="text-3xl font-bold text-white mt-2">{peak.finalScore.toFixed(1)}%</div>
+                    <div className="text-xs text-neutral-500 mt-1">{new Date(peak.timestamp).toLocaleString()}</div>
+                </div>
+                <div className="bg-neutral-900/70 rounded-lg p-4 border border-neutral-700/60">
+                    <div className="text-xs text-neutral-400 uppercase">Latest Substorm Window</div>
+                    {latestEvent ? (
+                        <>
+                            <div className="text-lg font-semibold text-white mt-2">{latestEvent.peakStatus}</div>
+                            <div className="text-xs text-neutral-500 mt-1">
+                                {new Date(latestEvent.start).toLocaleTimeString()} - {new Date(latestEvent.end).toLocaleTimeString()}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-2">Peak Probability: {latestEvent.peakProbability}%</div>
+                        </>
+                    ) : (
+                        <div className="text-sm text-neutral-500 mt-2">No recent substorm events.</div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- NZ Substorm Index Logic ---
 const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
     if (strengthNt >= 0) return -65.0;
@@ -712,7 +856,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     // ... [Calculated Values] ...
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
+    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore, isDaylight), [auroraScore, isDaylight]);
     const getMagnetometerAnnotations = useCallback(() => ({}), []);
 
     const simpleViewStatus = useMemo(() => {
