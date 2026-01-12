@@ -142,6 +142,23 @@ const parseIso = (ts: string | number) => {
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
+const getAuroraBlurb = (score: number | null) => {
+    const value = score ?? 0;
+    if (value >= 80) {
+        return "Extreme activity possible. Bright aurora could be visible well north of the usual regions.";
+    }
+    if (value >= 50) {
+        return "Good conditions. A visible aurora is possible if skies are clear and dark.";
+    }
+    if (value >= 35) {
+        return "Moderate activity. Modern phones may capture faint aurora with a dark southern view.";
+    }
+    if (value >= 20) {
+        return "Low activity. Long-exposure cameras might pick up a faint glow in the deep south.";
+    }
+    return "Very quiet conditions. Aurora is unlikely without a sudden substorm.";
+};
+
 const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
     if (isDaylight) {
         return {
