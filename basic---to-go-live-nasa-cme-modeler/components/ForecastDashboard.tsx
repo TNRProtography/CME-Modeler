@@ -380,10 +380,47 @@ const getProjectedBaseline = (samples: any[], targetTime: number) => {
     return slope * targetX + intercept;
 };
 
+const extractSeriesCandidates = (summary: any) => {
+    const candidates: string[] = [];
+    const stationSummary = summary?.domain?.[DOMAIN]?.stations?.[STATION];
+    if (!stationSummary?.sensorCodes) return candidates;
+
+    for (const sensorKey in stationSummary.sensorCodes) {
+        const names = stationSummary.sensorCodes[sensorKey].names;
+        for (const nameKey in names) {
+            const methods = names[nameKey].methods;
+            for (const methodKey in methods) {
+                if (!(methodKey.includes('60s') || methodKey.includes('1m'))) continue;
+                const aspects = methods[methodKey].aspects ?? {};
+                if (aspects['X']) candidates.push(`${STATION}/${nameKey}/${sensorKey}/${methodKey}/X`);
+                if (aspects['nil']) candidates.push(`${STATION}/${nameKey}/${sensorKey}/${methodKey}/nil`);
+            }
+        }
+    }
+
+    return candidates;
+};
+
+const fetchGeoNetSeries = async (seriesKeys: string[]) => {
+    for (const seriesKey of seriesKeys) {
+        const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${seriesKey}/latest/2d`;
+        const response = await fetch(tildeUrl);
+        if (!response.ok) continue;
+        try {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) return data;
+        } catch (error) {
+            console.warn('GeoNet parse error for series', seriesKey, error);
+        }
+    }
+    throw new Error('No valid GeoNet series available.');
+};
+
 // --- Sub-Component: NZ Substorm Index Panel ---
 const NzSubstormIndex: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [chartRange, setChartRange] = useState(24);
     const [hoverData, setHoverData] = useState<any>(null);
     const chartRef = useRef<HTMLDivElement>(null);
@@ -393,40 +430,24 @@ const NzSubstormIndex: React.FC = () => {
             try {
                 // 1. Fetch GeoNet Data
                 const summaryRes = await fetch(`${TILDE_BASE}/dataSummary/${DOMAIN}?station=${STATION}`);
+                if (!summaryRes.ok) throw new Error(`GeoNet summary unavailable (${summaryRes.status}).`);
                 const summary = await summaryRes.json();
-                
-                let bestSeries = "";
-                const st = summary?.domain?.[DOMAIN]?.stations?.[STATION];
-                if (st) {
-                    for (const sKey in st.sensorCodes) {
-                       const names = st.sensorCodes[sKey].names;
-                       for (const nKey in names) {
-                           if(nKey.toLowerCase().includes('north') || nKey === 'X' || nKey === 'magnetic-field') {
-                               const methods = names[nKey].methods;
-                               for(const mKey in methods) {
-                                   if(mKey.includes('60s') || mKey.includes('1m')) {
-                                       const aspects = methods[mKey].aspects;
-                                       if(aspects['X']) bestSeries = `${STATION}/${nKey}/${sKey}/${mKey}/X`;
-                                       else if(aspects['nil']) bestSeries = `${STATION}/${nKey}/${sKey}/${mKey}/nil`;
-                                   }
-                               }
-                           }
-                       }
-                    }
-                }
-                
-                const seriesKey = bestSeries || `${STATION}/magnetic-field/50/60s/X`;
-                const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${seriesKey}/latest/2d`;
+
+                const candidateSeries = extractSeriesCandidates(summary);
+                const fallbackSeries = [
+                    `${STATION}/magnetic-field/50/60s/X`,
+                    `${STATION}/magnetic-field/50/60s/nil`,
+                ];
+                const geoDataPromise = fetchGeoNetSeries([...candidateSeries, ...fallbackSeries]);
                 const noaaMagUrl = NOAA_RTSW_MAG;
                 const noaaWindUrl = NOAA_RTSW_WIND;
 
-                const [geoRes, magRes, windRes] = await Promise.all([
-                    fetch(tildeUrl),
+                const [geoData, magRes, windRes] = await Promise.all([
+                    geoDataPromise,
                     fetch(noaaMagUrl),
                     fetch(noaaWindUrl)
                 ]);
 
-                const geoData = await geoRes.json();
                 const magData = await magRes.json();
                 const windData = await windRes.json();
 
@@ -505,10 +526,12 @@ const NzSubstormIndex: React.FC = () => {
                     }
                 });
                 setLoading(false);
+                setErrorMessage(null);
 
             } catch (e) {
                 console.error("NZ Substorm Fetch Error", e);
                 setLoading(false);
+                setErrorMessage('Unable to load GeoNet data right now.');
             }
         };
         fetchData();
@@ -546,7 +569,7 @@ const NzSubstormIndex: React.FC = () => {
     }, [data, chartRange]);
 
     if (loading) return <div className="h-64 flex items-center justify-center text-neutral-500">Initializing NZ Ground Systems...</div>;
-    if (!data) return <div className="h-64 flex items-center justify-center text-red-400">System Offline</div>;
+    if (!data) return <div className="h-64 flex items-center justify-center text-red-400">{errorMessage ?? 'System Offline'}</div>;
 
     // Chart Rendering
     const activePoints = data.points.filter((p: any) => p.t >= Date.now() - (chartRange * 3600 * 1000));
