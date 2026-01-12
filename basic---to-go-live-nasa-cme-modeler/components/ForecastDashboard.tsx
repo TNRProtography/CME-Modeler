@@ -173,6 +173,16 @@ const getGaugeStyle = (value: number | null, type: 'power' | 'speed' | 'density'
     return { color: GAUGE_COLORS[colorKey].solid, emoji: GAUGE_EMOJIS[colorKey], percentage };
 };
 
+const getAuroraEmoji = (score: number | null) => {
+    const value = score ?? 0;
+    if (value >= 80) return '🤩';
+    if (value >= 50) return '😍';
+    if (value >= 35) return '😄';
+    if (value >= 20) return '🙂';
+    if (value >= 10) return '😐';
+    return '😞';
+};
+
 const getAuroraBlurb = (score: number | null) => {
     const value = score ?? 0;
     if (value >= 80) {
@@ -807,6 +817,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                </div>
                             </ForecastChartPanel>
 
+                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <TipsSection />
+                                <CameraSettingsSection settings={cameraSettings} />
+                            </div>
+
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div></div>
+                            <div className="col-span-12"><button onClick={handleDownloadForecastImage} className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"><DownloadIcon className="w-6 h-6" /><span>Download The Aurora Forecast For The Next Two Hours!</span></button></div>
+
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
                                 <div className="flex justify-center items-center mb-4">
                                     <h3 className="text-xl font-semibold text-center text-white">NZ Substorm Index (NZ-ASI)</h3>
@@ -822,14 +840,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     Powered by GeoNet Tilde API and NOAA SWPC for real-time substorm visibility guidance.
                                 </p>
                             </div>
-
-                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <TipsSection />
-                                <CameraSettingsSection settings={cameraSettings} />
-                            </div>
-
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div></div>
-                            <div className="col-span-12"><button onClick={handleDownloadForecastImage} className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"><DownloadIcon className="w-6 h-6" /><span>Download The Aurora Forecast For The Next Two Hours!</span></button></div>
                         </main>
                     )}
 
