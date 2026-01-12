@@ -9,7 +9,7 @@ const buildNzAsiHtml = () => `
   <title>Spot The Aurora | NZ Substorm Index</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root { --bg: #171717; --text: #e5e5e5; --muted: #a3a3a3; --card-bg: rgba(10, 10, 10, 0.8); --border: rgba(64, 64, 64, 0.6); --chart-h: 240px; }
+    :root { --bg: #171717; --text: #e5e5e5; --muted: #a3a3a3; --card-bg: rgba(10, 10, 10, 0.8); --border: rgba(64, 64, 64, 0.6); --chart-h: clamp(220px, 38vh, 320px); }
     *, *::before, *::after { box-sizing: border-box; }
     html, body { height: 100%; overflow: hidden; }
     body { margin: 0; padding: 0; font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; background-color: var(--bg); background-image: url('https://spottheaurora.thenamesrock.workers.dev/background-aurora.jpg'); background-size: cover; background-attachment: fixed; color: var(--text); line-height: 1.5; }
@@ -458,7 +458,7 @@ const buildNzAsiHtml = () => `
           return;
       }
       const w = 1000, h = 320;
-      const padL = 60, padR = 20, padT = 20, padB = 30;
+      const padL = 60, padR = 20, padT = 18, padB = 36;
       const tMin = points[0].t; const tMax = points[points.length - 1].t;
       const vals = points.map(p => p.v);
       let vMin = Math.min(...vals); let vMax = Math.max(...vals);
@@ -470,9 +470,14 @@ const buildNzAsiHtml = () => `
       for(let i=0; i<=steps; i++) {
           const val = vMin + (i/steps) * (vMax - vMin); const y = Y(val);
           const isZero = Math.abs(val) < (range/20);
-          const col = isZero ? '#737373' : '#262626'; const width = isZero ? 2 : 1;
+          const col = isZero ? '#9ca3af' : '#2a2a2a'; const width = isZero ? 1.5 : 1;
           gridHtml += \`<line x1="\${padL}" y1="\${y}" x2="\${w-padR}" y2="\${y}" stroke="\${col}" stroke-width="\${width}" />\`;
-          gridHtml += \`<text x="\${padL-8}" y="\${y+4}" fill="#737373" text-anchor="end" font-size="10" font-family="sans-serif">\${Math.round(val)}</text>\`;
+          gridHtml += \`<text x="\${padL-8}" y="\${y+4}" fill="#6b7280" text-anchor="end" font-size="10" font-family="Inter, sans-serif">\${Math.round(val)}</text>\`;
+      }
+      const vSteps = 8;
+      for(let i=0; i<=vSteps; i++) {
+          const x = padL + (i / vSteps) * (w - padL - padR);
+          gridHtml += \`<line x1="\${x}" y1="\${padT}" x2="\${x}" y2="\${h-padB}" stroke="#1f1f1f" stroke-width="1" />\`;
       }
       const threshLabels = { WATCH: DEFAULT_THRESHOLDS.watch, ACTIVE: DEFAULT_THRESHOLDS.active, STRONG: DEFAULT_THRESHOLDS.strong, SEVERE: DEFAULT_THRESHOLDS.severe };
       let threshHtml = '';
@@ -481,27 +486,15 @@ const buildNzAsiHtml = () => `
           threshHtml += \`<line x1="\${padL}" y1="\${y}" x2="\${w-padR}" y2="\${y}" stroke="#404040" stroke-dasharray="4,4" />\`;
           threshHtml += \`<text x="\${w-padR}" y="\${y-4}" fill="#525252" text-anchor="end" font-size="9" font-family="sans-serif">\${k}</text>\`;
       }
-      let pathHtml = ''; let curSeg = [points[0]];
-      for(let i=1; i<points.length; i++) {
-          const p = points[i]; const prev = points[i-1];
-          if(p.l === prev.l) { curSeg.push(p); } else {
-              const d = curSeg.map(pt => \`\${X(pt.t).toFixed(1)},\${Y(pt.v).toFixed(1)}\`).join(' ');
-              const col = LEVEL_COLORS[curSeg[0].l] || "#e5e5e5";
-              pathHtml += \`<polyline points="\${d}" fill="none" stroke="\${col}" stroke-width="2.5" stroke-linejoin="round" />\`;
-              curSeg = [prev, p];
-          }
-      }
-      if(curSeg.length > 1) {
-          const d = curSeg.map(pt => \`\${X(pt.t).toFixed(1)},\${Y(pt.v).toFixed(1)}\`).join(' ');
-          const col = LEVEL_COLORS[curSeg[0].l] || "#e5e5e5";
-          pathHtml += \`<polyline points="\${d}" fill="none" stroke="\${col}" stroke-width="2.5" stroke-linejoin="round" />\`;
-      }
-      let labelsHtml = ''; const labelSteps = 5;
+      let pathHtml = '';
+      const linePoints = points.map(pt => \`\${X(pt.t).toFixed(1)},\${Y(pt.v).toFixed(1)}\`).join(' ');
+      pathHtml = \`<polyline points="\${linePoints}" fill="none" stroke="#e5e7eb" stroke-width="1.6" stroke-linejoin="round" />\`;
+      let labelsHtml = ''; const labelSteps = 6;
       for(let i=0; i<=labelSteps; i++) {
           const t = tMin + (i/labelSteps) * (tMax - tMin); const x = X(t);
           const date = new Date(t);
           const label = date.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12:false });
-          labelsHtml += \`<text x="\${x}" y="\${h-10}" fill="#737373" text-anchor="middle" font-size="10" font-family="sans-serif">\${label}</text>\`;
+          labelsHtml += \`<text x="\${x}" y="\${h-10}" fill="#6b7280" text-anchor="middle" font-size="9" font-family="Inter, sans-serif">\${label}</text>\`;
       }
       const container = document.getElementById('chart-container');
       const oldSvg = container.querySelector('svg');

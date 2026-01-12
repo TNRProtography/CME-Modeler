@@ -838,7 +838,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
                                 <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto"><p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p></div>
                             </div>
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} nzMagData={nzMagData} />
                             <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
@@ -863,7 +863,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             />
                             <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} nzMagData={nzMagData} />
                             
                             <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}><MagneticFieldChart data={allMagneticData} /></ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
