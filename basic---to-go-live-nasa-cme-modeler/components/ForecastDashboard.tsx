@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
-import { useForecastData, NzMagEvent } from '../hooks/useForecastData';
+import { useForecastData } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
 
@@ -24,7 +24,6 @@ import {
     HemisphericPowerChart,
     SubstormChart,
     MoonArcChart,
-    NzMagnetometerChart,
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 import CaretIcon from './icons/CaretIcon';
@@ -84,6 +83,12 @@ const LAT_DELTA = AKL_LAT - OBAN_LAT;
 const REQ_CAM = { start: -300, end: -800 };
 const REQ_PHN = { start: -350, end: -900 };
 const REQ_EYE = { start: -500, end: -1200 };
+const QUIET_THRESHOLD = -10000;
+const ACTIVE_THRESHOLD = -25000;
+const STRONG_THRESHOLD = -45000;
+const SEVERE_THRESHOLD = -100000;
+const EXPANSION_SLOPE = -500;
+const RECOVERY_SLOPE = 200;
 
 interface NzTown { name: string; lat: number; lon: number; cam?: string; phone?: string; eye?: string; }
 
@@ -142,6 +147,182 @@ const parseIso = (ts: string | number) => {
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
+type SubstormPhase = 'quiet' | 'growth' | 'expansion' | 'substorm' | 'recovery';
+
+const PHASE_DETAILS: Record<SubstormPhase, { label: string; color: string }> = {
+    quiet: { label: 'Quiet', color: '#64748b' },
+    growth: { label: 'Growth', color: '#38bdf8' },
+    expansion: { label: 'Expansion', color: '#f97316' },
+    substorm: { label: 'Substorm', color: '#facc15' },
+    recovery: { label: 'Recovery', color: '#4ade80' },
+};
+
+const ALERT_LEVELS = [
+    { key: 'quiet', label: 'Quiet', color: 'text-slate-300', border: 'border-slate-500/40' },
+    { key: 'active', label: 'Active', color: 'text-yellow-300', border: 'border-yellow-500/40' },
+    { key: 'strong', label: 'Strong', color: 'text-orange-300', border: 'border-orange-500/40' },
+    { key: 'severe', label: 'Severe', color: 'text-red-300', border: 'border-red-500/40' },
+];
+
+const getAlertLevel = (strength: number) => {
+    if (strength <= SEVERE_THRESHOLD) return ALERT_LEVELS[3];
+    if (strength <= STRONG_THRESHOLD) return ALERT_LEVELS[2];
+    if (strength <= ACTIVE_THRESHOLD) return ALERT_LEVELS[1];
+    return ALERT_LEVELS[0];
+};
+
+const getPhaseForPoint = (value: number, slope: number): SubstormPhase => {
+    if (value > QUIET_THRESHOLD) return 'quiet';
+    if (value <= STRONG_THRESHOLD && slope <= EXPANSION_SLOPE) return 'expansion';
+    if (value <= ACTIVE_THRESHOLD && slope >= RECOVERY_SLOPE) return 'recovery';
+    if (value <= ACTIVE_THRESHOLD) return 'substorm';
+    return 'growth';
+};
+
+interface CameraSettings {
+    overall: string;
+    phone: { android: Record<string, string>; apple: Record<string, string> };
+    dslr: Record<string, string>;
+}
+
+const getGaugeStyle = (
+    value: number | null,
+    type: 'power' | 'speed' | 'density' | 'bt' | 'bz'
+) => {
+    if (value === null || Number.isNaN(value)) {
+        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.error, percentage: 0 };
+    }
+
+    const thresholds = GAUGE_THRESHOLDS[type];
+    let key: keyof typeof GAUGE_COLORS = 'gray';
+    if (type === 'bz') {
+        if (value <= thresholds.purple) key = 'purple';
+        else if (value <= thresholds.red) key = 'red';
+        else if (value <= thresholds.orange) key = 'orange';
+        else if (value <= thresholds.yellow) key = 'yellow';
+        else if (value <= thresholds.gray) key = 'gray';
+    } else {
+        if (value >= thresholds.pink) key = 'pink';
+        else if (value >= thresholds.purple) key = 'purple';
+        else if (value >= thresholds.red) key = 'red';
+        else if (value >= thresholds.orange) key = 'orange';
+        else if (value >= thresholds.yellow) key = 'yellow';
+    }
+
+    const maxExpected = type === 'bz' ? Math.abs(thresholds.maxNegativeExpected) : thresholds.maxExpected;
+    const rawValue = type === 'bz' ? Math.max(0, Math.abs(Math.min(0, value))) : Math.max(0, value);
+    const percentage = Math.min(100, Math.round((rawValue / maxExpected) * 100));
+    return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
+};
+
+const getAuroraEmoji = (score: number | null) => {
+    if (score === null) return GAUGE_EMOJIS.error;
+    if (score >= 80) return '🤩';
+    if (score >= 50) return '👁️';
+    if (score >= 35) return '📱';
+    if (score >= 20) return '📷';
+    if (score >= 10) return '😐';
+    return '😞';
+};
+
+const getAuroraBlurb = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) return 'The sun is currently up. Aurora visibility is not possible until after sunset.';
+    if (score === null) return 'Gathering live data for the latest aurora forecast.';
+    if (score >= 80) return 'Huge aurora potential. Strong displays are possible if skies are clear.';
+    if (score >= 50) return 'Good conditions. A visible aurora is possible from darker locations.';
+    if (score >= 35) return 'Moderate conditions. Phones may capture aurora with night mode in dark skies.';
+    if (score >= 20) return 'Camera-only conditions. Long exposures may detect faint glow.';
+    return 'Very quiet conditions. Aurora is unlikely right now.';
+};
+
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean): CameraSettings => {
+    if (isDaylight) {
+        return {
+            overall: 'Daylight detected. Camera settings are for nighttime use only.',
+            phone: {
+                android: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+            },
+            dslr: { exposure: '10-15s', iso: '800-1600', aperture: 'f/2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    if (score === null) {
+        return {
+            overall: 'Waiting for forecast data to provide tailored settings.',
+            phone: {
+                android: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: 'Auto', focus: 'Infinity' },
+            },
+            dslr: { exposure: '10-20s', iso: '800-1600', aperture: 'f/2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    if (score >= 50) {
+        return {
+            overall: 'Strong aurora possible. Shorter exposures to capture movement.',
+            phone: {
+                android: { mode: 'Night mode', exposure: '3-5s', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: '3-5s', focus: 'Infinity' },
+            },
+            dslr: { exposure: '3-8s', iso: '800-1600', aperture: 'f/2.0-2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    if (score >= 20) {
+        return {
+            overall: 'Faint aurora likely. Use longer exposures and stable tripod.',
+            phone: {
+                android: { mode: 'Night mode', exposure: '8-10s', focus: 'Infinity' },
+                apple: { mode: 'Night mode', exposure: '8-10s', focus: 'Infinity' },
+            },
+            dslr: { exposure: '10-20s', iso: '1600-3200', aperture: 'f/2.8', focus: 'Manual infinity' },
+        };
+    }
+
+    return {
+        overall: 'Very quiet conditions. Use maximum exposure to capture faint glow.',
+        phone: {
+            android: { mode: 'Night mode', exposure: '10s', focus: 'Infinity' },
+            apple: { mode: 'Night mode', exposure: '10s', focus: 'Infinity' },
+        },
+        dslr: { exposure: '15-25s', iso: '3200', aperture: 'f/2.8', focus: 'Manual infinity' },
+    };
+};
+
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({ summary }) => {
+    if (!summary) return null;
+    const peak = summary.highestScore;
+    const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
+
+    return (
+        <div className="col-span-12 card bg-neutral-950/80 p-4">
+            <h3 className="text-xl font-semibold text-center text-white mb-4">Activity Summary</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-neutral-300">
+                <div className="bg-neutral-900/70 rounded-lg p-4 border border-neutral-700/60">
+                    <div className="text-xs text-neutral-400 uppercase">Peak Forecast (24h)</div>
+                    <div className="text-3xl font-bold text-white mt-2">{peak.finalScore.toFixed(1)}%</div>
+                    <div className="text-xs text-neutral-500 mt-1">{new Date(peak.timestamp).toLocaleString()}</div>
+                </div>
+                <div className="bg-neutral-900/70 rounded-lg p-4 border border-neutral-700/60">
+                    <div className="text-xs text-neutral-400 uppercase">Latest Substorm Window</div>
+                    {latestEvent ? (
+                        <>
+                            <div className="text-lg font-semibold text-white mt-2">{latestEvent.peakStatus}</div>
+                            <div className="text-xs text-neutral-500 mt-1">
+                                {new Date(latestEvent.start).toLocaleTimeString()} - {new Date(latestEvent.end).toLocaleTimeString()}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-2">Peak Probability: {latestEvent.peakProbability}%</div>
+                        </>
+                    ) : (
+                        <div className="text-sm text-neutral-500 mt-2">No recent substorm events.</div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- NZ Substorm Index Logic ---
 const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
     if (strengthNt >= 0) return -65.0;
@@ -199,10 +380,47 @@ const getProjectedBaseline = (samples: any[], targetTime: number) => {
     return slope * targetX + intercept;
 };
 
+const extractSeriesCandidates = (summary: any) => {
+    const candidates: string[] = [];
+    const stationSummary = summary?.domain?.[DOMAIN]?.stations?.[STATION];
+    if (!stationSummary?.sensorCodes) return candidates;
+
+    for (const sensorKey in stationSummary.sensorCodes) {
+        const names = stationSummary.sensorCodes[sensorKey].names;
+        for (const nameKey in names) {
+            const methods = names[nameKey].methods;
+            for (const methodKey in methods) {
+                if (!(methodKey.includes('60s') || methodKey.includes('1m'))) continue;
+                const aspects = methods[methodKey].aspects ?? {};
+                if (aspects['X']) candidates.push(`${STATION}/${nameKey}/${sensorKey}/${methodKey}/X`);
+                if (aspects['nil']) candidates.push(`${STATION}/${nameKey}/${sensorKey}/${methodKey}/nil`);
+            }
+        }
+    }
+
+    return candidates;
+};
+
+const fetchGeoNetSeries = async (seriesKeys: string[]) => {
+    for (const seriesKey of seriesKeys) {
+        const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${seriesKey}/latest/2d`;
+        const response = await fetch(tildeUrl);
+        if (!response.ok) continue;
+        try {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) return data;
+        } catch (error) {
+            console.warn('GeoNet parse error for series', seriesKey, error);
+        }
+    }
+    throw new Error('No valid GeoNet series available.');
+};
+
 // --- Sub-Component: NZ Substorm Index Panel ---
 const NzSubstormIndex: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [chartRange, setChartRange] = useState(24);
     const [hoverData, setHoverData] = useState<any>(null);
     const chartRef = useRef<HTMLDivElement>(null);
@@ -212,40 +430,24 @@ const NzSubstormIndex: React.FC = () => {
             try {
                 // 1. Fetch GeoNet Data
                 const summaryRes = await fetch(`${TILDE_BASE}/dataSummary/${DOMAIN}?station=${STATION}`);
+                if (!summaryRes.ok) throw new Error(`GeoNet summary unavailable (${summaryRes.status}).`);
                 const summary = await summaryRes.json();
-                
-                let bestSeries = "";
-                const st = summary?.domain?.[DOMAIN]?.stations?.[STATION];
-                if (st) {
-                    for (const sKey in st.sensorCodes) {
-                       const names = st.sensorCodes[sKey].names;
-                       for (const nKey in names) {
-                           if(nKey.toLowerCase().includes('north') || nKey === 'X' || nKey === 'magnetic-field') {
-                               const methods = names[nKey].methods;
-                               for(const mKey in methods) {
-                                   if(mKey.includes('60s') || mKey.includes('1m')) {
-                                       const aspects = methods[mKey].aspects;
-                                       if(aspects['X']) bestSeries = `${STATION}/${nKey}/${sKey}/${mKey}/X`;
-                                       else if(aspects['nil']) bestSeries = `${STATION}/${nKey}/${sKey}/${mKey}/nil`;
-                                   }
-                               }
-                           }
-                       }
-                    }
-                }
-                
-                const seriesKey = bestSeries || `${STATION}/magnetic-field/50/60s/X`;
-                const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${seriesKey}/latest/2d`;
+
+                const candidateSeries = extractSeriesCandidates(summary);
+                const fallbackSeries = [
+                    `${STATION}/magnetic-field/50/60s/X`,
+                    `${STATION}/magnetic-field/50/60s/nil`,
+                ];
+                const geoDataPromise = fetchGeoNetSeries([...candidateSeries, ...fallbackSeries]);
                 const noaaMagUrl = NOAA_RTSW_MAG;
                 const noaaWindUrl = NOAA_RTSW_WIND;
 
-                const [geoRes, magRes, windRes] = await Promise.all([
-                    fetch(tildeUrl),
+                const [geoData, magRes, windRes] = await Promise.all([
+                    geoDataPromise,
                     fetch(noaaMagUrl),
                     fetch(noaaWindUrl)
                 ]);
 
-                const geoData = await geoRes.json();
                 const magData = await magRes.json();
                 const windData = await windRes.json();
 
@@ -256,6 +458,7 @@ const NzSubstormIndex: React.FC = () => {
 
                 // Calculate Baseline & Strength
                 const points = [];
+                let previousPoint: { t: number; v: number } | null = null;
                 for (let i = 0; i < rawSamples.length; i++) {
                     if (rawSamples[i].t < Date.now() - 24 * 3600 * 1000) continue;
                     const base = getProjectedBaseline(rawSamples, rawSamples[i].t);
@@ -264,7 +467,12 @@ const NzSubstormIndex: React.FC = () => {
                     let s = (rawSamples[i].val - base) * SCALE_FACTOR;
                     if (s > 0 && s < 1500) s = s * 0.1; 
                     s = clamp(s, -250000, 250000);
-                    points.push({ t: rawSamples[i].t, v: s });
+                    const slopePerMin = previousPoint
+                        ? (s - previousPoint.v) / ((rawSamples[i].t - previousPoint.t) / 60000)
+                        : 0;
+                    const phase = getPhaseForPoint(s, slopePerMin);
+                    points.push({ t: rawSamples[i].t, v: s, phase, slope: slopePerMin });
+                    previousPoint = { t: rawSamples[i].t, v: s };
                 }
 
                 // Current State
@@ -302,6 +510,8 @@ const NzSubstormIndex: React.FC = () => {
 
                 // Calculate Visibility
                 const towns = getVisibleTowns(currentStrength);
+                const alertLevel = getAlertLevel(currentStrength);
+                const currentPhase = getPhaseForPoint(currentStrength, slope);
 
                 setData({
                     strength: currentStrength,
@@ -309,15 +519,19 @@ const NzSubstormIndex: React.FC = () => {
                     points,
                     towns,
                     outlook,
+                    alertLevel,
+                    currentPhase,
                     trends: {
                         m5: currentStrength, // Simplify for demo
                     }
                 });
                 setLoading(false);
+                setErrorMessage(null);
 
             } catch (e) {
                 console.error("NZ Substorm Fetch Error", e);
                 setLoading(false);
+                setErrorMessage('Unable to load GeoNet data right now.');
             }
         };
         fetchData();
@@ -355,7 +569,7 @@ const NzSubstormIndex: React.FC = () => {
     }, [data, chartRange]);
 
     if (loading) return <div className="h-64 flex items-center justify-center text-neutral-500">Initializing NZ Ground Systems...</div>;
-    if (!data) return <div className="h-64 flex items-center justify-center text-red-400">System Offline</div>;
+    if (!data) return <div className="h-64 flex items-center justify-center text-red-400">{errorMessage ?? 'System Offline'}</div>;
 
     // Chart Rendering
     const activePoints = data.points.filter((p: any) => p.t >= Date.now() - (chartRange * 3600 * 1000));
@@ -368,9 +582,22 @@ const NzSubstormIndex: React.FC = () => {
     const getX = (t: number) => ((t - activePoints[0].t) / (activePoints[activePoints.length-1].t - activePoints[0].t)) * 100;
     const getY = (v: number) => 100 - ((v - vMin) / (vMax - vMin)) * 100;
 
-    let pathD = "";
+    const phaseSegments: { phase: SubstormPhase; path: string }[] = [];
     if (activePoints.length > 0) {
-        pathD = `M ${getX(activePoints[0].t)} ${getY(activePoints[0].v)} ` + activePoints.map((p: any) => `L ${getX(p.t)} ${getY(p.v)}`).join(" ");
+        let currentPhase = activePoints[0].phase as SubstormPhase;
+        let currentPath = `M ${getX(activePoints[0].t)} ${getY(activePoints[0].v)} `;
+        for (let i = 1; i < activePoints.length; i++) {
+            const pointPhase = activePoints[i].phase as SubstormPhase;
+            const segmentPoint = `L ${getX(activePoints[i].t)} ${getY(activePoints[i].v)} `;
+            if (pointPhase !== currentPhase) {
+                phaseSegments.push({ phase: currentPhase, path: currentPath });
+                currentPhase = pointPhase;
+                currentPath = `M ${getX(activePoints[i - 1].t)} ${getY(activePoints[i - 1].v)} ${segmentPoint}`;
+            } else {
+                currentPath += segmentPoint;
+            }
+        }
+        phaseSegments.push({ phase: currentPhase, path: currentPath });
     }
 
     // Map Rendering
@@ -419,12 +646,15 @@ const NzSubstormIndex: React.FC = () => {
                     {Math.round(data.strength)}
                 </div>
                 <div className="mt-4 flex gap-2">
-                    <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-white border border-neutral-700">
-                        {data.strength < -100000 ? 'SEVERE' : data.strength < -45000 ? 'STRONG' : data.strength < -25000 ? 'ACTIVE' : 'QUIET'}
+                    <span className={`px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold border ${data.alertLevel.border} ${data.alertLevel.color}`}>
+                        {data.alertLevel.label.toUpperCase()} ALERT
                     </span>
                     <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-neutral-300 border border-neutral-700">
                         Slope: {data.slope.toFixed(1)}/min
                     </span>
+                </div>
+                <div className="mt-3 px-3 py-1 bg-neutral-900/70 border border-neutral-700 rounded-full text-xs text-neutral-200">
+                    Phase: <span className="font-semibold" style={{ color: PHASE_DETAILS[data.currentPhase as SubstormPhase].color }}>{PHASE_DETAILS[data.currentPhase as SubstormPhase].label}</span>
                 </div>
                 <div className="mt-6 p-3 bg-sky-900/20 border border-sky-500/30 rounded text-sm text-sky-100 text-center" dangerouslySetInnerHTML={{ __html: data.outlook }}></div>
             </div>
@@ -433,14 +663,14 @@ const NzSubstormIndex: React.FC = () => {
             <div className="md:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Town Lists */}
                 <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 flex flex-col gap-3">
-                    <h3 className="text-xs font-bold text-neutral-400 uppercase">Active Visibility Zones</h3>
+                    <h3 className="text-xs font-bold text-neutral-400 uppercase">Alert Levels by Visibility</h3>
                     
                     <div>
                         <div className="text-[10px] text-green-400 font-bold mb-1 flex items-center gap-1">📷 CAMERA (Long Exposure)</div>
                         <div className="flex flex-wrap gap-1">
                             {data.towns.filter((t:any) => t.cam).length === 0 ? <span className="text-neutral-600 text-xs italic">No towns in range</span> : 
                              data.towns.filter((t:any) => t.cam).map((t:any) => (
-                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.cam === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.cam === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name}</span>
+                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.cam === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.cam === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name} ({t.lat.toFixed(2)}°)</span>
                             ))}
                         </div>
                     </div>
@@ -450,7 +680,7 @@ const NzSubstormIndex: React.FC = () => {
                         <div className="flex flex-wrap gap-1">
                             {data.towns.filter((t:any) => t.phone).length === 0 ? <span className="text-neutral-600 text-xs italic">No towns in range</span> : 
                              data.towns.filter((t:any) => t.phone).map((t:any) => (
-                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.phone === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.phone === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name}</span>
+                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.phone === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.phone === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name} ({t.lat.toFixed(2)}°)</span>
                             ))}
                         </div>
                     </div>
@@ -460,7 +690,7 @@ const NzSubstormIndex: React.FC = () => {
                         <div className="flex flex-wrap gap-1">
                             {data.towns.filter((t:any) => t.eye).length === 0 ? <span className="text-neutral-600 text-xs italic">No towns in range</span> : 
                              data.towns.filter((t:any) => t.eye).map((t:any) => (
-                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.eye === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.eye === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name}</span>
+                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.eye === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.eye === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name} ({t.lat.toFixed(2)}°)</span>
                             ))}
                         </div>
                     </div>
@@ -479,10 +709,47 @@ const NzSubstormIndex: React.FC = () => {
                 </div>
             </div>
 
+            {/* Town Alert Table */}
+            <div className="md:col-span-12 bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-bold text-neutral-400 uppercase">Town Alert Levels (Latitudes)</h3>
+                    <div className="flex items-center gap-2 text-[10px] text-neutral-500">
+                        {ALERT_LEVELS.map(level => (
+                            <span key={level.key} className={`px-2 py-0.5 rounded-full border ${level.border} ${level.color}`}>{level.label}</span>
+                        ))}
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-neutral-300">
+                    {data.towns.map((town: NzTown) => (
+                        <div key={town.name} className="flex items-center justify-between bg-neutral-950/60 border border-neutral-800 rounded px-3 py-2">
+                            <div className="flex flex-col">
+                                <span className="font-semibold text-neutral-100">{town.name}</span>
+                                <span className="text-[10px] text-neutral-500">{town.lat.toFixed(2)}°</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full ${town.cam ? (town.cam === 'green' ? 'bg-green-400' : town.cam === 'yellow' ? 'bg-yellow-400' : 'bg-red-400') : 'bg-neutral-700'}`} title="Camera"></span>
+                                <span className={`w-2.5 h-2.5 rounded-full ${town.phone ? (town.phone === 'green' ? 'bg-green-400' : town.phone === 'yellow' ? 'bg-yellow-400' : 'bg-red-400') : 'bg-neutral-700'}`} title="Phone"></span>
+                                <span className={`w-2.5 h-2.5 rounded-full ${town.eye ? (town.eye === 'green' ? 'bg-green-400' : town.eye === 'yellow' ? 'bg-yellow-400' : 'bg-red-400') : 'bg-neutral-700'}`} title="Eye"></span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             {/* Interactive Graph */}
             <div className="md:col-span-12 bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 relative">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xs font-bold text-neutral-400 uppercase">24 Hour History</h3>
+                    <div>
+                        <h3 className="text-xs font-bold text-neutral-400 uppercase">Activity Phases (Last 24 Hours)</h3>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            {(Object.keys(PHASE_DETAILS) as SubstormPhase[]).map((phase) => (
+                                <span key={phase} className="flex items-center gap-1 text-[10px] text-neutral-400">
+                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PHASE_DETAILS[phase].color }}></span>
+                                    {PHASE_DETAILS[phase].label}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
                     <div className="flex gap-1">
                         {[1, 3, 6, 12, 24].map(h => (
                             <button key={h} onClick={() => setChartRange(h)} className={`px-2 py-1 text-xs rounded font-bold transition-colors ${chartRange === h ? 'bg-sky-600 text-white' : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'}`}>{h}H</button>
@@ -502,7 +769,9 @@ const NzSubstormIndex: React.FC = () => {
                         <line x1="0" y1="50" x2="100" y2="50" stroke="#333" strokeWidth="0.5" />
                         <line x1="0" y1="25" x2="100" y2="25" stroke="#222" strokeWidth="0.5" strokeDasharray="2" />
                         <line x1="0" y1="75" x2="100" y2="75" stroke="#222" strokeWidth="0.5" strokeDasharray="2" />
-                        <path d={pathD} fill="none" stroke={data.strength < -25000 ? '#facc15' : '#e5e5e5'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                        {phaseSegments.map((segment, idx) => (
+                            <path key={idx} d={segment.path} fill="none" stroke={PHASE_DETAILS[segment.phase].color} strokeWidth="1.7" vectorEffect="non-scaling-stroke" />
+                        ))}
                     </svg>
 
                     {hoverData && (
@@ -533,7 +802,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, nzMagData, loadingNzMag, substormForecast, activitySummary, nzMagSubstormEvents, interplanetaryShockData
+        goes18Data, goes19Data, loadingMagnetometer, substormForecast, activitySummary, interplanetaryShockData
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
@@ -542,8 +811,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    const [selectedNzMagEvent, setSelectedNzMagEvent] = useState<NzMagEvent | null>(null);
-    const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
     const initialLoadCalled = useRef(false);
 
     // ... [Original UseEffects & Handlers] ...
@@ -612,9 +879,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     // ... [Calculated Values] ...
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
+    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore, isDaylight), [auroraScore, isDaylight]);
     const getMagnetometerAnnotations = useCallback(() => ({}), []);
-    const latestMaxDelta = useMemo(() => (!nzMagSubstormEvents || nzMagSubstormEvents.length === 0) ? null : nzMagSubstormEvents[nzMagSubstormEvents.length - 1].maxDelta, [nzMagSubstormEvents]);
 
     const simpleViewStatus = useMemo(() => {
         const score = auroraScore ?? 0;
@@ -676,6 +942,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
                             <UnifiedForecastPanel score={auroraScore} blurb={auroraBlurb} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
+                            <NzSubstormIndex />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
@@ -693,24 +960,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 title="Substorm Activity"
                                 currentValue={substormForecast.status === 'ONSET' ? `ONSET DETECTED` : substormForecast.status.replace('_', ' ')}
                                 emoji="⚡"
-                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
+                                onOpenModal={() => openModal('substorm')}
                             >
-                               <div className="flex justify-center items-center gap-4 mb-2">
-                                    <button onClick={() => setActiveMagnetometer('nz')} className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>Ground Confirmation (NZ)</button>
-                                    <button onClick={() => setActiveMagnetometer('goes')} className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>Satellite Forecast (GOES)</button>
-                               </div>
-
                                <div className="min-h-[350px]">
-                                    {activeMagnetometer === 'goes' ? (
-                                        <div className="h-full">
-                                            <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
-                                        </div>
-                                    ) : (
-                                        <div className="h-full w-full">
-                                            {/* THIS IS THE NEW INTEGRATED COMPONENT */}
-                                            <NzSubstormIndex />
-                                        </div>
-                                   )}
+                                    <div className="h-full">
+                                        <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={getMagnetometerAnnotations()} loadingMessage={loadingMagnetometer} />
+                                    </div>
                                </div>
                             </ForecastChartPanel>
 
