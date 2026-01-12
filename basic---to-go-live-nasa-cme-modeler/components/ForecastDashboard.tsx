@@ -142,6 +142,51 @@ const parseIso = (ts: string | number) => {
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) {
+        return {
+            overall: 'It is currently daytime. Wait until after sunset for aurora photography settings.',
+            phone: {
+                android: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+                apple: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+            },
+            dslr: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+        };
+    }
+
+    const scoreValue = score ?? 0;
+    if (scoreValue >= 60) {
+        return {
+            overall: 'Strong display possible. Shorter exposures will preserve structure.',
+            phone: {
+                android: { iso: '800-1600', shutter: '5-10s', aperture: 'f/1.6-f/2.8', focus: 'Manual ∞', wb: '3500-4000K' },
+                apple: { iso: 'Auto', shutter: 'Night Mode 3-5s', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+            },
+            dslr: { iso: '800-1600', shutter: '2-6s', aperture: 'f/1.4-f/2.8', focus: 'Manual ∞', wb: '3500-4000K' }
+        };
+    }
+
+    if (scoreValue >= 35) {
+        return {
+            overall: 'Moderate activity. Use longer exposures and higher ISO.',
+            phone: {
+                android: { iso: '1600-3200', shutter: '10-15s', aperture: 'f/1.6-f/2.8', focus: 'Manual ∞', wb: '3500-4500K' },
+                apple: { iso: 'Auto', shutter: 'Night Mode 5-10s', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+            },
+            dslr: { iso: '1600-3200', shutter: '8-15s', aperture: 'f/1.4-f/2.8', focus: 'Manual ∞', wb: '3500-4500K' }
+        };
+    }
+
+    return {
+        overall: 'Quiet conditions. Use long exposures and a stable tripod.',
+        phone: {
+            android: { iso: '3200-6400', shutter: '15-20s', aperture: 'f/1.6-f/2.8', focus: 'Manual ∞', wb: '4000-4500K' },
+            apple: { iso: 'Auto', shutter: 'Night Mode 10s', aperture: 'Auto', focus: 'Auto', wb: 'Auto' }
+        },
+        dslr: { iso: '3200-6400', shutter: '15-25s', aperture: 'f/1.4-f/2.8', focus: 'Manual ∞', wb: '4000-4500K' }
+    };
+};
+
 // --- NZ Substorm Index Logic ---
 const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
     if (strengthNt >= 0) return -65.0;
