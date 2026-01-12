@@ -38,9 +38,9 @@ const buildNzAsiHtml = () => `
     .pill-green { background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); color: #4ade80; }
     .empty-msg { font-size:0.8rem; color:#525252; font-style:italic; }
     .chart-controls { display: flex; gap: 5px; }
-    .btn-time { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #aaa; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; font-weight: 600; transition: all 0.2s; }
-    .btn-time:hover { background: rgba(255,255,255,0.1); color: #fff; }
-    .btn-time.active { background: #0ea5e9; color: #fff; border-color: #0ea5e9; }
+    .btn-time { background: #262626; border: 1px solid #3f3f46; color: #a3a3a3; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+    .btn-time:hover { background: #404040; color: #e5e5e5; }
+    .btn-time.active { background: #0284c7; color: #fff; border-color: #0284c7; }
     .chart-box { width: 100%; height: var(--chart-h); background: rgba(0,0,0,0.2); border-radius: 8px; padding: 0; overflow:hidden; position: relative; cursor:crosshair; }
     #chart-tooltip { position: absolute; pointer-events: none; background: rgba(0,0,0,0.9); border: 1px solid #444; border-radius: 6px; padding: 8px; font-size: 0.8rem; color: #fff; z-index: 10; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
     #chart-cursor { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.3); pointer-events: none; display: none; z-index: 5; }
@@ -114,7 +114,7 @@ const buildNzAsiHtml = () => `
 
       <div class="card col-span-2">
         <div class="card-header">
-            <div class="card-title" style="margin:0">History</div>
+            <div class="card-title" style="margin:0">24 Hour History</div>
             <div class="chart-controls">
                 <button class="btn-time" onclick="setChartRange(1)">1H</button>
                 <button class="btn-time" onclick="setChartRange(3)">3H</button>

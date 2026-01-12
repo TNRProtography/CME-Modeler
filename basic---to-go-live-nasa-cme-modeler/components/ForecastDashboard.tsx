@@ -829,7 +829,19 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            <UnifiedForecastPanel score={auroraScore} blurb={auroraBlurb} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
+                            <UnifiedForecastPanel
+                                score={auroraScore}
+                                blurb={auroraBlurb}
+                                lastUpdated={lastUpdated}
+                                locationBlurb={locationBlurb}
+                                getGaugeStyle={getGaugeStyle}
+                                getScoreColorKey={getForecastScoreColorKey}
+                                getAuroraEmoji={getAuroraEmoji}
+                                gaugeColors={GAUGE_COLORS}
+                                onOpenModal={() => openModal('unified-forecast')}
+                                substormForecast={substormForecast}
+                                asiSection={<NzAsiEmbed />}
+                            />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
@@ -876,25 +888,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center"><h2 className="text-xl font-semibold text-center text-white">ACE EPAM (Last 3 Days)</h2><button onClick={() => openModal('epam')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div onClick={() => setViewerMedia && epamImageUrl !== '/placeholder.png' && setViewerMedia({ url: epamImageUrl, type: 'image' })} className="flex-grow relative mt-2 cursor-pointer min-h-[300px]"><img src={epamImageUrl} alt="ACE EPAM Data" className="w-full h-full object-contain" /></div></div>
                             <div className="col-span-12"><button onClick={handleDownloadForecastImage} className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-800 transition-colors font-semibold"><DownloadIcon className="w-6 h-6" /><span>Download The Aurora Forecast For The Next Two Hours!</span></button></div>
 
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-                                <div className="flex justify-center items-center mb-4 gap-2">
-                                    <h3 className="text-xl font-semibold text-center text-white">Aurora Substorm Index</h3>
-                                    <button
-                                        className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-white/20 text-xs text-neutral-200 hover:bg-white/10"
-                                        title="Hybrid NZ substorm nowcast combining GeoNet ground magnetometers with NOAA solar wind data to highlight short-term visibility zones."
-                                        aria-label="About the Aurora Substorm Index"
-                                        type="button"
-                                    >
-                                        ?
-                                    </button>
-                                </div>
-                                <div className="relative w-full min-h-[720px] rounded-lg overflow-hidden border border-white/10">
-                                    <NzAsiEmbed />
-                                </div>
-                                <p className="text-xs text-neutral-400 mt-3 text-center">
-                                    Powered by GeoNet Tilde API and NOAA SWPC for real-time substorm visibility guidance.
-                                </p>
-                            </div>
                         </main>
                     )}
 

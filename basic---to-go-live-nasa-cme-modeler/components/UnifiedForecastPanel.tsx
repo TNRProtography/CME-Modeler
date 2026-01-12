@@ -15,6 +15,7 @@ interface UnifiedForecastPanelProps {
   getAuroraEmoji: (score: number | null) => string;
   gaugeColors: Record<string, { solid: string }>;
   onOpenModal: (id: string) => void;
+  asiSection?: React.ReactNode;
   
   // Substorm forecast props
   substormForecast: SubstormForecast;
@@ -30,7 +31,8 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   getAuroraEmoji,
   gaugeColors,
   onOpenModal,
-  substormForecast
+  substormForecast,
+  asiSection
 }) => {
   const isDaylight = blurb.includes("The sun is currently up");
   const { status, likelihood, windowLabel, action } = substormForecast || { status: 'QUIET', likelihood: 0, windowLabel: '', action: '' };
@@ -173,6 +175,28 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
           )}
         </div>
       </div>
+
+      {asiSection && (
+        <div className="mt-6 border-t border-neutral-800/60 pt-6">
+          <div className="flex justify-center items-center mb-4 gap-2">
+            <h3 className="text-xl font-semibold text-center text-white">Aurora Substorm Index</h3>
+            <button
+              className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-white/20 text-xs text-neutral-200 hover:bg-white/10"
+              title="Hybrid NZ substorm nowcast combining GeoNet ground magnetometers with NOAA solar wind data to highlight short-term visibility zones."
+              aria-label="About the Aurora Substorm Index"
+              type="button"
+            >
+              ?
+            </button>
+          </div>
+          <div className="relative w-full min-h-[840px] rounded-lg overflow-hidden border border-white/10">
+            {asiSection}
+          </div>
+          <p className="text-xs text-neutral-400 mt-3 text-center">
+            Powered by GeoNet Tilde API and NOAA SWPC for real-time substorm visibility guidance.
+          </p>
+        </div>
+      )}
 
       {isSubstormImminent && !isDaylight && (score ?? 0) > 0 && (
         <div className="mt-4 p-3 bg-gradient-to-r from-red-900/30 to-orange-900/30 border border-red-700/50 rounded-lg">
