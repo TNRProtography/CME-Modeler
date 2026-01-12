@@ -246,7 +246,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     };
 };
 
-const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({ summary }) => {
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null; nzMagData: any[] }> = ({ summary, nzMagData }) => {
     if (!summary) {
         return (
             <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
@@ -258,7 +258,31 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
     const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
     const peakScore = summary.highestScore.finalScore;
     const peakColor = GAUGE_COLORS[getForecastScoreColorKey(peakScore)].solid;
-    const latestEvent = summary.substormEvents.at(-1);
+    const series = Array.isArray(nzMagData) && nzMagData.length > 0 ? nzMagData[0]?.data : null;
+    const samplePoints = Array.isArray(series)
+        ? series
+            .map((point: any) => ({ t: point.x, val: point.y }))
+            .filter((point: any) => Number.isFinite(point.t) && Number.isFinite(point.val))
+            .sort((a: any, b: any) => a.t - b.t)
+        : [];
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    let minStrength: number | null = null;
+    for (const point of samplePoints) {
+        if (point.t < cutoff) continue;
+        const base = getProjectedBaseline(samplePoints, point.t);
+        if (base === null) continue;
+        let strength = (point.val - base) * SCALE_FACTOR;
+        if (strength > 0 && strength < 1500) strength *= 0.1;
+        strength = clamp(strength, -250000, 250000);
+        if (minStrength === null || strength < minStrength) minStrength = strength;
+    }
+    const visibleTowns = minStrength !== null ? getVisibleTowns(minStrength) : [];
+    const highestTown = visibleTowns
+        .filter(town => town.cam || town.phone || town.eye)
+        .sort((a, b) => b.lat - a.lat)[0];
+    const highestTownLabel = highestTown
+        ? `${highestTown.name} (${highestTown.eye ? 'eye' : highestTown.phone ? 'phone' : 'camera'})`
+        : 'None detected';
 
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
@@ -273,23 +297,18 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary | null }> = ({
                 </div>
 
                 <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
-                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Substorm Events</h3>
-                    <p className="text-5xl font-bold text-sky-300">{summary.substormEvents.length}</p>
-                    <p className="text-sm text-neutral-400 mt-1">Detected in the last 24 hours</p>
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Highest Town Reached</h3>
+                    <p className="text-2xl font-bold text-sky-200">{highestTownLabel}</p>
+                    <p className="text-sm text-neutral-400 mt-3">Northernmost town with visibility</p>
                 </div>
 
                 <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
-                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Latest Substorm</h3>
-                    {latestEvent ? (
-                        <>
-                            <p className="text-4xl font-bold text-amber-300">{getAuroraEmoji(latestEvent.peakProbability * 100)}</p>
-                            <p className="text-sm text-neutral-400 mt-1">
-                                {formatTime(latestEvent.start)} - {formatTime(latestEvent.end)}
-                            </p>
-                        </>
-                    ) : (
-                        <p className="text-sm text-neutral-400 mt-6">No recent substorms</p>
-                    )}
+                    <h3 className="text-lg font-semibold text-neutral-200 mb-2">Lowest ASI (24h)</h3>
+                    <p className="text-5xl font-bold text-amber-300">
+                        {minStrength !== null ? `${Math.round(minStrength)}` : '--'}
+                        <span className="text-base text-neutral-400 ml-2">nT</span>
+                    </p>
+                    <p className="text-sm text-neutral-400 mt-1">Most negative 24h strength</p>
                 </div>
             </div>
         </div>
@@ -820,7 +839,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto"><p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p></div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
-                            <ActivitySummaryDisplay summary={activitySummary} />
+                            <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
@@ -842,7 +861,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 substormForecast={substormForecast}
                                 asiSection={<NzAsiEmbed />}
                             />
-                            <ActivitySummaryDisplay summary={activitySummary} />
+                            <ActivitySummaryDisplay summary={activitySummary} nzMagData={nzMagData} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             

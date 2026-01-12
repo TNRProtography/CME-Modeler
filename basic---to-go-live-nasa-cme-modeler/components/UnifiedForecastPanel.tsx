@@ -189,7 +189,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
               ?
             </button>
           </div>
-          <div className="relative w-full min-h-[980px] rounded-lg overflow-hidden border border-white/10">
+          <div className="relative w-full min-h-[1400px] rounded-lg overflow-hidden border border-white/10">
             {asiSection}
           </div>
           <p className="text-xs text-neutral-400 mt-3 text-center">
