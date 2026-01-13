@@ -519,6 +519,10 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     )}
                     <div className="mt-4 pt-3 border-t border-neutral-800 flex gap-4 text-[10px] text-neutral-400 justify-center">
                         <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-neutral-600" />
+                            No visibility likely
+                        </span>
+                        <span className="flex items-center gap-1">
                             <div className="w-2 h-2 rounded-full bg-red-500" />
                             Possible
                         </span>

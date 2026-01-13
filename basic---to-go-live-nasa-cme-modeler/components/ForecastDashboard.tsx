@@ -139,15 +139,6 @@ const getAuroraEmoji = (score: number | null) => {
     return '😴';
 };
 
-const getAuroraBlurb = (score: number | null) => {
-    if (score === null) return 'Forecast data is loading. Please wait a moment.';
-    if (score >= 80) return 'Expect a strong display. Visible aurora is highly likely in clear skies.';
-    if (score >= 50) return 'Conditions are favorable. Naked-eye viewing is possible in dark locations.';
-    if (score >= 35) return 'Phone cameras may capture faint aurora. Head to a dark southern view.';
-    if (score >= 20) return 'Camera-only conditions. Long exposure shots may reveal a glow.';
-    return 'Low activity. Aurora is unlikely tonight.';
-};
-
 const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
     if (isDaylight) {
         return {
@@ -315,7 +306,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     // ... [Calculated Values] ...
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
     const getMagnetometerAnnotations = useCallback(() => ({}), []);
     const latestMaxDelta = useMemo(() => (!nzMagSubstormEvents || nzMagSubstormEvents.length === 0) ? null : nzMagSubstormEvents[nzMagSubstormEvents.length - 1].maxDelta, [nzMagSubstormEvents]);
 
@@ -329,16 +319,62 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return { text: 'No Aurora Expected', emoji: '😞' };
     }, [auroraScore]);
 
-    const actionOneLiner = useMemo(() => {
+    const forecastLines = useMemo(() => {
+        const now = Date.now();
+        const sunrise = celestialTimes?.sun?.rise ?? null;
+        const sunset = celestialTimes?.sun?.set ?? null;
+        const moonrise = celestialTimes?.moon?.rise ?? null;
+        const moonset = celestialTimes?.moon?.set ?? null;
+        const darkBufferMs = 90 * 60 * 1000;
+        const sunUp = sunrise && sunset ? now >= sunrise && now <= sunset : isDaylight;
+        const formatTime = (ts: number | null) =>
+            ts ? new Date(ts).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }) : '—';
+        const sunriseText = formatTime(sunrise);
+        const sunsetText = formatTime(sunset);
+        const darkStart = sunset ? sunset + darkBufferMs : null;
+        const darkEnd = sunrise ? sunrise - darkBufferMs : null;
+        const darkText = darkStart && darkEnd
+            ? `Dark enough ~${formatTime(darkStart)}–${formatTime(darkEnd)}`
+            : 'Darkness window unavailable';
+
         const score = auroraScore ?? 0;
-        if (isDaylight) return "It's daytime. Check back after sunset for the nighttime forecast.";
-        if (substormForecast.status === 'ONSET') return "GO NOW! An aurora eruption is detected with good power. Look south immediately!";
-        if (substormForecast.status === 'IMMINENT_30') return "GET READY! An eruption is highly likely within 30 minutes. Head to your spot.";
-        if (score >= 50) return "CONDITIONS ARE GOOD. A visible aurora is possible. Find a dark spot and be patient.";
-        if (score >= 35) return "WORTH A LOOK. A modern phone might capture an aurora. Find a very dark location.";
-        if (score >= 20) return "CAMERA ONLY. A DSLR/Mirrorless with a long exposure may pick up a faint glow.";
-        return "STAY INDOORS. Conditions are very quiet, an aurora is unlikely tonight.";
-    }, [auroraScore, substormForecast.status, isDaylight]);
+        let actionLine = 'Low odds tonight—stay home unless you are already outside.';
+        if (sunUp) {
+            actionLine = 'The sun is up—stay home for now and check back after dark.';
+        } else if (substormForecast.status === 'ONSET') {
+            actionLine = 'Aurora is happening now—get outside and look south immediately.';
+        } else if (substormForecast.status === 'IMMINENT_30') {
+            actionLine = 'Substorm is about to happen—go to your viewing spot and be ready.';
+        } else if (substormForecast.status === 'LIKELY_60') {
+            actionLine = 'Be on alert—substorm activity is likely within the next hour.';
+        } else if (score >= 50) {
+            actionLine = 'Good conditions—go to your viewing spot and stay ready.';
+        } else if (score >= 35) {
+            actionLine = 'Phone/camera chances—be on alert in a dark location.';
+        } else if (score >= 20) {
+            actionLine = 'Camera-only chances—consider a quick check if you are nearby.';
+        }
+
+        const sunLine = sunrise && sunset
+            ? `Sunrise ${sunriseText} · Sunset ${sunsetText}`
+            : 'Sunrise/Sunset times unavailable';
+
+        const moonIllumination = celestialTimes?.moon?.illumination;
+        const moonTimes = moonrise && moonset
+            ? `Moonrise ${formatTime(moonrise)} · Moonset ${formatTime(moonset)}`
+            : 'Moonrise/Moonset times unavailable';
+        const moonLine = moonIllumination !== undefined
+            ? `${moonTimes} · Illumination ${Math.round(moonIllumination)}%`
+            : `${moonTimes} · Illumination unavailable`;
+
+        return [
+            sunUp ? 'The sun is up right now.' : 'The sun is down right now.',
+            actionLine,
+            sunLine,
+            darkText,
+            moonLine
+        ];
+    }, [auroraScore, celestialTimes, isDaylight, substormForecast.status]);
 
     if (isLoading) return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
 
@@ -366,7 +402,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <div className="col-span-12 card bg-neutral-950/80 p-6 text-center">
                                 <div className="text-7xl font-extrabold" style={{color: GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid}}>{(auroraScore ?? 0).toFixed(1)}%</div>
                                 <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
-                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto"><p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p></div>
+                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto text-left">
+                                    <div className="text-sm font-semibold text-amber-300 mb-2">Tonight's Forecast</div>
+                                    <div className="space-y-2 text-sm text-neutral-200">
+                                        {forecastLines.map((line) => (
+                                            <p key={line} className="leading-relaxed">{line}</p>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             <ActivitySummaryDisplay summary={activitySummary} />
@@ -378,7 +421,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            <UnifiedForecastPanel score={auroraScore} blurb={auroraBlurb} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
+                            <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
