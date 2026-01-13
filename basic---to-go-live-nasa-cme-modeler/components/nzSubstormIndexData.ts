@@ -56,6 +56,7 @@ export interface NzSubstormIndexData {
   points: { t: number; v: number }[];
   towns: NzTown[];
   outlook: string;
+  solarWind: { bz: number; speed: number };
   trends: { m5: number };
   stationCount: number;
   lastUpdated: number | null;
@@ -278,6 +279,7 @@ export const useNzSubstormIndexData = () => {
           points,
           towns,
           outlook,
+          solarWind: { bz, speed },
           trends: {
             m5: currentStrength,
           },

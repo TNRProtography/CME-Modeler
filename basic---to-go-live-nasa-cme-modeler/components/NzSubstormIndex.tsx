@@ -1,7 +1,17 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { CHART_LOOKBACK_HOURS, useNzSubstormIndexData } from './nzSubstormIndexData';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { CHART_LOOKBACK_HOURS, NzTown, useNzSubstormIndexData } from './nzSubstormIndexData';
 
-const NzSubstormIndex: React.FC = () => {
+type CelestialTimes = {
+  sun?: { rise: number | null; set: number | null };
+  moon?: { illumination?: number };
+};
+
+interface NzSubstormIndexProps {
+  celestialTimes?: CelestialTimes;
+  isDaylight?: boolean;
+}
+
+const NzSubstormIndex: React.FC<NzSubstormIndexProps> = ({ celestialTimes, isDaylight }) => {
   const { data, loading } = useNzSubstormIndexData();
   const [chartRange, setChartRange] = useState(CHART_LOOKBACK_HOURS);
   const [hoverData, setHoverData] = useState<any>(null);
@@ -61,6 +71,55 @@ const NzSubstormIndex: React.FC = () => {
       activePoints.map((p: any) => `L ${getX(p.t)} ${getY(p.v)}`).join(' ');
   }
 
+  const forecastText = useMemo(() => {
+    if (!data) return '';
+    const now = Date.now();
+    const sunrise = celestialTimes?.sun?.rise ?? null;
+    const sunset = celestialTimes?.sun?.set ?? null;
+    const darkBuffer = 90 * 60 * 1000;
+    const darkEnough = sunset && sunrise
+      ? (now >= sunset - darkBuffer || now <= sunrise + darkBuffer)
+      : !isDaylight;
+    const moonIllumination = celestialTimes?.moon?.illumination ?? null;
+    const moonNote = moonIllumination !== null
+      ? moonIllumination >= 75
+        ? 'The moon is bright, so faint glows will be harder to pick out.'
+        : moonIllumination >= 40
+        ? 'The moon is moderate, so contrast will be a little reduced.'
+        : 'The moon is dim, so the sky should stay nice and dark.'
+      : 'Moonlight data is unavailable, so plan for darker skies just in case.';
+
+    const { bz, speed } = data.solarWind;
+    const solarNote = bz < -10 && speed > 500
+      ? `Solar wind is primed (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s) for a strong response.`
+      : bz < -5
+      ? `Solar wind is favorable (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`
+      : `Solar wind is mostly quiet (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`;
+
+    const magnitude = Math.abs(data.strength);
+    const sizeLabel = magnitude >= 1500 ? 'major' : magnitude >= 800 ? 'strong' : magnitude >= 450 ? 'moderate' : 'minor';
+
+    const pickTown = (towns: NzTown[], key: 'eye' | 'phone' | 'cam') => {
+      const matches = towns.filter((t) => t[key]);
+      if (matches.length === 0) return null;
+      return matches.sort((a, b) => b.lat - a.lat)[0];
+    };
+    const bestTown =
+      pickTown(data.towns, 'eye') ||
+      pickTown(data.towns, 'phone') ||
+      pickTown(data.towns, 'cam');
+
+    const visibilityLine = bestTown
+      ? `Best odds are around ${bestTown.name} right now.`
+      : 'No towns are in range yet—expect activity to remain south of New Zealand.';
+
+    const lightLine = darkEnough
+      ? 'It is dark enough to observe.'
+      : 'It is still too bright right now—check back closer to darkness.';
+
+    return `${lightLine} A ${sizeLabel} burst is possible based on current ground activity. ${solarNote} ${moonNote} ${visibilityLine}`;
+  }, [data, celestialTimes, isDaylight]);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
       <div className="md:col-span-12 flex flex-col md:flex-row md:justify-between md:items-center pb-2 border-b border-neutral-800 gap-2">
@@ -91,22 +150,12 @@ const NzSubstormIndex: React.FC = () => {
             Slope: {data.slope.toFixed(1)}/min
           </span>
         </div>
-        <div
-          className="mt-6 p-3 bg-sky-900/20 border border-sky-500/30 rounded text-sm text-sky-100 text-center"
-          dangerouslySetInnerHTML={{ __html: data.outlook }}
-        />
-      </div>
-
-      <div className="md:col-span-8">
-        <div className="bg-neutral-900/50 rounded-lg border border-neutral-800 relative overflow-hidden p-6 h-[250px] flex flex-col justify-center text-center">
-          <div className="text-sm font-semibold text-neutral-200 mb-2">Map Overlay</div>
-          <p className="text-xs text-neutral-400">
-            Visibility bands and town markers are now drawn directly on the Aurora Sightings map below for a unified view.
-          </p>
+        <div className="mt-6 p-3 bg-sky-900/20 border border-sky-500/30 rounded text-sm text-sky-100 text-center">
+          {forecastText}
         </div>
       </div>
 
-      <div className="md:col-span-12 bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 relative">
+      <div className="md:col-span-8 bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 relative">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xs font-bold text-neutral-400 uppercase">24 Hour History</h3>
           <div className="flex gap-1">

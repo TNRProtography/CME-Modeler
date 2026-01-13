@@ -400,7 +400,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                         </div>
                                     ) : (
                                         <div className="h-full w-full">
-                                            <NzSubstormIndex />
+                                            <NzSubstormIndex celestialTimes={celestialTimes} isDaylight={isDaylight} />
                                         </div>
                                    )}
                                </div>

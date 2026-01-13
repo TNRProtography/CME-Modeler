@@ -5,7 +5,7 @@ import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
-import { calculateReachLatitude, useNzSubstormIndexData } from './nzSubstormIndexData';
+import { NZ_TOWNS, calculateReachLatitude, useNzSubstormIndexData } from './nzSubstormIndexData';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -23,35 +23,8 @@ const RedCrossIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- CONSTANTS & CONFIG ---
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
-const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
-const PROFANITY_PATTERNS = [
-    /f\s*\W*\s*u\s*\W*\s*c\s*\W*\s*k/i,
-    /s\s*\W*\s*h\s*\W*\s*i\s*\W*\s*t/i,
-    /b\s*\W*\s*i\s*\W*\s*t\s*\W*\s*c\s*\W*\s*h/i,
-    /c\s*\W*\s*u\s*\W*\s*n\s*\W*\s*t/i,
-    /d\s*\W*\s*a\s*\W*\s*m\s*\W*\s*n/i,
-    /a\s*\W*\s*s\s*\W*\s*s\s*\W*h\s*\W*\s*o\s*\W*\s*l\s*\W*\s*e/i,
-    /d\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
-    /c\s*\W*\s*o\s*\W*\s*c\s*\W*\s*k/i,
-    /p\s*\W*\s*u\s*\W*\s*s\s*\W*\s*s\s*\W*\s*y/i,
-    /b\s*\W*\s*a\s*\W*\s*l\s*\W*\s*l\s*\W*\s*s/i,
-    /t\s*\W*\s*e\s*\W*\s*s\s*\W*\s*t\s*\W*\s*i\s*\W*\s*c\s*\W*\s*l\s*\W*\s*e/i,
-    /b\s*\W*\s*o\s*\W*\s*l\s*\W*\s*l\s*\W*\s*o\s*\W*\s*c\s*\W*\s*k\s*\W*\s*s/i,
-    /p\s*\W*\s*e\s*\W*\s*n\s*\W*\s*i\s*\W*\s*s/i,
-    /v\s*\W*\s*a\s*\W*\s*g\s*\W*\s*i\s*\W*\s*n\s*\W*\s*a/i,
-    /t\s*\W*\s*i\s*\W*\s*t\s*\W*\s*s/i,
-    /m\s*\W*\s*o\s*\W*\s*t\s*\W*\s*h\s*\W*\s*e\s*\W*\s*r\s*\W*\s*f\s*\W*\s*u\s*\W*\s*c\s*\W*\s*k/i,
-    /s\s*\W*\s*l\s*\W*\s*u\s*\W*\s*t/i,
-    /b\s*\W*\s*i\s*\W*\s*t\s*\W*\s*c\s*\W*\s*h\s*\W*\s*e\s*\W*\s*a\s*\W*\s*d/i,
-    /w\s*\W*\s*h\s*\W*\s*o\s*\W*\s*r\s*\W*\s*e/i,
-    /t\s*\W*\s*w\s*\W*\s*a\s*\W*\s*t/i,
-    /p\s*\W*\s*r\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
-    /c\s*\W*\s*u\s*\W*\s*m/i,
-    /j\s*\W*\s*i\s*\W*\s*z\s*\W*\s*z/i,
-    /d\s*\W*\s*o\s*\W*\s*u\s*\W*\s*c\s*\W*\s*h/i,
-];
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
@@ -188,11 +161,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
-    const [userName, setUserName] = useState<string>('');
     const [userPosition, setUserPosition] = useState<L.LatLng | null>(null);
     const [hasGpsLock, setHasGpsLock] = useState(false);
     const [gpsError, setGpsError] = useState<string | null>(null);
-    const [nameError, setNameError] = useState<string | null>(null);
     const [selectedStatus, setSelectedStatus] = useState<SightingStatus | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
@@ -202,10 +173,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     const [sunsetWindowStart, setSunsetWindowStart] = useState<number>(() => computeSunsetWindowStart());
 
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
-
-    const containsProfanity = useCallback((value: string) => {
-        return PROFANITY_PATTERNS.some(pattern => pattern.test(value));
-    }, []);
 
     const requestGpsFix = useCallback(() => {
         if (!navigator.geolocation) {
@@ -244,7 +211,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     }, []);
 
     useEffect(() => {
-        setUserName(localStorage.getItem(LOCAL_STORAGE_USERNAME_KEY) || '');
         const lastReportString = localStorage.getItem(LOCAL_STORAGE_LAST_REPORT_KEY);
         if (lastReportString) setLastReportInfo(JSON.parse(lastReportString));
         fetchSightings();
@@ -275,25 +241,34 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
     const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight && hasGpsLock;
 
-    const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newName = e.target.value;
-        const hasProfanity = containsProfanity(newName);
-        setNameError(hasProfanity ? 'Please remove profanity from your name before submitting.' : null);
-        setUserName(newName);
-        if (!hasProfanity) {
-            localStorage.setItem(LOCAL_STORAGE_USERNAME_KEY, newName);
+    const findNearestTownName = useCallback((lat: number, lon: number) => {
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const haversine = (town: { lat: number; lon: number }) => {
+            const dLat = toRad(lat - town.lat);
+            const dLon = toRad(lon - town.lon);
+            const lat1 = toRad(town.lat);
+            const lat2 = toRad(lat);
+            const h =
+                Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+            return 6371 * 2 * Math.asin(Math.sqrt(h));
+        };
+
+        let nearest = NZ_TOWNS[0];
+        let best = Number.POSITIVE_INFINITY;
+        for (const town of NZ_TOWNS) {
+            const dist = haversine(town);
+            if (dist < best) {
+                best = dist;
+                nearest = town;
+            }
         }
-    };
+        return nearest.name;
+    }, []);
 
     const handleSubmit = async () => {
-        if (containsProfanity(userName)) {
-            alert('Profanity is not allowed in the name field.');
-            return;
-        }
-
-        if (!userPosition || !selectedStatus || !userName.trim() || !canSubmit) {
+        if (!userPosition || !selectedStatus || !canSubmit) {
             const alertMsg = [
-                !userName.trim() && 'Please enter your name.',
                 !hasGpsLock && 'GPS is required to submit. Please enable location services to continue.',
                 !userPosition && 'Please set your location by enabling GPS. Tap "Try GPS again" if needed.',
                 !selectedStatus && 'Please select your sighting status.',
@@ -305,7 +280,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
         setIsSubmitting(true);
         setError(null);
-        const reportData: Omit<SightingReport, 'timestamp'> = { lat: userPosition.lat, lng: userPosition.lng, status: selectedStatus, name: userName.trim() };
+        const reportData: Omit<SightingReport, 'timestamp'> = {
+            lat: userPosition.lat,
+            lng: userPosition.lng,
+            status: selectedStatus,
+            name: findNearestTownName(userPosition.lat, userPosition.lng)
+        };
         const pendingSighting: SightingReport = { ...reportData, timestamp: Date.now(), isPending: true };
         setPendingReport(pendingSighting);
 
@@ -387,8 +367,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     </div>
                 )}
                 <div className="col-span-12 md:col-span-3 space-y-2">
-                    <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="w-full bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                    {nameError && <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">{nameError}</p>}
+                    <div className="text-xs text-neutral-400 bg-neutral-800/60 border border-neutral-700 rounded px-3 py-2">
+                        Reports are tagged to the nearest town automatically.
+                    </div>
                 </div>
 
                 <div className="col-span-12 md:col-span-9 space-y-4">
@@ -629,7 +610,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         }}
                                     >
                                         <Popup>
-                                            <strong>{sighting.name}</strong> reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
+                                            <strong>{sighting.name}</strong> (nearest town) reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
                                         </Popup>
                                     </Marker>
                                 );
@@ -643,7 +624,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                      <h3 className="text-xl font-semibold text-white">Latest 5 Reports</h3>
                      <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left text-neutral-400">
-                            <thead className="text-xs text-neutral-300 uppercase bg-neutral-800"><tr><th scope="col" className="px-4 py-2">Time</th><th scope="col" className="px-4 py-2">Name</th><th scope="col" className="px-4 py-2">Report</th></tr></thead>
+                            <thead className="text-xs text-neutral-300 uppercase bg-neutral-800"><tr><th scope="col" className="px-4 py-2">Time</th><th scope="col" className="px-4 py-2">Nearest Town</th><th scope="col" className="px-4 py-2">Report</th></tr></thead>
                             <tbody>
                                 {isLoading ? ( <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr> ) : sightings.length === 0 ? ( <tr><td colSpan={3} className="text-center p-4 italic">No reports since sunset today.</td></tr> ) : sightings.slice(0, 5).map(s => (
                                     <tr
