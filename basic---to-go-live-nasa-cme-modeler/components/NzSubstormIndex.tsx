@@ -16,6 +16,54 @@ const NzSubstormIndex: React.FC<NzSubstormIndexProps> = ({ celestialTimes, isDay
   const [chartRange, setChartRange] = useState(CHART_LOOKBACK_HOURS);
   const [hoverData, setHoverData] = useState<any>(null);
   const chartRef = useRef<HTMLDivElement>(null);
+  const forecastText = useMemo(() => {
+    if (!data) return '';
+    const now = Date.now();
+    const sunrise = celestialTimes?.sun?.rise ?? null;
+    const sunset = celestialTimes?.sun?.set ?? null;
+    const darkBuffer = 90 * 60 * 1000;
+    const darkEnough = sunset && sunrise
+      ? (now >= sunset - darkBuffer || now <= sunrise + darkBuffer)
+      : !isDaylight;
+    const moonIllumination = celestialTimes?.moon?.illumination ?? null;
+    const moonNote = moonIllumination !== null
+      ? moonIllumination >= 75
+        ? 'The moon is bright, so faint glows will be harder to pick out.'
+        : moonIllumination >= 40
+        ? 'The moon is moderate, so contrast will be a little reduced.'
+        : 'The moon is dim, so the sky should stay nice and dark.'
+      : 'Moonlight data is unavailable, so plan for darker skies just in case.';
+
+    const { bz, speed } = data.solarWind;
+    const solarNote = bz < -10 && speed > 500
+      ? `Solar wind is primed (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s) for a strong response.`
+      : bz < -5
+      ? `Solar wind is favorable (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`
+      : `Solar wind is mostly quiet (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`;
+
+    const magnitude = Math.abs(data.strength);
+    const sizeLabel = magnitude >= 1500 ? 'major' : magnitude >= 800 ? 'strong' : magnitude >= 450 ? 'moderate' : 'minor';
+
+    const pickTown = (towns: NzTown[], key: 'eye' | 'phone' | 'cam') => {
+      const matches = towns.filter((t) => t[key]);
+      if (matches.length === 0) return null;
+      return matches.sort((a, b) => b.lat - a.lat)[0];
+    };
+    const bestTown =
+      pickTown(data.towns, 'eye') ||
+      pickTown(data.towns, 'phone') ||
+      pickTown(data.towns, 'cam');
+
+    const visibilityLine = bestTown
+      ? `Best odds are around ${bestTown.name} right now.`
+      : 'No towns are in range yet—expect activity to remain south of New Zealand.';
+
+    const lightLine = darkEnough
+      ? 'It is dark enough to observe.'
+      : 'It is still too bright right now—check back closer to darkness.';
+
+    return `${lightLine} A ${sizeLabel} burst is possible based on current ground activity. ${solarNote} ${moonNote} ${visibilityLine}`;
+  }, [data, celestialTimes, isDaylight]);
   const handleMouseMove = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
       if (!data || !chartRef.current) return;
@@ -70,55 +118,6 @@ const NzSubstormIndex: React.FC<NzSubstormIndexProps> = ({ celestialTimes, isDay
     pathD = `M ${getX(activePoints[0].t)} ${getY(activePoints[0].v)} ` +
       activePoints.map((p: any) => `L ${getX(p.t)} ${getY(p.v)}`).join(' ');
   }
-
-  const forecastText = useMemo(() => {
-    if (!data) return '';
-    const now = Date.now();
-    const sunrise = celestialTimes?.sun?.rise ?? null;
-    const sunset = celestialTimes?.sun?.set ?? null;
-    const darkBuffer = 90 * 60 * 1000;
-    const darkEnough = sunset && sunrise
-      ? (now >= sunset - darkBuffer || now <= sunrise + darkBuffer)
-      : !isDaylight;
-    const moonIllumination = celestialTimes?.moon?.illumination ?? null;
-    const moonNote = moonIllumination !== null
-      ? moonIllumination >= 75
-        ? 'The moon is bright, so faint glows will be harder to pick out.'
-        : moonIllumination >= 40
-        ? 'The moon is moderate, so contrast will be a little reduced.'
-        : 'The moon is dim, so the sky should stay nice and dark.'
-      : 'Moonlight data is unavailable, so plan for darker skies just in case.';
-
-    const { bz, speed } = data.solarWind;
-    const solarNote = bz < -10 && speed > 500
-      ? `Solar wind is primed (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s) for a strong response.`
-      : bz < -5
-      ? `Solar wind is favorable (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`
-      : `Solar wind is mostly quiet (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`;
-
-    const magnitude = Math.abs(data.strength);
-    const sizeLabel = magnitude >= 1500 ? 'major' : magnitude >= 800 ? 'strong' : magnitude >= 450 ? 'moderate' : 'minor';
-
-    const pickTown = (towns: NzTown[], key: 'eye' | 'phone' | 'cam') => {
-      const matches = towns.filter((t) => t[key]);
-      if (matches.length === 0) return null;
-      return matches.sort((a, b) => b.lat - a.lat)[0];
-    };
-    const bestTown =
-      pickTown(data.towns, 'eye') ||
-      pickTown(data.towns, 'phone') ||
-      pickTown(data.towns, 'cam');
-
-    const visibilityLine = bestTown
-      ? `Best odds are around ${bestTown.name} right now.`
-      : 'No towns are in range yet—expect activity to remain south of New Zealand.';
-
-    const lightLine = darkEnough
-      ? 'It is dark enough to observe.'
-      : 'It is still too bright right now—check back closer to darkness.';
-
-    return `${lightLine} A ${sizeLabel} burst is possible based on current ground activity. ${solarNote} ${moonNote} ${visibilityLine}`;
-  }, [data, celestialTimes, isDaylight]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
