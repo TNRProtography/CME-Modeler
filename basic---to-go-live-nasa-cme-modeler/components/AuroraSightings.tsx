@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
+import { calculateReachLatitude, useNzSubstormIndexData } from './nzSubstormIndexData';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -182,6 +183,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
 };
 
 const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal }) => {
+    const { data: nzSubstormData } = useNzSubstormIndexData();
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -449,7 +451,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                 <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
+                <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
                         zoom={MAP_ZOOM}
@@ -468,6 +470,46 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
+                        {nzSubstormData && (
+                            <>
+                                {nzSubstormData.towns.map((town, index) => {
+                                    let color = '#666';
+                                    let radius = 4;
+                                    if (town.cam) {
+                                        color = '#4ade80';
+                                        radius = 5;
+                                    }
+                                    if (town.phone) {
+                                        color = '#38bdf8';
+                                        radius = 6;
+                                    }
+                                    if (town.eye) {
+                                        color = '#facc15';
+                                        radius = 7;
+                                    }
+                                    return (
+                                        <CircleMarker
+                                            key={`${town.name}-${index}`}
+                                            center={[town.lat, town.lon]}
+                                            radius={radius}
+                                            pathOptions={{ color, fillColor: color, fillOpacity: 0.85 }}
+                                        />
+                                    );
+                                })}
+                                <Polyline
+                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[1][1]]]}
+                                    pathOptions={{ color: '#4ade80', dashArray: '4' }}
+                                />
+                                <Polyline
+                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[1][1]]]}
+                                    pathOptions={{ color: '#38bdf8', dashArray: '4' }}
+                                />
+                                <Polyline
+                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[1][1]]]}
+                                    pathOptions={{ color: '#facc15', dashArray: '4' }}
+                                />
+                            </>
+                        )}
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
                         <>
                              {sightings.map(sighting => {
