@@ -451,6 +451,106 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-3 bg-neutral-950/80 p-4 rounded-lg border border-neutral-800">
+                    <h3 className="text-sm font-bold text-neutral-400 uppercase mb-3">Active Visibility Zones</h3>
+                    {!nzSubstormData ? (
+                        <div className="text-xs text-neutral-500 italic">Loading NZ substorm visibility zones...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <div className="text-[10px] text-green-400 font-bold mb-2 flex items-center gap-1">📷 CAMERA (Long Exposure)</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {nzSubstormData.towns.filter((t) => t.cam).length === 0 ? (
+                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
+                                    ) : (
+                                        nzSubstormData.towns
+                                            .filter((t) => t.cam)
+                                            .map((t) => (
+                                                <span
+                                                    key={`cam-${t.name}`}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                        t.cam === 'green'
+                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
+                                                            : t.cam === 'yellow'
+                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
+                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                    }`}
+                                                >
+                                                    {t.name}
+                                                </span>
+                                            ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-[10px] text-sky-400 font-bold mb-2 flex items-center gap-1">📱 PHONE (Night Mode)</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {nzSubstormData.towns.filter((t) => t.phone).length === 0 ? (
+                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
+                                    ) : (
+                                        nzSubstormData.towns
+                                            .filter((t) => t.phone)
+                                            .map((t) => (
+                                                <span
+                                                    key={`phone-${t.name}`}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                        t.phone === 'green'
+                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
+                                                            : t.phone === 'yellow'
+                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
+                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                    }`}
+                                                >
+                                                    {t.name}
+                                                </span>
+                                            ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-[10px] text-yellow-400 font-bold mb-2 flex items-center gap-1">👁️ NAKED EYE</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {nzSubstormData.towns.filter((t) => t.eye).length === 0 ? (
+                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
+                                    ) : (
+                                        nzSubstormData.towns
+                                            .filter((t) => t.eye)
+                                            .map((t) => (
+                                                <span
+                                                    key={`eye-${t.name}`}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                        t.eye === 'green'
+                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
+                                                            : t.eye === 'yellow'
+                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
+                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                    }`}
+                                                >
+                                                    {t.name}
+                                                </span>
+                                            ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <div className="mt-4 pt-3 border-t border-neutral-800 flex gap-4 text-[10px] text-neutral-400 justify-center">
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                            Possible
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                            Good
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-green-500" />
+                            Great
+                        </span>
+                    </div>
+                </div>
                 <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}

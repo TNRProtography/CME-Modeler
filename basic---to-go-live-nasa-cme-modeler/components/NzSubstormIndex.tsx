@@ -79,13 +79,13 @@ const NzSubstormIndex: React.FC = () => {
         <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-2">Current Activity</div>
         <div
           className="text-6xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]"
-          style={{ color: data.strength < -450 ? '#ef4444' : data.strength < -250 ? '#facc15' : '#e5e5e5' }}
+          style={{ color: data.strength < -1500 ? '#ef4444' : data.strength < -800 ? '#facc15' : '#e5e5e5' }}
         >
           {Math.round(data.strength)}
         </div>
         <div className="mt-4 flex gap-2">
           <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-white border border-neutral-700">
-            {data.strength < -1000 ? 'SEVERE' : data.strength < -450 ? 'STRONG' : data.strength < -250 ? 'ACTIVE' : 'QUIET'}
+            {data.strength < -1500 ? 'SEVERE' : data.strength < -800 ? 'STRONG' : data.strength < -450 ? 'ACTIVE' : 'QUIET'}
           </span>
           <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-neutral-300 border border-neutral-700">
             Slope: {data.slope.toFixed(1)}/min
@@ -97,104 +97,7 @@ const NzSubstormIndex: React.FC = () => {
         />
       </div>
 
-      <div className="md:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 flex flex-col gap-3">
-          <h3 className="text-xs font-bold text-neutral-400 uppercase">Active Visibility Zones</h3>
-
-          <div>
-            <div className="text-[10px] text-green-400 font-bold mb-1 flex items-center gap-1">📷 CAMERA (Long Exposure)</div>
-            <div className="flex flex-wrap gap-1">
-              {data.towns.filter((t: any) => t.cam).length === 0 ? (
-                <span className="text-neutral-600 text-xs italic">No towns in range</span>
-              ) : (
-                data.towns
-                  .filter((t: any) => t.cam)
-                  .map((t: any) => (
-                    <span
-                      key={t.name}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        t.cam === 'green'
-                          ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                          : t.cam === 'yellow'
-                          ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                          : 'bg-red-500/20 border-red-500/40 text-red-300'
-                      }`}
-                    >
-                      {t.name}
-                    </span>
-                  ))
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[10px] text-sky-400 font-bold mb-1 flex items-center gap-1">📱 PHONE (Night Mode)</div>
-            <div className="flex flex-wrap gap-1">
-              {data.towns.filter((t: any) => t.phone).length === 0 ? (
-                <span className="text-neutral-600 text-xs italic">No towns in range</span>
-              ) : (
-                data.towns
-                  .filter((t: any) => t.phone)
-                  .map((t: any) => (
-                    <span
-                      key={t.name}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        t.phone === 'green'
-                          ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                          : t.phone === 'yellow'
-                          ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                          : 'bg-red-500/20 border-red-500/40 text-red-300'
-                      }`}
-                    >
-                      {t.name}
-                    </span>
-                  ))
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[10px] text-yellow-400 font-bold mb-1 flex items-center gap-1">👁️ NAKED EYE</div>
-            <div className="flex flex-wrap gap-1">
-              {data.towns.filter((t: any) => t.eye).length === 0 ? (
-                <span className="text-neutral-600 text-xs italic">No towns in range</span>
-              ) : (
-                data.towns
-                  .filter((t: any) => t.eye)
-                  .map((t: any) => (
-                    <span
-                      key={t.name}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        t.eye === 'green'
-                          ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                          : t.eye === 'yellow'
-                          ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                          : 'bg-red-500/20 border-red-500/40 text-red-300'
-                      }`}
-                    >
-                      {t.name}
-                    </span>
-                  ))
-              )}
-            </div>
-          </div>
-
-          <div className="mt-auto pt-3 border-t border-neutral-800 flex gap-4 text-[10px] text-neutral-400 justify-center">
-            <span className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-              Possible
-            </span>
-            <span className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-yellow-500" />
-              Good
-            </span>
-            <span className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              Great
-            </span>
-          </div>
-        </div>
-
+      <div className="md:col-span-8">
         <div className="bg-neutral-900/50 rounded-lg border border-neutral-800 relative overflow-hidden p-6 h-[250px] flex flex-col justify-center text-center">
           <div className="text-sm font-semibold text-neutral-200 mb-2">Map Overlay</div>
           <p className="text-xs text-neutral-400">
@@ -236,7 +139,7 @@ const NzSubstormIndex: React.FC = () => {
             <path
               d={pathD}
               fill="none"
-              stroke={data.strength < -250 ? '#facc15' : '#e5e5e5'}
+              stroke={data.strength < -450 ? '#facc15' : '#e5e5e5'}
               strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
             />
@@ -250,7 +153,7 @@ const NzSubstormIndex: React.FC = () => {
                 style={{ left: hoverData.x > 300 ? hoverData.x - 120 : hoverData.x + 10 }}
               >
                 <div className="font-bold">{new Date(hoverData.closest.t).toLocaleTimeString()}</div>
-                <div style={{ color: hoverData.closest.v < -250 ? '#facc15' : '#ccc' }}>
+                <div style={{ color: hoverData.closest.v < -450 ? '#facc15' : '#ccc' }}>
                   {Math.round(hoverData.closest.v)} nT
                 </div>
               </div>

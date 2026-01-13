@@ -5,7 +5,7 @@ const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json
 const NOAA_RTSW_WIND = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
 const DOMAIN = 'geomag';
 const SCALE_FACTOR = 100;
-const DISPLAY_DIVISOR = 100;
+const DISPLAY_DIVISOR = 10;
 const AGGREGATION_MINUTES = 5;
 export const CHART_LOOKBACK_HOURS = 24;
 const BASELINE_WINDOW_MINUTES = 180;
@@ -16,9 +16,9 @@ const AKL_LAT = -36.85;
 const LAT_DELTA = AKL_LAT - OBAN_LAT;
 
 // Thresholds (Display Units)
-const REQ_CAM = { start: -300 / DISPLAY_DIVISOR, end: -800 / DISPLAY_DIVISOR };
-const REQ_PHN = { start: -350 / DISPLAY_DIVISOR, end: -900 / DISPLAY_DIVISOR };
-const REQ_EYE = { start: -500 / DISPLAY_DIVISOR, end: -1200 / DISPLAY_DIVISOR };
+const REQ_CAM = { start: -300, end: -1000 };
+const REQ_PHN = { start: -450, end: -1100 };
+const REQ_EYE = { start: -800, end: -1500 };
 
 export interface NzTown {
   name: string;
@@ -85,7 +85,7 @@ const getTownStatus = (town: NzTown, currentStrength: number, category: 'camera'
   if (currentStrength <= required) {
     const excess = Math.abs(currentStrength) - Math.abs(required);
     if (excess < 50) return 'red';
-    if (excess < 100) return 'yellow';
+    if (excess < 150) return 'yellow';
     return 'green';
   }
   return undefined;
