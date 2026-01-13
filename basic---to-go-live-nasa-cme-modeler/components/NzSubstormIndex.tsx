@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { CircleMarker, MapContainer, Polyline, TileLayer } from 'react-leaflet';
+import L from 'leaflet';
 
 const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
 const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json';
@@ -14,6 +16,7 @@ const BASELINE_WINDOW_MINUTES = 180;
 const OBAN_LAT = -46.9;
 const AKL_LAT = -36.85;
 const LAT_DELTA = AKL_LAT - OBAN_LAT;
+const NZ_BOUNDS: L.LatLngBoundsExpression = [[-48, 166], [-34, 179]];
 
 // Thresholds (Display Units)
 const REQ_CAM = { start: -300 / DISPLAY_DIVISOR, end: -800 / DISPLAY_DIVISOR };
@@ -353,66 +356,9 @@ const NzSubstormIndex: React.FC = () => {
       activePoints.map((p: any) => `L ${getX(p.t)} ${getY(p.v)}`).join(' ');
   }
 
-  const renderMap = () => {
-    const w = 300;
-    const h = 400;
-    const Y = (lat: number) => ((lat - -34.0) / (-47.5 - -34.0)) * h;
-    const X = (lon: number) => ((lon - 166.0) / (179.0 - 166.0)) * w;
-
-    const southIslandPath =
-      'M 116 328 L 96 306 L 92 288 L 103 272 L 118 260 L 130 242 L 139 226 L 152 214 L 162 198 L 166 180 L 160 166 L 148 156 L 140 142 L 134 126 L 122 120 L 112 130 L 104 148 L 98 170 L 90 192 L 82 214 L 74 238 L 72 256 L 78 276 L 86 294 L 98 314 L 110 332 Z';
-    const northIslandPath =
-      'M 178 176 L 188 166 L 198 152 L 206 136 L 212 118 L 214 102 L 208 88 L 200 78 L 196 62 L 190 50 L 184 42 L 176 44 L 170 56 L 166 74 L 166 94 L 168 114 L 170 132 L 170 150 L 172 164 Z';
-
-    const lCam = calculateReachLatitude(data.strength, 'camera');
-    const lPhn = calculateReachLatitude(data.strength, 'phone');
-    const lEye = calculateReachLatitude(data.strength, 'eye');
-
-    const yCam = Y(lCam);
-    const yPhn = Y(lPhn);
-    const yEye = Y(lEye);
-
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full opacity-90">
-        <path d={southIslandPath} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
-        <path d={northIslandPath} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
-
-        {data.towns.map((t: NzTown, i: number) => {
-          let fill = '#555';
-          let r = 2;
-          if (t.cam) {
-            fill = '#4ade80';
-            r = 3;
-          }
-          if (t.phone) {
-            fill = '#38bdf8';
-            r = 3.5;
-          }
-          if (t.eye) {
-            fill = '#facc15';
-            r = 4;
-          }
-          return <circle key={i} cx={X(t.lon)} cy={Y(t.lat)} r={r} fill={fill} />;
-        })}
-
-        {yCam < h && (
-          <line x1="0" y1={yCam} x2={w} y2={yCam} stroke="#4ade80" strokeDasharray="4" strokeWidth="1">
-            <title>Camera</title>
-          </line>
-        )}
-        {yPhn < h && (
-          <line x1="0" y1={yPhn} x2={w} y2={yPhn} stroke="#38bdf8" strokeDasharray="4" strokeWidth="1">
-            <title>Phone</title>
-          </line>
-        )}
-        {yEye < h && (
-          <line x1="0" y1={yEye} x2={w} y2={yEye} stroke="#facc15" strokeDasharray="4" strokeWidth="1">
-            <title>Eye</title>
-          </line>
-        )}
-      </svg>
-    );
-  };
+  const lCam = calculateReachLatitude(data.strength, 'camera');
+  const lPhn = calculateReachLatitude(data.strength, 'phone');
+  const lEye = calculateReachLatitude(data.strength, 'eye');
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
@@ -548,8 +494,45 @@ const NzSubstormIndex: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-neutral-900/50 rounded-lg border border-neutral-800 relative overflow-hidden flex items-center justify-center p-2 h-[250px]">
-          {renderMap()}
+        <div className="bg-neutral-900/50 rounded-lg border border-neutral-800 relative overflow-hidden p-2 h-[250px]">
+          <MapContainer
+            bounds={NZ_BOUNDS}
+            scrollWheelZoom={false}
+            className="w-full h-full rounded-md"
+            zoomControl={false}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
+            {data.towns.map((t: NzTown, i: number) => {
+              let color = '#666';
+              let radius = 4;
+              if (t.cam) {
+                color = '#4ade80';
+                radius = 5;
+              }
+              if (t.phone) {
+                color = '#38bdf8';
+                radius = 6;
+              }
+              if (t.eye) {
+                color = '#facc15';
+                radius = 7;
+              }
+              return (
+                <CircleMarker
+                  key={`${t.name}-${i}`}
+                  center={[t.lat, t.lon]}
+                  radius={radius}
+                  pathOptions={{ color, fillColor: color, fillOpacity: 0.85 }}
+                />
+              );
+            })}
+            <Polyline positions={[[lCam, 166], [lCam, 179]]} pathOptions={{ color: '#4ade80', dashArray: '4' }} />
+            <Polyline positions={[[lPhn, 166], [lPhn, 179]]} pathOptions={{ color: '#38bdf8', dashArray: '4' }} />
+            <Polyline positions={[[lEye, 166], [lEye, 179]]} pathOptions={{ color: '#facc15', dashArray: '4' }} />
+          </MapContainer>
           <div className="absolute bottom-2 right-2 text-[10px] text-neutral-600">New Zealand Map</div>
         </div>
       </div>
