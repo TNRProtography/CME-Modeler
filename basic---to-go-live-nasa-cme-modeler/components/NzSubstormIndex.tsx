@@ -5,6 +5,7 @@ const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json
 const NOAA_RTSW_WIND = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
 const DOMAIN = 'geomag';
 const SCALE_FACTOR = 100;
+const DISPLAY_DIVISOR = 100;
 const AGGREGATION_MINUTES = 5;
 const CHART_LOOKBACK_HOURS = 24;
 const BASELINE_WINDOW_MINUTES = 180;
@@ -15,9 +16,9 @@ const AKL_LAT = -36.85;
 const LAT_DELTA = AKL_LAT - OBAN_LAT;
 
 // Thresholds (Display Units)
-const REQ_CAM = { start: -300, end: -800 };
-const REQ_PHN = { start: -350, end: -900 };
-const REQ_EYE = { start: -500, end: -1200 };
+const REQ_CAM = { start: -300 / DISPLAY_DIVISOR, end: -800 / DISPLAY_DIVISOR };
+const REQ_PHN = { start: -350 / DISPLAY_DIVISOR, end: -900 / DISPLAY_DIVISOR };
+const REQ_EYE = { start: -500 / DISPLAY_DIVISOR, end: -1200 / DISPLAY_DIVISOR };
 
 interface NzTown {
   name: string;
@@ -241,7 +242,7 @@ const NzSubstormIndex: React.FC = () => {
         }, 0);
 
         const points = Array.from(combinedMap.entries())
-          .map(([t, values]) => ({ t, v: Math.min(...values) }))
+          .map(([t, values]) => ({ t, v: Math.min(...values) / DISPLAY_DIVISOR }))
           .sort((a, b) => a.t - b.t);
 
         if (points.length < 10) throw new Error('Insufficient Ground Data');
@@ -269,7 +270,7 @@ const NzSubstormIndex: React.FC = () => {
         if (bz < -15 && speed > 500) outlook = `⚠️ WARNING: Severe shock (Bz ${bz}, ${speed}km/s). Major impact in ${delay} mins.`;
         else if (bz < -10) outlook = `🚨 Incoming: Strong negative field (Bz ${bz}). Intensification in ${delay} mins.`;
         else if (bz < -5) outlook = `📡 Watch: Favorable wind (Bz ${bz}). Substorm building, arrival ~${delay} mins.`;
-        else if (currentStrength < -200 * SCALE_FACTOR) outlook = '👀 Ground: Active conditions detected.';
+        else if (currentStrength < -200 / DISPLAY_DIVISOR) outlook = '👀 Ground: Active conditions detected.';
         else outlook = '🌙 Quiet: Currently quiet.';
 
         const towns = getVisibleTowns(currentStrength);
@@ -358,6 +359,11 @@ const NzSubstormIndex: React.FC = () => {
     const Y = (lat: number) => ((lat - -34.0) / (-47.5 - -34.0)) * h;
     const X = (lon: number) => ((lon - 166.0) / (179.0 - 166.0)) * w;
 
+    const southIslandPath =
+      'M 116 328 L 96 306 L 92 288 L 103 272 L 118 260 L 130 242 L 139 226 L 152 214 L 162 198 L 166 180 L 160 166 L 148 156 L 140 142 L 134 126 L 122 120 L 112 130 L 104 148 L 98 170 L 90 192 L 82 214 L 74 238 L 72 256 L 78 276 L 86 294 L 98 314 L 110 332 Z';
+    const northIslandPath =
+      'M 178 176 L 188 166 L 198 152 L 206 136 L 212 118 L 214 102 L 208 88 L 200 78 L 196 62 L 190 50 L 184 42 L 176 44 L 170 56 L 166 74 L 166 94 L 168 114 L 170 132 L 170 150 L 172 164 Z';
+
     const lCam = calculateReachLatitude(data.strength, 'camera');
     const lPhn = calculateReachLatitude(data.strength, 'phone');
     const lEye = calculateReachLatitude(data.strength, 'eye');
@@ -368,11 +374,8 @@ const NzSubstormIndex: React.FC = () => {
 
     return (
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full opacity-90">
-        <path
-          d="M 152 24 L 160 30 L 165 60 L 200 120 L 180 180 L 140 240 L 100 300 L 40 360 L 60 380 L 120 340 L 160 280 L 180 200 Z"
-          fill="rgba(255,255,255,0.1)"
-          stroke="rgba(255,255,255,0.2)"
-        />
+        <path d={southIslandPath} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
+        <path d={northIslandPath} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
 
         {data.towns.map((t: NzTown, i: number) => {
           let fill = '#555';
@@ -429,13 +432,13 @@ const NzSubstormIndex: React.FC = () => {
         <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-2">Current Activity</div>
         <div
           className="text-6xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]"
-          style={{ color: data.strength < -45000 ? '#ef4444' : data.strength < -25000 ? '#facc15' : '#e5e5e5' }}
+          style={{ color: data.strength < -450 ? '#ef4444' : data.strength < -250 ? '#facc15' : '#e5e5e5' }}
         >
           {Math.round(data.strength)}
         </div>
         <div className="mt-4 flex gap-2">
           <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-white border border-neutral-700">
-            {data.strength < -100000 ? 'SEVERE' : data.strength < -45000 ? 'STRONG' : data.strength < -25000 ? 'ACTIVE' : 'QUIET'}
+            {data.strength < -1000 ? 'SEVERE' : data.strength < -450 ? 'STRONG' : data.strength < -250 ? 'ACTIVE' : 'QUIET'}
           </span>
           <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-neutral-300 border border-neutral-700">
             Slope: {data.slope.toFixed(1)}/min
@@ -547,7 +550,7 @@ const NzSubstormIndex: React.FC = () => {
 
         <div className="bg-neutral-900/50 rounded-lg border border-neutral-800 relative overflow-hidden flex items-center justify-center p-2 h-[250px]">
           {renderMap()}
-          <div className="absolute bottom-2 right-2 text-[10px] text-neutral-600">Schematic Map</div>
+          <div className="absolute bottom-2 right-2 text-[10px] text-neutral-600">New Zealand Map</div>
         </div>
       </div>
 
@@ -584,7 +587,7 @@ const NzSubstormIndex: React.FC = () => {
             <path
               d={pathD}
               fill="none"
-              stroke={data.strength < -25000 ? '#facc15' : '#e5e5e5'}
+              stroke={data.strength < -250 ? '#facc15' : '#e5e5e5'}
               strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
             />
@@ -598,7 +601,7 @@ const NzSubstormIndex: React.FC = () => {
                 style={{ left: hoverData.x > 300 ? hoverData.x - 120 : hoverData.x + 10 }}
               >
                 <div className="font-bold">{new Date(hoverData.closest.t).toLocaleTimeString()}</div>
-                <div style={{ color: hoverData.closest.v < -25000 ? '#facc15' : '#ccc' }}>
+                <div style={{ color: hoverData.closest.v < -250 ? '#facc15' : '#ccc' }}>
                   {Math.round(hoverData.closest.v)} nT
                 </div>
               </div>
