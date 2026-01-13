@@ -7,7 +7,8 @@ import { SubstormForecast } from '../types';
 interface UnifiedForecastPanelProps {
   // Aurora forecast props
   score: number | null;
-  blurb: string;
+  isDaylight: boolean;
+  forecastLines: string[];
   lastUpdated: string;
   locationBlurb: string;
   getGaugeStyle: (v: number | null, type: 'power' | 'speed' | 'density' | 'bt' | 'bz') => { color: string; emoji: string; percentage: number };
@@ -22,7 +23,8 @@ interface UnifiedForecastPanelProps {
 
 export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   score,
-  blurb,
+  isDaylight,
+  forecastLines,
   lastUpdated,
   locationBlurb,
   getGaugeStyle,
@@ -32,8 +34,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   onOpenModal,
   substormForecast
 }) => {
-  const isDaylight = blurb.includes("The sun is currently up");
-  const { status, likelihood, windowLabel, action } = substormForecast || { status: 'QUIET', likelihood: 0, windowLabel: '', action: '' };
+  const { status, likelihood, windowLabel } = substormForecast || { status: 'QUIET', likelihood: 0, windowLabel: '' };
   
   const isSubstormActive = status !== 'QUIET';
   const isSubstormImminent = status === 'IMMINENT_30' || status === 'ONSET';
@@ -65,20 +66,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     if (likelihood >= 25) return "from-yellow-300 to-amber-400";
     return "from-neutral-600 to-neutral-700";
   }, [likelihood]);
-
-  // --- NEW: Logic for score-based "fuss" ---
-  const actionPanelStyle = useMemo(() => {
-    if (!isSubstormImminent || isDaylight || (score ?? 0) <= 0) {
-        return 'bg-neutral-900/50 border border-neutral-700/50';
-    }
-    if (score >= 50) {
-        return 'bg-red-900/30 border-2 border-red-500 animate-pulse';
-    }
-    if (score >= 25) {
-        return 'bg-red-900/20 border border-red-600';
-    }
-    return 'bg-neutral-900/50 border border-neutral-700/50';
-  }, [isSubstormImminent, isDaylight, score]);
 
   return (
     <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
@@ -151,26 +138,17 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
               </div>
             </div>
           )}
-          
-          <div className={`rounded-lg p-4 ${actionPanelStyle}`}>
-            <div className="text-sm text-neutral-300 font-medium mb-1">
-              Recommended Action
-            </div>
-            <p className="text-neutral-200">
-              {action}
-            </p>
-          </div>
 
-          {!isDaylight && (
-            <div className="rounded-lg p-4 bg-neutral-900/50 border border-neutral-700/50">
-                <div className="text-sm text-neutral-300 font-medium mb-1">
-                Visibility
-                </div>
-                <p className="text-neutral-200">
-                {blurb}
-                </p>
+          <div className="rounded-lg p-4 bg-neutral-900/50 border border-neutral-700/50">
+            <div className="text-sm text-neutral-300 font-medium mb-2">
+              Tonight's Forecast
             </div>
-          )}
+            <div className="space-y-2 text-sm text-neutral-200">
+              {forecastLines.map((line) => (
+                <p key={line} className="leading-relaxed">{line}</p>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
+import { NZ_TOWNS, calculateReachLatitude, useNzSubstormIndexData } from './nzSubstormIndexData';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -22,35 +23,8 @@ const RedCrossIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- CONSTANTS & CONFIG ---
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
-const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
-const PROFANITY_PATTERNS = [
-    /f\s*\W*\s*u\s*\W*\s*c\s*\W*\s*k/i,
-    /s\s*\W*\s*h\s*\W*\s*i\s*\W*\s*t/i,
-    /b\s*\W*\s*i\s*\W*\s*t\s*\W*\s*c\s*\W*\s*h/i,
-    /c\s*\W*\s*u\s*\W*\s*n\s*\W*\s*t/i,
-    /d\s*\W*\s*a\s*\W*\s*m\s*\W*\s*n/i,
-    /a\s*\W*\s*s\s*\W*\s*s\s*\W*h\s*\W*\s*o\s*\W*\s*l\s*\W*\s*e/i,
-    /d\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
-    /c\s*\W*\s*o\s*\W*\s*c\s*\W*\s*k/i,
-    /p\s*\W*\s*u\s*\W*\s*s\s*\W*\s*s\s*\W*\s*y/i,
-    /b\s*\W*\s*a\s*\W*\s*l\s*\W*\s*l\s*\W*\s*s/i,
-    /t\s*\W*\s*e\s*\W*\s*s\s*\W*\s*t\s*\W*\s*i\s*\W*\s*c\s*\W*\s*l\s*\W*\s*e/i,
-    /b\s*\W*\s*o\s*\W*\s*l\s*\W*\s*l\s*\W*\s*o\s*\W*\s*c\s*\W*\s*k\s*\W*\s*s/i,
-    /p\s*\W*\s*e\s*\W*\s*n\s*\W*\s*i\s*\W*\s*s/i,
-    /v\s*\W*\s*a\s*\W*\s*g\s*\W*\s*i\s*\W*\s*n\s*\W*\s*a/i,
-    /t\s*\W*\s*i\s*\W*\s*t\s*\W*\s*s/i,
-    /m\s*\W*\s*o\s*\W*\s*t\s*\W*\s*h\s*\W*\s*e\s*\W*\s*r\s*\W*\s*f\s*\W*\s*u\s*\W*\s*c\s*\W*\s*k/i,
-    /s\s*\W*\s*l\s*\W*\s*u\s*\W*\s*t/i,
-    /b\s*\W*\s*i\s*\W*\s*t\s*\W*\s*c\s*\W*\s*h\s*\W*\s*e\s*\W*\s*a\s*\W*\s*d/i,
-    /w\s*\W*\s*h\s*\W*\s*o\s*\W*\s*r\s*\W*\s*e/i,
-    /t\s*\W*\s*w\s*\W*\s*a\s*\W*\s*t/i,
-    /p\s*\W*\s*r\s*\W*\s*i\s*\W*\s*c\s*\W*\s*k/i,
-    /c\s*\W*\s*u\s*\W*\s*m/i,
-    /j\s*\W*\s*i\s*\W*\s*z\s*\W*\s*z/i,
-    /d\s*\W*\s*o\s*\W*\s*u\s*\W*\s*c\s*\W*\s*h/i,
-];
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
@@ -182,15 +156,14 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
 };
 
 const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal }) => {
+    const { data: nzSubstormData } = useNzSubstormIndexData();
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
-    const [userName, setUserName] = useState<string>('');
     const [userPosition, setUserPosition] = useState<L.LatLng | null>(null);
     const [hasGpsLock, setHasGpsLock] = useState(false);
     const [gpsError, setGpsError] = useState<string | null>(null);
-    const [nameError, setNameError] = useState<string | null>(null);
     const [selectedStatus, setSelectedStatus] = useState<SightingStatus | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
@@ -200,10 +173,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     const [sunsetWindowStart, setSunsetWindowStart] = useState<number>(() => computeSunsetWindowStart());
 
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
-
-    const containsProfanity = useCallback((value: string) => {
-        return PROFANITY_PATTERNS.some(pattern => pattern.test(value));
-    }, []);
 
     const requestGpsFix = useCallback(() => {
         if (!navigator.geolocation) {
@@ -242,7 +211,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     }, []);
 
     useEffect(() => {
-        setUserName(localStorage.getItem(LOCAL_STORAGE_USERNAME_KEY) || '');
         const lastReportString = localStorage.getItem(LOCAL_STORAGE_LAST_REPORT_KEY);
         if (lastReportString) setLastReportInfo(JSON.parse(lastReportString));
         fetchSightings();
@@ -273,25 +241,34 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
     const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight && hasGpsLock;
 
-    const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newName = e.target.value;
-        const hasProfanity = containsProfanity(newName);
-        setNameError(hasProfanity ? 'Please remove profanity from your name before submitting.' : null);
-        setUserName(newName);
-        if (!hasProfanity) {
-            localStorage.setItem(LOCAL_STORAGE_USERNAME_KEY, newName);
+    const findNearestTownName = useCallback((lat: number, lon: number) => {
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const haversine = (town: { lat: number; lon: number }) => {
+            const dLat = toRad(lat - town.lat);
+            const dLon = toRad(lon - town.lon);
+            const lat1 = toRad(town.lat);
+            const lat2 = toRad(lat);
+            const h =
+                Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+            return 6371 * 2 * Math.asin(Math.sqrt(h));
+        };
+
+        let nearest = NZ_TOWNS[0];
+        let best = Number.POSITIVE_INFINITY;
+        for (const town of NZ_TOWNS) {
+            const dist = haversine(town);
+            if (dist < best) {
+                best = dist;
+                nearest = town;
+            }
         }
-    };
+        return nearest.name;
+    }, []);
 
     const handleSubmit = async () => {
-        if (containsProfanity(userName)) {
-            alert('Profanity is not allowed in the name field.');
-            return;
-        }
-
-        if (!userPosition || !selectedStatus || !userName.trim() || !canSubmit) {
+        if (!userPosition || !selectedStatus || !canSubmit) {
             const alertMsg = [
-                !userName.trim() && 'Please enter your name.',
                 !hasGpsLock && 'GPS is required to submit. Please enable location services to continue.',
                 !userPosition && 'Please set your location by enabling GPS. Tap "Try GPS again" if needed.',
                 !selectedStatus && 'Please select your sighting status.',
@@ -303,7 +280,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
         setIsSubmitting(true);
         setError(null);
-        const reportData: Omit<SightingReport, 'timestamp'> = { lat: userPosition.lat, lng: userPosition.lng, status: selectedStatus, name: userName.trim() };
+        const reportData: Omit<SightingReport, 'timestamp'> = {
+            lat: userPosition.lat,
+            lng: userPosition.lng,
+            status: selectedStatus,
+            name: findNearestTownName(userPosition.lat, userPosition.lng)
+        };
         const pendingSighting: SightingReport = { ...reportData, timestamp: Date.now(), isPending: true };
         setPendingReport(pendingSighting);
 
@@ -385,8 +367,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     </div>
                 )}
                 <div className="col-span-12 md:col-span-3 space-y-2">
-                    <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="w-full bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                    {nameError && <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">{nameError}</p>}
+                    <div className="text-xs text-neutral-400 bg-neutral-800/60 border border-neutral-700 rounded px-3 py-2">
+                        Reports are tagged to the nearest town automatically.
+                    </div>
                 </div>
 
                 <div className="col-span-12 md:col-span-9 space-y-4">
@@ -449,7 +432,111 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                 <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
+                <div className="lg:col-span-3 bg-neutral-950/80 p-4 rounded-lg border border-neutral-800">
+                    <h3 className="text-sm font-bold text-neutral-400 uppercase mb-3">Active Visibility Zones</h3>
+                    {!nzSubstormData ? (
+                        <div className="text-xs text-neutral-500 italic">Loading NZ substorm visibility zones...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <div className="text-[10px] text-green-400 font-bold mb-2 flex items-center gap-1">📷 CAMERA (Long Exposure)</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {nzSubstormData.towns.filter((t) => t.cam).length === 0 ? (
+                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
+                                    ) : (
+                                        nzSubstormData.towns
+                                            .filter((t) => t.cam)
+                                            .map((t) => (
+                                                <span
+                                                    key={`cam-${t.name}`}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                        t.cam === 'green'
+                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
+                                                            : t.cam === 'yellow'
+                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
+                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                    }`}
+                                                >
+                                                    {t.name}
+                                                </span>
+                                            ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-[10px] text-sky-400 font-bold mb-2 flex items-center gap-1">📱 PHONE (Night Mode)</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {nzSubstormData.towns.filter((t) => t.phone).length === 0 ? (
+                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
+                                    ) : (
+                                        nzSubstormData.towns
+                                            .filter((t) => t.phone)
+                                            .map((t) => (
+                                                <span
+                                                    key={`phone-${t.name}`}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                        t.phone === 'green'
+                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
+                                                            : t.phone === 'yellow'
+                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
+                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                    }`}
+                                                >
+                                                    {t.name}
+                                                </span>
+                                            ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-[10px] text-yellow-400 font-bold mb-2 flex items-center gap-1">👁️ NAKED EYE</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {nzSubstormData.towns.filter((t) => t.eye).length === 0 ? (
+                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
+                                    ) : (
+                                        nzSubstormData.towns
+                                            .filter((t) => t.eye)
+                                            .map((t) => (
+                                                <span
+                                                    key={`eye-${t.name}`}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                        t.eye === 'green'
+                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
+                                                            : t.eye === 'yellow'
+                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
+                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                    }`}
+                                                >
+                                                    {t.name}
+                                                </span>
+                                            ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <div className="mt-4 pt-3 border-t border-neutral-800 flex gap-4 text-[10px] text-neutral-400 justify-center">
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-neutral-600" />
+                            No visibility likely
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                            Possible
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                            Good
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <div className="w-2 h-2 rounded-full bg-green-500" />
+                            Great
+                        </span>
+                    </div>
+                </div>
+                <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
                         zoom={MAP_ZOOM}
@@ -468,6 +555,46 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
+                        {nzSubstormData && (
+                            <>
+                                {nzSubstormData.towns.map((town, index) => {
+                                    let color = '#666';
+                                    let radius = 4;
+                                    if (town.cam) {
+                                        color = '#4ade80';
+                                        radius = 5;
+                                    }
+                                    if (town.phone) {
+                                        color = '#38bdf8';
+                                        radius = 6;
+                                    }
+                                    if (town.eye) {
+                                        color = '#facc15';
+                                        radius = 7;
+                                    }
+                                    return (
+                                        <CircleMarker
+                                            key={`${town.name}-${index}`}
+                                            center={[town.lat, town.lon]}
+                                            radius={radius}
+                                            pathOptions={{ color, fillColor: color, fillOpacity: 0.85 }}
+                                        />
+                                    );
+                                })}
+                                <Polyline
+                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[1][1]]]}
+                                    pathOptions={{ color: '#4ade80', dashArray: '4' }}
+                                />
+                                <Polyline
+                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[1][1]]]}
+                                    pathOptions={{ color: '#38bdf8', dashArray: '4' }}
+                                />
+                                <Polyline
+                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[1][1]]]}
+                                    pathOptions={{ color: '#facc15', dashArray: '4' }}
+                                />
+                            </>
+                        )}
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
                         <>
                              {sightings.map(sighting => {
@@ -487,7 +614,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         }}
                                     >
                                         <Popup>
-                                            <strong>{sighting.name}</strong> reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
+                                            <strong>{sighting.name}</strong> (nearest town) reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
                                         </Popup>
                                     </Marker>
                                 );
@@ -501,7 +628,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                      <h3 className="text-xl font-semibold text-white">Latest 5 Reports</h3>
                      <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left text-neutral-400">
-                            <thead className="text-xs text-neutral-300 uppercase bg-neutral-800"><tr><th scope="col" className="px-4 py-2">Time</th><th scope="col" className="px-4 py-2">Name</th><th scope="col" className="px-4 py-2">Report</th></tr></thead>
+                            <thead className="text-xs text-neutral-300 uppercase bg-neutral-800"><tr><th scope="col" className="px-4 py-2">Time</th><th scope="col" className="px-4 py-2">Nearest Town</th><th scope="col" className="px-4 py-2">Report</th></tr></thead>
                             <tbody>
                                 {isLoading ? ( <tr><td colSpan={3} className="text-center p-4 italic">Loading reports...</td></tr> ) : sightings.length === 0 ? ( <tr><td colSpan={3} className="text-center p-4 italic">No reports since sunset today.</td></tr> ) : sightings.slice(0, 5).map(s => (
                                     <tr

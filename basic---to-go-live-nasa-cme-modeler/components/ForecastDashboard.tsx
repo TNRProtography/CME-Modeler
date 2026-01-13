@@ -26,6 +26,7 @@ import {
     MoonArcChart,
     NzMagnetometerChart,
 } from './ForecastCharts';
+import NzSubstormIndex from './NzSubstormIndex';
 import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 import CaretIcon from './icons/CaretIcon';
 
@@ -67,47 +68,6 @@ const GAUGE_EMOJIS = {
     purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}'
 };
 
-// --- NZ SUBSTORM INDEX CONSTANTS ---
-const TILDE_BASE = "https://tilde.geonet.org.nz/v4";
-const NOAA_RTSW_MAG = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json";
-const NOAA_RTSW_WIND = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json";
-const DOMAIN = "geomag";
-const STATION = "EYWM"; // West Melton
-const SCALE_FACTOR = 100;
-
-// Geographic Config
-const OBAN_LAT = -46.90;
-const AKL_LAT = -36.85;
-const LAT_DELTA = AKL_LAT - OBAN_LAT;
-
-// Thresholds (Display Units)
-const REQ_CAM = { start: -300, end: -800 };
-const REQ_PHN = { start: -350, end: -900 };
-const REQ_EYE = { start: -500, end: -1200 };
-
-interface NzTown { name: string; lat: number; lon: number; cam?: string; phone?: string; eye?: string; }
-
-const NZ_TOWNS: NzTown[] = [
-    { name: "Oban", lat: -46.90, lon: 168.12 },
-    { name: "Invercargill", lat: -46.41, lon: 168.35 },
-    { name: "Dunedin", lat: -45.87, lon: 170.50 },
-    { name: "Queenstown", lat: -45.03, lon: 168.66 },
-    { name: "Wānaka", lat: -44.70, lon: 169.12 },
-    { name: "Twizel", lat: -44.26, lon: 170.10 },
-    { name: "Timaru", lat: -44.39, lon: 171.25 },
-    { name: "Christchurch", lat: -43.53, lon: 172.63 },
-    { name: "Kaikōura", lat: -42.40, lon: 173.68 },
-    { name: "Greymouth", lat: -42.45, lon: 171.20 },
-    { name: "Nelson", lat: -41.27, lon: 173.28 },
-    { name: "Wellington", lat: -41.29, lon: 174.77 },
-    { name: "Palmerston Nth", lat: -40.35, lon: 175.60 },
-    { name: "Napier", lat: -39.49, lon: 176.91 },
-    { name: "Taupō", lat: -38.68, lon: 176.07 },
-    { name: "Tauranga", lat: -37.68, lon: 176.16 },
-    { name: "Auckland", lat: -36.85, lon: 174.76 },
-    { name: "Whangārei", lat: -35.72, lon: 174.32 }
-];
-
 // --- TYPES ---
 interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
@@ -135,398 +95,132 @@ const getForecastScoreColorKey = (score: number) => {
     return 'gray';
 };
 
-const parseIso = (ts: string | number) => {
-    const t = new Date(ts).getTime();
-    return Number.isFinite(t) ? t : null;
-};
-
-const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-
-// --- NZ Substorm Index Logic ---
-const calculateReachLatitude = (strengthNt: number, mode: 'camera'|'phone'|'eye') => {
-    if (strengthNt >= 0) return -65.0;
-    const curve = (mode === 'phone' ? REQ_PHN : (mode === 'eye' ? REQ_EYE : REQ_CAM));
-    const slope = (curve.end - curve.start) / LAT_DELTA;
-    const lat = OBAN_LAT + (strengthNt - curve.start) / slope;
-    return Math.max(-48, Math.min(-34, lat));
-};
-
-const getTownStatus = (town: NzTown, currentStrength: number, category: 'camera'|'phone'|'eye') => {
-    if (currentStrength >= 0) return undefined;
-    const reqs = (category === 'phone' ? REQ_PHN : (category === 'eye' ? REQ_EYE : REQ_CAM));
-    const slope = (reqs.end - reqs.start) / LAT_DELTA;
-    const required = reqs.start + (town.lat - OBAN_LAT) * slope;
-
-    if (currentStrength <= required) {
-        const excess = Math.abs(currentStrength) - Math.abs(required);
-        if (excess < 50) return 'red';
-        if (excess < 100) return 'yellow';
-        return 'green';
+const getGaugeStyle = (
+    value: number | null,
+    type: 'power' | 'speed' | 'density' | 'bt' | 'bz'
+) => {
+    if (value === null || !Number.isFinite(value)) {
+        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.gray, percentage: 0 };
     }
-    return undefined;
-};
 
-const getVisibleTowns = (strength: number): NzTown[] => {
-    return NZ_TOWNS.map(town => ({
-        ...town,
-        cam: getTownStatus(town, strength, 'camera'),
-        phone: getTownStatus(town, strength, 'phone'),
-        eye: getTownStatus(town, strength, 'eye')
-    }));
-};
+    const thresholds = GAUGE_THRESHOLDS[type];
+    let key: keyof typeof GAUGE_COLORS = 'gray';
 
-const getProjectedBaseline = (samples: any[], targetTime: number) => {
-    const endWindow = targetTime - 5 * 60000;
-    const startWindow = targetTime - 185 * 60000;
-    const windowPoints: any[] = [];
-    for (let i = samples.length - 1; i >= 0; i--) {
-        const t = samples[i].t;
-        if (t > endWindow) continue;
-        if (t < startWindow) break;
-        windowPoints.push(samples[i]);
+    if (type === 'bz') {
+        if (value <= thresholds.pink) key = 'pink';
+        else if (value <= thresholds.purple) key = 'purple';
+        else if (value <= thresholds.red) key = 'red';
+        else if (value <= thresholds.orange) key = 'orange';
+        else if (value <= thresholds.yellow) key = 'yellow';
+    } else {
+        if (value >= thresholds.pink) key = 'pink';
+        else if (value >= thresholds.purple) key = 'purple';
+        else if (value >= thresholds.red) key = 'red';
+        else if (value >= thresholds.orange) key = 'orange';
+        else if (value >= thresholds.yellow) key = 'yellow';
     }
-    if (windowPoints.length < 10) return null;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    const n = windowPoints.length;
-    for (let i = 0; i < n; i++) {
-        const x = (windowPoints[i].t - startWindow) / 60000;
-        const y = windowPoints[i].val;
-        sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
-    }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    const targetX = (targetTime - startWindow) / 60000;
-    return slope * targetX + intercept;
+
+    const maxExpected =
+        type === 'bz'
+            ? Math.abs(thresholds.maxNegativeExpected ?? thresholds.pink)
+            : thresholds.maxExpected ?? Math.abs(thresholds.pink);
+    const percentage = Math.max(0, Math.min(100, (Math.abs(value) / maxExpected) * 100));
+
+    return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
 };
 
-// --- Sub-Component: NZ Substorm Index Panel ---
-const NzSubstormIndex: React.FC = () => {
-    const [loading, setLoading] = useState(true);
-    const [data, setData] = useState<any>(null);
-    const [chartRange, setChartRange] = useState(24);
-    const [hoverData, setHoverData] = useState<any>(null);
-    const chartRef = useRef<HTMLDivElement>(null);
+const getAuroraEmoji = (score: number | null) => {
+    if (score === null) return '❓';
+    if (score >= 80) return '🤩';
+    if (score >= 50) return '🌌';
+    if (score >= 35) return '📱';
+    if (score >= 20) return '📷';
+    if (score >= 10) return '😐';
+    return '😴';
+};
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                // 1. Fetch GeoNet Data
-                const summaryRes = await fetch(`${TILDE_BASE}/dataSummary/${DOMAIN}?station=${STATION}`);
-                const summary = await summaryRes.json();
-                
-                let bestSeries = "";
-                const st = summary?.domain?.[DOMAIN]?.stations?.[STATION];
-                if (st) {
-                    for (const sKey in st.sensorCodes) {
-                       const names = st.sensorCodes[sKey].names;
-                       for (const nKey in names) {
-                           if(nKey.toLowerCase().includes('north') || nKey === 'X' || nKey === 'magnetic-field') {
-                               const methods = names[nKey].methods;
-                               for(const mKey in methods) {
-                                   if(mKey.includes('60s') || mKey.includes('1m')) {
-                                       const aspects = methods[mKey].aspects;
-                                       if(aspects['X']) bestSeries = `${STATION}/${nKey}/${sKey}/${mKey}/X`;
-                                       else if(aspects['nil']) bestSeries = `${STATION}/${nKey}/${sKey}/${mKey}/nil`;
-                                   }
-                               }
-                           }
-                       }
-                    }
-                }
-                
-                const seriesKey = bestSeries || `${STATION}/magnetic-field/50/60s/X`;
-                const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${seriesKey}/latest/2d`;
-                const noaaMagUrl = NOAA_RTSW_MAG;
-                const noaaWindUrl = NOAA_RTSW_WIND;
-
-                const [geoRes, magRes, windRes] = await Promise.all([
-                    fetch(tildeUrl),
-                    fetch(noaaMagUrl),
-                    fetch(noaaWindUrl)
-                ]);
-
-                const geoData = await geoRes.json();
-                const magData = await magRes.json();
-                const windData = await windRes.json();
-
-                // Process Ground Data
-                const rawSamples = (geoData[0]?.data || []).map((d: any) => ({ t: parseIso(d.ts), val: d.val })).filter((d: any) => d.t && d.val != null).sort((a: any, b: any) => a.t - b.t);
-                
-                if (rawSamples.length < 10) throw new Error("Insufficient Ground Data");
-
-                // Calculate Baseline & Strength
-                const points = [];
-                for (let i = 0; i < rawSamples.length; i++) {
-                    if (rawSamples[i].t < Date.now() - 24 * 3600 * 1000) continue;
-                    const base = getProjectedBaseline(rawSamples, rawSamples[i].t);
-                    if (base === null) continue;
-                    
-                    let s = (rawSamples[i].val - base) * SCALE_FACTOR;
-                    if (s > 0 && s < 1500) s = s * 0.1; 
-                    s = clamp(s, -250000, 250000);
-                    points.push({ t: rawSamples[i].t, v: s });
-                }
-
-                // Current State
-                const last = rawSamples[rawSamples.length - 1];
-                const nowT = last.t;
-                const baseNow = getProjectedBaseline(rawSamples, nowT) ?? last.val;
-                let currentStrength = (last.val - baseNow) * SCALE_FACTOR;
-                if (currentStrength > 0 && currentStrength < 1500) currentStrength *= 0.1;
-                currentStrength = clamp(currentStrength, -250000, 250000);
-
-                // Calculate Slope
-                const slopeStart = nowT - 10 * 60000;
-                const slopeSet = rawSamples.filter((s: any) => s.t >= slopeStart);
-                let slope = 0;
-                if (slopeSet.length > 1) {
-                    const first = slopeSet[0];
-                    const dt = (last.t - first.t) / 60000;
-                    if (dt > 0) slope = ((last.val * SCALE_FACTOR) - (first.val * SCALE_FACTOR)) / dt;
-                }
-
-                // Process Satellite Data
-                const lastMag = magData[magData.length - 1];
-                const lastWind = windData[windData.length - 1];
-                const bz = lastMag ? parseFloat(lastMag.bz_gsm) : 0;
-                const speed = lastWind ? parseFloat(lastWind.speed) : 0;
-
-                // Generate Outlook
-                let outlook = "";
-                let delay = speed > 0 ? Math.round(1500000 / speed / 60) : 60;
-                if (bz < -15 && speed > 500) outlook = `⚠️ WARNING: Severe shock (Bz ${bz}, ${speed}km/s). Major impact in ${delay} mins.`;
-                else if (bz < -10) outlook = `🚨 Incoming: Strong negative field (Bz ${bz}). Intensification in ${delay} mins.`;
-                else if (bz < -5) outlook = `📡 Watch: Favorable wind (Bz ${bz}). Substorm building, arrival ~${delay} mins.`;
-                else if (currentStrength < -200 * SCALE_FACTOR) outlook = "👀 Ground: Active conditions detected.";
-                else outlook = "🌙 Quiet: Currently quiet.";
-
-                // Calculate Visibility
-                const towns = getVisibleTowns(currentStrength);
-
-                setData({
-                    strength: currentStrength,
-                    slope,
-                    points,
-                    towns,
-                    outlook,
-                    trends: {
-                        m5: currentStrength, // Simplify for demo
-                    }
-                });
-                setLoading(false);
-
-            } catch (e) {
-                console.error("NZ Substorm Fetch Error", e);
-                setLoading(false);
-            }
+const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
+    if (isDaylight) {
+        return {
+            overall: 'It is currently daylight. Camera settings are not applicable until after sunset.',
+            phone: {
+                android: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+                apple: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
+            },
+            dslr: { iso: 'Auto', shutter: 'Auto', aperture: 'Auto', focus: 'Auto', wb: 'Auto' },
         };
-        fetchData();
-        const interval = setInterval(fetchData, 60000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Interactive Chart Logic
-    const handleMouseMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-        if (!data || !chartRef.current) return;
-        const rect = chartRef.current.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-        const x = clientX - rect.left;
-        const w = rect.width;
-        
-        // Filter points based on range
-        const now = Date.now();
-        const cutoff = now - (chartRange * 3600 * 1000);
-        const activePoints = data.points.filter((p: any) => p.t >= cutoff);
-        if (activePoints.length === 0) return;
-
-        const ratio = x / w;
-        const tMin = activePoints[0].t;
-        const tMax = activePoints[activePoints.length - 1].t;
-        const timeAtCursor = tMin + ratio * (tMax - tMin);
-
-        // Find closest
-        let closest = activePoints[0];
-        let minDiff = Math.abs(timeAtCursor - closest.t);
-        for(let i=1; i<activePoints.length; i++) {
-            const diff = Math.abs(timeAtCursor - activePoints[i].t);
-            if(diff < minDiff) { minDiff = diff; closest = activePoints[i]; }
-        }
-        setHoverData({ x, closest });
-    }, [data, chartRange]);
-
-    if (loading) return <div className="h-64 flex items-center justify-center text-neutral-500">Initializing NZ Ground Systems...</div>;
-    if (!data) return <div className="h-64 flex items-center justify-center text-red-400">System Offline</div>;
-
-    // Chart Rendering
-    const activePoints = data.points.filter((p: any) => p.t >= Date.now() - (chartRange * 3600 * 1000));
-    const vals = activePoints.map((p: any) => p.v);
-    let vMin = Math.min(...vals); let vMax = Math.max(...vals);
-    if(vMax < 1000) vMax = 1000; if(vMin > -1000) vMin = -1000;
-    const range = vMax - vMin; 
-    vMax += range * 0.1; vMin -= range * 0.1;
-
-    const getX = (t: number) => ((t - activePoints[0].t) / (activePoints[activePoints.length-1].t - activePoints[0].t)) * 100;
-    const getY = (v: number) => 100 - ((v - vMin) / (vMax - vMin)) * 100;
-
-    let pathD = "";
-    if (activePoints.length > 0) {
-        pathD = `M ${getX(activePoints[0].t)} ${getY(activePoints[0].v)} ` + activePoints.map((p: any) => `L ${getX(p.t)} ${getY(p.v)}`).join(" ");
     }
 
-    // Map Rendering
-    const renderMap = () => {
-        const w = 300; const h = 400;
-        const Y = (lat: number) => (lat - (-34.0)) / ((-47.5) - (-34.0)) * h;
-        const X = (lon: number) => (lon - 166.0) / (179.0 - 166.0) * w;
-        
-        const lCam = calculateReachLatitude(data.strength, 'camera');
-        const lPhn = calculateReachLatitude(data.strength, 'phone');
-        const lEye = calculateReachLatitude(data.strength, 'eye');
+    const strength = score ?? 0;
+    const strong = strength >= 50;
+    const moderate = strength >= 25;
 
-        const yCam = Y(lCam); const yPhn = Y(lPhn); const yEye = Y(lEye);
+    return {
+        overall: strong
+            ? 'Strong activity expected. Shorter exposures reduce blowout.'
+            : moderate
+            ? 'Moderate activity. Start with a balanced exposure and adjust as needed.'
+            : 'Low activity. Longer exposures and higher ISO may be required.',
+        phone: {
+            android: {
+                iso: strong ? '800-1600' : moderate ? '1600-3200' : '3200-6400',
+                shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
+                aperture: 'Wide open',
+                focus: 'Infinity',
+                wb: '3500-4200K',
+            },
+            apple: {
+                iso: strong ? 'Auto' : moderate ? 'Auto' : 'Auto',
+                shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
+                aperture: 'Wide open',
+                focus: 'Infinity',
+                wb: '3500-4200K',
+            },
+        },
+        dslr: {
+            iso: strong ? '1600-3200' : moderate ? '3200-6400' : '6400+',
+            shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
+            aperture: 'f/1.4 – f/2.8',
+            focus: 'Infinity',
+            wb: '3500-4200K',
+        },
+    };
+};
 
-        return (
-            <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full opacity-90">
-                <path d="M 152 24 L 160 30 L 165 60 L 200 120 L 180 180 L 140 240 L 100 300 L 40 360 L 60 380 L 120 340 L 160 280 L 180 200 Z" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" />
-                
-                {data.towns.map((t: NzTown, i: number) => {
-                    let fill = "#555"; let r = 2;
-                    if(t.cam) { fill = "#4ade80"; r=3; }
-                    if(t.phone) { fill = "#38bdf8"; r=3.5; }
-                    if(t.eye) { fill = "#facc15"; r=4; }
-                    return <circle key={i} cx={X(t.lon)} cy={Y(t.lat)} r={r} fill={fill} />
-                })}
-
-                {yCam < h && <line x1="0" y1={yCam} x2={w} y2={yCam} stroke="#4ade80" strokeDasharray="4" strokeWidth="1"><title>Camera</title></line>}
-                {yPhn < h && <line x1="0" y1={yPhn} x2={w} y2={yPhn} stroke="#38bdf8" strokeDasharray="4" strokeWidth="1"><title>Phone</title></line>}
-                {yEye < h && <line x1="0" y1={yEye} x2={w} y2={yEye} stroke="#facc15" strokeDasharray="4" strokeWidth="1"><title>Eye</title></line>}
-            </svg>
-        );
-    }
-
+const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summary }) => {
+    if (!summary) return null;
+    const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
     return (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
-            {/* Header */}
-            <div className="md:col-span-12 flex justify-between items-center pb-2 border-b border-neutral-800">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2"><span className="text-sky-400">SPOT THE AURORA</span> / NZ SUBSTORM INDEX</h2>
-                <div className="text-xs text-neutral-500">Live Ground Magnetometer (EYWM) + RTSW</div>
-            </div>
-
-            {/* Hero Card */}
-            <div className="md:col-span-4 bg-neutral-900/50 rounded-lg p-6 flex flex-col justify-center items-center relative overflow-hidden border border-neutral-800">
-                <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-2">Current Activity</div>
-                <div className="text-6xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" style={{ color: data.strength < -45000 ? '#ef4444' : data.strength < -25000 ? '#facc15' : '#e5e5e5' }}>
-                    {Math.round(data.strength)}
-                </div>
-                <div className="mt-4 flex gap-2">
-                    <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-white border border-neutral-700">
-                        {data.strength < -100000 ? 'SEVERE' : data.strength < -45000 ? 'STRONG' : data.strength < -25000 ? 'ACTIVE' : 'QUIET'}
-                    </span>
-                    <span className="px-3 py-1 bg-neutral-800 rounded-full text-xs font-bold text-neutral-300 border border-neutral-700">
-                        Slope: {data.slope.toFixed(1)}/min
-                    </span>
-                </div>
-                <div className="mt-6 p-3 bg-sky-900/20 border border-sky-500/30 rounded text-sm text-sky-100 text-center" dangerouslySetInnerHTML={{ __html: data.outlook }}></div>
-            </div>
-
-            {/* Visibility & Map */}
-            <div className="md:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Town Lists */}
-                <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 flex flex-col gap-3">
-                    <h3 className="text-xs font-bold text-neutral-400 uppercase">Active Visibility Zones</h3>
-                    
-                    <div>
-                        <div className="text-[10px] text-green-400 font-bold mb-1 flex items-center gap-1">📷 CAMERA (Long Exposure)</div>
-                        <div className="flex flex-wrap gap-1">
-                            {data.towns.filter((t:any) => t.cam).length === 0 ? <span className="text-neutral-600 text-xs italic">No towns in range</span> : 
-                             data.towns.filter((t:any) => t.cam).map((t:any) => (
-                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.cam === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.cam === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name}</span>
-                            ))}
-                        </div>
+        <div className="col-span-12 card bg-neutral-950/80 p-4">
+            <h3 className="text-xl font-semibold text-white mb-2">Recent Activity Summary</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-neutral-300">
+                <div className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
+                    <div className="text-neutral-400 text-xs uppercase">Peak Score</div>
+                    <div className="text-lg font-semibold text-white">
+                        {summary.highestScore?.finalScore?.toFixed(1) ?? 'N/A'}%
                     </div>
-
-                    <div>
-                        <div className="text-[10px] text-sky-400 font-bold mb-1 flex items-center gap-1">📱 PHONE (Night Mode)</div>
-                        <div className="flex flex-wrap gap-1">
-                            {data.towns.filter((t:any) => t.phone).length === 0 ? <span className="text-neutral-600 text-xs italic">No towns in range</span> : 
-                             data.towns.filter((t:any) => t.phone).map((t:any) => (
-                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.phone === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.phone === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name}</span>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="text-[10px] text-yellow-400 font-bold mb-1 flex items-center gap-1">👁️ NAKED EYE</div>
-                        <div className="flex flex-wrap gap-1">
-                            {data.towns.filter((t:any) => t.eye).length === 0 ? <span className="text-neutral-600 text-xs italic">No towns in range</span> : 
-                             data.towns.filter((t:any) => t.eye).map((t:any) => (
-                                <span key={t.name} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${t.eye === 'green' ? 'bg-green-500/20 border-green-500/40 text-green-300' : t.eye === 'yellow' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300' : 'bg-red-500/20 border-red-500/40 text-red-300'}`}>{t.name}</span>
-                            ))}
-                        </div>
-                    </div>
-                    
-                    <div className="mt-auto pt-3 border-t border-neutral-800 flex gap-4 text-[10px] text-neutral-400 justify-center">
-                        <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Possible</span>
-                        <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-yellow-500"></div> Good</span>
-                        <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div> Great</span>
+                    <div className="text-xs text-neutral-500">
+                        {summary.highestScore?.timestamp ? new Date(summary.highestScore.timestamp).toLocaleString() : '—'}
                     </div>
                 </div>
-
-                {/* Map */}
-                <div className="bg-neutral-900/50 rounded-lg border border-neutral-800 relative overflow-hidden flex items-center justify-center p-2 h-[250px]">
-                    {renderMap()}
-                    <div className="absolute bottom-2 right-2 text-[10px] text-neutral-600">Schematic Map</div>
-                </div>
-            </div>
-
-            {/* Interactive Graph */}
-            <div className="md:col-span-12 bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 relative">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xs font-bold text-neutral-400 uppercase">24 Hour History</h3>
-                    <div className="flex gap-1">
-                        {[1, 3, 6, 12, 24].map(h => (
-                            <button key={h} onClick={() => setChartRange(h)} className={`px-2 py-1 text-xs rounded font-bold transition-colors ${chartRange === h ? 'bg-sky-600 text-white' : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'}`}>{h}H</button>
-                        ))}
-                    </div>
-                </div>
-                
-                <div 
-                    ref={chartRef}
-                    className="w-full h-[200px] bg-black/20 rounded relative cursor-crosshair overflow-hidden"
-                    onMouseMove={handleMouseMove}
-                    onTouchMove={handleMouseMove}
-                    onMouseLeave={() => setHoverData(null)}
-                    onTouchEnd={() => setHoverData(null)}
-                >
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
-                        <line x1="0" y1="50" x2="100" y2="50" stroke="#333" strokeWidth="0.5" />
-                        <line x1="0" y1="25" x2="100" y2="25" stroke="#222" strokeWidth="0.5" strokeDasharray="2" />
-                        <line x1="0" y1="75" x2="100" y2="75" stroke="#222" strokeWidth="0.5" strokeDasharray="2" />
-                        <path d={pathD} fill="none" stroke={data.strength < -25000 ? '#facc15' : '#e5e5e5'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                    </svg>
-
-                    {hoverData && (
+                <div className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
+                    <div className="text-neutral-400 text-xs uppercase">Latest Substorm Window</div>
+                    {latestEvent ? (
                         <>
-                            <div className="absolute top-0 bottom-0 w-px bg-white/20 pointer-events-none" style={{ left: hoverData.x }} />
-                            <div className="absolute top-2 bg-neutral-900/90 border border-neutral-700 p-2 rounded text-xs text-white pointer-events-none z-10 whitespace-nowrap shadow-lg" style={{ left: hoverData.x > 300 ? hoverData.x - 120 : hoverData.x + 10 }}>
-                                <div className="font-bold">{new Date(hoverData.closest.t).toLocaleTimeString()}</div>
-                                <div style={{ color: hoverData.closest.v < -25000 ? '#facc15' : '#ccc' }}>{Math.round(hoverData.closest.v)} nT</div>
+                            <div className="text-lg font-semibold text-white">{latestEvent.peakStatus}</div>
+                            <div className="text-xs text-neutral-500">
+                                {new Date(latestEvent.start).toLocaleTimeString()} – {new Date(latestEvent.end).toLocaleTimeString()}
                             </div>
+                            <div className="text-xs text-neutral-400">Peak probability: {latestEvent.peakProbability}%</div>
                         </>
+                    ) : (
+                        <div className="text-neutral-500 text-sm">No substorm events recorded.</div>
                     )}
                 </div>
             </div>
         </div>
     );
 };
-
-// ... (Rest of original ForecastDashboard.tsx: getSuggestedCameraSettings, ActivitySummaryDisplay, ForecastDashboard main component, etc) ...
-// The rest of the file should be exactly as it was, ensuring the `ForecastDashboard` function below uses <NzSubstormIndex /> 
-// inside the "UnifiedForecastPanel" or where the old "Ground Confirmation" button logic was.
-
-// [NOTE: Because this file is massive, I am assuming you will place the `NzSubstormIndex` component 
-// I wrote above BEFORE the `ForecastDashboard` main component, and then inside `ForecastDashboard`, 
-// you will replace the old `NzMagnetometerChart` section with `<NzSubstormIndex />`]
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
@@ -612,7 +306,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     // ... [Calculated Values] ...
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
-    const auroraBlurb = useMemo(() => getAuroraBlurb(auroraScore), [auroraScore]);
     const getMagnetometerAnnotations = useCallback(() => ({}), []);
     const latestMaxDelta = useMemo(() => (!nzMagSubstormEvents || nzMagSubstormEvents.length === 0) ? null : nzMagSubstormEvents[nzMagSubstormEvents.length - 1].maxDelta, [nzMagSubstormEvents]);
 
@@ -626,16 +319,62 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         return { text: 'No Aurora Expected', emoji: '😞' };
     }, [auroraScore]);
 
-    const actionOneLiner = useMemo(() => {
+    const forecastLines = useMemo(() => {
+        const now = Date.now();
+        const sunrise = celestialTimes?.sun?.rise ?? null;
+        const sunset = celestialTimes?.sun?.set ?? null;
+        const moonrise = celestialTimes?.moon?.rise ?? null;
+        const moonset = celestialTimes?.moon?.set ?? null;
+        const darkBufferMs = 90 * 60 * 1000;
+        const sunUp = sunrise && sunset ? now >= sunrise && now <= sunset : isDaylight;
+        const formatTime = (ts: number | null) =>
+            ts ? new Date(ts).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }) : '—';
+        const sunriseText = formatTime(sunrise);
+        const sunsetText = formatTime(sunset);
+        const darkStart = sunset ? sunset + darkBufferMs : null;
+        const darkEnd = sunrise ? sunrise - darkBufferMs : null;
+        const darkText = darkStart && darkEnd
+            ? `Dark enough ~${formatTime(darkStart)}–${formatTime(darkEnd)}`
+            : 'Darkness window unavailable';
+
         const score = auroraScore ?? 0;
-        if (isDaylight) return "It's daytime. Check back after sunset for the nighttime forecast.";
-        if (substormForecast.status === 'ONSET') return "GO NOW! An aurora eruption is detected with good power. Look south immediately!";
-        if (substormForecast.status === 'IMMINENT_30') return "GET READY! An eruption is highly likely within 30 minutes. Head to your spot.";
-        if (score >= 50) return "CONDITIONS ARE GOOD. A visible aurora is possible. Find a dark spot and be patient.";
-        if (score >= 35) return "WORTH A LOOK. A modern phone might capture an aurora. Find a very dark location.";
-        if (score >= 20) return "CAMERA ONLY. A DSLR/Mirrorless with a long exposure may pick up a faint glow.";
-        return "STAY INDOORS. Conditions are very quiet, an aurora is unlikely tonight.";
-    }, [auroraScore, substormForecast.status, isDaylight]);
+        let actionLine = 'Low odds tonight—stay home unless you are already outside.';
+        if (sunUp) {
+            actionLine = 'The sun is up—stay home for now and check back after dark.';
+        } else if (substormForecast.status === 'ONSET') {
+            actionLine = 'Aurora is happening now—get outside and look south immediately.';
+        } else if (substormForecast.status === 'IMMINENT_30') {
+            actionLine = 'Substorm is about to happen—go to your viewing spot and be ready.';
+        } else if (substormForecast.status === 'LIKELY_60') {
+            actionLine = 'Be on alert—substorm activity is likely within the next hour.';
+        } else if (score >= 50) {
+            actionLine = 'Good conditions—go to your viewing spot and stay ready.';
+        } else if (score >= 35) {
+            actionLine = 'Phone/camera chances—be on alert in a dark location.';
+        } else if (score >= 20) {
+            actionLine = 'Camera-only chances—consider a quick check if you are nearby.';
+        }
+
+        const sunLine = sunrise && sunset
+            ? `Sunrise ${sunriseText} · Sunset ${sunsetText}`
+            : 'Sunrise/Sunset times unavailable';
+
+        const moonIllumination = celestialTimes?.moon?.illumination;
+        const moonTimes = moonrise && moonset
+            ? `Moonrise ${formatTime(moonrise)} · Moonset ${formatTime(moonset)}`
+            : 'Moonrise/Moonset times unavailable';
+        const moonLine = moonIllumination !== undefined
+            ? `${moonTimes} · Illumination ${Math.round(moonIllumination)}%`
+            : `${moonTimes} · Illumination unavailable`;
+
+        return [
+            sunUp ? 'The sun is up right now.' : 'The sun is down right now.',
+            actionLine,
+            sunLine,
+            darkText,
+            moonLine
+        ];
+    }, [auroraScore, celestialTimes, isDaylight, substormForecast.status]);
 
     if (isLoading) return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
 
@@ -663,7 +402,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <div className="col-span-12 card bg-neutral-950/80 p-6 text-center">
                                 <div className="text-7xl font-extrabold" style={{color: GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid}}>{(auroraScore ?? 0).toFixed(1)}%</div>
                                 <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
-                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto"><p className="text-lg font-semibold text-amber-300">{actionOneLiner}</p></div>
+                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto text-left">
+                                    <div className="text-sm font-semibold text-amber-300 mb-2">Tonight's Forecast</div>
+                                    <div className="space-y-2 text-sm text-neutral-200">
+                                        {forecastLines.map((line) => (
+                                            <p key={line} className="leading-relaxed">{line}</p>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             <ActivitySummaryDisplay summary={activitySummary} />
@@ -675,20 +421,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            <UnifiedForecastPanel score={auroraScore} blurb={auroraBlurb} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
+                            <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
-                            
-                            <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}><MagneticFieldChart data={allMagneticData} /></ForecastChartPanel>
-                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
-                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}><SolarWindSpeedChart data={allSpeedData} /></ForecastChartPanel>
-                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}><SolarWindDensityChart data={allDensityData} /></ForecastChartPanel>
-                            <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}><MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} /></ForecastChartPanel>
-
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3><button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
-
                             <ForecastChartPanel
                                 title="Substorm Activity"
                                 currentValue={substormForecast.status === 'ONSET' ? `ONSET DETECTED` : substormForecast.status.replace('_', ' ')}
@@ -707,12 +443,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                         </div>
                                     ) : (
                                         <div className="h-full w-full">
-                                            {/* THIS IS THE NEW INTEGRATED COMPONENT */}
-                                            <NzSubstormIndex />
+                                            <NzSubstormIndex celestialTimes={celestialTimes} isDaylight={isDaylight} />
                                         </div>
                                    )}
                                </div>
                             </ForecastChartPanel>
+                            
+                            <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}><MagneticFieldChart data={allMagneticData} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}><SolarWindSpeedChart data={allSpeedData} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}><SolarWindDensityChart data={allDensityData} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}><MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} /></ForecastChartPanel>
+
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3><button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
+
 
                             <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <TipsSection />
