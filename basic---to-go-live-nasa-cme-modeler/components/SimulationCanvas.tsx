@@ -657,30 +657,58 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const particleTexture = createParticleTexture(THREE);
 
+    const getCmeDirectionFromData = (cme: ProcessedCME) => {
+      const dir = new THREE.Vector3();
+      const earth = celestialBodiesRef.current.EARTH;
+
+      if (cme.isEarthDirected && earth?.mesh) {
+        const earthPos = new THREE.Vector3();
+        earth.mesh.getWorldPosition(earthPos);
+        if (earthPos.lengthSq() > 0) return earthPos.normalize();
+      }
+
+      dir.setFromSphericalCoords(
+        1,
+        THREE.MathUtils.degToRad(90 - cme.latitude),
+        THREE.MathUtils.degToRad(cme.longitude)
+      );
+      return dir.normalize();
+    };
+
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
       const colors: number[] = [];
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = 1 * Math.tan(halfAngle);
+      const croissantBend = Math.min(Math.PI * 0.9, halfAngle * 2.4);
+      const baseRadius = Math.max(0.35, Math.tan(halfAngle));
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
-        const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
-        const x = r * Math.cos(theta);
-        const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        const t = Math.pow(Math.random(), 0.7);
+        const angleOnArc = THREE.MathUtils.lerp(-croissantBend / 2, croissantBend / 2, t);
+        const rotatedAngleOnArc = angleOnArc + Math.PI / 2;
+        const centerRadius = baseRadius + t * 0.9;
+        const thickness = 0.18 + 0.22 * (1 - Math.abs(angleOnArc) / (croissantBend / 2));
+        const minorRadius = thickness * Math.sqrt(Math.random());
+        const phi = Math.random() * Math.PI * 2;
 
-        const relPos = y;
+        const cx = 0;
+        const cy = Math.cos(rotatedAngleOnArc) * centerRadius;
+        const cz = Math.sin(rotatedAngleOnArc) * centerRadius;
+
+        const x = cx + minorRadius * Math.cos(phi);
+        const y = cy + minorRadius * Math.sin(phi) * Math.cos(rotatedAngleOnArc);
+        const z = cz + minorRadius * Math.sin(phi) * Math.sin(rotatedAngleOnArc);
+        pos.push(x, y, z);
+
+        const relPos = 0.2 + 0.8 * t;
         const finalColor = new THREE.Color();
-        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
-        else if (relPos < 0.3) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
+        if (relPos < 0.25) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.25);
+        else if (relPos < 0.6) finalColor.copy(coreColor);
+        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.6) / 0.4);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
 
@@ -701,9 +729,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const system = new THREE.Points(geom, mat);
       system.userData = cme;
-      const dir = new THREE.Vector3();
-      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      const dir = getCmeDirectionFromData(cme);
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      system.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir.clone().normalize(), Math.PI / 2));
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
