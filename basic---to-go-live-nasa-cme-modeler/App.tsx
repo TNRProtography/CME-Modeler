@@ -27,6 +27,7 @@ import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
 import GlobalBanner from './components/GlobalBanner';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
+import WsaEnlilPinwheel from './components/WsaEnlilPinwheel';
 
 // Modal Imports
 import SettingsModal from './components/SettingsModal';
@@ -36,15 +37,6 @@ import ForecastModelsModal from './components/ForecastModelsModal';
 import SolarSurferGame from './components/SolarSurferGame';
 import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
-import {
-  DEFAULT_FORECAST_VIEW_KEY,
-  DEFAULT_MAIN_PAGE_KEY,
-  getForecastViewFromSearch,
-  getPageFromPathname,
-  PAGE_PATHS,
-  SETTINGS_PATH,
-  TUTORIAL_PATH,
-} from './utils/navigation';
 
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -59,13 +51,26 @@ const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const PinwheelIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className={className}>
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 3c-1.8 2.2-.6 5.2 2 5.2 3.2 0 3.8-3.8 1.1-5.7M5.2 8.5C3 10.3 4 13.8 7 13.8c3.7 0 4.3-4.8.6-6.3M8 18.8c1.2 2.5 4.8 2.5 5.9 0 1.6-3.3-2.6-5.6-4.6-3.1M18.8 14.2c2.8-.2 3.9-3.6 1.7-5.4-3-2.6-6.2 1.8-3.3 3.8M12 12l0.01-.01"
+        />
+        <circle cx="12" cy="12" r="0.9" fill="currentColor" />
+    </svg>
+);
+
 type ViewerMedia =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
     | { type: 'animation', urls: string[] };
 
+type MainPage = 'forecast' | 'solar-activity' | 'modeler' | 'pinwheel';
+
 interface NavigationTarget {
-  page: 'forecast' | 'solar-activity';
+  page: Exclude<MainPage, 'modeler' | 'pinwheel'>;
   elementId: string;
   expandId?: string;
 }
@@ -91,10 +96,11 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.4';
 
-const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
+const PAGE_PATHS: Record<MainPage, string> = {
   forecast: '/spot-the-aurora-forecast',
   'solar-activity': '/solar-dashboard',
   modeler: '/cme-visualization',
+  pinwheel: '/wsa-enlil-pinwheel',
 };
 
 const SETTINGS_PATH = '/settings';
@@ -109,17 +115,18 @@ const getForecastViewFromSearch = (search: string): 'simple' | 'advanced' | null
   return null;
 };
 
-const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 'modeler' | null => {
+const getPageFromPathname = (pathname: string): MainPage | null => {
   if (pathname.startsWith(PAGE_PATHS['solar-activity'])) return 'solar-activity';
   if (pathname.startsWith(PAGE_PATHS['modeler'])) return 'modeler';
+  if (pathname.startsWith(PAGE_PATHS['pinwheel'])) return 'pinwheel';
   if (pathname.startsWith(PAGE_PATHS['forecast'])) return 'forecast';
   return null;
 };
 
 const App: React.FC = () => {
   const getStoredMainPage = () => {
-    const stored = localStorage.getItem(DEFAULT_MAIN_PAGE_KEY);
-    return stored === 'solar-activity' || stored === 'modeler' ? stored : 'forecast';
+    const stored = localStorage.getItem(DEFAULT_MAIN_PAGE_KEY) as MainPage | null;
+    return stored === 'solar-activity' || stored === 'modeler' || stored === 'pinwheel' ? stored : 'forecast';
   };
 
   const getStoredForecastView = () => {
@@ -127,15 +134,13 @@ const App: React.FC = () => {
     return stored === 'advanced' ? 'advanced' : 'simple';
   };
 
-  const [defaultMainPage, setDefaultMainPage] = useState<'forecast' | 'modeler' | 'solar-activity'>(() =>
-    getStoredMainPage()
-  );
+  const [defaultMainPage, setDefaultMainPage] = useState<MainPage>(() => getStoredMainPage());
 
   const [defaultForecastView, setDefaultForecastView] = useState<'simple' | 'advanced'>(() =>
     getStoredForecastView()
   );
 
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
+  const [activePage, setActivePage] = useState<MainPage>(
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
   );
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -196,7 +201,7 @@ const App: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const cmePageLoadedOnce = useRef(false);
-  const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
+  const lastMainPageRef = useRef<MainPage>(activePage);
   const [forecastViewMode, setForecastViewMode] = useState<'simple' | 'advanced'>(() => {
     const viewFromSearch = getForecastViewFromSearch(window.location.search);
     if (viewFromSearch) return viewFromSearch;
@@ -266,7 +271,7 @@ const App: React.FC = () => {
   );
 
   const navigateToPage = useCallback(
-    (page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
+    (page: MainPage, replaceHistory = false) => {
       if (page === 'forecast') {
         const url = new URL(window.location.href);
         url.pathname = PAGE_PATHS.forecast;
@@ -435,14 +440,14 @@ const App: React.FC = () => {
     [navigateToPath]
   );
 
-  const handleDefaultMainPageChange = useCallback((page: 'forecast' | 'solar-activity' | 'modeler') => {
-    setDefaultMainPage(page);
-    localStorage.setItem(DEFAULT_MAIN_PAGE_KEY, page);
-  }, []);
-
   const handleDefaultForecastViewChange = useCallback((view: 'simple' | 'advanced') => {
     setDefaultForecastView(view);
     localStorage.setItem(DEFAULT_FORECAST_VIEW_KEY, view);
+  }, []);
+
+  const handleDefaultMainPageChange = useCallback((page: MainPage) => {
+    setDefaultMainPage(page);
+    localStorage.setItem(DEFAULT_MAIN_PAGE_KEY, page);
   }, []);
 
   const handleOpenSettings = useCallback(() => {
@@ -860,7 +865,7 @@ const App: React.FC = () => {
                       <button
                         id="nav-forecast"
                         onClick={() => navigateToPage('forecast')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[24%] max-w-[25%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'forecast' ? 'bg-gradient-to-r from-sky-500/80 via-sky-400/80 to-indigo-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-forecast' ? 'tutorial-highlight' : ''}`}
                         title="View Live Aurora Forecasts"
                       >
                           <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -874,7 +879,7 @@ const App: React.FC = () => {
                       <button
                         id="nav-solar-activity"
                         onClick={() => navigateToPage('solar-activity')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[24%] max-w-[25%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'solar-activity' ? 'bg-gradient-to-r from-emerald-400/80 via-teal-400/80 to-cyan-400/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-solar-activity' ? 'tutorial-highlight' : ''}`}
                         title="View Solar Activity"
                       >
                           <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -888,7 +893,7 @@ const App: React.FC = () => {
                       <button
                         id="nav-modeler"
                         onClick={() => navigateToPage('modeler')}
-                        className={`min-w-0 flex-1 basis-[31%] max-w-[33%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
+                        className={`min-w-0 flex-1 basis-[24%] max-w-[25%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'modeler' ? 'bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-fuchsia-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-modeler' ? 'tutorial-highlight' : ''}`}
                         title="View CME Visualization"
                       >
                           <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -897,6 +902,20 @@ const App: React.FC = () => {
                           <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
                             <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">3D Lab</span>
                             <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">CME Visualization</span>
+                          </div>
+                      </button>
+                      <button
+                        id="nav-pinwheel"
+                        onClick={() => navigateToPage('pinwheel')}
+                        className={`min-w-0 flex-1 basis-[24%] max-w-[25%] sm:flex-none sm:max-w-none overflow-hidden flex items-center gap-0.5 sm:gap-1 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded-lg sm:rounded-xl text-neutral-50 font-semibold shadow-xl transition-all active:scale-95 backdrop-blur-lg border modern-cta ${activePage === 'pinwheel' ? 'bg-gradient-to-r from-amber-400/80 via-orange-500/80 to-rose-500/80 border-white/30 ring-2 ring-white/40 drop-shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${highlightedElementId === 'nav-pinwheel' ? 'tutorial-highlight' : ''}`}
+                        title="View WSA-ENLIL style pinwheel"
+                      >
+                          <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-md sm:rounded-lg bg-white/10 border border-white/15 shadow-inner flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <PinwheelIcon className="w-3 h-3 sm:w-4.5 sm:h-4.5" />
+                          </div>
+                          <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
+                            <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">Pinwheel</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">WSA-ENLIL</span>
                           </div>
                       </button>
                   </div>
@@ -1040,6 +1059,9 @@ const App: React.FC = () => {
                       onViewModeChange={handleForecastViewChange}
                       refreshSignal={manualRefreshKey}
                   />
+              </div>
+              <div className={`w-full h-full ${activePage === 'pinwheel' ? 'block' : 'hidden'}`}>
+                  <WsaEnlilPinwheel />
               </div>
               <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
                   <SolarActivityDashboard
