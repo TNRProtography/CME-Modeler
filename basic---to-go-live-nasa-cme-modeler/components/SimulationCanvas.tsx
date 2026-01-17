@@ -61,7 +61,7 @@ let arrowTextureCache: any = null;
 const createArrowTexture = (THREE: any) => {
   if (arrowTextureCache) return arrowTextureCache;
   if (!THREE || typeof document === 'undefined') return null;
-  
+
   const canvas = document.createElement('canvas');
   const size = 256;
   canvas.width = size;
@@ -82,11 +82,53 @@ const createArrowTexture = (THREE: any) => {
     ctx.closePath();
     ctx.fill();
   }
-  
+
   arrowTextureCache = new THREE.CanvasTexture(canvas);
   arrowTextureCache.wrapS = THREE.RepeatWrapping;
   arrowTextureCache.wrapT = THREE.RepeatWrapping;
   return arrowTextureCache;
+};
+
+// Curved "croissant" geometry for the flux rope that always starts at the Sun (origin)
+const createCroissantFluxRopeGeometry = (THREE: any) => {
+  const curve = new THREE.CatmullRomCurve3(
+    [
+      new THREE.Vector3(0, 0, 0),
+      // Early lift away from the Sun and slight lean so the back hugs the surface
+      new THREE.Vector3(0.14, 0.24, -0.18),
+      // Broad mid-body to capture the croissant belly
+      new THREE.Vector3(-0.16, 0.56, -0.08),
+      // Tip that points straight down the original CME axis
+      new THREE.Vector3(0, 1, 0),
+    ],
+    false,
+    'catmullrom',
+    0.6
+  );
+
+  const geometry = new THREE.TubeGeometry(curve, 240, 0.12, 56, false);
+
+  // Give the croissant a teardrop profile: thick at the Sun, softly bulged in the middle,
+  // and tapered near the leading edge. We scale vertex offsets relative to the curve so the
+  // rope keeps its width even as it stretches.
+  const pos = geometry.attributes.position as any;
+  const uv = geometry.attributes.uv as any;
+  const temp = new THREE.Vector3();
+  const center = new THREE.Vector3();
+
+  for (let i = 0; i < pos.count; i++) {
+    const t = clamp(uv.getY(i), 0, 1);
+    const widthProfile = 1.35 - 0.9 * t + 0.38 * Math.sin(Math.PI * t);
+
+    center.copy(curve.getPointAt(t));
+    temp.fromBufferAttribute(pos, i).sub(center).multiplyScalar(widthProfile).add(center);
+    pos.setXYZ(i, temp.x, temp.y, temp.z);
+  }
+
+  pos.needsUpdate = true;
+  geometry.computeVertexNormals();
+
+  return geometry;
 };
 
 const getCmeOpacity = (speed: number): number => {
@@ -335,8 +377,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- START OF MODIFICATION: Reverting to original blinking ring ---
-    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    // Croissant-like flux rope that starts at the Sun (origin)
+    const fluxRopeGeometry = createCroissantFluxRopeGeometry(THREE);
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
       fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
@@ -351,7 +393,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       side: THREE.DoubleSide,
     });
     fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
-    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    fluxRopeRef.current.position.set(0, 0, 0);
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
     // --- END OF MODIFICATION ---
@@ -592,15 +634,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
         if (shouldShowFluxRope) {
-          const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
+            const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
-            fluxRopeRef.current.position.copy(cmeObject.position);
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+            const halfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle);
+            const ropeLength = Math.max(cmeObject.position.length() + cmeObject.scale.y, 0.0001);
+            const angularRadius = ropeLength * Math.tan(halfAngleRad);
+            const radiusScale = angularRadius * 0.65;
+            fluxRopeRef.current.scale.set(radiusScale, ropeLength, radiusScale);
             fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
         }
