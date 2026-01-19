@@ -117,6 +117,7 @@ export interface SubstormActivity {
   color: string;
   isStretching: boolean;
   isErupting: boolean;
+  phase: 'Growth' | 'Expansion' | 'Recovery';
   probability?: number;
   predictedStartTime?: number;
   predictedEndTime?: number;
