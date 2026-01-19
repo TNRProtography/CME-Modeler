@@ -352,6 +352,16 @@ export const useForecastData = (
         }
     }
 
+    const lastEventEnd = nzMagSubstormEvents.length > 0 ? nzMagSubstormEvents[nzMagSubstormEvents.length - 1].end : null;
+    const recentRecoveryWindow = lastEventEnd ? (now - lastEventEnd) <= 90 * 60 * 1000 : false;
+    const phase = status === 'ONSET'
+      ? 'Expansion'
+      : status === 'WATCH' || status === 'LIKELY_60' || status === 'IMMINENT_30'
+      ? 'Growth'
+      : recentRecoveryWindow
+      ? 'Recovery'
+      : 'Recovery';
+
     setSubstormForecast({ status, likelihood, windowLabel, action, p30: probs.P30, p60: probs.P60 });
 
     setSubstormActivityStatus({
@@ -360,11 +370,12 @@ export const useForecastData = (
       probability: likelihood,
       predictedStartTime: status !== 'QUIET' ? Date.now() : undefined,
       predictedEndTime: status !== 'QUIET' ? Date.now() + 60 * 60 * 1000 : undefined,
-      text: action,
+      phase,
+      text: `${action} Substorm phase: ${phase}.`,
       color: ''
     });
 
-  }, [recentL1Data, goesOnset, nzMagOnset, auroraScore, baseAuroraScore, isDaylight, celestialTimes, setSubstormActivityStatus]);
+  }, [recentL1Data, goesOnset, nzMagOnset, auroraScore, baseAuroraScore, isDaylight, celestialTimes, nzMagSubstormEvents, setSubstormActivityStatus]);
 
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);

@@ -29,6 +29,11 @@ const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
+const REACH_COLORS = {
+    camera: '#ef4444',
+    phone: '#facc15',
+    eye: '#22c55e'
+};
 
 const computeSunsetWindowStart = () => {
     const now = new Date();
@@ -561,15 +566,15 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                     let color = '#666';
                                     let radius = 4;
                                     if (town.cam) {
-                                        color = '#4ade80';
+                                        color = REACH_COLORS.camera;
                                         radius = 5;
                                     }
                                     if (town.phone) {
-                                        color = '#38bdf8';
+                                        color = REACH_COLORS.phone;
                                         radius = 6;
                                     }
                                     if (town.eye) {
-                                        color = '#facc15';
+                                        color = REACH_COLORS.eye;
                                         radius = 7;
                                     }
                                     return (
@@ -583,15 +588,15 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                 })}
                                 <Polyline
                                     positions={[[calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[1][1]]]}
-                                    pathOptions={{ color: '#4ade80', dashArray: '4' }}
+                                    pathOptions={{ color: REACH_COLORS.camera, dashArray: '4' }}
                                 />
                                 <Polyline
                                     positions={[[calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[1][1]]]}
-                                    pathOptions={{ color: '#38bdf8', dashArray: '4' }}
+                                    pathOptions={{ color: REACH_COLORS.phone, dashArray: '4' }}
                                 />
                                 <Polyline
                                     positions={[[calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[1][1]]]}
-                                    pathOptions={{ color: '#facc15', dashArray: '4' }}
+                                    pathOptions={{ color: REACH_COLORS.eye, dashArray: '4' }}
                                 />
                             </>
                         )}
