@@ -659,8 +659,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const colors: number[] = [];
       const halfAngleRad = THREE.MathUtils.degToRad(Math.max(12, cme.halfAngle));
       const coneRadiusAtUnit = Math.tan(halfAngleRad);
-      const maxArc = Math.PI * 0.9;
-      const arc = Math.min(maxArc, halfAngleRad * 1.35);
+      const maxArc = Math.PI * 0.75;
+      const arc = Math.min(maxArc, halfAngleRad * 1.1);
       const majorRadius = Math.min(0.78, 0.45 + coneRadiusAtUnit * 0.35);
       const tubeRadius = Math.min(0.3, 0.18 + coneRadiusAtUnit * 0.12);
       const radialScale = Math.min(1, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
@@ -671,7 +671,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < pCount; i++) {
-        const u = (Math.random() - 0.5) * arc;
+        const uSeed = Math.pow(Math.random(), 0.7);
+        const u = (uSeed - 0.5) * arc;
         const v = Math.random() * Math.PI * 2;
         const tubeOffset = tubeRadius + (Math.random() - 0.5) * shellJitter;
         const cosV = Math.cos(v);
@@ -680,19 +681,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const sinU = Math.sin(u);
 
         const frontness = 1 - Math.abs(u) / (arc / 2);
+        const smoothFrontness = frontness * frontness * (3 - 2 * frontness);
         const bend = bendStrength * frontness;
-        const noise = Math.sin(u * 2.3 + v) * bend;
-        const tailStretch = (1 - frontness) * 0.35;
+        const noise = Math.sin(u * 2.1 + v) * bend * (0.4 + 0.6 * frontness);
+        const tailStretch = (1 - frontness) * 0.22;
 
-        const x = (tubeOffset * sinV + noise * 0.6) * radialScale;
+        const x = (tubeOffset * sinV + noise * 0.5) * radialScale;
         const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
         const z = ((majorRadius + tubeOffset * cosV) * sinU + noise) * radialScale;
         pos.push(x, y, z);
 
         const finalColor = new THREE.Color();
-        if (frontness > 0.75) finalColor.copy(coreColor).lerp(shockColor, (frontness - 0.75) / 0.25);
-        else if (frontness > 0.4) finalColor.copy(coreColor);
-        else finalColor.copy(wakeColor).lerp(coreColor, frontness / 0.4);
+        if (smoothFrontness > 0.7) finalColor.copy(coreColor).lerp(shockColor, (smoothFrontness - 0.7) / 0.3);
+        else if (smoothFrontness > 0.35) finalColor.copy(coreColor);
+        else finalColor.copy(wakeColor).lerp(coreColor, smoothFrontness / 0.35);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
 
