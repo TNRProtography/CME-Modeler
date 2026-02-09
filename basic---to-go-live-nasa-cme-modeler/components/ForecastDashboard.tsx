@@ -183,6 +183,8 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     };
 };
 
+const isImapSource = (source?: string) => source === 'IMAP';
+
 const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summary }) => {
     if (!summary) return null;
     const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
@@ -418,10 +420,34 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             
-                            <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}><MagneticFieldChart data={allMagneticData} /></ForecastChartPanel>
+                            <ForecastChartPanel
+                                title="Interplanetary Magnetic Field"
+                                currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
+                                emoji={gaugeData.bz.emoji}
+                                onOpenModal={() => openModal('bz')}
+                                isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
+                            >
+                                <MagneticFieldChart data={allMagneticData} />
+                            </ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
-                            <ForecastChartPanel title="Solar Wind Speed" currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`} emoji={gaugeData.speed.emoji} onOpenModal={() => openModal('speed')}><SolarWindSpeedChart data={allSpeedData} /></ForecastChartPanel>
-                            <ForecastChartPanel title="Solar Wind Density" currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.density.source}</span>`} emoji={gaugeData.density.emoji} onOpenModal={() => openModal('density')}><SolarWindDensityChart data={allDensityData} /></ForecastChartPanel>
+                            <ForecastChartPanel
+                                title="Solar Wind Speed"
+                                currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`}
+                                emoji={gaugeData.speed.emoji}
+                                onOpenModal={() => openModal('speed')}
+                                isImap={isImapSource(gaugeData.speed.source)}
+                            >
+                                <SolarWindSpeedChart data={allSpeedData} />
+                            </ForecastChartPanel>
+                            <ForecastChartPanel
+                                title="Solar Wind Density"
+                                currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.density.source}</span>`}
+                                emoji={gaugeData.density.emoji}
+                                onOpenModal={() => openModal('density')}
+                                isImap={isImapSource(gaugeData.density.source)}
+                            >
+                                <SolarWindDensityChart data={allDensityData} />
+                            </ForecastChartPanel>
                             <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}><MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} /></ForecastChartPanel>
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
