@@ -189,8 +189,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
-  const fluxRopeRef = useRef<THREE.Group | null>(null);
-  const fluxRopeMaterialsRef = useRef<Array<{ material: THREE.ShaderMaterial; phase: number }>>([]);
+  const fluxRopeRef = useRef<any>(null);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
@@ -336,54 +335,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    const fluxRopeGroup = new THREE.Group();
-    const fluxRopeTexture = createArrowTexture(THREE);
-    const fluxRopeBaseUniforms = {
-      uTime: { value: 0 },
-      uTexture: { value: fluxRopeTexture },
-      uColor: { value: new THREE.Color(0xffffff) },
-    };
-
-    const buildRopeStrand = (radius: number, tube: number, phase: number, tilt: number) => {
-      const geometry = new THREE.TorusKnotGeometry(radius, tube, 220, 16, 2, 3);
-      const material = new THREE.ShaderMaterial({
-        vertexShader: FLUX_ROPE_VERTEX_SHADER,
-        fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-        uniforms: {
-          uTime: { value: 0 },
-          uTexture: { value: fluxRopeBaseUniforms.uTexture.value },
-          uColor: { value: fluxRopeBaseUniforms.uColor.value.clone() },
-        },
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.rotation.x = Math.PI / 2 + tilt;
-      mesh.rotation.z = phase;
-      fluxRopeGroup.add(mesh);
-      fluxRopeMaterialsRef.current.push({ material, phase });
-    };
-
-    buildRopeStrand(1.0, 0.07, 0, 0.08);
-    buildRopeStrand(0.94, 0.06, Math.PI / 2, -0.06);
-
-    const coreGeometry = new THREE.TorusGeometry(0.85, 0.035, 18, 120);
-    const coreMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
+    const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
+    const fluxRopeMaterial = new THREE.ShaderMaterial({
+      vertexShader: FLUX_ROPE_VERTEX_SHADER,
+      fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
+      uniforms: {
+        uTime: { value: 0 },
+        uTexture: { value: createArrowTexture(THREE) },
+        uColor: { value: new THREE.Color(0xffffff) },
+      },
       transparent: true,
-      opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
-    const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
-    coreMesh.rotation.x = Math.PI / 2;
-    fluxRopeGroup.add(coreMesh);
-
-    fluxRopeGroup.visible = false;
-    fluxRopeRef.current = fluxRopeGroup;
-    scene.add(fluxRopeGroup);
+    fluxRopeRef.current = new THREE.Mesh(fluxRopeGeometry, fluxRopeMaterial);
+    fluxRopeRef.current.rotation.x = Math.PI / 2;
+    fluxRopeRef.current.visible = false;
+    scene.add(fluxRopeRef.current);
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -629,15 +598,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
             const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
             fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
-            const ropeColor = getCmeCoreColor(cme.speed);
-            fluxRopeMaterialsRef.current.forEach(({ material }) => {
-              material.uniforms.uColor.value = ropeColor;
-            });
+            fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
         }
-        fluxRopeMaterialsRef.current.forEach(({ material, phase }) => {
-          material.uniforms.uTime.value = elapsedTime + phase;
-        });
+        fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
 
       const maxImpactSpeed = checkImpacts();
