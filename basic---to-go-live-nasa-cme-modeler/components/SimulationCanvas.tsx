@@ -672,7 +672,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       for (let i = 0; i < pCount; i++) {
         const uSeed = Math.pow(Math.random(), 0.7);
-        const u = (uSeed - 0.5) * arc;
+        const u = uSeed * (arc / 2);
         const v = Math.random() * Math.PI * 2;
         const tubeOffset = tubeRadius + (Math.random() - 0.5) * shellJitter;
         const cosV = Math.cos(v);
@@ -680,7 +680,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const cosU = Math.cos(u);
         const sinU = Math.sin(u);
 
-        const frontness = 1 - Math.abs(u) / (arc / 2);
+        const frontness = 1 - u / (arc / 2);
         const smoothFrontness = frontness * frontness * (3 - 2 * frontness);
         const bend = bendStrength * frontness;
         const noise = Math.sin(u * 2.1 + v) * bend * (0.4 + 0.6 * frontness);
