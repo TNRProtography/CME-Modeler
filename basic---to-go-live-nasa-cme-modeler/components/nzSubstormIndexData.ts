@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
-const SOLAR_WIND_IMF_URL = 'https://spottheaurora.thenamesrock.workers.dev/solar-wind';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
 const DOMAIN = 'geomag';
 const SCALE_FACTOR = 100;
 const DISPLAY_DIVISOR = 10;

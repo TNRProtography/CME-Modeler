@@ -14,7 +14,7 @@
 // --- API Endpoints ---
 const NOAA_XRAY_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const DONKI_GST_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/GST';
-const SOLAR_WIND_IMF_URL = 'https://spottheaurora.thenamesrock.workers.dev/solar-wind';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
 
 
 // --- Constants ---
