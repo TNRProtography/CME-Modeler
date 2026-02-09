@@ -10,7 +10,7 @@ interface TutorialStep {
 }
 
 const STEPS: TutorialStep[] = [
-  { targetId: 'nav-forecast', title: 'Aurora Forecast', content: 'This is your go-to page for live aurora forecasts, substorm detection, and sighting maps. Check here to see if an aurora might be visible tonight!', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-forecast', title: 'Aurora Forecast', content: 'This is your go-to page for live aurora forecasts, substorm detection, and magnetometer confirmations. Check here to see if an aurora might be visible tonight!', placement: 'bottom', widthClass: 'w-80' },
   { targetId: 'nav-solar-activity', title: 'Solar Activity', content: 'Dive deep into the latest solar data and active regions. See real-time solar flares and imagery directly from the Sun.', placement: 'bottom', widthClass: 'w-80' },
   { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! This tool helps visualize how solar events travel toward Earth.', placement: 'bottom', widthClass: 'w-80' }, 
   { targetId: 'nav-settings', title: 'App Settings', content: 'Finally, here you can configure app settings, manage notifications, and install the app to your device. Note: If you are in an in-app browser (like Facebook), the install button may not work. Please open this site in your phone\'s main browser (e.g., Chrome or Safari) to install.', placement: 'left', widthClass: 'w-72' },

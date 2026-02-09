@@ -55,8 +55,7 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
-const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
+const SOLAR_WIND_IMF_URL = 'https://spottheaurora.thenamesrock.workers.dev/solar-wind';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
@@ -135,6 +134,11 @@ const parseNOAATime = (s: string): number => {
   return Number.isFinite(t) ? t : NaN;
 };
 
+const getSourceLabel = (source?: string | null) => {
+  if (!source) return '—';
+  return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
+};
+
 const getVisibilityBlurb = (score: number | null): string => {
     if (score === null) return 'Potential visibility is unknown.';
     if (score >= 80) return 'Potential visibility is high, with a significant display likely.';
@@ -153,13 +157,13 @@ export const useForecastData = (
   const [auroraScore, setAuroraScore] = useState<number | null>(null);
   const [baseAuroraScore, setBaseAuroraScore] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
-  const [gaugeData, setGaugeData] = useState<Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string }>>({
-    bt: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
-    bz: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
+  const [gaugeData, setGaugeData] = useState<Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string; source?: string }>>({
+    bt: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
+    bz: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
     power: { value: '...', unit: 'GW', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
     moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
-    speed: { value: '...', unit: 'km/s', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
-    density: { value: '...', unit: 'p/cm³', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
+    speed: { value: '...', unit: 'km/s', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
+    density: { value: '...', unit: 'p/cm³', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
   });
   const [celestialTimes, setCelestialTimes] = useState<CelestialTimeData>({});
   const [isDaylight, setIsDaylight] = useState(false);
@@ -372,14 +376,13 @@ export const useForecastData = (
     
     const results = await Promise.allSettled([
       fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${NOAA_PLASMA_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${NOAA_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
+      fetch(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
       fetch(nzMagUrl).then(res => res.json())
     ]);
-    const [forecastResult, plasmaResult, magResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
+    const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
@@ -393,14 +396,10 @@ export const useForecastData = (
       setCurrentAuroraScore(initialAdjustedScore);
 
       setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
-      const { bt, bz } = currentForecast?.inputs?.magneticField ?? {};
-
       if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
       if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
       setGaugeData((prev) => ({
         ...prev,
-        bt: { ...prev.bt, value: bt?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
-        bz: { ...prev.bz, value: bz?.toFixed(1) ?? 'N/A', ...getGaugeStyle(bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
         power: { ...prev.power, value: currentForecast?.inputs?.hemisphericPower?.toFixed(1) ?? 'N/A', ...getGaugeStyle(currentForecast?.inputs?.hemisphericPower ?? null, 'power'), lastUpdated: `Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}` },
         moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || [])
       }));
@@ -408,80 +407,79 @@ export const useForecastData = (
       if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
     
-    if (plasmaResult.status === 'fulfilled' && Array.isArray(plasmaResult.value) && plasmaResult.value.length > 1) {
-      const plasmaData = plasmaResult.value;
-      const header = plasmaData[0];
-      const dataRows = plasmaData.slice(1);
-      const timeIndex = header.indexOf('time_tag');
-      const speedIndex = header.indexOf('speed');
-      const densityIndex = header.indexOf('density');
-      if (timeIndex !== -1 && speedIndex !== -1 && densityIndex !== -1) {
-          const speedPoints: { time: number; value: number }[] = [];
-          const densityPoints: { time: number; value: number }[] = [];
-          for (const row of dataRows) {
-              const t = parseNOAATime(row[timeIndex]);
-              const s = (row[speedIndex] === null) ? NaN : Number(row[speedIndex]);
-              const n = (row[densityIndex] === null) ? NaN : Number(row[densityIndex]);
-              if (Number.isFinite(t)) {
-                  if (Number.isFinite(s) && s >= 0) speedPoints.push({ time: t, value: s });
-                  if (Number.isFinite(n) && n >= 0) densityPoints.push({ time: t, value: n });
-              }
-          }
-          speedPoints.sort((a, b) => a.time - b.time);
-          densityPoints.sort((a, b) => a.time - b.time);
-          setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
-          setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
-          const latestSpeed = speedPoints.at(-1);
-          const latestDensity = densityPoints.at(-1);
-          setGaugeData(prev => ({
-              ...prev,
-              speed: latestSpeed ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}` } : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A' },
-              density: latestDensity ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}` } : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A' }
-          }));
-      }
-    }
+    if (solarWindResult.status === 'fulfilled' && solarWindResult.value?.ok && Array.isArray(solarWindResult.value.data)) {
+      const solarWindData = solarWindResult.value.data as Array<{
+        time_utc?: string;
+        time_nz?: string;
+        speed?: number | null;
+        density?: number | null;
+        temp?: number | null;
+        angle?: number | null;
+        clock?: number | null;
+        bt?: number | null;
+        by?: number | null;
+        bx?: number | null;
+        bz?: number | null;
+        src?: { speed?: string | null; density?: string | null; temp?: string | null; angle?: string | null; clock?: string | null; bt?: string | null; by?: string | null; bx?: string | null; bz?: string | null };
+      }>;
 
-    if (magResult.status === 'fulfilled' && Array.isArray(magResult.value) && magResult.value.length > 1) {
-        const magData = magResult.value;
-        const header = magData[0];
-        const dataRows = magData.slice(1);
-        const timeIndex = header.indexOf('time_tag');
-        const btIndex = header.indexOf('bt');
-        const bzIndex = header.indexOf('bz_gsm');
-        const byIndex = header.indexOf('by_gsm');
-        if (timeIndex !== -1 && btIndex !== -1 && bzIndex !== -1 && byIndex !== -1) {
-            const processed = dataRows
-                .map((row: any) => {
-                    const t = parseNOAATime(row[timeIndex]);
-                    const bt = row[btIndex] === null ? NaN : Number(row[btIndex]);
-                    const bz = row[bzIndex] === null ? NaN : Number(row[bzIndex]);
-                    const by = row[byIndex] === null ? NaN : Number(row[byIndex]);
-                    if (!Number.isFinite(t) || !Number.isFinite(bt) || !Number.isFinite(bz) || !Number.isFinite(by) || bt < 0) return null;
-                    return { time: t, bt, bz, by };
-                })
-                .filter((p): p is NonNullable<typeof p> => p !== null);
-            const sortedForCharts = [...processed].sort((a, b) => a.time - b.time);
-            setAllMagneticData(sortedForCharts);
+      const speedPoints: { time: number; value: number; source: string }[] = [];
+      const densityPoints: { time: number; value: number; source: string }[] = [];
+      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number }[] = [];
 
-            const latestMagneticPoint = sortedForCharts.at(-1);
-            if (latestMagneticPoint) {
-              setGaugeData(prev => ({
-                ...prev,
-                bt: {
-                  ...prev.bt,
-                  value: latestMagneticPoint.bt.toFixed(1),
-                  ...getGaugeStyle(latestMagneticPoint.bt, 'bt'),
-                  lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`
-                },
-                bz: {
-                  ...prev.bz,
-                  value: latestMagneticPoint.bz.toFixed(1),
-                  ...getGaugeStyle(latestMagneticPoint.bz, 'bz'),
-                  lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`
-                }
-              }));
-            }
+      for (const entry of solarWindData) {
+        const timeValue = entry.time_utc ?? entry.time_nz;
+        const t = timeValue ? new Date(timeValue).getTime() : NaN;
+        if (!Number.isFinite(t)) continue;
+
+        if (Number.isFinite(entry.speed ?? NaN) && (entry.speed ?? 0) >= 0) {
+          speedPoints.push({ time: t, value: entry.speed as number, source: getSourceLabel(entry.src?.speed) });
         }
+        if (Number.isFinite(entry.density ?? NaN) && (entry.density ?? 0) >= 0) {
+          densityPoints.push({ time: t, value: entry.density as number, source: getSourceLabel(entry.src?.density) });
+        }
+
+        const by = Number.isFinite(entry.by ?? NaN) ? (entry.by as number) : null;
+        const bz = Number.isFinite(entry.bz ?? NaN) ? (entry.bz as number) : null;
+        const bx = Number.isFinite(entry.bx ?? NaN) ? (entry.bx as number) : null;
+        const computedBt = Number.isFinite(entry.bt ?? NaN)
+          ? (entry.bt as number)
+          : (by != null && bz != null ? Math.sqrt(by ** 2 + bz ** 2) : null);
+
+        if (computedBt != null && by != null && bz != null && computedBt >= 0) {
+          magneticPoints.push({ time: t, bt: computedBt, by, bz, bx: bx ?? 0 });
+        }
+      }
+
+      speedPoints.sort((a, b) => a.time - b.time);
+      densityPoints.sort((a, b) => a.time - b.time);
+      magneticPoints.sort((a, b) => a.time - b.time);
+
+      setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
+      setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
+      setAllMagneticData(magneticPoints);
+
+      const latestSpeed = speedPoints.at(-1);
+      const latestDensity = densityPoints.at(-1);
+      const latestMagneticPoint = magneticPoints.at(-1);
+      const latestMagEntry = [...solarWindData].reverse().find((entry) => entry && (entry.bt != null || entry.bz != null || entry.by != null));
+      const latestMagSource = latestMagEntry?.src;
+
+      setGaugeData(prev => ({
+        ...prev,
+        speed: latestSpeed
+          ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}`, source: latestSpeed.source }
+          : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+        density: latestDensity
+          ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}`, source: latestDensity.source }
+          : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+        bt: latestMagneticPoint
+          ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bt) }
+          : { ...prev.bt, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+        bz: latestMagneticPoint
+          ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bz) }
+          : { ...prev.bz, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' }
+      }));
     }
 
     let anyGoesDataFound = false;

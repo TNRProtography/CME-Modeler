@@ -407,7 +407,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
-            <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
+            <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for forecast adjustments and location-aware alerts.</p>
             <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
-const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json';
-const NOAA_RTSW_WIND = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
+const SOLAR_WIND_IMF_URL = 'https://spottheaurora.thenamesrock.workers.dev/solar-wind';
 const DOMAIN = 'geomag';
 const SCALE_FACTOR = 100;
 const DISPLAY_DIVISOR = 10;
@@ -57,6 +56,7 @@ export interface NzSubstormIndexData {
   towns: NzTown[];
   outlook: string;
   solarWind: { bz: number; speed: number };
+  solarWindSource?: string;
   trends: { m5: number };
   stationCount: number;
   lastUpdated: number | null;
@@ -68,6 +68,11 @@ const parseIso = (ts: string | number) => {
 };
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
+
+const getSourceLabel = (source?: string | null) => {
+  if (!source) return '—';
+  return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
+};
 
 export const calculateReachLatitude = (strengthNt: number, mode: 'camera' | 'phone' | 'eye') => {
   if (strengthNt >= 0) return -65.0;
@@ -186,10 +191,7 @@ export const useNzSubstormIndexData = () => {
         if (stationEntries.length === 0) throw new Error('No magnetometer stations found.');
 
         const aggregationParams = `aggregationPeriod=${AGGREGATION_MINUTES}m&aggregationFunction=mean`;
-        const noaaMagUrl = NOAA_RTSW_MAG;
-        const noaaWindUrl = NOAA_RTSW_WIND;
-
-        const [stationSeries, magRes, windRes] = await Promise.all([
+        const [stationSeries, solarWindRes] = await Promise.all([
           Promise.all(
             stationEntries.map(async (entry) => {
               const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${entry.seriesKey}/latest/2d?${aggregationParams}`;
@@ -198,12 +200,9 @@ export const useNzSubstormIndexData = () => {
               return { station: entry.stationCode, seriesKey: entry.seriesKey, data: series };
             })
           ),
-          fetch(noaaMagUrl),
-          fetch(noaaWindUrl),
+          fetch(SOLAR_WIND_IMF_URL),
         ]);
-
-        const magData = await magRes.json();
-        const windData = await windRes.json();
+        const solarWindData = await solarWindRes.json();
 
         const now = Date.now();
         const chartCutoff = now - CHART_LOOKBACK_HOURS * 3600 * 1000;
@@ -258,10 +257,17 @@ export const useNzSubstormIndexData = () => {
           if (dt > 0) slope = (currentPoint.v - first.v) / dt;
         }
 
-        const lastMag = magData[magData.length - 1];
-        const lastWind = windData[windData.length - 1];
-        const bz = lastMag ? parseFloat(lastMag.bz_gsm) : 0;
-        const speed = lastWind ? parseFloat(lastWind.speed) : 0;
+        let bz = 0;
+        let speed = 0;
+        let solarWindSource = '—';
+        if (solarWindData?.ok && Array.isArray(solarWindData.data)) {
+          const latestEntry = [...solarWindData.data].reverse().find((entry: any) => entry && entry.speed != null && entry.bz != null);
+          if (latestEntry) {
+            bz = Number(latestEntry.bz) || 0;
+            speed = Number(latestEntry.speed) || 0;
+            solarWindSource = getSourceLabel(latestEntry?.src?.bz ?? latestEntry?.src?.speed);
+          }
+        }
 
         let outlook = '';
         const delay = speed > 0 ? Math.round(1500000 / speed / 60) : 60;
@@ -280,6 +286,7 @@ export const useNzSubstormIndexData = () => {
           towns,
           outlook,
           solarWind: { bz, speed },
+          solarWindSource,
           trends: {
             m5: currentStrength,
           },
