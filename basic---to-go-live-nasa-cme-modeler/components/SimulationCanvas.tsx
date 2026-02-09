@@ -673,7 +673,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       for (let i = 0; i < pCount; i++) {
         const uSeed = Math.pow(Math.random(), 0.7);
         const u = uSeed * (arc / 2);
-        const v = Math.random() * Math.PI * 2;
+        const v = Math.random() * Math.PI;
         const tubeOffset = tubeRadius + (Math.random() - 0.5) * shellJitter;
         const cosV = Math.cos(v);
         const sinV = Math.sin(v);
