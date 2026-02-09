@@ -670,7 +670,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
-      for (let i = 0; i < pCount; i++) {
+      let filled = 0;
+      let attempts = 0;
+      while (filled < pCount && attempts < pCount * 4) {
+        attempts += 1;
         const uSeed = Math.pow(Math.random(), 0.7);
         const u = uSeed * (arc / 2);
         const v = Math.random() * Math.PI;
@@ -689,6 +692,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const x = (tubeOffset * sinV + noise * 0.5) * radialScale;
         const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
         const z = ((majorRadius + tubeOffset * cosV) * sinU + noise) * radialScale;
+        if (y <= 0) {
+          continue;
+        }
         pos.push(x, y, z);
 
         const finalColor = new THREE.Color();
@@ -696,6 +702,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         else if (smoothFrontness > 0.35) finalColor.copy(coreColor);
         else finalColor.copy(wakeColor).lerp(coreColor, smoothFrontness / 0.35);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
+        filled += 1;
       }
 
       const geom = new THREE.BufferGeometry();
