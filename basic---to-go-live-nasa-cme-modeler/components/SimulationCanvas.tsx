@@ -690,7 +690,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const majorRadius = 0.75;
       const tubeRadius = 0.28;
       const shellJitter = 0.06;
-      const frontOffset = majorRadius + tubeRadius;
+      const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.22, 0.08, 0.28);
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
@@ -704,12 +704,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const cosU = Math.cos(u);
         const sinU = Math.sin(u);
 
-        const x = tubeOffset * sinV;
-        const y = (majorRadius + tubeOffset * cosV) * cosU - frontOffset;
-        const z = (majorRadius + tubeOffset * cosV) * sinU;
+        const frontness = 1 - Math.abs(u) / (arc / 2);
+        const bend = bendStrength * frontness;
+        const noise = Math.sin(u * 2.3 + v) * bend;
+        const tailStretch = (1 - frontness) * 0.35;
+
+        const x = tubeOffset * sinV + noise * 0.6;
+        const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
+        const z = (majorRadius + tubeOffset * cosV) * sinU + noise;
         pos.push(x, y, z);
 
-        const frontness = 1 - Math.abs(u) / (arc / 2);
         const finalColor = new THREE.Color();
         if (frontness > 0.75) finalColor.copy(coreColor).lerp(shockColor, (frontness - 0.75) / 0.25);
         else if (frontness > 0.4) finalColor.copy(coreColor);
