@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import LoadingSpinner from './icons/LoadingSpinner';
+import AuroraSightings from './AuroraSightings';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
@@ -21,11 +22,8 @@ import {
     SolarWindDensityChart,
     MagneticFieldChart,
     HemisphericPowerChart,
-    SubstormChart,
     MoonArcChart,
-    NzMagnetometerChart,
 } from './ForecastCharts';
-import NzSubstormIndex from './NzSubstormIndex';
 import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 
 // --- ICONS ---
@@ -220,74 +218,12 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summar
     );
 };
 
-const SubstormMagnetometerPanel: React.FC<{
-    substormForecast: SubstormForecast;
-    activeMagnetometer: 'goes' | 'nz';
-    onToggle: (value: 'goes' | 'nz') => void;
-    goes18Data: { time: number; hp: number }[];
-    goes19Data: { time: number; hp: number }[];
-    loadingMagnetometer: string | null;
-    celestialTimes: any;
-    isDaylight: boolean;
-    onOpenModal: () => void;
-}> = ({
-    substormForecast,
-    activeMagnetometer,
-    onToggle,
-    goes18Data,
-    goes19Data,
-    loadingMagnetometer,
-    celestialTimes,
-    isDaylight,
-    onOpenModal,
-}) => {
-    const statusLabel = substormForecast.status.replace('_', ' ');
-    return (
-        <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-            <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-2">
-                    <h3 className="text-xl font-semibold text-white">Substorm Forecast & Magnetometers</h3>
-                    <button onClick={onOpenModal} className="p-1 text-neutral-400 hover:text-neutral-100" title="About substorm magnetometers">
-                        <GuideIcon className="w-5 h-5" />
-                    </button>
-                </div>
-                <div className="text-right">
-                    <div className="text-xs text-neutral-400">Window</div>
-                    <div className="text-lg font-semibold text-white">{substormForecast.windowLabel}</div>
-                    <div className="text-xs text-neutral-400">Likelihood {substormForecast.likelihood}%</div>
-                </div>
-            </div>
-            <div className="text-sm text-neutral-300 mb-4 space-y-1">
-                <div>
-                    <span className="text-neutral-400">Status:</span> <span className="font-semibold text-neutral-100">{statusLabel}</span>
-                </div>
-                <div className="text-xs text-neutral-400">{substormForecast.action}</div>
-            </div>
-            <div className="flex justify-center items-center gap-4 mb-2">
-                <button onClick={() => onToggle('nz')} className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'nz' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>Ground Confirmation (NZ)</button>
-                <button onClick={() => onToggle('goes')} className={`px-4 py-1 text-sm rounded transition-colors ${activeMagnetometer === 'goes' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>Satellite Forecast (GOES)</button>
-            </div>
-            <div className="min-h-[350px]">
-                {activeMagnetometer === 'goes' ? (
-                    <div className="h-full">
-                        <SubstormChart goes18Data={goes18Data} goes19Data={goes19Data} annotations={{}} loadingMessage={loadingMagnetometer} />
-                    </div>
-                ) : (
-                    <div className="h-full w-full">
-                        <NzSubstormIndex celestialTimes={celestialTimes} isDaylight={isDaylight} />
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
-
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
-        goes18Data, goes19Data, loadingMagnetometer, substormForecast, activitySummary, interplanetaryShockData
+        substormForecast, activitySummary, interplanetaryShockData
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
@@ -296,7 +232,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
-    const [activeMagnetometer, setActiveMagnetometer] = useState<'goes' | 'nz'>('nz');
     const initialLoadCalled = useRef(false);
 
     // ... [Original UseEffects & Handlers] ...
@@ -351,14 +286,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         // ... [Keep existing tooltips] ...
         'unified-forecast': `<strong>Spot The Aurora Forecast</strong>...`,
         // ...
-        'substorm': '<strong>GOES Magnetometer Forecast</strong><br>Satellite magnetic field measurements at geosynchronous orbit. Sharp increases can indicate substorm onset or energy injection.',
-        'nz-mag': '<strong>NZ Ground Magnetometers</strong><br>Real-time magnetic disturbance over New Zealand. Spikes or rapid drops suggest substorm activity confirmed on the ground.'
+        'substorm': '<strong>Substorm Activity</strong><br>Rapid changes in the magnetic field can indicate substorm onset or energy injection.'
     }), []);
     
     const openModal = useCallback((id: string) => {
         const contentData = tooltipContent[id as keyof typeof tooltipContent];
         if (contentData) {
-            let title = id === 'nz-mag' ? 'About the NZ Substorm Index' : (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
+            let title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
             setModalState({ isOpen: true, title: title, content: contentData });
         }
     }, [tooltipContent]);
@@ -469,17 +403,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             </div>
-                            <SubstormMagnetometerPanel
-                                substormForecast={substormForecast}
-                                activeMagnetometer={activeMagnetometer}
-                                onToggle={setActiveMagnetometer}
-                                goes18Data={goes18Data}
-                                goes19Data={goes19Data}
-                                loadingMagnetometer={loadingMagnetometer}
-                                celestialTimes={celestialTimes}
-                                isDaylight={isDaylight}
-                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
-                            />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
@@ -492,17 +416,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
-                            <SubstormMagnetometerPanel
-                                substormForecast={substormForecast}
-                                activeMagnetometer={activeMagnetometer}
-                                onToggle={setActiveMagnetometer}
-                                goes18Data={goes18Data}
-                                goes19Data={goes19Data}
-                                loadingMagnetometer={loadingMagnetometer}
-                                celestialTimes={celestialTimes}
-                                isDaylight={isDaylight}
-                                onOpenModal={() => openModal(activeMagnetometer === 'goes' ? 'substorm' : 'nz-mag')}
-                            />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} />
                             
                             <ForecastChartPanel title="Interplanetary Magnetic Field" currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`} emoji={gaugeData.bz.emoji} onOpenModal={() => openModal('bz')}><MagneticFieldChart data={allMagneticData} /></ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>

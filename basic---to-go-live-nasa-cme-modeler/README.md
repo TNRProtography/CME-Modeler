@@ -2,7 +2,7 @@
 
 ![TNR Protography Logo](https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png)
 
-A comprehensive web application designed to help users track and visualize space weather phenomena affecting Earth. It features a 3D Coronal Mass Ejection (CME) modeler, a live aurora forecast dashboard with real-time solar wind data, and a solar activity monitor.
+A comprehensive web application designed to help users track and visualize space weather phenomena affecting Earth. It features a 3D Coronal Mass Ejection (CME) modeler, a live aurora forecast dashboard with real-time solar wind data, and a solar activity monitor. A unique community-driven aurora sighting map allows users to report and view local aurora visibility.
 
 ## Features
 
@@ -19,9 +19,18 @@ A comprehensive web application designed to help users track and visualize space
     *   Real-time solar wind data (Speed, Density, IMF Bt, IMF Bz) from NOAA RTSW and IMAP.
     *   Hemispheric Power and Moon Illumination data.
     *   Interactive charts for historical solar wind and magnetic field data.
-    *   Substorm forecast with ground (NZ) and GOES magnetometer confirmations.
     *   Live cloud cover map (Windy.com iframe).
     *   Queenstown live camera feed (iframe).
+
+*   **Spotting The Aurora (Community Sighting Map)**:
+    *   Interactive Leaflet map focused on the South Island of NZ.
+    *   Users can report current aurora visibility based on their location.
+    *   Report categories: Naked Eye 👁️, Phone Camera 📱, DSLR/Mirrorless 📷, Cloudy ☁️, Nothing ❌.
+    *   User's name is saved locally for convenience (only cached data).
+    *   GPS-based or manual pin placement for location.
+    *   Only one report allowed per user per 60 minutes.
+    *   All individual reports are displayed on the map without clustering, with newer reports overlaying older ones.
+    *   Table of the 5 latest reports.
 
 *   **Solar Activity Dashboard**:
     *   Real-time GOES X-ray Flux data with historical charts.
@@ -84,7 +93,7 @@ The application will typically be accessible at http://localhost:5173 (or anothe
 Usage
 The application features three main sections, accessible via the navigation buttons in the header bar:
 Aurora Forecast: This is the primary dashboard for live aurora conditions, featuring the custom "Spot The Aurora Forecast" score, real-time solar wind data, and local conditions for New Zealand's West Coast.
-Substorm Forecast: Below the main forecast, you will find a substorm outlook with magnetometer confirmations from NZ ground stations and GOES satellites.
+Spotting The Aurora (Map): Below the main forecast, you'll find an interactive map. Click on the map to set your location (or allow GPS access), select your sighting status (Naked Eye, Phone Camera, DSLR/Mirrorless, Cloudy, Nothing), enter your name, and submit. Your name will be saved locally. Reports are visible to all users and update automatically every minute. A detailed guide on reporting is available by clicking the ? icon next to the "Spotting The Aurora" title.
 Solar Activity: Provides a deeper dive into solar events, including X-ray flux, latest SUVI solar images, and details on recent solar flares and active regions/sunspots. Click on images (like the SUVI or ACE EPAM charts) for a full-screen viewer.
 CME Modeler: Explore Coronal Mass Ejections in a 3D interactive solar system.
 Controls (Left Panel): Adjust the date range of CMEs, change the camera's view (top-down, side), and focus on the Sun or Earth. You can also toggle visibility for labels, other planets (Mercury, Venus, Mars), and Earth's Moon/L1 point.
@@ -96,13 +105,13 @@ This application is designed for maximum data freshness:
 Live Data: All data displayed in the "Aurora Forecast" and "Solar Activity" dashboards, as well as the CME data, is fetched live from various APIs.
 Automatic Refresh: Data on the dashboards automatically refreshes every minute to ensure you always have the most current information.
 No Application Caching: The application's files (HTML, JavaScript, CSS) and API responses are explicitly prevented from being cached by your browser or the service worker. This means every time you open the app, you download the absolute latest version from the server.
-Local Storage Exception: The only data persistently stored on your device is your preferred navigation view selection.
+Local Storage Exception: The only data persistently stored on your device is your preferred name for aurora sighting reports, which is saved in your browser's local storage for convenience.
 Acknowledgements & Data Sources
 This project leverages publicly available data from several excellent sources, providing critical information for space weather monitoring and aurora forecasting:
 NASA DONKI: Coronal Mass Ejections (CME) and Solar Flare data.
-NOAA SWPC: GOES magnetometers, SUVI Solar Images, and Solar Region data.
+NOAA SWPC: Solar Wind (ACE/DSCOVR), Interplanetary Magnetic Field (IMF), GOES magnetometers, SUVI Solar Images, and Solar Region data.
 NOAA RTSW + IMAP: Solar Wind (Speed, Density), Interplanetary Magnetic Field (IMF).
-TNR Protography: Proprietary Aurora Forecast algorithm and API proxy services for ENLIL and Hemispheric Power data.
+TNR Protography: Proprietary Aurora Forecast algorithm, Aurora Sighting API backend, and API proxy services for ENLIL and Hemispheric Power data.
 Windy.com: Live Cloud Cover map iframe.
 Roundshot: Queenstown Live Camera iframe.
 Developed with ❤️ by TNR Protography.
