@@ -686,26 +686,34 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
       const colors: number[] = [];
-      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = 1 * Math.tan(halfAngle);
+      const arc = Math.PI * 1.25;
+      const majorRadius = 0.75;
+      const tubeRadius = 0.28;
+      const shellJitter = 0.06;
+      const frontOffset = majorRadius + tubeRadius;
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
-        const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
-        const x = r * Math.cos(theta);
-        const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        const u = (Math.random() - 0.5) * arc;
+        const v = Math.random() * Math.PI * 2;
+        const tubeOffset = tubeRadius + (Math.random() - 0.5) * shellJitter;
+        const cosV = Math.cos(v);
+        const sinV = Math.sin(v);
+        const cosU = Math.cos(u);
+        const sinU = Math.sin(u);
 
-        const relPos = y;
+        const x = tubeOffset * sinV;
+        const y = (majorRadius + tubeOffset * cosV) * cosU - frontOffset;
+        const z = (majorRadius + tubeOffset * cosV) * sinU;
+        pos.push(x, y, z);
+
+        const frontness = 1 - Math.abs(u) / (arc / 2);
         const finalColor = new THREE.Color();
-        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
-        else if (relPos < 0.3) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
+        if (frontness > 0.75) finalColor.copy(coreColor).lerp(shockColor, (frontness - 0.75) / 0.25);
+        else if (frontness > 0.4) finalColor.copy(coreColor);
+        else finalColor.copy(wakeColor).lerp(coreColor, frontness / 0.4);
         colors.push(finalColor.r, finalColor.g, finalColor.b);
       }
 
