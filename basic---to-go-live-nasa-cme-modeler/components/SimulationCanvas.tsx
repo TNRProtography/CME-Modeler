@@ -686,11 +686,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
       const colors: number[] = [];
-      const arc = Math.PI * 1.25;
-      const majorRadius = 0.75;
-      const tubeRadius = 0.28;
+      const halfAngleRad = THREE.MathUtils.degToRad(Math.max(12, cme.halfAngle));
+      const coneRadiusAtUnit = Math.tan(halfAngleRad);
+      const maxArc = Math.PI * 0.9;
+      const arc = Math.min(maxArc, halfAngleRad * 1.35);
+      const majorRadius = Math.min(0.78, 0.45 + coneRadiusAtUnit * 0.35);
+      const tubeRadius = Math.min(0.3, 0.18 + coneRadiusAtUnit * 0.12);
+      const radialScale = Math.min(1, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
       const shellJitter = 0.06;
-      const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.22, 0.08, 0.28);
+      const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.18, 0.08, 0.26);
       const shockColor = new THREE.Color(0xffaaaa);
       const wakeColor = new THREE.Color(0x8888ff);
       const coreColor = getCmeCoreColor(cme.speed);
@@ -709,9 +713,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const noise = Math.sin(u * 2.3 + v) * bend;
         const tailStretch = (1 - frontness) * 0.35;
 
-        const x = tubeOffset * sinV + noise * 0.6;
+        const x = (tubeOffset * sinV + noise * 0.6) * radialScale;
         const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
-        const z = (majorRadius + tubeOffset * cosV) * sinU + noise;
+        const z = ((majorRadius + tubeOffset * cosV) * sinU + noise) * radialScale;
         pos.push(x, y, z);
 
         const finalColor = new THREE.Color();
