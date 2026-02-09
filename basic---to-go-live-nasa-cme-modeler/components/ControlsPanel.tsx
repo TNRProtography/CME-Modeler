@@ -178,7 +178,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <ToggleSwitch id="show-labels-toggle" label="Show Labels" checked={showLabels} onChange={onShowLabelsChange} />
             <ToggleSwitch id="show-extra-planets-toggle" label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
             <ToggleSwitch id="show-moon-l1-toggle" label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
-            <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
+            <div className="flex items-center justify-between">
+              <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
+              <button
+                type="button"
+                className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/20 text-xs text-white/80 hover:text-white hover:border-white/40 transition"
+                aria-label="Flux rope orientation help"
+                title="Hold your fist like a rope: point your thumb in the CME travel direction (leading edge). Your curled fingers show the magnetic field rotation."
+              >
+                ?
+              </button>
+            </div>
           </div>
         </div>
 

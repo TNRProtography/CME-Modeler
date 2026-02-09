@@ -9,7 +9,8 @@ import {
   PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER
+  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
+  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
 
 /** =========================================================
@@ -53,6 +54,39 @@ const createParticleTexture = (THREE: any) => {
   context.fillRect(0, 0, 128, 128);
   particleTextureCache = new THREE.CanvasTexture(canvas);
   return particleTextureCache;
+};
+
+// --- Arrow flow texture for flux rope ---
+let arrowTextureCache: any = null;
+const createArrowTexture = (THREE: any) => {
+  if (arrowTextureCache) return arrowTextureCache;
+  if (!THREE || typeof document === 'undefined') return null;
+
+  const canvas = document.createElement('canvas');
+  const size = 256;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+  const arrowWidth = size / 6;
+  const arrowHeight = size / 4;
+  const spacing = size / 3;
+
+  for (let x = -arrowWidth; x < size + spacing; x += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, size * 0.5);
+    ctx.lineTo(x + arrowWidth, size * 0.5 - arrowHeight / 2);
+    ctx.lineTo(x + arrowWidth, size * 0.5 + arrowHeight / 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  arrowTextureCache = new THREE.CanvasTexture(canvas);
+  arrowTextureCache.wrapS = THREE.RepeatWrapping;
+  arrowTextureCache.wrapT = THREE.RepeatWrapping;
+  return arrowTextureCache;
 };
 
 const getCmeOpacity = (speed: number): number => {
@@ -156,6 +190,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const orbitsRef = useRef<Record<string, any>>({});
   const predictionLineRef = useRef<any>(null);
   const fluxRopeRef = useRef<THREE.Group | null>(null);
+  const fluxRopeMaterialsRef = useRef<Array<{ material: THREE.ShaderMaterial; phase: number }>>([]);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef = useRef<any>(null);
@@ -302,67 +337,49 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     scene.add(cmeGroupRef.current);
 
     const fluxRopeGroup = new THREE.Group();
+    const fluxRopeTexture = createArrowTexture(THREE);
+    const fluxRopeBaseUniforms = {
+      uTime: { value: 0 },
+      uTexture: { value: fluxRopeTexture },
+      uColor: { value: new THREE.Color(0xffffff) },
+    };
 
-    const shockGeometry = new THREE.TorusGeometry(1.05, 0.22, 32, 160, Math.PI * 1.35);
-    const coreGeometry = new THREE.TorusGeometry(0.96, 0.09, 24, 140, Math.PI * 1.32);
-    const cavityGeometry = new THREE.TorusGeometry(0.92, 0.16, 22, 120, Math.PI * 1.3);
-    const noseGeometry = new THREE.SphereGeometry(0.26, 32, 24, 0, Math.PI);
+    const buildRopeStrand = (radius: number, tube: number, phase: number, tilt: number) => {
+      const geometry = new THREE.TorusKnotGeometry(radius, tube, 220, 16, 2, 3);
+      const material = new THREE.ShaderMaterial({
+        vertexShader: FLUX_ROPE_VERTEX_SHADER,
+        fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
+        uniforms: {
+          uTime: { value: 0 },
+          uTexture: { value: fluxRopeBaseUniforms.uTexture.value },
+          uColor: { value: fluxRopeBaseUniforms.uColor.value.clone() },
+        },
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.x = Math.PI / 2 + tilt;
+      mesh.rotation.z = phase;
+      fluxRopeGroup.add(mesh);
+      fluxRopeMaterialsRef.current.push({ material, phase });
+    };
 
-    const shockMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.3,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+    buildRopeStrand(1.0, 0.07, 0, 0.08);
+    buildRopeStrand(0.94, 0.06, Math.PI / 2, -0.06);
+
+    const coreGeometry = new THREE.TorusGeometry(0.85, 0.035, 18, 120);
     const coreMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.45,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const cavityMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.12,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const noseMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
       opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-
-    const shockMesh = new THREE.Mesh(shockGeometry, shockMaterial);
     const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
-    const cavityMesh = new THREE.Mesh(cavityGeometry, cavityMaterial);
-    const noseMesh = new THREE.Mesh(noseGeometry, noseMaterial);
-
-    shockMesh.rotation.x = Math.PI / 2;
     coreMesh.rotation.x = Math.PI / 2;
-    cavityMesh.rotation.x = Math.PI / 2;
-
-    shockMesh.rotation.z = Math.PI / 7;
-    coreMesh.rotation.z = Math.PI / 7;
-    cavityMesh.rotation.z = Math.PI / 7;
-
-    shockMesh.scale.set(1.2, 0.8, 0.65);
-    coreMesh.scale.set(1.1, 0.78, 0.6);
-    cavityMesh.scale.set(1.05, 0.75, 0.58);
-
-    noseMesh.position.set(0, 0.18, 1.1);
-    noseMesh.scale.set(0.95, 0.75, 0.7);
-
-    shockMesh.userData.role = 'shock';
-    coreMesh.userData.role = 'core';
-    cavityMesh.userData.role = 'cavity';
-    noseMesh.userData.role = 'nose';
-
-    fluxRopeGroup.add(shockMesh, coreMesh, cavityMesh, noseMesh);
+    fluxRopeGroup.add(coreMesh);
 
     fluxRopeGroup.visible = false;
     fluxRopeRef.current = fluxRopeGroup;
@@ -609,29 +626,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
             const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            const ropeScale = coneRadius * 0.75;
-            fluxRopeRef.current.scale.set(ropeScale, ropeScale, ropeScale);
+            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
             const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y * 0.55));
+            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
             const ropeColor = getCmeCoreColor(cme.speed);
-            fluxRopeRef.current.traverse((child: any) => {
-              if (!child.material) return;
-              if (child.userData?.role === 'shock') {
-                child.material.color = ropeColor.clone().lerp(new THREE.Color(0xffffff), 0.35);
-                child.material.opacity = 0.4;
-              } else if (child.userData?.role === 'core') {
-                child.material.color = ropeColor.clone().lerp(new THREE.Color(0xffffff), 0.15);
-                child.material.opacity = 0.55;
-              } else if (child.userData?.role === 'cavity') {
-                child.material.color = ropeColor.clone().lerp(new THREE.Color(0x9bb7ff), 0.35);
-                child.material.opacity = 0.18;
-              } else if (child.userData?.role === 'nose') {
-                child.material.color = ropeColor.clone().lerp(new THREE.Color(0xffffff), 0.45);
-                child.material.opacity = 0.45;
-              }
+            fluxRopeMaterialsRef.current.forEach(({ material }) => {
+              material.uniforms.uColor.value = ropeColor;
             });
           }
         }
+        fluxRopeMaterialsRef.current.forEach(({ material, phase }) => {
+          material.uniforms.uTime.value = elapsedTime + phase;
+        });
       }
 
       const maxImpactSpeed = checkImpacts();
@@ -650,6 +656,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
       if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
+      if (arrowTextureCache) { arrowTextureCache.dispose?.(); arrowTextureCache = null; }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
       sceneRef.current?.traverse((o:any) => {
