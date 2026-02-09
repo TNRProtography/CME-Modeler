@@ -303,9 +303,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const fluxRopeGroup = new THREE.Group();
 
-    const shockGeometry = new THREE.TorusGeometry(1.05, 0.06, 20, 140, Math.PI * 1.55);
-    const coreGeometry = new THREE.TorusGeometry(0.9, 0.075, 24, 160, Math.PI * 1.45);
-    const wakeGeometry = new THREE.TorusGeometry(0.75, 0.05, 20, 140, Math.PI * 1.35);
+    const shockGeometry = new THREE.TorusGeometry(1.05, 0.22, 32, 160, Math.PI * 1.35);
+    const coreGeometry = new THREE.TorusGeometry(0.96, 0.09, 24, 140, Math.PI * 1.32);
+    const cavityGeometry = new THREE.TorusGeometry(0.92, 0.16, 22, 120, Math.PI * 1.3);
+    const noseGeometry = new THREE.SphereGeometry(0.26, 32, 24, 0, Math.PI);
 
     const shockMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -321,31 +322,47 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const wakeMaterial = new THREE.MeshBasicMaterial({
+    const cavityMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.12,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const noseMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
 
     const shockMesh = new THREE.Mesh(shockGeometry, shockMaterial);
     const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
-    const wakeMesh = new THREE.Mesh(wakeGeometry, wakeMaterial);
+    const cavityMesh = new THREE.Mesh(cavityGeometry, cavityMaterial);
+    const noseMesh = new THREE.Mesh(noseGeometry, noseMaterial);
 
     shockMesh.rotation.x = Math.PI / 2;
     coreMesh.rotation.x = Math.PI / 2;
-    wakeMesh.rotation.x = Math.PI / 2;
+    cavityMesh.rotation.x = Math.PI / 2;
 
-    shockMesh.rotation.z = Math.PI / 6;
-    coreMesh.rotation.z = Math.PI / 5;
-    wakeMesh.rotation.z = Math.PI / 4;
+    shockMesh.rotation.z = Math.PI / 7;
+    coreMesh.rotation.z = Math.PI / 7;
+    cavityMesh.rotation.z = Math.PI / 7;
+
+    shockMesh.scale.set(1.2, 0.8, 0.65);
+    coreMesh.scale.set(1.1, 0.78, 0.6);
+    cavityMesh.scale.set(1.05, 0.75, 0.58);
+
+    noseMesh.position.set(0, 0.18, 1.1);
+    noseMesh.scale.set(0.95, 0.75, 0.7);
 
     shockMesh.userData.role = 'shock';
     coreMesh.userData.role = 'core';
-    wakeMesh.userData.role = 'wake';
+    cavityMesh.userData.role = 'cavity';
+    noseMesh.userData.role = 'nose';
 
-    fluxRopeGroup.add(shockMesh, coreMesh, wakeMesh);
+    fluxRopeGroup.add(shockMesh, coreMesh, cavityMesh, noseMesh);
 
     fluxRopeGroup.visible = false;
     fluxRopeRef.current = fluxRopeGroup;
@@ -592,22 +609,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
             const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            const ropeScale = coneRadius * 0.7;
+            const ropeScale = coneRadius * 0.75;
             fluxRopeRef.current.scale.set(ropeScale, ropeScale, ropeScale);
             const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y * 0.6));
+            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y * 0.55));
             const ropeColor = getCmeCoreColor(cme.speed);
             fluxRopeRef.current.traverse((child: any) => {
               if (!child.material) return;
               if (child.userData?.role === 'shock') {
                 child.material.color = ropeColor.clone().lerp(new THREE.Color(0xffffff), 0.35);
-                child.material.opacity = 0.28;
+                child.material.opacity = 0.4;
               } else if (child.userData?.role === 'core') {
                 child.material.color = ropeColor.clone().lerp(new THREE.Color(0xffffff), 0.15);
-                child.material.opacity = 0.5;
-              } else if (child.userData?.role === 'wake') {
+                child.material.opacity = 0.55;
+              } else if (child.userData?.role === 'cavity') {
                 child.material.color = ropeColor.clone().lerp(new THREE.Color(0x9bb7ff), 0.35);
-                child.material.opacity = 0.22;
+                child.material.opacity = 0.18;
+              } else if (child.userData?.role === 'nose') {
+                child.material.color = ropeColor.clone().lerp(new THREE.Color(0xffffff), 0.45);
+                child.material.opacity = 0.45;
               }
             });
           }
