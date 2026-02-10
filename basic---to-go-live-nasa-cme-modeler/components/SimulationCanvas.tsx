@@ -660,10 +660,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const halfAngleRad = THREE.MathUtils.degToRad(Math.max(12, cme.halfAngle));
       const coneRadiusAtUnit = Math.tan(halfAngleRad);
       const maxArc = Math.PI * 0.75;
-      const arc = Math.min(maxArc, halfAngleRad * 0.9);
-      const majorRadius = Math.min(0.78, 0.45 + coneRadiusAtUnit * 0.35);
-      const tubeRadius = Math.min(0.3, 0.18 + coneRadiusAtUnit * 0.12);
-      const radialScale = Math.min(1, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
+      const arc = Math.min(maxArc, halfAngleRad * 0.78);
+      const majorRadius = Math.min(0.9, 0.52 + coneRadiusAtUnit * 0.4);
+      const tubeRadius = Math.min(0.36, 0.22 + coneRadiusAtUnit * 0.16);
+      const radialScale = Math.min(1.15, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
       const shellJitter = 0.06;
       const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.18, 0.08, 0.26);
       const shockColor = new THREE.Color(0xffaaaa);
@@ -689,7 +689,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const smoothFrontness = frontness * frontness * (3 - 2 * frontness);
         const bend = bendStrength * frontness;
         const noise = Math.sin(u * 2.1 + v) * bend * (0.4 + 0.6 * frontness);
-        const tailStretch = (1 - frontness) * 0.16;
+        const tailStretch = (1 - frontness) * 0.14;
 
         const ringRadius = majorRadius + tubeOffset * cosV;
         const crossRadius = Math.abs(tubeOffset * sinV);
@@ -698,14 +698,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const centerWeight = 1 - radialNorm;
         const frontBulge = Math.pow(smoothFrontness, 2.4);
         const noseRoundness = 1 - 0.35 * frontBulge;
-        const depthBoost = 0.9 + centerWeight * 0.35 + frontBulge * 0.3;
-        const lateralTighten = 1 - 0.5 * frontBulge;
+        const depthBoost = 1.0 + centerWeight * 0.55 + frontBulge * 0.38;
+        const lateralTighten = 1 - 0.32 * frontBulge;
 
-        const x = (tubeOffset * sinV + noise * 0.35) * radialScale * lateralTighten;
-        const y = ringRadius * cosU - tailStretch + frontBulge * 0.1;
+        const x = (tubeOffset * sinV + noise * 0.32) * radialScale * lateralTighten;
+        const y = ringRadius * cosU - tailStretch + frontBulge * 0.04;
         const z = ((ringRadius * sinU + noise) * radialScale) * noseRoundness * depthBoost;
         const radialDistSq = x * x * 1.25 + z * z * 0.45;
-        const trimThreshold = 0.2 + radialDistSq * 0.32;
+        const trimThreshold = 0.24 + radialDistSq * 0.28;
         if (y <= trimThreshold) {
           continue;
         }
