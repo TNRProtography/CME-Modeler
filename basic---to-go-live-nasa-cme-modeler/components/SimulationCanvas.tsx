@@ -703,7 +703,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (y <= trimThreshold) {
           continue;
         }
-        pos.push(x, y, z);
+        // Rotate the CME shell 90° around its propagation axis (local Y)
+        // so the croissant orientation matches the expected inner/outer arc layout.
+        const rotatedX = z;
+        const rotatedY = y;
+        const rotatedZ = -x;
+        pos.push(rotatedX, rotatedY, rotatedZ);
 
         colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
         filled += 1;
