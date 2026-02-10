@@ -660,7 +660,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const halfAngleRad = THREE.MathUtils.degToRad(Math.max(12, cme.halfAngle));
       const coneRadiusAtUnit = Math.tan(halfAngleRad);
       const maxArc = Math.PI * 0.75;
-      const arc = Math.min(maxArc, halfAngleRad * 1.1);
+      const arc = Math.min(maxArc, halfAngleRad * 0.9);
       const majorRadius = Math.min(0.78, 0.45 + coneRadiusAtUnit * 0.35);
       const tubeRadius = Math.min(0.3, 0.18 + coneRadiusAtUnit * 0.12);
       const radialScale = Math.min(1, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
@@ -689,7 +689,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const smoothFrontness = frontness * frontness * (3 - 2 * frontness);
         const bend = bendStrength * frontness;
         const noise = Math.sin(u * 2.1 + v) * bend * (0.4 + 0.6 * frontness);
-        const tailStretch = (1 - frontness) * 0.22;
+        const tailStretch = (1 - frontness) * 0.16;
 
         const ringRadius = majorRadius + tubeOffset * cosV;
         const crossRadius = Math.abs(tubeOffset * sinV);
@@ -702,7 +702,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const x = (tubeOffset * sinV + noise * 0.4) * radialScale * noseRoundness;
         const y = ringRadius * cosU - tailStretch + frontBulge * 0.1;
         const z = ((ringRadius * sinU + noise) * radialScale) * noseRoundness;
-        if (y <= 0) {
+        const radialDistSq = x * x + z * z;
+        const trimThreshold = 0.18 + radialDistSq * 0.35;
+        if (y <= trimThreshold) {
           continue;
         }
         pos.push(x, y, z);
