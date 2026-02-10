@@ -666,9 +666,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const radialScale = Math.min(1.15, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
       const shellJitter = 0.06;
       const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.18, 0.08, 0.26);
-      const shockColor = new THREE.Color(0xffaaaa);
-      const wakeColor = new THREE.Color(0x8888ff);
-      const coreColor = getCmeCoreColor(cme.speed);
+      const cmeColor = getCmeCoreColor(cme.speed);
 
       let filled = 0;
       let attempts = 0;
@@ -711,16 +709,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
         pos.push(x, y, z);
 
-        const finalColor = new THREE.Color();
-        if (smoothFrontness > 0.72) {
-          finalColor.copy(coreColor).lerp(shockColor, (smoothFrontness - 0.72) / 0.28);
-        } else if (smoothFrontness > 0.35) {
-          finalColor.copy(coreColor);
-        } else {
-          finalColor.copy(wakeColor).lerp(coreColor, smoothFrontness / 0.35);
-        }
-        finalColor.lerp(new THREE.Color(0xffffff), centerWeight * (0.2 + 0.45 * frontBulge));
-        colors.push(finalColor.r, finalColor.g, finalColor.b);
+        colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
         filled += 1;
       }
 
