@@ -692,7 +692,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const x = (tubeOffset * sinV + noise * 0.5) * radialScale;
         const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
         const z = ((majorRadius + tubeOffset * cosV) * sinU + noise) * radialScale;
-        if (y <= 0) {
+        if (y <= majorRadius * 0.2) {
           continue;
         }
         pos.push(x, y, z);
