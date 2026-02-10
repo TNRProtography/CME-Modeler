@@ -697,13 +697,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const radialNorm = THREE.MathUtils.clamp(crossRadius / maxCross, 0, 1);
         const centerWeight = 1 - radialNorm;
         const frontBulge = Math.pow(smoothFrontness, 2.4);
-        const noseRoundness = 1 - 0.45 * frontBulge;
+        const noseRoundness = 1 - 0.35 * frontBulge;
+        const depthBoost = 0.9 + centerWeight * 0.35 + frontBulge * 0.3;
+        const lateralTighten = 1 - 0.5 * frontBulge;
 
-        const x = (tubeOffset * sinV + noise * 0.4) * radialScale * noseRoundness;
+        const x = (tubeOffset * sinV + noise * 0.35) * radialScale * lateralTighten;
         const y = ringRadius * cosU - tailStretch + frontBulge * 0.1;
-        const z = ((ringRadius * sinU + noise) * radialScale) * noseRoundness;
-        const radialDistSq = x * x + z * z;
-        const trimThreshold = 0.18 + radialDistSq * 0.35;
+        const z = ((ringRadius * sinU + noise) * radialScale) * noseRoundness * depthBoost;
+        const radialDistSq = x * x * 1.25 + z * z * 0.45;
+        const trimThreshold = 0.2 + radialDistSq * 0.32;
         if (y <= trimThreshold) {
           continue;
         }
