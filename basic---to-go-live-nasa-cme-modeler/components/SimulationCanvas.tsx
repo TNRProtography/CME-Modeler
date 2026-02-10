@@ -659,11 +659,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const colors: number[] = [];
       const halfAngleRad = THREE.MathUtils.degToRad(Math.max(12, cme.halfAngle));
       const coneRadiusAtUnit = Math.tan(halfAngleRad);
-      const maxArc = Math.PI * 0.75;
-      const arc = Math.min(maxArc, halfAngleRad * 0.78);
-      const majorRadius = Math.min(0.9, 0.52 + coneRadiusAtUnit * 0.4);
-      const tubeRadius = Math.min(0.36, 0.22 + coneRadiusAtUnit * 0.16);
-      const radialScale = Math.min(1.15, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
+      const maxArc = Math.PI * 0.65;
+      const arc = Math.min(maxArc, halfAngleRad * 0.72);
+      const majorRadius = Math.min(0.86, 0.5 + coneRadiusAtUnit * 0.34);
+      const tubeRadius = Math.min(0.3, 0.2 + coneRadiusAtUnit * 0.12);
+      const radialScale = Math.min(1.0, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
       const shellJitter = 0.06;
       const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.18, 0.08, 0.26);
       const cmeColor = getCmeCoreColor(cme.speed);
@@ -672,38 +672,34 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       let attempts = 0;
       while (filled < pCount && attempts < pCount * 4) {
         attempts += 1;
-        const uSeed = Math.pow(Math.random(), 0.7);
-        const u = uSeed * (arc / 2);
-        // Keep only the anti-sunward/front hemisphere of the tube cross-section.
-        // This samples v in [-pi/2, pi/2], where cos(v) >= 0.
-        const v = (Math.random() - 0.5) * Math.PI;
-        const tubeOffset = tubeRadius + (Math.random() - 0.5) * shellJitter;
+        const u = (Math.random() - 0.5) * arc;
+        // Limit cross-section sweep so the CME reads like a croissant/banana shell instead of split prongs.
+        const v = Math.random() * (Math.PI * 0.78) + Math.PI * 0.12;
+        const tubeOffset = tubeRadius + (Math.random() - 0.5) * (shellJitter * 0.45);
         const cosV = Math.cos(v);
         const sinV = Math.sin(v);
         const cosU = Math.cos(u);
         const sinU = Math.sin(u);
 
-        const frontness = 1 - u / (arc / 2);
+        const frontness = 1 - Math.abs(u) / (arc / 2);
         const smoothFrontness = frontness * frontness * (3 - 2 * frontness);
-        const bend = bendStrength * frontness;
-        const noise = Math.sin(u * 2.1 + v) * bend * (0.4 + 0.6 * frontness);
-        const tailStretch = (1 - frontness) * 0.14;
+        const bend = bendStrength * (0.45 + smoothFrontness * 0.55);
+        const noise = Math.sin(u * 1.8 + v * 0.7) * bend * 0.12;
+        const tailStretch = (1 - smoothFrontness) * 0.08;
 
         const ringRadius = majorRadius + tubeOffset * cosV;
         const crossRadius = Math.abs(tubeOffset * sinV);
         const maxCross = Math.max(tubeRadius + shellJitter, 0.001);
         const radialNorm = THREE.MathUtils.clamp(crossRadius / maxCross, 0, 1);
         const centerWeight = 1 - radialNorm;
-        const frontBulge = Math.pow(smoothFrontness, 2.4);
-        const noseRoundness = 1 - 0.35 * frontBulge;
-        const depthBoost = 1.0 + centerWeight * 0.55 + frontBulge * 0.38;
-        const lateralTighten = 1 - 0.32 * frontBulge;
+        const frontBulge = Math.pow(smoothFrontness, 1.8);
+        const depthBoost = 0.95 + centerWeight * 0.35 + frontBulge * 0.18;
+        const lateralTighten = 1 - 0.2 * frontBulge;
 
-        const x = (tubeOffset * sinV + noise * 0.32) * radialScale * lateralTighten;
-        const y = ringRadius * cosU - tailStretch + frontBulge * 0.04;
-        const z = ((ringRadius * sinU + noise) * radialScale) * noseRoundness * depthBoost;
-        const radialDistSq = x * x * 1.25 + z * z * 0.45;
-        const trimThreshold = 0.24 + radialDistSq * 0.28;
+        const x = (tubeOffset * sinV + noise) * radialScale * lateralTighten;
+        const y = ringRadius * cosU - tailStretch + frontBulge * 0.025;
+        const z = (ringRadius * sinU + noise) * radialScale * depthBoost;
+        const trimThreshold = 0.13 + (1 - smoothFrontness) * 0.1;
         if (y <= trimThreshold) {
           continue;
         }
