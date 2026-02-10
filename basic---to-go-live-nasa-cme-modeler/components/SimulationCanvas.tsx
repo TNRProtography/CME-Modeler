@@ -691,18 +691,31 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const noise = Math.sin(u * 2.1 + v) * bend * (0.4 + 0.6 * frontness);
         const tailStretch = (1 - frontness) * 0.22;
 
-        const x = (tubeOffset * sinV + noise * 0.5) * radialScale;
-        const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
-        const z = ((majorRadius + tubeOffset * cosV) * sinU + noise) * radialScale;
+        const ringRadius = majorRadius + tubeOffset * cosV;
+        const crossRadius = Math.abs(tubeOffset * sinV);
+        const maxCross = Math.max(tubeRadius + shellJitter, 0.001);
+        const radialNorm = THREE.MathUtils.clamp(crossRadius / maxCross, 0, 1);
+        const centerWeight = 1 - radialNorm;
+        const frontBulge = Math.pow(smoothFrontness, 2.4);
+        const noseRoundness = 1 - 0.45 * frontBulge;
+
+        const x = (tubeOffset * sinV + noise * 0.4) * radialScale * noseRoundness;
+        const y = ringRadius * cosU - tailStretch + frontBulge * 0.1;
+        const z = ((ringRadius * sinU + noise) * radialScale) * noseRoundness;
         if (y <= 0) {
           continue;
         }
         pos.push(x, y, z);
 
         const finalColor = new THREE.Color();
-        if (smoothFrontness > 0.7) finalColor.copy(coreColor).lerp(shockColor, (smoothFrontness - 0.7) / 0.3);
-        else if (smoothFrontness > 0.35) finalColor.copy(coreColor);
-        else finalColor.copy(wakeColor).lerp(coreColor, smoothFrontness / 0.35);
+        if (smoothFrontness > 0.72) {
+          finalColor.copy(coreColor).lerp(shockColor, (smoothFrontness - 0.72) / 0.28);
+        } else if (smoothFrontness > 0.35) {
+          finalColor.copy(coreColor);
+        } else {
+          finalColor.copy(wakeColor).lerp(coreColor, smoothFrontness / 0.35);
+        }
+        finalColor.lerp(new THREE.Color(0xffffff), centerWeight * (0.2 + 0.45 * frontBulge));
         colors.push(finalColor.r, finalColor.g, finalColor.b);
         filled += 1;
       }
