@@ -703,12 +703,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (y <= trimThreshold) {
           continue;
         }
-        // Rotate the CME shell 90° around its propagation axis (local Y)
-        // so the croissant orientation matches the expected inner/outer arc layout.
-        const rotatedX = z;
-        const rotatedY = y;
-        const rotatedZ = -x;
-        pos.push(rotatedX, rotatedY, rotatedZ);
+        // Base 90° rotation for shell orientation.
+        const baseX = z;
+        const baseY = y;
+        const baseZ = -x;
+        // Then, from halfway along the long section to the nose, twist an additional 90°.
+        const twistT = THREE.MathUtils.clamp((smoothFrontness - 0.5) * 2, 0, 1);
+        const twistAngle = twistT * (Math.PI / 2);
+        const cosTwist = Math.cos(twistAngle);
+        const sinTwist = Math.sin(twistAngle);
+        const twistedX = baseX * cosTwist - baseZ * sinTwist;
+        const twistedZ = baseX * sinTwist + baseZ * cosTwist;
+        pos.push(twistedX, baseY, twistedZ);
 
         colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
         filled += 1;
