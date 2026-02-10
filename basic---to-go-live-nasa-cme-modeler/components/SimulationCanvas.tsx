@@ -676,7 +676,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         attempts += 1;
         const uSeed = Math.pow(Math.random(), 0.7);
         const u = uSeed * (arc / 2);
-        const v = Math.random() * Math.PI;
+        // Keep only the anti-sunward/front hemisphere of the tube cross-section.
+        // This samples v in [-pi/2, pi/2], where cos(v) >= 0.
+        const v = (Math.random() - 0.5) * Math.PI;
         const tubeOffset = tubeRadius + (Math.random() - 0.5) * shellJitter;
         const cosV = Math.cos(v);
         const sinV = Math.sin(v);
@@ -692,7 +694,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const x = (tubeOffset * sinV + noise * 0.5) * radialScale;
         const y = (majorRadius + tubeOffset * cosV) * cosU - tailStretch;
         const z = ((majorRadius + tubeOffset * cosV) * sinU + noise) * radialScale;
-        if (y <= majorRadius * 0.2) {
+        if (y <= 0) {
           continue;
         }
         pos.push(x, y, z);
