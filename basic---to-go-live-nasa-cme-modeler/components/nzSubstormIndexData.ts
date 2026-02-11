@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
-const NOAA_RTSW_MAG = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json';
-const NOAA_RTSW_WIND = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
 const DOMAIN = 'geomag';
 const SCALE_FACTOR = 100;
 const DISPLAY_DIVISOR = 10;
@@ -57,6 +56,7 @@ export interface NzSubstormIndexData {
   towns: NzTown[];
   outlook: string;
   solarWind: { bz: number; speed: number };
+  solarWindSource?: string;
   trends: { m5: number };
   stationCount: number;
   lastUpdated: number | null;
@@ -68,6 +68,132 @@ const parseIso = (ts: string | number) => {
 };
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
+
+const getSourceLabel = (source?: string | null) => {
+  if (!source) return '—';
+  return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
+};
+
+const splitTopLevelArrayEntries = (raw: string): string[] => {
+  const entries: string[] = [];
+  let current = '';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    current += ch;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) {
+      const candidate = current.slice(0, -1).trim();
+      if (candidate) entries.push(candidate);
+      current = '';
+    }
+  }
+
+  const trailing = current.trim();
+  if (trailing) entries.push(trailing);
+  return entries;
+};
+
+const parseJsonWithRowRecovery = (rawText: string) => {
+  const text = rawText.trim();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // fall through to row-level recovery
+  }
+
+  const parseArrayEntries = (arrayBody: string) => {
+    const recovered: any[] = [];
+    for (const entryText of splitTopLevelArrayEntries(arrayBody)) {
+      try {
+        recovered.push(JSON.parse(entryText));
+      } catch {
+        // Skip malformed row and continue
+      }
+    }
+    return recovered;
+  };
+
+  if (text.startsWith('[') && text.endsWith(']')) {
+    return parseArrayEntries(text.slice(1, -1));
+  }
+
+  const dataKeyIndex = text.indexOf('"data"');
+  if (dataKeyIndex >= 0) {
+    const arrayStart = text.indexOf('[', dataKeyIndex);
+    if (arrayStart >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let arrayEnd = -1;
+
+      for (let i = arrayStart; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === '[') depth++;
+        else if (ch === ']') {
+          depth--;
+          if (depth === 0) {
+            arrayEnd = i;
+            break;
+          }
+        }
+      }
+
+      if (arrayEnd > arrayStart) {
+        const recoveredData = parseArrayEntries(text.slice(arrayStart + 1, arrayEnd));
+        const okMatch = text.match(/"ok"\s*:\s*(true|false)/i);
+        return { ok: okMatch ? okMatch[1].toLowerCase() === 'true' : recoveredData.length > 0, data: recoveredData };
+      }
+    }
+  }
+
+  return null;
+};
+
+const fetchJsonWithRecovery = async (url: string) => {
+  const response = await fetch(url);
+  const raw = await response.text();
+  const parsed = parseJsonWithRowRecovery(raw);
+  if (parsed === null) {
+    throw new Error(`Unable to parse JSON from ${url}`);
+  }
+  return parsed;
+};
 
 export const calculateReachLatitude = (strengthNt: number, mode: 'camera' | 'phone' | 'eye') => {
   if (strengthNt >= 0) return -65.0;
@@ -174,8 +300,7 @@ export const useNzSubstormIndexData = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const summaryRes = await fetch(`${TILDE_BASE}/dataSummary/${DOMAIN}`);
-        const summary = await summaryRes.json();
+        const summary = await fetchJsonWithRecovery(`${TILDE_BASE}/dataSummary/${DOMAIN}`);
         const stations = summary?.domain?.[DOMAIN]?.stations ?? {};
         const stationEntries = Object.keys(stations)
           .map((stationCode) => ({
@@ -186,24 +311,17 @@ export const useNzSubstormIndexData = () => {
         if (stationEntries.length === 0) throw new Error('No magnetometer stations found.');
 
         const aggregationParams = `aggregationPeriod=${AGGREGATION_MINUTES}m&aggregationFunction=mean`;
-        const noaaMagUrl = NOAA_RTSW_MAG;
-        const noaaWindUrl = NOAA_RTSW_WIND;
-
-        const [stationSeries, magRes, windRes] = await Promise.all([
+        const [stationSeries, solarWindRes] = await Promise.all([
           Promise.all(
             stationEntries.map(async (entry) => {
               const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${entry.seriesKey}/latest/2d?${aggregationParams}`;
-              const res = await fetch(tildeUrl);
-              const series = await res.json();
+              const series = await fetchJsonWithRecovery(tildeUrl);
               return { station: entry.stationCode, seriesKey: entry.seriesKey, data: series };
             })
           ),
-          fetch(noaaMagUrl),
-          fetch(noaaWindUrl),
+          fetchJsonWithRecovery(SOLAR_WIND_IMF_URL),
         ]);
-
-        const magData = await magRes.json();
-        const windData = await windRes.json();
+        const solarWindData = solarWindRes;
 
         const now = Date.now();
         const chartCutoff = now - CHART_LOOKBACK_HOURS * 3600 * 1000;
@@ -258,10 +376,17 @@ export const useNzSubstormIndexData = () => {
           if (dt > 0) slope = (currentPoint.v - first.v) / dt;
         }
 
-        const lastMag = magData[magData.length - 1];
-        const lastWind = windData[windData.length - 1];
-        const bz = lastMag ? parseFloat(lastMag.bz_gsm) : 0;
-        const speed = lastWind ? parseFloat(lastWind.speed) : 0;
+        let bz = 0;
+        let speed = 0;
+        let solarWindSource = '—';
+        if (solarWindData?.ok && Array.isArray(solarWindData.data)) {
+          const latestEntry = [...solarWindData.data].reverse().find((entry: any) => entry && entry.speed != null && entry.bz != null);
+          if (latestEntry) {
+            bz = Number(latestEntry.bz) || 0;
+            speed = Number(latestEntry.speed) || 0;
+            solarWindSource = getSourceLabel(latestEntry?.src?.bz ?? latestEntry?.src?.speed);
+          }
+        }
 
         let outlook = '';
         const delay = speed > 0 ? Math.round(1500000 / speed / 60) : 60;
@@ -280,6 +405,7 @@ export const useNzSubstormIndexData = () => {
           towns,
           outlook,
           solarWind: { bz, speed },
+          solarWindSource,
           trends: {
             m5: currentStrength,
           },

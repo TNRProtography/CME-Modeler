@@ -61,7 +61,7 @@ let arrowTextureCache: any = null;
 const createArrowTexture = (THREE: any) => {
   if (arrowTextureCache) return arrowTextureCache;
   if (!THREE || typeof document === 'undefined') return null;
-  
+
   const canvas = document.createElement('canvas');
   const size = 256;
   canvas.width = size;
@@ -82,7 +82,7 @@ const createArrowTexture = (THREE: any) => {
     ctx.closePath();
     ctx.fill();
   }
-  
+
   arrowTextureCache = new THREE.CanvasTexture(canvas);
   arrowTextureCache.wrapS = THREE.RepeatWrapping;
   arrowTextureCache.wrapT = THREE.RepeatWrapping;
@@ -335,7 +335,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeGroupRef.current = new THREE.Group();
     scene.add(cmeGroupRef.current);
 
-    // --- START OF MODIFICATION: Reverting to original blinking ring ---
     const fluxRopeGeometry = new THREE.TorusGeometry(1.0, 0.05, 16, 100);
     const fluxRopeMaterial = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER,
@@ -354,7 +353,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     fluxRopeRef.current.rotation.x = Math.PI / 2;
     fluxRopeRef.current.visible = false;
     scene.add(fluxRopeRef.current);
-    // --- END OF MODIFICATION ---
 
     const makeStars = (count: number, spread: number, size: number) => {
       const verts: number[] = [];
@@ -587,7 +585,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // --- START OF MODIFICATION: Reverting Flux Rope Animation Logic ---
       const shouldShowFluxRope = showFluxRope && currentlyModeledCMEId;
       if (fluxRopeRef.current) {
         fluxRopeRef.current.visible = shouldShowFluxRope;
@@ -606,7 +603,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
         fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime;
       }
-      // --- END OF MODIFICATION ---
 
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
@@ -662,10 +658,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pos: number[] = [];
       const colors: number[] = [];
       const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = 1 * Math.tan(halfAngle);
-      const shockColor = new THREE.Color(0xffaaaa);
-      const wakeColor = new THREE.Color(0x8888ff);
-      const coreColor = getCmeCoreColor(cme.speed);
+      const coneRadius = Math.tan(halfAngle);
+      const cmeColor = getCmeCoreColor(cme.speed);
 
       for (let i = 0; i < pCount; i++) {
         const y = Math.cbrt(Math.random());
@@ -674,14 +668,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / coneRadius) ** 2)), z);
+        pos.push(x, y * (1 + 0.5 * (1 - (r / Math.max(coneRadius, 0.0001)) ** 2)), z);
 
-        const relPos = y;
-        const finalColor = new THREE.Color();
-        if (relPos < 0.1) finalColor.copy(wakeColor).lerp(coreColor, relPos / 0.1);
-        else if (relPos < 0.3) finalColor.copy(coreColor);
-        else finalColor.copy(coreColor).lerp(shockColor, (relPos - 0.3) / 0.7);
-        colors.push(finalColor.r, finalColor.g, finalColor.b);
+        colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
       }
 
       const geom = new THREE.BufferGeometry();

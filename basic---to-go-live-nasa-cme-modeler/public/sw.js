@@ -14,9 +14,7 @@
 // --- API Endpoints ---
 const NOAA_XRAY_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const DONKI_GST_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/GST';
-// --- NEW: Added NOAA plasma and mag URLs ---
-const NOAA_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
-const NOAA_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
 
 
 // --- Constants ---
@@ -116,26 +114,23 @@ async function checkIPS(env, ipsThresholds) {
                 let solarWindInfo = '';
 
                 try {
-                    const [plasmaRes, magRes] = await Promise.all([
-                        fetchWithRetry(NOAA_PLASMA_URL),
-                        fetchWithRetry(NOAA_MAG_URL)
-                    ]);
-                    
-                    if (plasmaRes && magRes) {
-                        const plasmaData = await plasmaRes.json();
-                        const magData = await magRes.json();
-                        
-                        const plasmaHeader = plasmaData[0];
-                        const magHeader = magData[0];
-                        const latestPlasma = plasmaData[plasmaData.length - 1];
-                        const latestMag = magData[magData.length - 1];
-                        
-                        const speed = Number(latestPlasma[plasmaHeader.indexOf('speed')]).toFixed(0);
-                        const bt = Number(latestMag[magHeader.indexOf('bt')]).toFixed(1);
-                        const bz = Number(latestMag[magHeader.indexOf('bz_gsm')]).toFixed(1);
+                    const solarWindRes = await fetchWithRetry(SOLAR_WIND_IMF_URL);
+                    if (solarWindRes) {
+                        const solarWindData = await solarWindRes.json();
+                        if (solarWindData?.ok && Array.isArray(solarWindData.data)) {
+                            const latestEntry = [...solarWindData.data].reverse().find((entry) =>
+                                entry && (entry.speed != null || entry.bt != null || entry.bz != null)
+                            );
+                            if (latestEntry) {
+                                const speed = Number(latestEntry.speed).toFixed(0);
+                                const btValue = latestEntry.bt ?? (latestEntry.by != null && latestEntry.bz != null ? Math.sqrt(latestEntry.by ** 2 + latestEntry.bz ** 2) : null);
+                                const bt = btValue != null ? Number(btValue).toFixed(1) : null;
+                                const bz = latestEntry.bz != null ? Number(latestEntry.bz).toFixed(1) : null;
 
-                        if (!isNaN(speed) && !isNaN(bt) && !isNaN(bz)) {
-                            solarWindInfo = `\n\nPost-shock conditions: Speed ${speed} km/s, Bt ${bt} nT, Bz ${bz} nT.`;
+                                if (!isNaN(speed) && bt !== null && bz !== null) {
+                                    solarWindInfo = `\n\nPost-shock conditions: Speed ${speed} km/s, Bt ${bt} nT, Bz ${bz} nT.`;
+                                }
+                            }
                         }
                     }
                 } catch (e) {

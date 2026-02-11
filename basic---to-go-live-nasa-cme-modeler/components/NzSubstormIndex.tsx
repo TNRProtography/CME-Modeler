@@ -35,11 +35,12 @@ const NzSubstormIndex: React.FC<NzSubstormIndexProps> = ({ celestialTimes, isDay
       : 'Moonlight data is unavailable, so plan for darker skies just in case.';
 
     const { bz, speed } = data.solarWind;
+    const sourceLabel = data.solarWindSource ? ` Source: ${data.solarWindSource}.` : '';
     const solarNote = bz < -10 && speed > 500
-      ? `Solar wind is primed (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s) for a strong response.`
+      ? `Solar wind is primed (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s) for a strong response.${sourceLabel}`
       : bz < -5
-      ? `Solar wind is favorable (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`
-      : `Solar wind is mostly quiet (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).`;
+      ? `Solar wind is favorable (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).${sourceLabel}`
+      : `Solar wind is mostly quiet (Bz ${bz.toFixed(1)} nT, ${Math.round(speed)} km/s).${sourceLabel}`;
 
     const magnitude = Math.abs(data.strength);
     const sizeLabel = magnitude >= 1500 ? 'major' : magnitude >= 800 ? 'strong' : magnitude >= 450 ? 'moderate' : 'minor';
@@ -126,7 +127,7 @@ const NzSubstormIndex: React.FC<NzSubstormIndexProps> = ({ celestialTimes, isDay
           <span className="text-sky-400">SPOT THE AURORA</span> / NZ SUBSTORM INDEX
         </h2>
         <div className="text-xs text-neutral-500">
-          GeoNet Magnetometers ({data.stationCount} stations) + RTSW
+          GeoNet Magnetometers ({data.stationCount} stations) + {data.solarWindSource ?? 'Solar Wind'}
           {data.lastUpdated && (
             <span className="block md:inline md:ml-2">Updated {new Date(data.lastUpdated).toLocaleTimeString()}</span>
           )}

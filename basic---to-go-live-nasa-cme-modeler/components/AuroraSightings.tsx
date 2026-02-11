@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
-import { NZ_TOWNS, calculateReachLatitude, useNzSubstormIndexData } from './nzSubstormIndexData';
+import { NZ_TOWNS } from './nzSubstormIndexData';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -156,7 +156,6 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
 };
 
 const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal }) => {
-    const { data: nzSubstormData } = useNzSubstormIndexData();
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -432,110 +431,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-3 bg-neutral-950/80 p-4 rounded-lg border border-neutral-800">
-                    <h3 className="text-sm font-bold text-neutral-400 uppercase mb-3">Active Visibility Zones</h3>
-                    {!nzSubstormData ? (
-                        <div className="text-xs text-neutral-500 italic">Loading NZ substorm visibility zones...</div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <div className="text-[10px] text-green-400 font-bold mb-2 flex items-center gap-1">📷 CAMERA (Long Exposure)</div>
-                                <div className="flex flex-wrap gap-1">
-                                    {nzSubstormData.towns.filter((t) => t.cam).length === 0 ? (
-                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
-                                    ) : (
-                                        nzSubstormData.towns
-                                            .filter((t) => t.cam)
-                                            .map((t) => (
-                                                <span
-                                                    key={`cam-${t.name}`}
-                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                                        t.cam === 'green'
-                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                                                            : t.cam === 'yellow'
-                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
-                                                    }`}
-                                                >
-                                                    {t.name}
-                                                </span>
-                                            ))
-                                    )}
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="text-[10px] text-sky-400 font-bold mb-2 flex items-center gap-1">📱 PHONE (Night Mode)</div>
-                                <div className="flex flex-wrap gap-1">
-                                    {nzSubstormData.towns.filter((t) => t.phone).length === 0 ? (
-                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
-                                    ) : (
-                                        nzSubstormData.towns
-                                            .filter((t) => t.phone)
-                                            .map((t) => (
-                                                <span
-                                                    key={`phone-${t.name}`}
-                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                                        t.phone === 'green'
-                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                                                            : t.phone === 'yellow'
-                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
-                                                    }`}
-                                                >
-                                                    {t.name}
-                                                </span>
-                                            ))
-                                    )}
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="text-[10px] text-yellow-400 font-bold mb-2 flex items-center gap-1">👁️ NAKED EYE</div>
-                                <div className="flex flex-wrap gap-1">
-                                    {nzSubstormData.towns.filter((t) => t.eye).length === 0 ? (
-                                        <span className="text-neutral-600 text-xs italic">No towns in range</span>
-                                    ) : (
-                                        nzSubstormData.towns
-                                            .filter((t) => t.eye)
-                                            .map((t) => (
-                                                <span
-                                                    key={`eye-${t.name}`}
-                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                                        t.eye === 'green'
-                                                            ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                                                            : t.eye === 'yellow'
-                                                            ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300'
-                                                            : 'bg-red-500/20 border-red-500/40 text-red-300'
-                                                    }`}
-                                                >
-                                                    {t.name}
-                                                </span>
-                                            ))
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    <div className="mt-4 pt-3 border-t border-neutral-800 flex gap-4 text-[10px] text-neutral-400 justify-center">
-                        <span className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded-full bg-neutral-600" />
-                            No visibility likely
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded-full bg-red-500" />
-                            Possible
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                            Good
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded-full bg-green-500" />
-                            Great
-                        </span>
-                    </div>
-                </div>
                 <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
@@ -555,46 +450,6 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
                         <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
-                        {nzSubstormData && (
-                            <>
-                                {nzSubstormData.towns.map((town, index) => {
-                                    let color = '#666';
-                                    let radius = 4;
-                                    if (town.cam) {
-                                        color = '#4ade80';
-                                        radius = 5;
-                                    }
-                                    if (town.phone) {
-                                        color = '#38bdf8';
-                                        radius = 6;
-                                    }
-                                    if (town.eye) {
-                                        color = '#facc15';
-                                        radius = 7;
-                                    }
-                                    return (
-                                        <CircleMarker
-                                            key={`${town.name}-${index}`}
-                                            center={[town.lat, town.lon]}
-                                            radius={radius}
-                                            pathOptions={{ color, fillColor: color, fillOpacity: 0.85 }}
-                                        />
-                                    );
-                                })}
-                                <Polyline
-                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'camera'), NZ_BOUNDS[1][1]]]}
-                                    pathOptions={{ color: '#4ade80', dashArray: '4' }}
-                                />
-                                <Polyline
-                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'phone'), NZ_BOUNDS[1][1]]]}
-                                    pathOptions={{ color: '#38bdf8', dashArray: '4' }}
-                                />
-                                <Polyline
-                                    positions={[[calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[0][1]], [calculateReachLatitude(nzSubstormData.strength, 'eye'), NZ_BOUNDS[1][1]]]}
-                                    pathOptions={{ color: '#facc15', dashArray: '4' }}
-                                />
-                            </>
-                        )}
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
                         <>
                              {sightings.map(sighting => {

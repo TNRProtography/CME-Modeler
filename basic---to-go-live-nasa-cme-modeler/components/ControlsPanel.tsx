@@ -1,6 +1,6 @@
 // --- START OF FILE ControlsPanel.tsx ---
 
-import React from 'react';
+import React, { useState } from 'react';
 import { TimeRange, ViewMode, FocusTarget, CMEFilter } from '../types';
 import CloseIcon from './icons/CloseIcon';
 import ColorScaleGuide from './ColorScaleGuide';
@@ -104,6 +104,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   cmeFilter,
   onCmeFilterChange,
 }) => {
+  const [showFluxRopeHelp, setShowFluxRopeHelp] = useState(false);
   return (
     <div className="panel lg:relative lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl lg:max-w-xs w-full h-full flex flex-col">
       
@@ -178,7 +179,49 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <ToggleSwitch id="show-labels-toggle" label="Show Labels" checked={showLabels} onChange={onShowLabelsChange} />
             <ToggleSwitch id="show-extra-planets-toggle" label="Show Other Planets" checked={showExtraPlanets} onChange={onShowExtraPlanetsChange} />
             <ToggleSwitch id="show-moon-l1-toggle" label="Show Moon & L1" checked={showMoonL1} onChange={onShowMoonL1Change} />
-            <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
+            <div className="flex items-center justify-between">
+              <ToggleSwitch id="show-flux-rope-toggle" label="Show Flux Rope" checked={showFluxRope} onChange={onShowFluxRopeChange} />
+              <button
+                type="button"
+                className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/20 text-xs text-white/80 hover:text-white hover:border-white/40 transition"
+                aria-label="Flux rope orientation help"
+                aria-expanded={showFluxRopeHelp}
+                onClick={() => setShowFluxRopeHelp((value) => !value)}
+              >
+                ?
+              </button>
+            </div>
+            {showFluxRopeHelp && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-neutral-200 space-y-2">
+                <p>
+                  <strong>Flux rope orientation:</strong> make a fist and point your thumb in the CME travel direction
+                  (leading edge). Your curled fingers show the magnetic field rotation.
+                </p>
+                <div className="flex items-center gap-3">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 120 80"
+                    className="h-12 w-20 text-sky-200"
+                  >
+                    <defs>
+                      <marker id="arrow-head" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                        <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
+                      </marker>
+                    </defs>
+                    <ellipse cx="40" cy="40" rx="26" ry="18" fill="none" stroke="currentColor" strokeWidth="2" />
+                    <path d="M66 40 H110" stroke="currentColor" strokeWidth="2" markerEnd="url(#arrow-head)" />
+                    <path d="M40 22 C52 26 56 36 48 48" stroke="currentColor" strokeWidth="2" markerEnd="url(#arrow-head)" fill="none" />
+                  </svg>
+                  <div className="space-y-1">
+                    <div><span className="font-semibold text-neutral-100">Thumb</span>: travel direction (nose).</div>
+                    <div><span className="font-semibold text-neutral-100">Fingers</span>: magnetic field rotation.</div>
+                  </div>
+                </div>
+                <p>
+                  When the field points south (down toward Earth), aurora odds and KP tend to increase.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

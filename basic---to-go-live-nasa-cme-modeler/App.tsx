@@ -86,35 +86,13 @@ interface ImpactDataPoint {
     density: number;
 }
 
+type InitialLoadTaskKey = 'forecastData' | 'solarData' | 'modelerCmeData';
+
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.4';
 
-const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
-  forecast: '/spot-the-aurora-forecast',
-  'solar-activity': '/solar-dashboard',
-  modeler: '/cme-visualization',
-};
-
-const SETTINGS_PATH = '/settings';
-const TUTORIAL_PATH = '/tutorial';
-const DEFAULT_MAIN_PAGE_KEY = 'sta_default_main_page';
-const DEFAULT_FORECAST_VIEW_KEY = 'sta_default_forecast_view';
-
-const getForecastViewFromSearch = (search: string): 'simple' | 'advanced' | null => {
-  const params = new URLSearchParams(search);
-  const viewParam = params.get('view');
-  if (viewParam === 'advanced' || viewParam === 'simple') return viewParam;
-  return null;
-};
-
-const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 'modeler' | null => {
-  if (pathname.startsWith(PAGE_PATHS['solar-activity'])) return 'solar-activity';
-  if (pathname.startsWith(PAGE_PATHS['modeler'])) return 'modeler';
-  if (pathname.startsWith(PAGE_PATHS['forecast'])) return 'forecast';
-  return null;
-};
 
 const App: React.FC = () => {
   const getStoredMainPage = () => {
@@ -195,6 +173,17 @@ const App: React.FC = () => {
   const [isMinTimeElapsed, setIsMinTimeElapsed] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
+  const initialPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
+  const [initialLoadTasks, setInitialLoadTasks] = useState<Record<InitialLoadTaskKey, boolean>>(() => ({
+    forecastData: false,
+    solarData: false,
+    modelerCmeData: initialPageRef.current !== 'modeler',
+  }));
+  const [reloadNotice, setReloadNotice] = useState<string | null>(null);
+  const [reloadCountdown, setReloadCountdown] = useState<number | null>(null);
+  const reloadScheduledRef = useRef(false);
+  const lastProgressRef = useRef(0);
+  const lastProgressAtRef = useRef(Date.now());
   const cmePageLoadedOnce = useRef(false);
   const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
   const [forecastViewMode, setForecastViewMode] = useState<'simple' | 'advanced'>(() => {
@@ -206,6 +195,28 @@ const App: React.FC = () => {
   const [pageViewStorageMode] = useState<'server' | 'local'>(() => getPageViewStorageMode());
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const markInitialTaskDone = useCallback((task: InitialLoadTaskKey) => {
+    setInitialLoadTasks((prev) => {
+      if (prev[task]) return prev;
+      return { ...prev, [task]: true };
+    });
+  }, []);
+
+  const initialLoadProgress = useMemo(() => {
+    const values = Object.values(initialLoadTasks);
+    const completed = values.filter(Boolean).length;
+    const total = values.length;
+    if (total === 0) return 100;
+    return Math.round((completed / total) * 100);
+  }, [initialLoadTasks]);
+
+  const initialLoadStatus = useMemo(() => {
+    if (!initialLoadTasks.forecastData) return 'Loading forecast data…';
+    if (!initialLoadTasks.solarData) return 'Loading solar activity data…';
+    if (!initialLoadTasks.modelerCmeData) return 'Loading CME model data…';
+    return 'Finalizing dashboard…';
+  }, [initialLoadTasks]);
 
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
@@ -363,7 +374,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    setTimeout(() => setIsMinTimeElapsed(true), 3500);
+    const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 1200);
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
@@ -372,14 +383,52 @@ const App: React.FC = () => {
     if (!clockRef.current && (window as any).THREE) {
       clockRef.current = new (window as any).THREE.Clock();
     }
+    return () => clearTimeout(minTimer);
   }, []);
   
+  useEffect(() => {
+    const allReady = Object.values(initialLoadTasks).every(Boolean);
+    if (allReady && !isDashboardReady) {
+      setIsDashboardReady(true);
+    }
+  }, [initialLoadTasks, isDashboardReady]);
+
   useEffect(() => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
       setTimeout(() => setShowInitialLoader(false), 500);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
+
+  useEffect(() => {
+    if (!showInitialLoader || isFadingOut || reloadScheduledRef.current) return;
+
+    const now = Date.now();
+    if (initialLoadProgress !== lastProgressRef.current) {
+      lastProgressRef.current = initialLoadProgress;
+      lastProgressAtRef.current = now;
+      setReloadNotice(null);
+      setReloadCountdown(null);
+      return;
+    }
+
+    const stagnantForMs = now - lastProgressAtRef.current;
+    if (initialLoadProgress < 100 && stagnantForMs > 3000) {
+      reloadScheduledRef.current = true;
+      setReloadNotice(`Loading is taking longer than expected at ${initialLoadProgress}%. We will refresh automatically.`);
+      setReloadCountdown(3);
+    }
+  }, [showInitialLoader, isFadingOut, initialLoadProgress]);
+
+  useEffect(() => {
+    if (!reloadScheduledRef.current || reloadCountdown === null) return;
+    if (reloadCountdown <= 0) {
+      window.location.reload();
+      return;
+    }
+    const timer = setTimeout(() => setReloadCountdown((prev) => (prev == null ? prev : prev - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [reloadCountdown]);
 
   useEffect(() => {
     if (activePage === 'modeler' && !isLoading) {
@@ -509,9 +558,12 @@ const App: React.FC = () => {
     } finally {
       if (!silent) {
         setIsLoading(false);
+        if (initialPageRef.current === 'modeler') {
+          markInitialTaskDone('modelerCmeData');
+        }
       }
     }
-  }, [resetClock, apiKey]);
+  }, [resetClock, apiKey, markInitialTaskDone]);
 
   const handleRefreshAppData = useCallback(async () => {
     setIsRefreshing(true);
@@ -832,12 +884,24 @@ const App: React.FC = () => {
   }, []);
 
   const handleInitialLoad = useCallback(() => {
-      setIsDashboardReady(true);
-  }, []);
+      markInitialTaskDone('forecastData');
+  }, [markInitialTaskDone]);
+
+  const handleSolarInitialLoad = useCallback(() => {
+      markInitialTaskDone('solarData');
+  }, [markInitialTaskDone]);
   
   return (
     <>
-      {showInitialLoader && <InitialLoadingScreen isFadingOut={isFadingOut} />}
+      {showInitialLoader && (
+        <InitialLoadingScreen
+          isFadingOut={isFadingOut}
+          progress={initialLoadProgress}
+          statusText={initialLoadStatus}
+          reloadNotice={reloadNotice}
+          reloadCountdown={reloadCountdown}
+        />
+      )}
       <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
           <GlobalBanner
               isFlareAlert={isFlareAlert}
@@ -1048,6 +1112,7 @@ const App: React.FC = () => {
                       onViewCMEInVisualization={handleViewCMEInVisualization}
                       navigationTarget={navigationTarget}
                       refreshSignal={manualRefreshKey}
+                      onInitialLoad={handleSolarInitialLoad}
                   />
               </div>
           </div>

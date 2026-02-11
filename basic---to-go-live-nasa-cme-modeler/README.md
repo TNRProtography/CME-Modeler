@@ -16,7 +16,7 @@ A comprehensive web application designed to help users track and visualize space
 
 *   **Aurora Forecast Dashboard**:
     *   Proprietary "Spot The Aurora Forecast" score for the West Coast of New Zealand.
-    *   Real-time solar wind data (Speed, Density, IMF Bt, IMF Bz) from NOAA SWPC.
+    *   Real-time solar wind data (Speed, Density, IMF Bt, IMF Bz) from NOAA RTSW and IMAP.
     *   Hemispheric Power and Moon Illumination data.
     *   Interactive charts for historical solar wind and magnetic field data.
     *   Live cloud cover map (Windy.com iframe).
@@ -49,8 +49,9 @@ A comprehensive web application designed to help users track and visualize space
 *   **Charting**: Chart.js, react-chartjs-2, chartjs-plugin-annotation
 *   **Data Sources**:
     *   NASA DONKI API (CMEs, Solar Flares)
-    *   NOAA SWPC (Solar Wind, Magnetic Field, SUVI Images, Solar Regions)
-    *   TNR Protography Cloudflare Workers (Aurora Forecast, Aurora Sightings API Backend, ENLIL Proxy)
+    *   NOAA SWPC (GOES Magnetometers, SUVI Images, Solar Regions)
+    *   NOAA RTSW + IMAP (Solar Wind, Magnetic Field)
+    *   TNR Protography Cloudflare Workers (Aurora Forecast, ENLIL Proxy)
     *   Windy.com (Cloud Cover Map)
     *   Roundshot (Queenstown Live Camera)
 *   **Build Tool**: Vite
@@ -108,7 +109,8 @@ Local Storage Exception: The only data persistently stored on your device is you
 Acknowledgements & Data Sources
 This project leverages publicly available data from several excellent sources, providing critical information for space weather monitoring and aurora forecasting:
 NASA DONKI: Coronal Mass Ejections (CME) and Solar Flare data.
-NOAA SWPC: Solar Wind (ACE/DSCOVR), Interplanetary Magnetic Field (IMF), SUVI Solar Images, and Solar Region data.
+NOAA SWPC: Solar Wind (ACE/DSCOVR), Interplanetary Magnetic Field (IMF), GOES magnetometers, SUVI Solar Images, and Solar Region data.
+NOAA RTSW + IMAP: Solar Wind (Speed, Density), Interplanetary Magnetic Field (IMF).
 TNR Protography: Proprietary Aurora Forecast algorithm, Aurora Sighting API backend, and API proxy services for ENLIL and Hemispheric Power data.
 Windy.com: Live Cloud Cover map iframe.
 Roundshot: Queenstown Live Camera iframe.
