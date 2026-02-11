@@ -276,17 +276,76 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
 
   // Tooltips
+  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+    <div class='space-y-3 text-left'>
+      <p><strong>${title}</strong></p>
+      <p><strong>What this is:</strong> ${whatItIs}</p>
+      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+    </div>
+  `;
+
   const tooltipContent = useMemo(() => ({
-    'xray-flux': 'The GOES X-ray Flux measures X-ray radiation from the Sun. Sudden, sharp increases indicate solar flares. Flares are classified by their peak X-ray flux: B, C, M, and X, with X being the most intense.',
-    'proton-flux': '<strong>GOES Proton Flux (>=10 MeV):</strong> Measures the flux of solar protons with energies of 10 MeV or greater.',
-    'suvi-131': '<strong>SUVI 131Å:</strong> Hot, flaring corona regions.',
-    'suvi-304': '<strong>SUVI 304Å:</strong> Cooler, denser plasma; prominences/filaments.',
-    'sdo-hmibc-1024': '<strong>SDO HMI Continuum (1024px):</strong> Sunspots & granulation.',
-    'sdo-hmiif-1024': '<strong>SDO HMI Intensitygram (1024px):</strong> Magnetic field concentrations.',
-    'sdo-aia193-2048': '<strong>SDO AIA 193Å (2048px):</strong> Coronal holes & large-scale corona.',
-    'ccor1-video': '<strong>CCOR1 Coronagraph Video:</strong> Tracks CMEs leaving the Sun.',
-    'solar-flares': 'Latest detected solar flares. M/X are stronger. "CME Event" highlights linked CMEs.',
-    'solar-imagery': `<p><strong>SUVI 131Å:</strong> Hot, flaring regions.</p><br><p><strong>SUVI 304Å:</strong> Cooler plasma; prominences.</p><br><p><strong>AIA 193Å:</strong> Coronal holes.</p><br><p><strong>HMI:</strong> Sunspots & magnetic structure.</p>`
+    'xray-flux': buildStatTooltip(
+      'GOES X-ray Flux',
+      'A live measure of solar X-ray output from flares.',
+      'Large spikes mean stronger flares and a higher chance of downstream CME-driven aurora risk in coming days.',
+      'Flare classes scale logarithmically (B/C/M/X) from 1–8 Å flux; geoeffectiveness depends on associated CME speed, direction, and IMF coupling at Earth.'
+    ),
+    'proton-flux': buildStatTooltip(
+      'GOES Proton Flux (>=10 MeV)',
+      'Counts high-energy protons arriving near Earth.',
+      'Raised proton levels indicate energetic solar activity and disturbed space-weather context, sometimes around CME/shock periods.',
+      'SEP flux is not a direct aurora brightness metric; use with solar-wind/IMF and geomagnetic indices for operational interpretation.'
+    ),
+    'suvi-131': buildStatTooltip(
+      'SUVI 131Å',
+      'Ultraviolet view highlighting very hot flare regions in the corona.',
+      'Helps identify active regions likely to produce flare/CME events that can later enhance aurora.',
+      'Dominated by high-temperature Fe lines; useful for impulsive heating diagnostics and flare morphology.'
+    ),
+    'suvi-304': buildStatTooltip(
+      'SUVI 304Å',
+      'Ultraviolet view of cooler chromospheric/transition-region plasma, including prominences.',
+      'Erupting prominences seen here can be linked to CME launches that may influence aurora after transit.',
+      'Primarily He II 304 Å emission; useful for filament channel and prominence eruption tracking.'
+    ),
+    'sdo-hmibc-1024': buildStatTooltip(
+      'SDO HMI Continuum',
+      'White-light style image showing sunspots and photospheric structure.',
+      'Large/complex sunspot groups are often tied to stronger flare potential, which can precede aurora-driving events.',
+      'Continuum intensity maps photospheric brightness; active region complexity is often combined with magnetograms for forecast confidence.'
+    ),
+    'sdo-hmiif-1024': buildStatTooltip(
+      'SDO HMI Intensitygram',
+      'Image emphasizing photospheric intensity and active-region structure.',
+      'Tracks evolving active regions that can produce eruptions relevant to aurora risk windows.',
+      'Used alongside line-of-sight magnetic products to infer magnetic stress and flare productivity potential.'
+    ),
+    'sdo-aia193-2048': buildStatTooltip(
+      'SDO AIA 193Å',
+      'Coronal image that highlights coronal holes and large-scale hot corona.',
+      'Coronal holes can send high-speed streams that elevate geomagnetic activity and aurora potential.',
+      '193 Å channels emphasize Fe XII/XXIV regimes; recurring coronal holes are key for recurrent HSS-driven activity.'
+    ),
+    'ccor1-video': buildStatTooltip(
+      'CCOR1 Coronagraph',
+      'A coronagraph view that reveals CMEs leaving the Sun.',
+      'Earth-directed CMEs are one of the main drivers of major aurora episodes after 1–3 days travel time.',
+      'Coronagraph kinematics (plane-of-sky speed/width) require projection-aware interpretation for true geoeffective trajectory.'
+    ),
+    'solar-flares': buildStatTooltip(
+      'Solar Flares List',
+      'Recent flare detections and classes from monitoring feeds.',
+      'More frequent and stronger flares usually mean a more active Sun and greater chance of aurora-supporting disturbances.',
+      'Flare class alone is insufficient; CME association, source longitude, and magnetic orientation govern Earth impact potential.'
+    ),
+    'solar-imagery': buildStatTooltip(
+      'Solar Imagery Types',
+      'Different wavelengths show different layers and temperatures of the Sun.',
+      'Using several layers together improves confidence in spotting features that can lead to aurora-driving events.',
+      'Multi-wavelength context supports feature cross-identification (flares, filaments, coronal holes, active-region evolution).'
+    )
   }), []);
 
   const openModal = useCallback((id: string) => {

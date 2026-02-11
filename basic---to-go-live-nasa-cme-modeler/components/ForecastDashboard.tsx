@@ -202,19 +202,6 @@ const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp
     return latest;
 };
 
-const getMedianCadenceMinutes = (timestamps: number[]): number | null => {
-    if (timestamps.length < 2) return null;
-    const sorted = [...timestamps].sort((a, b) => a - b);
-    const diffs: number[] = [];
-    for (let i = 1; i < sorted.length; i++) {
-        const diffMin = (sorted[i] - sorted[i - 1]) / 60000;
-        if (diffMin > 0 && Number.isFinite(diffMin)) diffs.push(diffMin);
-    }
-    if (!diffs.length) return null;
-    diffs.sort((a, b) => a - b);
-    return diffs[Math.floor(diffs.length / 2)];
-};
-
 const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summary }) => {
     if (!summary) return null;
     const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
@@ -313,12 +300,76 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         // ... (truncated for space, use original logic) ...
     }, [auroraScore, substormForecast, gaugeData, celestialTimes]);
 
-    // ... [Tooltip content & handlers] ...
+    const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+        <div class='space-y-3 text-left'>
+            <p><strong>${title}</strong></p>
+            <p><strong>What this is:</strong> ${whatItIs}</p>
+            <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+            <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+        </div>
+    `;
+
     const tooltipContent = useMemo(() => ({
-        // ... [Keep existing tooltips] ...
-        'unified-forecast': `<strong>Spot The Aurora Forecast</strong>...`,
-        // ...
-        'substorm': '<strong>Substorm Activity</strong><br>Rapid changes in the magnetic field can indicate substorm onset or energy injection.'
+        'unified-forecast': buildStatTooltip(
+            'Spot The Aurora Forecast',
+            'A combined score from space-weather inputs plus local viewing conditions (darkness, moonlight, cloud context).',
+            'Higher scores mean better overall chance of seeing aurora from New Zealand.',
+            'This is a weighted composite signal, not a single sensor, blending solar-wind coupling proxies with local visibility constraints.'
+        ),
+        'forecast': buildStatTooltip(
+            'Forecast Trend',
+            'A timeline of forecast scores over recent hours.',
+            'A rising trend means aurora potential is building; a falling trend means activity is easing.',
+            'Trend direction reflects short-term changes in modeled geomagnetic forcing and local visibility weighting.'
+        ),
+        'bz': buildStatTooltip(
+            'Interplanetary Magnetic Field (Bt/Bz)',
+            'Bt is total magnetic strength in the solar wind. Bz is the north-south part of that field.',
+            'Strong negative Bz (southward) helps energy enter Earth’s magnetosphere and can rapidly grow aurora activity.',
+            'Southward IMF increases dayside reconnection efficiency; sustained negative Bz with elevated |B| boosts coupling and substorm likelihood.'
+        ),
+        'power': buildStatTooltip(
+            'Hemispheric Power (GW)',
+            'Estimated total auroral energy being deposited into one hemisphere.',
+            'Higher GW usually means brighter and wider auroral ovals, improving visibility farther north.',
+            'GW is an inferred integrated precipitation power proxy and should be interpreted with timing/IMF context.'
+        ),
+        'speed': buildStatTooltip(
+            'Solar Wind Speed',
+            'How fast solar plasma is flowing past monitoring spacecraft.',
+            'Faster wind can deliver energy more effectively and support stronger aurora when magnetic conditions are favorable.',
+            'Speed contributes to coupling functions (e.g., Newell-like scaling); speed alone is not sufficient without favorable IMF orientation.'
+        ),
+        'density': buildStatTooltip(
+            'Solar Wind Density',
+            'How many particles are in the solar wind stream.',
+            'Higher density can increase pressure on Earth’s magnetic field and trigger sharper responses, especially during shocks.',
+            'Density spikes raise dynamic pressure (with speed), causing magnetopause compression and transient geomagnetic enhancements.'
+        ),
+        'moon': buildStatTooltip(
+            'Moon Illumination & Arc',
+            'Current moon brightness and rise/set timing.',
+            'Brighter moonlight can wash out faint aurora, so darker moon conditions help visual detection.',
+            'Lunar phase and altitude change sky background luminance and practical camera SNR for faint structures.'
+        ),
+        'live-cameras': buildStatTooltip(
+            'Live Cameras',
+            'Real-time sky views from selected locations.',
+            'Useful for confirming active aurora in near-real-time and checking cloud conditions before driving out.',
+            'Camera exposure pipelines vary; treat feeds as situational confirmation rather than calibrated photometric instruments.'
+        ),
+        'epam': buildStatTooltip(
+            'ACE EPAM',
+            'Energetic particle monitor data from ACE spacecraft.',
+            'Particle increases can indicate disturbed solar-wind conditions that may support elevated geomagnetic activity.',
+            'EPAM channels are energetic particle proxies and can provide contextual lead/association signals, not deterministic aurora forecasts.'
+        ),
+        'substorm': buildStatTooltip(
+            'Substorm Activity',
+            'Short-lived magnetic energy releases in Earth’s magnetosphere.',
+            'Substorms often cause sudden aurora brightening, expansion, and faster movement in the sky.',
+            'Substorm onset is tied to nightside current-sheet instability and unloading after magnetotail energy storage.'
+        )
     }), []);
     
     const openModal = useCallback((id: string) => {
@@ -338,10 +389,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const powerLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(hemisphericPowerHistory.map((p) => ({ timestamp: p.timestamp })))), [hemisphericPowerHistory]);
     const speedLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allSpeedData)), [allSpeedData]);
     const densityLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allDensityData)), [allDensityData]);
-
-    const speedCadenceMin = useMemo(() => getMedianCadenceMinutes(allSpeedData.map((p: any) => p.x).filter((x: any) => typeof x === 'number')), [allSpeedData]);
-    const imfCadenceMin = useMemo(() => getMedianCadenceMinutes(allMagneticData.map((p: any) => p.time).filter((x: any) => typeof x === 'number')), [allMagneticData]);
-    const powerCadenceMin = useMemo(() => getMedianCadenceMinutes(hemisphericPowerHistory.map((p) => p.timestamp).filter((x) => typeof x === 'number')), [hemisphericPowerHistory]);
 
     const simpleViewStatus = useMemo(() => {
         const score = auroraScore ?? 0;
@@ -466,18 +513,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 emoji={gaugeData.bz.emoji}
                                 onOpenModal={() => openModal('bz')}
                                 isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
-                                lastDataReceived={`${imfLastReceived}${imfCadenceMin ? ` · ~${imfCadenceMin.toFixed(1)}m cadence` : ''}`}
+                                lastDataReceived={imfLastReceived}
                             >
                                 <MagneticFieldChart data={allMagneticData} />
                             </ForecastChartPanel>
-                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={`${powerLastReceived}${powerCadenceMin ? ` · ~${powerCadenceMin.toFixed(1)}m cadence` : ''}`}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
                             <ForecastChartPanel
                                 title="Solar Wind Speed"
                                 currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`}
                                 emoji={gaugeData.speed.emoji}
                                 onOpenModal={() => openModal('speed')}
                                 isImap={isImapSource(gaugeData.speed.source)}
-                                lastDataReceived={`${speedLastReceived}${speedCadenceMin ? ` · ~${speedCadenceMin.toFixed(1)}m cadence` : ''}`}
+                                lastDataReceived={speedLastReceived}
                             >
                                 <SolarWindSpeedChart data={allSpeedData} />
                             </ForecastChartPanel>

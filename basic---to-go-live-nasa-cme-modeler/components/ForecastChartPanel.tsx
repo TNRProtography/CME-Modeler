@@ -60,7 +60,7 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
           <div className="text-2xl mt-1">{emoji}</div>
           {lastDataReceived && (
             <div className="text-[11px] text-neutral-400 mt-1">
-              Last data: {lastDataReceived}
+              Last updated: {lastDataReceived}
             </div>
           )}
         </div>
