@@ -17,6 +17,10 @@ const SLOGANS = [
 
 interface InitialLoadingScreenProps {
   isFadingOut: boolean;
+  progress: number;
+  statusText: string;
+  reloadNotice?: string | null;
+  reloadCountdown?: number | null;
 }
 
 const getParticleColor = (progress: number): string => {
@@ -25,7 +29,7 @@ const getParticleColor = (progress: number): string => {
   return `hsl(25, 100%, ${55 + (1-progress) * 50}%)`; // Orange/Red shock front
 };
 
-const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut }) => {
+const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut, progress, statusText, reloadNotice, reloadCountdown }) => {
   const [sloganIndex, setSloganIndex] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>();
@@ -201,16 +205,36 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
         onTouchStart={handleInteraction}
       />
       
-      <div className="absolute top-1/4 flex flex-col items-center">
+      <div className="absolute top-1/4 flex flex-col items-center px-6">
         <img 
           src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
           alt="TNR Protography Logo"
           className="w-full max-w-xs h-auto mb-8 animate-pulse"
           style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
         />
-        <p className="text-neutral-200 text-lg font-medium tracking-wide text-center w-64 h-12 transition-opacity duration-300">
-          {SLOGANS[sloganIndex]}
+        <p className="text-neutral-200 text-lg font-medium tracking-wide text-center w-80 h-12 transition-opacity duration-300">
+          {statusText || SLOGANS[sloganIndex]}
         </p>
+        <div className="w-80 mt-3">
+          <div className="flex justify-between text-xs text-neutral-300 mb-1">
+            <span>Loading data</span>
+            <span>{Math.max(0, Math.min(100, Math.round(progress)))}%</span>
+          </div>
+          <div className="h-2 w-full rounded-full bg-white/15 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-sky-400 via-cyan-300 to-emerald-300 transition-all duration-300"
+              style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+            />
+          </div>
+        </div>
+        {reloadNotice && (
+          <div className="mt-4 w-80 rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-center text-sm text-amber-200">
+            <p>{reloadNotice}</p>
+            {typeof reloadCountdown === 'number' && reloadCountdown >= 0 && (
+              <p className="mt-1 text-xs text-amber-100/90">Reloading in {reloadCountdown}s…</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

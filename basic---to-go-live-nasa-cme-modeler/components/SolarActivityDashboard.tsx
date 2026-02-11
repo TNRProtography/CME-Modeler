@@ -17,6 +17,7 @@ interface SolarActivityDashboardProps {
   onViewCMEInVisualization: (cmeId: string) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
   refreshSignal: number;
+  onInitialLoad?: () => void;
 }
 
 interface SolarActivitySummary {
@@ -239,7 +240,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onInitialLoad }) => {
   const isInitialLoad = useRef(true);
   // Imagery state
   const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
@@ -274,6 +275,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [lastFlaresUpdate, setLastFlaresUpdate] = useState<string | null>(null);
   const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
+  const initialLoadNotifiedRef = useRef(false);
 
   // Tooltips
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
@@ -514,8 +516,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [refreshSignal, runAllUpdates]);
 
   useEffect(() => {
-    setOverallActivityStatus(getOverallActivityStatus(currentXraySummary.class || 'N/A', currentProtonSummary.class || 'N/A'));
-  }, [currentXraySummary, currentProtonSummary]);
+    if (!onInitialLoad || initialLoadNotifiedRef.current) return;
+
+    const hasInitialCoreData = !!lastXrayUpdate && !!lastProtonUpdate && !!lastFlaresUpdate;
+    const hasAnyImagery = [suvi131, suvi304, sdoAia193_2048, sdoHmiBc1024, sdoHmiIf1024]
+      .some((img) => !img.loading && !!img.url);
+
+    if (hasInitialCoreData && hasAnyImagery) {
+      initialLoadNotifiedRef.current = true;
+      onInitialLoad();
+    }
+  }, [
+    onInitialLoad,
+    lastXrayUpdate,
+    lastProtonUpdate,
+    lastFlaresUpdate,
+    suvi131,
+    suvi304,
+    sdoAia193_2048,
+    sdoHmiBc1024,
+    sdoHmiIf1024,
+  ]);
 
   // Chart options/data
   const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
