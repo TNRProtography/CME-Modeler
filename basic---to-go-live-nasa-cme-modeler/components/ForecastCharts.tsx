@@ -241,7 +241,21 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
 
 export const SolarWindSpeedChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
-    const chartData = useMemo(() => ({ datasets: [{ label: 'Speed', data: data, yAxisID: 'y', fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => getSmoothPositiveActivityColor(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.speed) }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false) }] }), [data]);
+    const latestValue = data.length ? (data[data.length - 1]?.y ?? 0) : 0;
+    const lineColor = getSmoothPositiveActivityColor(latestValue, GAUGE_THRESHOLDS.speed);
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Speed',
+            data,
+            yAxisID: 'y',
+            fill: 'origin',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            tension: 0.2,
+            borderColor: lineColor,
+            backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.speed, false),
+        }]
+    }), [data, lineColor]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Speed (km/s)', chartData.datasets, { type: 'speed' }), [timeRange, chartData]);
 
     return (
@@ -256,7 +270,21 @@ export const SolarWindSpeedChart: React.FC<{ data: any[] }> = ({ data }) => {
 
 export const SolarWindDensityChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
-    const chartData = useMemo(() => ({ datasets: [{ label: 'Density', data: data, yAxisID: 'y', fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => getSmoothPositiveActivityColor(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.density) }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false) }] }), [data]);
+    const latestValue = data.length ? (data[data.length - 1]?.y ?? 0) : 0;
+    const lineColor = getSmoothPositiveActivityColor(latestValue, GAUGE_THRESHOLDS.density);
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Density',
+            data,
+            yAxisID: 'y',
+            fill: 'origin',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            tension: 0.2,
+            borderColor: lineColor,
+            backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.density, false),
+        }]
+    }), [data, lineColor]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Density (p/cm³)', chartData.datasets, { type: 'density' }), [timeRange, chartData]);
 
     return (
@@ -271,7 +299,37 @@ export const SolarWindDensityChart: React.FC<{ data: any[] }> = ({ data }) => {
 
 export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
-    const chartData = useMemo(() => ({ datasets: [ { label: 'Bt', data: data.map(p => ({ x: p.time, y: p.bt })), order: 1, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => getSmoothPositiveActivityColor(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bt) }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false) }, { label: 'Bz', data: data.map(p => ({ x: p.time, y: p.bz })), order: 0, fill: 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.2, segment: { borderColor: (ctx: ScriptableContext<'line'>) => getSmoothBzActivityColor(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.bz) }, backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true) } ] }), [data]);
+    const latestBt = data.length ? (data[data.length - 1]?.bt ?? 0) : 0;
+    const latestBz = data.length ? (data[data.length - 1]?.bz ?? 0) : 0;
+    const btColor = getSmoothPositiveActivityColor(latestBt, GAUGE_THRESHOLDS.bt);
+    const bzColor = getSmoothBzActivityColor(latestBz, GAUGE_THRESHOLDS.bz);
+
+    const chartData = useMemo(() => ({
+        datasets: [
+            {
+                label: 'Bt',
+                data: data.map(p => ({ x: p.time, y: p.bt })),
+                order: 1,
+                fill: 'origin',
+                borderWidth: 1.6,
+                pointRadius: 0,
+                tension: 0.2,
+                borderColor: btColor,
+                backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bt, false),
+            },
+            {
+                label: 'Bz',
+                data: data.map(p => ({ x: p.time, y: p.bz })),
+                order: 0,
+                fill: 'origin',
+                borderWidth: 1.6,
+                pointRadius: 0,
+                tension: 0.2,
+                borderColor: bzColor,
+                backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true),
+            }
+        ]
+    }), [data, btColor, bzColor]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Magnetic Field (nT)', chartData.datasets, { type: 'imf' }), [timeRange, chartData]);
 
     return (
@@ -286,7 +344,21 @@ export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
 
 export const HemisphericPowerChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
-    const chartData = useMemo(() => ({ datasets: [{ label: 'Hemispheric Power', data: data, borderColor: (ctx: ScriptableContext<'line'>) => getSmoothPositiveActivityColor(ctx.p1?.parsed?.y ?? 0, GAUGE_THRESHOLDS.power), backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false), fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true }] }), [data]);
+    const latestValue = data.length ? (data[data.length - 1]?.y ?? 0) : 0;
+    const lineColor = getSmoothPositiveActivityColor(latestValue, GAUGE_THRESHOLDS.power);
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Hemispheric Power',
+            data,
+            borderColor: lineColor,
+            backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false),
+            fill: 'origin',
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 1.6,
+            spanGaps: true,
+        }]
+    }), [data, lineColor]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Hemispheric Power (GW)', chartData.datasets, { type: 'power' }), [timeRange, chartData]);
 
     return (
@@ -482,7 +554,7 @@ export const SimpleTrendChart: React.FC<{ auroraScoreHistory: { timestamp: numbe
             datasets: [{
                 label: 'Spot The Aurora Forecast',
                 data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })),
-                borderColor: (ctx: ScriptableContext<'line'>) => getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0),
+                borderColor: getSmoothForecastScoreColor(auroraScoreHistory.at(-1)?.finalScore ?? 0),
                 backgroundColor: getForecastGradient,
                 fill: 'origin',
                 tension: 0.2,
@@ -570,7 +642,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
             const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0, 0.33); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0, 0.33);
             gradient.addColorStop(0, color0); gradient.addColorStop(1, color1); return gradient;
         };
-        return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: (ctx: ScriptableContext<'line'>) => getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0), backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2 } ] };
+        return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: getSmoothForecastScoreColor(auroraScoreHistory.at(-1)?.finalScore ?? 0), backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2 } ] };
     }, [auroraScoreHistory]);
 
     return (
