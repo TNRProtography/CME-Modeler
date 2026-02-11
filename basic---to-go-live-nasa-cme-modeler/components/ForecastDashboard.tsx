@@ -183,7 +183,37 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
     };
 };
 
+
 const isImapSource = (source?: string) => source === 'IMAP';
+
+const formatTimeHHMM = (timestamp: number | null | undefined): string => {
+    if (!timestamp || !Number.isFinite(timestamp)) return '—';
+    return new Date(timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp?: number }>): number | null => {
+    let latest: number | null = null;
+    for (const point of series) {
+        const t = point?.x ?? point?.time ?? point?.timestamp;
+        if (typeof t === 'number' && Number.isFinite(t) && (latest === null || t > latest)) {
+            latest = t;
+        }
+    }
+    return latest;
+};
+
+const getMedianCadenceMinutes = (timestamps: number[]): number | null => {
+    if (timestamps.length < 2) return null;
+    const sorted = [...timestamps].sort((a, b) => a - b);
+    const diffs: number[] = [];
+    for (let i = 1; i < sorted.length; i++) {
+        const diffMin = (sorted[i] - sorted[i - 1]) / 60000;
+        if (diffMin > 0 && Number.isFinite(diffMin)) diffs.push(diffMin);
+    }
+    if (!diffs.length) return null;
+    diffs.sort((a, b) => a - b);
+    return diffs[Math.floor(diffs.length / 2)];
+};
 
 const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summary }) => {
     if (!summary) return null;
@@ -246,7 +276,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
-      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 30 * 1000);
+      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 60 * 1000);
       return () => clearInterval(interval);
     }, []);
 
@@ -302,6 +332,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     // ... [Calculated Values] ...
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
+
+
+    const imfLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allMagneticData.map((p: any) => ({ time: p.time })))), [allMagneticData]);
+    const powerLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(hemisphericPowerHistory.map((p) => ({ timestamp: p.timestamp })))), [hemisphericPowerHistory]);
+    const speedLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allSpeedData)), [allSpeedData]);
+    const densityLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allDensityData)), [allDensityData]);
+
+    const speedCadenceMin = useMemo(() => getMedianCadenceMinutes(allSpeedData.map((p: any) => p.x).filter((x: any) => typeof x === 'number')), [allSpeedData]);
+    const imfCadenceMin = useMemo(() => getMedianCadenceMinutes(allMagneticData.map((p: any) => p.time).filter((x: any) => typeof x === 'number')), [allMagneticData]);
+    const powerCadenceMin = useMemo(() => getMedianCadenceMinutes(hemisphericPowerHistory.map((p) => p.timestamp).filter((x) => typeof x === 'number')), [hemisphericPowerHistory]);
 
     const simpleViewStatus = useMemo(() => {
         const score = auroraScore ?? 0;
@@ -426,16 +466,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 emoji={gaugeData.bz.emoji}
                                 onOpenModal={() => openModal('bz')}
                                 isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
+                                lastDataReceived={`${imfLastReceived}${imfCadenceMin ? ` · ~${imfCadenceMin.toFixed(1)}m cadence` : ''}`}
                             >
                                 <MagneticFieldChart data={allMagneticData} />
                             </ForecastChartPanel>
-                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={`${powerLastReceived}${powerCadenceMin ? ` · ~${powerCadenceMin.toFixed(1)}m cadence` : ''}`}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
                             <ForecastChartPanel
                                 title="Solar Wind Speed"
                                 currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`}
                                 emoji={gaugeData.speed.emoji}
                                 onOpenModal={() => openModal('speed')}
                                 isImap={isImapSource(gaugeData.speed.source)}
+                                lastDataReceived={`${speedLastReceived}${speedCadenceMin ? ` · ~${speedCadenceMin.toFixed(1)}m cadence` : ''}`}
                             >
                                 <SolarWindSpeedChart data={allSpeedData} />
                             </ForecastChartPanel>
@@ -445,6 +487,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 emoji={gaugeData.density.emoji}
                                 onOpenModal={() => openModal('density')}
                                 isImap={isImapSource(gaugeData.density.source)}
+                                lastDataReceived={densityLastReceived}
                             >
                                 <SolarWindDensityChart data={allDensityData} />
                             </ForecastChartPanel>

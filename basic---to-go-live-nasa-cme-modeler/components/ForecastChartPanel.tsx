@@ -10,6 +10,7 @@ interface ForecastChartPanelProps {
   onOpenModal: () => void;
   children: React.ReactNode;
   isImap?: boolean;
+  lastDataReceived?: string;
 }
 
 const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
@@ -19,6 +20,7 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
   onOpenModal,
   children,
   isImap = false,
+  lastDataReceived,
 }) => {
   return (
     <div
@@ -56,6 +58,11 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
         <div className="text-right">
           <div className="text-3xl font-bold text-white" dangerouslySetInnerHTML={{ __html: currentValue }}></div>
           <div className="text-2xl mt-1">{emoji}</div>
+          {lastDataReceived && (
+            <div className="text-[11px] text-neutral-400 mt-1">
+              Last data: {lastDataReceived}
+            </div>
+          )}
         </div>
       </div>
       <div className="flex-grow w-full">
