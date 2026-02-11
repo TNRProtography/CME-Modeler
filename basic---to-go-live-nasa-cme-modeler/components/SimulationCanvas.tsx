@@ -657,67 +657,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
       const colors: number[] = [];
-      const halfAngleRad = THREE.MathUtils.degToRad(Math.max(12, cme.halfAngle));
-      const coneRadiusAtUnit = Math.tan(halfAngleRad);
-      const maxArc = Math.PI * 0.65;
-      const arc = Math.min(maxArc, halfAngleRad * 0.72);
-      const majorRadius = Math.min(0.86, 0.5 + coneRadiusAtUnit * 0.34);
-      const tubeRadius = Math.min(0.3, 0.2 + coneRadiusAtUnit * 0.12);
-      const radialScale = Math.min(1.0, coneRadiusAtUnit / Math.max(majorRadius + tubeRadius, 0.001));
-      const shellJitter = 0.06;
-      const bendStrength = THREE.MathUtils.clamp(0.08 + (cme.halfAngle / 180) * 0.18, 0.08, 0.26);
+      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
+      const coneRadius = Math.tan(halfAngle);
       const cmeColor = getCmeCoreColor(cme.speed);
 
-      let filled = 0;
-      let attempts = 0;
-      while (filled < pCount && attempts < pCount * 4) {
-        attempts += 1;
-        const u = (Math.random() - 0.5) * arc;
-        // Limit cross-section sweep so the CME reads like a croissant/banana shell instead of split prongs.
-        const v = Math.random() * (Math.PI * 0.78) + Math.PI * 0.12;
-        const tubeOffset = tubeRadius + (Math.random() - 0.5) * (shellJitter * 0.45);
-        const cosV = Math.cos(v);
-        const sinV = Math.sin(v);
-        const cosU = Math.cos(u);
-        const sinU = Math.sin(u);
-
-        const frontness = 1 - Math.abs(u) / (arc / 2);
-        const smoothFrontness = frontness * frontness * (3 - 2 * frontness);
-        const bend = bendStrength * (0.45 + smoothFrontness * 0.55);
-        const noise = Math.sin(u * 1.8 + v * 0.7) * bend * 0.12;
-        const tailStretch = (1 - smoothFrontness) * 0.08;
-
-        const ringRadius = majorRadius + tubeOffset * cosV;
-        const crossRadius = Math.abs(tubeOffset * sinV);
-        const maxCross = Math.max(tubeRadius + shellJitter, 0.001);
-        const radialNorm = THREE.MathUtils.clamp(crossRadius / maxCross, 0, 1);
-        const centerWeight = 1 - radialNorm;
-        const frontBulge = Math.pow(smoothFrontness, 1.8);
-        const depthBoost = 0.95 + centerWeight * 0.35 + frontBulge * 0.18;
-        const lateralTighten = 1 - 0.2 * frontBulge;
-
-        const x = (tubeOffset * sinV + noise) * radialScale * lateralTighten;
-        const y = ringRadius * cosU - tailStretch + frontBulge * 0.025;
-        const z = (ringRadius * sinU + noise) * radialScale * depthBoost;
-        const trimThreshold = 0.13 + (1 - smoothFrontness) * 0.1;
-        if (y <= trimThreshold) {
-          continue;
-        }
-        // Base 90° rotation for shell orientation.
-        const baseX = z;
-        const baseY = y;
-        const baseZ = -x;
-        // Then, from halfway along the long section to the nose, twist an additional 90°.
-        const twistT = THREE.MathUtils.clamp((smoothFrontness - 0.5) * 2, 0, 1);
-        const twistAngle = twistT * (Math.PI / 2);
-        const cosTwist = Math.cos(twistAngle);
-        const sinTwist = Math.sin(twistAngle);
-        const twistedX = baseX * cosTwist - baseZ * sinTwist;
-        const twistedZ = baseX * sinTwist + baseZ * cosTwist;
-        pos.push(twistedX, baseY, twistedZ);
+      for (let i = 0; i < pCount; i++) {
+        const y = Math.cbrt(Math.random());
+        const rAtY = y * coneRadius;
+        const theta = Math.random() * 2 * Math.PI;
+        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
+        const x = r * Math.cos(theta);
+        const z = r * Math.sin(theta);
+        pos.push(x, y * (1 + 0.5 * (1 - (r / Math.max(coneRadius, 0.0001)) ** 2)), z);
 
         colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
-        filled += 1;
       }
 
       const geom = new THREE.BufferGeometry();
