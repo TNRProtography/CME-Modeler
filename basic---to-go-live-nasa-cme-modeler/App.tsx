@@ -93,30 +93,6 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.4';
 
-const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
-  forecast: '/spot-the-aurora-forecast',
-  'solar-activity': '/solar-dashboard',
-  modeler: '/cme-visualization',
-};
-
-const SETTINGS_PATH = '/settings';
-const TUTORIAL_PATH = '/tutorial';
-const DEFAULT_MAIN_PAGE_KEY = 'sta_default_main_page';
-const DEFAULT_FORECAST_VIEW_KEY = 'sta_default_forecast_view';
-
-const getForecastViewFromSearch = (search: string): 'simple' | 'advanced' | null => {
-  const params = new URLSearchParams(search);
-  const viewParam = params.get('view');
-  if (viewParam === 'advanced' || viewParam === 'simple') return viewParam;
-  return null;
-};
-
-const getPageFromPathname = (pathname: string): 'forecast' | 'solar-activity' | 'modeler' | null => {
-  if (pathname.startsWith(PAGE_PATHS['solar-activity'])) return 'solar-activity';
-  if (pathname.startsWith(PAGE_PATHS['modeler'])) return 'modeler';
-  if (pathname.startsWith(PAGE_PATHS['forecast'])) return 'forecast';
-  return null;
-};
 
 const App: React.FC = () => {
   const getStoredMainPage = () => {

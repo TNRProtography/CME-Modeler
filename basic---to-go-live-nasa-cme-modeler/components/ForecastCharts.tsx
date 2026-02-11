@@ -27,92 +27,93 @@ export const GAUGE_COLORS = {
     pink:   { solid: '#FF1493', semi: 'rgba(255, 20, 147, 0.2)', trans: 'rgba(255, 20, 147, 0)' }
 };
 
-const COLOR_SEQUENCE: (keyof typeof GAUGE_COLORS)[] = ['gray', 'yellow', 'orange', 'red', 'purple', 'pink'];
+type GaugeColorKey = keyof typeof GAUGE_COLORS;
+type ColorStop = { value: number; color: GaugeColorKey };
 
-const hexToRgb = (hex: string) => {
-    const normalized = hex.replace('#', '');
-    const value = normalized.length === 3
-        ? normalized.split('').map((c) => c + c).join('')
-        : normalized;
-    const parsed = parseInt(value, 16);
-    return {
-        r: (parsed >> 16) & 255,
-        g: (parsed >> 8) & 255,
-        b: parsed & 255,
-    };
+const COLOR_RGB: Record<GaugeColorKey, { r: number; g: number; b: number }> = {
+    gray: { r: 128, g: 128, b: 128 },
+    yellow: { r: 255, g: 215, b: 0 },
+    orange: { r: 255, g: 165, b: 0 },
+    red: { r: 255, g: 69, b: 0 },
+    purple: { r: 128, g: 0, b: 128 },
+    pink: { r: 255, g: 20, b: 147 },
 };
 
-const mixHexColors = (fromHex: string, toHex: string, t: number) => {
-    const a = hexToRgb(fromHex);
-    const b = hexToRgb(toHex);
-    const clampedT = Math.max(0, Math.min(1, t));
-    const toHexPart = (n: number) => Math.round(n).toString(16).padStart(2, '0');
-    return `#${toHexPart(a.r + (b.r - a.r) * clampedT)}${toHexPart(a.g + (b.g - a.g) * clampedT)}${toHexPart(a.b + (b.b - a.b) * clampedT)}`;
+const toRgba = (color: GaugeColorKey, alpha = 1) => {
+    const c = COLOR_RGB[color];
+    return `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})`;
 };
 
-const getSmoothColorFromStops = (
-    value: number,
-    stops: Array<{ value: number; color: keyof typeof GAUGE_COLORS }>,
-) => {
-    if (!stops.length) return GAUGE_COLORS.gray.solid;
-    const sorted = [...stops].sort((a, b) => a.value - b.value);
-    if (value <= sorted[0].value) return GAUGE_COLORS[sorted[0].color].solid;
-    if (value >= sorted[sorted.length - 1].value) return GAUGE_COLORS[sorted[sorted.length - 1].color].solid;
+const interpolateStopsToRgba = (value: number, stops: ColorStop[], alpha = 1) => {
+    if (!stops.length) return toRgba('gray', alpha);
+    if (value <= stops[0].value) return toRgba(stops[0].color, alpha);
+    if (value >= stops[stops.length - 1].value) return toRgba(stops[stops.length - 1].color, alpha);
 
-    for (let i = 1; i < sorted.length; i++) {
-        const lower = sorted[i - 1];
-        const upper = sorted[i];
+    for (let i = 1; i < stops.length; i++) {
+        const lower = stops[i - 1];
+        const upper = stops[i];
         if (value <= upper.value) {
             const span = upper.value - lower.value || 1;
-            const ratio = (value - lower.value) / span;
-            return mixHexColors(GAUGE_COLORS[lower.color].solid, GAUGE_COLORS[upper.color].solid, ratio);
+            const t = Math.max(0, Math.min(1, (value - lower.value) / span));
+            const a = COLOR_RGB[lower.color];
+            const b = COLOR_RGB[upper.color];
+            return `rgba(${Math.round(a.r + (b.r - a.r) * t)}, ${Math.round(a.g + (b.g - a.g) * t)}, ${Math.round(a.b + (b.b - a.b) * t)}, ${alpha})`;
         }
     }
-    return GAUGE_COLORS.pink.solid;
+    return toRgba('pink', alpha);
 };
 
-const getSmoothPositiveActivityColor = (value: number, thresholds: { [key: string]: number }) => {
-    const stops = COLOR_SEQUENCE.map((color) => ({ value: thresholds[color], color }))
-        .filter((s) => Number.isFinite(s.value));
-    return getSmoothColorFromStops(value, stops as Array<{ value: number; color: keyof typeof GAUGE_COLORS }>);
-};
+const positiveStopsCache = new WeakMap<object, ColorStop[]>();
+const bzStopsCache = new WeakMap<object, ColorStop[]>();
 
-const getSmoothBzActivityColor = (value: number, thresholds: { [key: string]: number }) => {
-    const normalizedStrength = Math.max(0, -value);
-    const stops = [
-        { value: 0, color: 'gray' as const },
-        { value: Math.abs(thresholds.yellow), color: 'yellow' as const },
-        { value: Math.abs(thresholds.orange), color: 'orange' as const },
-        { value: Math.abs(thresholds.red), color: 'red' as const },
-        { value: Math.abs(thresholds.purple), color: 'purple' as const },
-        { value: Math.abs(thresholds.maxNegativeExpected ?? thresholds.purple), color: 'pink' as const },
+const getPositiveStops = (thresholds: { [key: string]: number }): ColorStop[] => {
+    const cached = positiveStopsCache.get(thresholds);
+    if (cached) return cached;
+    const maxExpected = Number.isFinite(thresholds.maxExpected) ? thresholds.maxExpected : (thresholds.purple || 100);
+    const stops: ColorStop[] = [
+        { value: 0, color: 'gray' },
+        { value: thresholds.yellow, color: 'yellow' },
+        { value: thresholds.orange, color: 'orange' },
+        { value: thresholds.red, color: 'red' },
+        { value: thresholds.purple, color: 'purple' },
+        { value: maxExpected, color: 'pink' },
     ];
-    return getSmoothColorFromStops(normalizedStrength, stops);
+    positiveStopsCache.set(thresholds, stops);
+    return stops;
 };
 
-const getSmoothForecastScoreColor = (score: number) => {
-    const stops = [
-        { value: 0, color: 'gray' as const },
-        { value: 10, color: 'yellow' as const },
-        { value: 25, color: 'orange' as const },
-        { value: 40, color: 'red' as const },
-        { value: 50, color: 'purple' as const },
-        { value: 80, color: 'pink' as const },
+const getBzStops = (thresholds: { [key: string]: number }): ColorStop[] => {
+    const cached = bzStopsCache.get(thresholds);
+    if (cached) return cached;
+    const stops: ColorStop[] = [
+        { value: 0, color: 'gray' },
+        { value: Math.abs(thresholds.yellow), color: 'yellow' },
+        { value: Math.abs(thresholds.orange), color: 'orange' },
+        { value: Math.abs(thresholds.red), color: 'red' },
+        { value: Math.abs(thresholds.purple), color: 'purple' },
+        { value: Math.abs(thresholds.maxNegativeExpected ?? thresholds.purple), color: 'pink' },
     ];
-    return getSmoothColorFromStops(score, stops);
+    bzStopsCache.set(thresholds, stops);
+    return stops;
 };
 
-const getPositiveScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
-    if (value >= thresholds.purple) return 'purple'; if (value >= thresholds.red) return 'red';
-    if (value >= thresholds.orange) return 'orange'; if (value >= thresholds.yellow) return 'yellow';
-    return 'gray';
-};
+const getSmoothPositiveActivityColor = (value: number, thresholds: { [key: string]: number }, alpha = 1) =>
+    interpolateStopsToRgba(value, getPositiveStops(thresholds), alpha);
 
-const getBzScaleColorKey = (value: number, thresholds: { [key: string]: number }) => {
-    if (value <= thresholds.purple) return 'purple'; if (value <= thresholds.red) return 'red';
-    if (value <= thresholds.orange) return 'orange'; if (value <= thresholds.yellow) return 'yellow';
-    return 'gray';
-};
+const getSmoothBzActivityColor = (value: number, thresholds: { [key: string]: number }, alpha = 1) =>
+    interpolateStopsToRgba(Math.max(0, -value), getBzStops(thresholds), alpha);
+
+const FORECAST_SCORE_STOPS: ColorStop[] = [
+    { value: 0, color: 'gray' },
+    { value: 10, color: 'yellow' },
+    { value: 25, color: 'orange' },
+    { value: 40, color: 'red' },
+    { value: 50, color: 'purple' },
+    { value: 80, color: 'pink' },
+];
+
+const getSmoothForecastScoreColor = (score: number, alpha = 1) =>
+    interpolateStopsToRgba(score, FORECAST_SCORE_STOPS, alpha);
 
 export const getForecastScoreColorKey = (score: number): keyof typeof GAUGE_COLORS => {
     if (score >= 80) return 'pink'; if (score >= 50) return 'purple'; if (score >= 40) return 'red';
@@ -473,8 +474,8 @@ export const SimpleTrendChart: React.FC<{ auroraScoreHistory: { timestamp: numbe
         const getForecastGradient = (ctx: ScriptableContext<'line'>) => {
             const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined;
             const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-            const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0);
-            gradient.addColorStop(0, `${color0}55`); gradient.addColorStop(1, `${color1}55`); return gradient;
+            const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0, 0.33); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0, 0.33);
+            gradient.addColorStop(0, color0); gradient.addColorStop(1, color1); return gradient;
         };
 
         return {
@@ -566,8 +567,8 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
         const getForecastGradient = (ctx: ScriptableContext<'line'>) => {
             const chart = ctx.chart; const { ctx: chartCtx, chartArea } = chart; if (!chartArea) return undefined;
             const gradient = chartCtx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-            const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0);
-            gradient.addColorStop(0, `${color0}55`); gradient.addColorStop(1, `${color1}55`); return gradient;
+            const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0, 0.33); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0, 0.33);
+            gradient.addColorStop(0, color0); gradient.addColorStop(1, color1); return gradient;
         };
         return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: (ctx: ScriptableContext<'line'>) => getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0), backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2 } ] };
     }, [auroraScoreHistory]);
