@@ -122,14 +122,6 @@ const getCmeCoreColor = (speed: number): any => {
 };
 
 const clamp = (v:number, a:number, b:number) => Math.max(a, Math.min(b, v));
-const ORBIT_REFERENCE_EPOCH_UTC = Date.UTC(2020, 0, 1, 0, 0, 0);
-
-const getLiveOrbitAngle = (data: PlanetData, nowMs: number): number => {
-  if (!data.orbitalPeriodDays) return data.angle;
-  const elapsedSeconds = (nowMs - ORBIT_REFERENCE_EPOCH_UTC) / 1000;
-  const angularVelocity = (2 * Math.PI) / (data.orbitalPeriodDays * 24 * 3600);
-  return data.angle + angularVelocity * elapsedSeconds;
-};
 
 /** =========================================================
  *  COMPONENT
@@ -396,9 +388,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
       const planetMesh = new THREE.Mesh(new THREE.SphereGeometry(data.size, 64, 64), new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 }));
-      const liveAngle = getLiveOrbitAngle(data as PlanetData, Date.now());
-      planetMesh.position.x = data.radius * Math.sin(liveAngle);
-      planetMesh.position.z = data.radius * Math.cos(liveAngle);
+      planetMesh.position.x = data.radius * Math.sin(data.angle);
+      planetMesh.position.z = data.radius * Math.cos(data.angle);
       planetMesh.userData = data;
       scene.add(planetMesh);
       celestialBodiesRef.current[name] = { mesh: planetMesh, name: data.name, labelId: data.labelElementId, userData: data };
@@ -432,9 +423,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (!parentBody) return;
 
       const moonMesh = new THREE.Mesh( new THREE.SphereGeometry(data.size, 16, 16), new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null }) );
-      const liveMoonAngle = getLiveOrbitAngle(data as PlanetData, Date.now());
-      moonMesh.position.x = data.radius * Math.sin(liveMoonAngle);
-      moonMesh.position.z = data.radius * Math.cos(liveMoonAngle);
+      moonMesh.position.x = data.radius * Math.sin(data.angle);
+      moonMesh.position.z = data.radius * Math.cos(data.angle);
       moonMesh.userData = data;
       parentBody.mesh.add(moonMesh);
       celestialBodiesRef.current[name] = { mesh: moonMesh, name: data.name, labelId: data.labelElementId, userData: data };
@@ -523,6 +513,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
       if (starsFarRef.current)  starsFarRef.current.rotation.y  += 0.00009;
+
+      const ORBIT_SPEED_SCALE = 2000;
+      Object.values(celestialBodiesRef.current).forEach(body => {
+        const d = body.userData as PlanetData | undefined;
+        if (d?.orbitalPeriodDays) {
+          const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * ORBIT_SPEED_SCALE) * elapsedTime;
+          body.mesh.position.x = d.radius * Math.sin(a);
+          body.mesh.position.z = d.radius * Math.cos(a);
+        }
+      });
 
       const l1Body = celestialBodiesRef.current['L1'];
       const earthBody = celestialBodiesRef.current['EARTH'];

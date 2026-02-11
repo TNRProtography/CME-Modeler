@@ -139,6 +139,127 @@ const getSourceLabel = (source?: string | null) => {
   return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
 };
 
+const splitTopLevelArrayEntries = (raw: string): string[] => {
+  const entries: string[] = [];
+  let current = '';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    current += ch;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) {
+      const candidate = current.slice(0, -1).trim();
+      if (candidate) entries.push(candidate);
+      current = '';
+    }
+  }
+
+  const trailing = current.trim();
+  if (trailing) entries.push(trailing);
+  return entries;
+};
+
+const parseJsonWithRowRecovery = (rawText: string) => {
+  const text = rawText.trim();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // fall through to row-level recovery
+  }
+
+  const parseArrayEntries = (arrayBody: string) => {
+    const recovered: any[] = [];
+    for (const entryText of splitTopLevelArrayEntries(arrayBody)) {
+      try {
+        recovered.push(JSON.parse(entryText));
+      } catch {
+        // Skip malformed row and continue
+      }
+    }
+    return recovered;
+  };
+
+  if (text.startsWith('[') && text.endsWith(']')) {
+    return parseArrayEntries(text.slice(1, -1));
+  }
+
+  const dataKeyIndex = text.indexOf('"data"');
+  if (dataKeyIndex >= 0) {
+    const arrayStart = text.indexOf('[', dataKeyIndex);
+    if (arrayStart >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let arrayEnd = -1;
+
+      for (let i = arrayStart; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === '[') depth++;
+        else if (ch === ']') {
+          depth--;
+          if (depth === 0) {
+            arrayEnd = i;
+            break;
+          }
+        }
+      }
+
+      if (arrayEnd > arrayStart) {
+        const recoveredData = parseArrayEntries(text.slice(arrayStart + 1, arrayEnd));
+        const okMatch = text.match(/"ok"\s*:\s*(true|false)/i);
+        return { ok: okMatch ? okMatch[1].toLowerCase() === 'true' : recoveredData.length > 0, data: recoveredData };
+      }
+    }
+  }
+
+  return null;
+};
+
+const fetchJsonWithRecovery = async (url: string) => {
+  const response = await fetch(url);
+  const raw = await response.text();
+  const parsed = parseJsonWithRowRecovery(raw);
+  if (parsed === null) {
+    throw new Error(`Unable to parse JSON from ${url}`);
+  }
+  return parsed;
+};
+
 const getVisibilityBlurb = (score: number | null): string => {
     if (score === null) return 'Potential visibility is unknown.';
     if (score >= 80) return 'Potential visibility is high, with a significant display likely.';
@@ -375,12 +496,12 @@ export const useForecastData = (
     const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
     
     const results = await Promise.allSettled([
-      fetch(`${FORECAST_API_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(`${NASA_IPS_URL}?_=${Date.now()}`).then(res => res.json()),
-      fetch(nzMagUrl).then(res => res.json())
+      fetchJsonWithRecovery(`${FORECAST_API_URL}?_=${Date.now()}`),
+      fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`),
+      fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`),
+      fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`),
+      fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`),
+      fetchJsonWithRecovery(nzMagUrl)
     ]);
     const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 

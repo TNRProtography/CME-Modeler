@@ -74,6 +74,127 @@ const getSourceLabel = (source?: string | null) => {
   return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
 };
 
+const splitTopLevelArrayEntries = (raw: string): string[] => {
+  const entries: string[] = [];
+  let current = '';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    current += ch;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) {
+      const candidate = current.slice(0, -1).trim();
+      if (candidate) entries.push(candidate);
+      current = '';
+    }
+  }
+
+  const trailing = current.trim();
+  if (trailing) entries.push(trailing);
+  return entries;
+};
+
+const parseJsonWithRowRecovery = (rawText: string) => {
+  const text = rawText.trim();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // fall through to row-level recovery
+  }
+
+  const parseArrayEntries = (arrayBody: string) => {
+    const recovered: any[] = [];
+    for (const entryText of splitTopLevelArrayEntries(arrayBody)) {
+      try {
+        recovered.push(JSON.parse(entryText));
+      } catch {
+        // Skip malformed row and continue
+      }
+    }
+    return recovered;
+  };
+
+  if (text.startsWith('[') && text.endsWith(']')) {
+    return parseArrayEntries(text.slice(1, -1));
+  }
+
+  const dataKeyIndex = text.indexOf('"data"');
+  if (dataKeyIndex >= 0) {
+    const arrayStart = text.indexOf('[', dataKeyIndex);
+    if (arrayStart >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let arrayEnd = -1;
+
+      for (let i = arrayStart; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === '[') depth++;
+        else if (ch === ']') {
+          depth--;
+          if (depth === 0) {
+            arrayEnd = i;
+            break;
+          }
+        }
+      }
+
+      if (arrayEnd > arrayStart) {
+        const recoveredData = parseArrayEntries(text.slice(arrayStart + 1, arrayEnd));
+        const okMatch = text.match(/"ok"\s*:\s*(true|false)/i);
+        return { ok: okMatch ? okMatch[1].toLowerCase() === 'true' : recoveredData.length > 0, data: recoveredData };
+      }
+    }
+  }
+
+  return null;
+};
+
+const fetchJsonWithRecovery = async (url: string) => {
+  const response = await fetch(url);
+  const raw = await response.text();
+  const parsed = parseJsonWithRowRecovery(raw);
+  if (parsed === null) {
+    throw new Error(`Unable to parse JSON from ${url}`);
+  }
+  return parsed;
+};
+
 export const calculateReachLatitude = (strengthNt: number, mode: 'camera' | 'phone' | 'eye') => {
   if (strengthNt >= 0) return -65.0;
   const curve = mode === 'phone' ? REQ_PHN : mode === 'eye' ? REQ_EYE : REQ_CAM;
@@ -179,8 +300,7 @@ export const useNzSubstormIndexData = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const summaryRes = await fetch(`${TILDE_BASE}/dataSummary/${DOMAIN}`);
-        const summary = await summaryRes.json();
+        const summary = await fetchJsonWithRecovery(`${TILDE_BASE}/dataSummary/${DOMAIN}`);
         const stations = summary?.domain?.[DOMAIN]?.stations ?? {};
         const stationEntries = Object.keys(stations)
           .map((stationCode) => ({
@@ -195,14 +315,13 @@ export const useNzSubstormIndexData = () => {
           Promise.all(
             stationEntries.map(async (entry) => {
               const tildeUrl = `${TILDE_BASE}/data/${DOMAIN}/${entry.seriesKey}/latest/2d?${aggregationParams}`;
-              const res = await fetch(tildeUrl);
-              const series = await res.json();
+              const series = await fetchJsonWithRecovery(tildeUrl);
               return { station: entry.stationCode, seriesKey: entry.seriesKey, data: series };
             })
           ),
-          fetch(SOLAR_WIND_IMF_URL),
+          fetchJsonWithRecovery(SOLAR_WIND_IMF_URL),
         ]);
-        const solarWindData = await solarWindRes.json();
+        const solarWindData = solarWindRes;
 
         const now = Date.now();
         const chartCutoff = now - CHART_LOOKBACK_HOURS * 3600 * 1000;
