@@ -37,6 +37,9 @@ interface ActiveSunspotRegion {
   longitude: number | null;
   observedTime: number | null;
   trend: 'Growing' | 'Shrinking' | 'Stable';
+  cFlareProbability: number | null;
+  mFlareProbability: number | null;
+  xFlareProbability: number | null;
 }
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
@@ -783,6 +786,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification;
           const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date;
           const observedTime = observedTimeCandidate ? Date.parse(observedTimeCandidate) : NaN;
+          const cFlareCandidate = item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c;
+          const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
+          const xFlareCandidate = item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x;
 
           if (!region || !location) return null;
 
@@ -795,14 +801,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             latitude: coords.latitude,
             longitude: coords.longitude,
             observedTime: Number.isFinite(observedTime) ? observedTime : null,
+            cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
+            mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
+            xFlareProbability: Number.isFinite(Number(xFlareCandidate)) ? Number(xFlareCandidate) : null,
           };
         })
         .filter((region: any): region is Omit<ActiveSunspotRegion, 'trend'> => Boolean(region));
 
-      const recentCutoff = Date.now() - (24 * 60 * 60 * 1000);
-      const recentParsed = parsed.filter((item) => item.observedTime !== null && item.observedTime >= recentCutoff);
+      const earthFacingParsed = parsed.filter((item) => item.longitude !== null && Math.abs(item.longitude) <= 90);
 
-      const grouped = recentParsed.reduce((acc, item) => {
+      const grouped = earthFacingParsed.reduce((acc, item) => {
         const bucket = acc.get(item.region) ?? [];
         bucket.push(item);
         acc.set(item.region, bucket);
@@ -1436,6 +1444,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                             <span>Area: <strong className="text-neutral-100">{region.area ?? 'N/A'} msh</strong></span>
                             <span>Spots: <strong className="text-neutral-100">{region.spotCount ?? 'N/A'}</strong></span>
                             <span>Status: <strong className={region.trend === 'Growing' ? 'text-emerald-400' : region.trend === 'Shrinking' ? 'text-rose-400' : 'text-yellow-300'}>{region.trend}</strong></span>
+                            <span>Flare odds: <strong className="text-cyan-200">C {region.cFlareProbability ?? 'N/A'}% · M {region.mFlareProbability ?? 'N/A'}% · X {region.xFlareProbability ?? 'N/A'}%</strong></span>
                             <span className="col-span-2">Coords: <strong className="text-neutral-100">{region.latitude ?? 'N/A'}°, {region.longitude ?? 'N/A'}°</strong></span>
                           </div>
                         </li>
@@ -1590,6 +1599,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <p><strong>Area:</strong> {selectedSunspotRegion.area ?? 'N/A'} millionths of solar hemisphere</p>
               <p><strong>Spot Count:</strong> {selectedSunspotRegion.spotCount ?? 'N/A'}</p>
               <p><strong>Status:</strong> <span className={selectedSunspotRegion.trend === 'Growing' ? 'text-emerald-400' : selectedSunspotRegion.trend === 'Shrinking' ? 'text-rose-400' : 'text-yellow-300'}>{selectedSunspotRegion.trend}</span></p>
+              <p><strong>Flare Probability:</strong> C {selectedSunspotRegion.cFlareProbability ?? 'N/A'}% · M {selectedSunspotRegion.mFlareProbability ?? 'N/A'}% · X {selectedSunspotRegion.xFlareProbability ?? 'N/A'}%</p>
               <p><strong>Overview Mode:</strong> {sunspotImageryMode === 'intensity' ? 'HMI Intensity' : 'HMI Magnetogram'}</p>
 
               <div className="rounded-md border border-neutral-700 bg-neutral-900/60 p-2 min-h-[280px] flex items-center justify-center">
