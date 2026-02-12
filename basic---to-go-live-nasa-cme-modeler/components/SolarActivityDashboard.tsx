@@ -859,6 +859,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const latest = sorted[0];
           if (!isValidSunspotRegion(latest)) return null;
 
+          const fallbackWithCoords = sorted.find((entry) => (entry?.latitude ?? null) !== null && (entry?.longitude ?? null) !== null);
+          const fallbackWithLocation = sorted.find((entry) => Boolean(entry?.location && entry.location !== 'N/A'));
           const previousWithArea = sorted.slice(1).find((entry) => (entry?.area ?? null) !== null);
 
           let trend: ActiveSunspotRegion['trend'] = 'Stable';
@@ -871,6 +873,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const { _sourceIndex, ...cleanLatest } = latest as any;
           return {
             ...cleanLatest,
+            location: cleanLatest.location || fallbackWithLocation?.location || 'N/A',
+            latitude: cleanLatest.latitude ?? fallbackWithCoords?.latitude ?? null,
+            longitude: cleanLatest.longitude ?? fallbackWithCoords?.longitude ?? null,
             trend,
           };
         })
