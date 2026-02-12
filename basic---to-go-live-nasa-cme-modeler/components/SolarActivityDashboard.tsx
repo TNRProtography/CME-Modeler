@@ -1038,11 +1038,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeSunspotRegions, overviewGeometry]);
 
   const displayedSunspotRegions = useMemo(() => {
-    const visible = new Set(plottedSunspots.map((spot) => spot.region));
     return activeSunspotRegions
-      .filter((region): region is ActiveSunspotRegion => Boolean(region && visible.has(region.region)))
+      .filter((region): region is ActiveSunspotRegion => Boolean(region))
       .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
-  }, [activeSunspotRegions, plottedSunspots]);
+  }, [activeSunspotRegions]);
 
   const selectedSunspotPreview = useMemo(() => {
     if (!selectedSunspotRegion || !overviewGeometry || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
@@ -1498,7 +1497,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-neutral-400 italic text-sm">No current Earth-facing sunspot regions available right now.</p>
+                    <p className="text-neutral-400 italic text-sm">No active sunspot region data returned by the NOAA feed right now.</p>
                   )}
                 </div>
               </div>
