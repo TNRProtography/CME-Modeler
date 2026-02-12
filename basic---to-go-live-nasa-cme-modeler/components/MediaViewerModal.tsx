@@ -71,7 +71,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
         if (cancelled) return;
 
         const validFrames = results.filter((u): u is string => Boolean(u));
-        setAnimationFrames(validFrames.length > 0 ? validFrames : uniqueUrls);
+        setAnimationFrames(validFrames);
         setCurrentFrame(0);
         setIsAnimationLoading(false);
         setIsPlaying(validFrames.length > 1);

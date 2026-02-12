@@ -388,6 +388,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })
   ), []);
 
+  const buildSuviFallbackUrls = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+    const groups = buildSuviFrameCandidateGroups(mode);
+    return groups.flatMap((group) => group);
+  }, [buildSuviFrameCandidateGroups]);
+
   const buildSuviFrameUrls = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
     const groups = buildSuviFrameCandidateGroups(mode);
     const resolved = await Promise.all(groups.map(async (group) => {
@@ -397,7 +402,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return resolved.filter((url): url is string => Boolean(url));
   }, [buildSuviFrameCandidateGroups, probeImageUrl]);
 
-  const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304', latestUrl: string) => {
+  const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
     const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
 
     try {
@@ -417,8 +422,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const generated = await buildSuviFrameUrls(mode);
     if (generated.length > 1) return generated;
 
-    return buildSixHourAnimationUrls(latestUrl, SUVI_FRAME_INTERVAL_MINUTES);
-  }, [buildSixHourAnimationUrls, buildSuviFrameUrls, extractSuviFramesFromIndex]);
+    return [];
+  }, [buildSuviFrameUrls, extractSuviFramesFromIndex]);
 
   const solarAnimationSources = useMemo<Record<SolarImageryMode, string>>(() => ({
     SUVI_131: SUVI_131_URL,
@@ -440,22 +445,28 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const sourceUrl = solarAnimationSources[mode];
     if (!sourceUrl) return;
 
-    const quickFallbackUrls = buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
-    setViewerMedia({
-      type: 'animation',
-      urls: quickFallbackUrls,
-    });
-
     if (mode === 'SUVI_131' || mode === 'SUVI_195' || mode === 'SUVI_304') {
-      const resolved = await fetchSuviAnimationFrames(mode, sourceUrl);
-      if (resolved.length > 1) {
+      setViewerMedia({
+        type: 'animation',
+        urls: buildSuviFallbackUrls(mode),
+      });
+
+      const resolved = await fetchSuviAnimationFrames(mode);
+      if (resolved.length > 0) {
         setViewerMedia({
           type: 'animation',
           urls: resolved,
         });
       }
+      return;
     }
-  }, [buildSixHourAnimationUrls, buildSuviFrameUrls, fetchSuviAnimationFrames, setViewerMedia, solarAnimationSources]);
+
+    const quickFallbackUrls = buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
+    setViewerMedia({
+      type: 'animation',
+      urls: quickFallbackUrls,
+    });
+  }, [buildSixHourAnimationUrls, buildSuviFallbackUrls, fetchSuviAnimationFrames, setViewerMedia, solarAnimationSources]);
 
   // Tooltips
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
