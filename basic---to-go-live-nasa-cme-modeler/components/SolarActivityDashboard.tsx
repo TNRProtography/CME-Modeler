@@ -26,7 +26,7 @@ interface SolarActivitySummary {
   flareCounts: { x: number; m: number; potentialCMEs: number; };
 }
 
-type SolarImageryMode = 'SUVI_131' | 'SUVI_304' | 'SDO_AIA193_2048' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
+type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URLS = [
@@ -41,14 +41,15 @@ const NOAA_PROTON_FLUX_URLS = [
 ];
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
+const SUVI_195_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
 const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
 const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
+const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 10;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
-const SDO_AIA_193_2048_URL = `${SDO_PROXY_BASE_URL}/sdo-aia193-2048`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 
 // --- HELPERS ---
@@ -269,7 +270,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoAia193_2048, setSdoAia193_2048] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+  const [suvi195, setSuvi195] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
@@ -350,9 +351,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
   }, []);
 
-  const buildSuviFrameCandidates = useCallback((mode: 'SUVI_131' | 'SUVI_304') => {
-    const channel = mode === 'SUVI_131' ? '131' : '304';
-    const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : SUVI_304_INDEX_URL;
+  const buildSuviFrameCandidates = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+    const channel = mode === 'SUVI_131' ? '131' : mode === 'SUVI_195' ? '195' : '304';
+    const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
     const now = Date.now();
     const sixHoursAgo = now - (6 * 60 * 60 * 1000);
     const intervalMs = SUVI_FRAME_INTERVAL_MINUTES * 60 * 1000;
@@ -387,8 +388,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     });
   }, []);
 
-  const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_304', latestUrl: string) => {
-    const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : SUVI_304_INDEX_URL;
+  const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304', latestUrl: string) => {
+    const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
 
     try {
       const controller = new AbortController();
@@ -420,7 +421,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const solarAnimationSources = useMemo<Record<SolarImageryMode, string>>(() => ({
     SUVI_131: SUVI_131_URL,
     SUVI_304: SUVI_304_URL,
-    SDO_AIA193_2048: `${SDO_AIA_193_2048_URL}?hours=6&format=gif`,
+    SUVI_195: SUVI_195_URL,
     SDO_HMIBC_1024: `${SDO_HMI_BC_1024_URL}?hours=6&format=gif`,
     SDO_HMIIF_1024: `${SDO_HMI_IF_1024_URL}?hours=6&format=gif`,
   }), []);
@@ -428,7 +429,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const imageryModeLabels: Record<SolarImageryMode, string> = {
     SUVI_131: 'SUVI 131Å',
     SUVI_304: 'SUVI 304Å',
-    SDO_AIA193_2048: 'SDO AIA 193Å',
+    SUVI_195: 'SUVI 195Å',
     SDO_HMIBC_1024: 'SDO HMI Continuum',
     SDO_HMIIF_1024: 'SDO HMI Intensitygram',
   };
@@ -443,7 +444,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       urls: quickFallbackUrls,
     });
 
-    if (mode === 'SUVI_131' || mode === 'SUVI_304') {
+    if (mode === 'SUVI_131' || mode === 'SUVI_195' || mode === 'SUVI_304') {
       const resolved = await fetchSuviAnimationFrames(mode, sourceUrl);
       if (resolved.length > 1) {
         setViewerMedia({
@@ -501,11 +502,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       'Tracks evolving active regions that can produce eruptions relevant to aurora risk windows.',
       'Used alongside line-of-sight magnetic products to infer magnetic stress and flare productivity potential.'
     ),
-    'sdo-aia193-2048': buildStatTooltip(
-      'SDO AIA 193Å',
-      'Coronal image that highlights coronal holes and large-scale hot corona.',
-      'Coronal holes can send high-speed streams that elevate geomagnetic activity and aurora potential.',
-      '193 Å channels emphasize Fe XII/XXIV regimes; recurring coronal holes are key for recurrent HSS-driven activity.'
+    'suvi-195': buildStatTooltip(
+      'SUVI 195Å',
+      'EUV view that highlights coronal structures and large-scale solar atmospheric changes.',
+      'Helpful for monitoring evolving coronal regions and disturbances that can precede space-weather changes.',
+      '195 Å imagery is useful for tracking coronal morphology over time and identifying evolving active regions.'
     ),
     'ccor1-video': buildStatTooltip(
       'CCOR1 Coronagraph',
@@ -537,7 +538,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
       else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
       else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
-      else if (id === 'sdo-aia193-2048') title = 'About SDO AIA 193Å Imagery (Coronal Holes)';
+      else if (id === 'suvi-195') title = 'About SUVI 195Å Imagery';
       else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
       else if (id === 'solar-flares') title = 'About Solar Flares';
       else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
@@ -687,7 +688,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     fetchImage(SUVI_304_URL, setSuvi304);
     fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
     fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
-    fetchImage(SDO_AIA_193_2048_URL, setSdoAia193_2048);
+    fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
     fetchProtonFlux();
@@ -709,7 +710,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (!onInitialLoad || initialLoadNotifiedRef.current) return;
 
     const hasInitialCoreData = !!lastXrayUpdate && !!lastProtonUpdate && !!lastFlaresUpdate;
-    const hasAnyImagery = [suvi131, suvi304, sdoAia193_2048, sdoHmiBc1024, sdoHmiIf1024]
+    const hasAnyImagery = [suvi131, suvi195, suvi304, sdoHmiBc1024, sdoHmiIf1024]
       .some((img) => !img.loading && !!img.url);
 
     if (hasInitialCoreData && hasAnyImagery) {
@@ -723,7 +724,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     lastFlaresUpdate,
     suvi131,
     suvi304,
-    sdoAia193_2048,
+    suvi195,
     sdoHmiBc1024,
     sdoHmiIf1024,
   ]);
@@ -928,7 +929,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="flex justify-center gap-2 my-2 flex-wrap mb-4">
                 <button onClick={() => setActiveSunImage('SUVI_131')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 131Å</button>
                 <button onClick={() => setActiveSunImage('SUVI_304')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 304Å</button>
-                <button onClick={() => setActiveSunImage('SDO_AIA193_2048')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO AIA 193Å</button>
+                <button onClick={() => setActiveSunImage('SUVI_195')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_195' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 195Å</button>
                 <button onClick={() => setActiveSunImage('SDO_HMIBC_1024')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO HMI Cont.</button>
                 <button onClick={() => setActiveSunImage('SDO_HMIIF_1024')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO HMI Int.</button>
               </div>
@@ -960,12 +961,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     {suvi304.loading && <LoadingSpinner message={suvi304.loading} />}
                   </div>
                 )}
-                {activeSunImage === 'SDO_AIA193_2048' && (
-                  <div onClick={() => sdoAia193_2048.url !== '/placeholder.png' && sdoAia193_2048.url !== '/error.png' && setViewerMedia({ url: sdoAia193_2048.url, type: 'image' })}
+                {activeSunImage === 'SUVI_195' && (
+                  <div onClick={() => suvi195.url !== '/placeholder.png' && suvi195.url !== '/error.png' && setViewerMedia({ url: suvi195.url, type: 'image' })}
                        className="w-full h-full flex justify-center items-center cursor-pointer"
-                       title={tooltipContent['sdo-aia193-2048']}>
-                    <img src={sdoAia193_2048.url} alt="SDO AIA 193Å" className="w-full h-full object-contain rounded-lg" />
-                    {sdoAia193_2048.loading && <LoadingSpinner message={sdoAia193_2048.loading} />}
+                       title={tooltipContent['suvi-195']}>
+                    <img src={suvi195.url} alt="SUVI 195Å" className="w-full h-full object-contain rounded-lg" />
+                    {suvi195.loading && <LoadingSpinner message={suvi195.loading} />}
                   </div>
                 )}
                 {activeSunImage === 'SDO_HMIBC_1024' && (
