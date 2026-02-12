@@ -41,6 +41,8 @@ const NOAA_PROTON_FLUX_URLS = [
 ];
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
+const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
+const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
@@ -302,17 +304,48 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const urls: string[] = [];
 
     for (let ts = sixHoursAgo; ts <= now; ts += stepMinutes * 60 * 1000) {
-      const iso = new Date(ts).toISOString();
       const u = new URL(baseUrl);
-      u.searchParams.set('time', iso);
-      u.searchParams.set('date', iso);
-      u.searchParams.set('ts', String(ts));
       u.searchParams.set('_', String(ts));
       urls.push(u.toString());
     }
 
     return urls;
   }, []);
+
+  const extractSuviFramesFromIndex = useCallback((html: string, indexUrl: string) => {
+    const regex = /href="([^"]+\.png)"/gi;
+    const now = Date.now();
+    const sixHoursAgo = now - (6 * 60 * 60 * 1000);
+    const frames: { url: string; t: number }[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(html)) !== null) {
+      const name = match[1];
+      if (name === 'latest.png') continue;
+      const startToken = name.match(/_s(\d{8}T\d{6})_/i)?.[1];
+      if (!startToken) continue;
+      const iso = `${startToken.slice(0,4)}-${startToken.slice(4,6)}-${startToken.slice(6,8)}T${startToken.slice(9,11)}:${startToken.slice(11,13)}:${startToken.slice(13,15)}Z`;
+      const t = Date.parse(iso);
+      if (!Number.isFinite(t) || t < sixHoursAgo || t > now + 5 * 60 * 1000) continue;
+      frames.push({ url: `${indexUrl}${name}`, t });
+    }
+
+    return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
+  }, []);
+
+  const fetchSuviAnimationFrames = useCallback(async (indexUrl: string, latestUrl: string) => {
+    try {
+      const response = await fetch(`${indexUrl}?_=${Date.now()}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      const urls = extractSuviFramesFromIndex(html, indexUrl);
+      if (urls.length > 1) return urls;
+    } catch (error) {
+      console.warn('Failed to parse SUVI directory listing, using fallback frames.', error);
+    }
+
+    return buildSixHourAnimationUrls(latestUrl);
+  }, [buildSixHourAnimationUrls, extractSuviFramesFromIndex]);
 
   const solarAnimationSources = useMemo<Record<SolarImageryMode, string>>(() => ({
     SUVI_131: SUVI_131_URL,
@@ -330,14 +363,24 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     SDO_HMIIF_1024: 'SDO HMI Intensitygram',
   };
 
-  const openSolarImageryAnimation = useCallback((mode: SolarImageryMode) => {
+  const openSolarImageryAnimation = useCallback(async (mode: SolarImageryMode) => {
     const sourceUrl = solarAnimationSources[mode];
     if (!sourceUrl) return;
+
+    let urls: string[] = [];
+    if (mode === 'SUVI_131') {
+      urls = await fetchSuviAnimationFrames(SUVI_131_INDEX_URL, SUVI_131_URL);
+    } else if (mode === 'SUVI_304') {
+      urls = await fetchSuviAnimationFrames(SUVI_304_INDEX_URL, SUVI_304_URL);
+    } else {
+      urls = buildSixHourAnimationUrls(sourceUrl);
+    }
+
     setViewerMedia({
       type: 'animation',
-      urls: buildSixHourAnimationUrls(sourceUrl),
+      urls,
     });
-  }, [buildSixHourAnimationUrls, setViewerMedia, solarAnimationSources]);
+  }, [buildSixHourAnimationUrls, fetchSuviAnimationFrames, setViewerMedia, solarAnimationSources]);
 
   // Tooltips
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
