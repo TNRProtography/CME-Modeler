@@ -295,10 +295,218 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     }, [lastUpdated, selectedCamera]);
 
     const handleDownloadForecastImage = useCallback(async () => {
-        // ... [Keep existing download logic] ...
+        const width = 1600;
+        const height = 2000;
         const canvas = document.createElement('canvas');
-        // ... (truncated for space, use original logic) ...
-    }, [auroraScore, substormForecast, gaugeData, celestialTimes]);
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const parseGaugeValue = (value?: string) => {
+            if (!value) return null;
+            const parsed = parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        const score = Math.round(auroraScore ?? 0);
+        const speed = parseGaugeValue(gaugeData?.speed?.value);
+        const density = parseGaugeValue(gaugeData?.density?.value);
+        const bt = parseGaugeValue(gaugeData?.bt?.value);
+        const bz = parseGaugeValue(gaugeData?.bz?.value);
+        const hp = parseGaugeValue(gaugeData?.power?.value);
+
+        const now = new Date();
+        const generatedAt = now.toLocaleString('en-NZ', {
+            timeZone: 'Pacific/Auckland',
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+
+        const chanceNow = Math.round(substormForecast?.likelihood ?? 0);
+        const chance30 = Math.round(substormForecast?.p30 ?? chanceNow);
+        const chance60 = Math.round(substormForecast?.p60 ?? chanceNow);
+        const substormWindow = substormForecast?.windowLabel || 'Monitoring for the next 60 minutes';
+
+        const substormSize = chanceNow >= 75 ? 'Large' : chanceNow >= 45 ? 'Moderate' : 'Small';
+        const substormEta = substormForecast?.status === 'ONSET'
+            ? 'Now'
+            : substormForecast?.status === 'IMMINENT_30'
+            ? 'Within ~30 min'
+            : substormForecast?.status === 'LIKELY_60'
+            ? 'Within ~60 min'
+            : substormWindow;
+
+        const visibility = isDaylight
+            ? 'Daylight now — next dark period is best.'
+            : score >= 50
+            ? 'Naked-eye visibility possible.'
+            : score >= 35
+            ? 'Phone and camera visibility possible.'
+            : score >= 20
+            ? 'Camera-first visibility likely.'
+            : 'Low visibility — monitor for change.';
+
+        const wrapText = (text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+            const words = text.split(' ');
+            let line = '';
+            let currentY = y;
+            for (let i = 0; i < words.length; i += 1) {
+                const testLine = `${line}${words[i]} `;
+                const testWidth = ctx.measureText(testLine).width;
+                if (testWidth > maxWidth && i > 0) {
+                    ctx.fillText(line, x, currentY);
+                    line = `${words[i]} `;
+                    currentY += lineHeight;
+                } else {
+                    line = testLine;
+                }
+            }
+            ctx.fillText(line.trimEnd(), x, currentY);
+            return currentY;
+        };
+
+        const bgGradient = ctx.createLinearGradient(0, 0, width, height);
+        bgGradient.addColorStop(0, '#050816');
+        bgGradient.addColorStop(0.45, '#112248');
+        bgGradient.addColorStop(1, '#031124');
+        ctx.fillStyle = bgGradient;
+        ctx.fillRect(0, 0, width, height);
+
+        const glow = ctx.createRadialGradient(width * 0.78, height * 0.18, 80, width * 0.78, height * 0.18, 760);
+        glow.addColorStop(0, 'rgba(70, 220, 255, 0.35)');
+        glow.addColorStop(1, 'rgba(70, 220, 255, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, width, height);
+
+        const card = (x: number, y: number, w: number, h: number) => {
+            ctx.save();
+            ctx.fillStyle = 'rgba(10, 18, 35, 0.78)';
+            ctx.strokeStyle = 'rgba(120, 208, 255, 0.25)';
+            ctx.lineWidth = 2;
+            const r = 24;
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        ctx.fillStyle = '#d9f6ff';
+        ctx.font = '700 72px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillText('Aurora Forecast Snapshot', 90, 120);
+
+        ctx.font = '500 34px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillStyle = '#9ad8ff';
+        ctx.fillText(`New Zealand · Generated ${generatedAt}`, 90, 174);
+
+        ctx.beginPath();
+        ctx.fillStyle = '#1cd8ff';
+        ctx.arc(width - 130, 130, 54, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#041325';
+        ctx.font = '800 42px Inter, Segoe UI, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('SA', width - 130, 145);
+        ctx.textAlign = 'left';
+
+        card(70, 230, width - 140, 300);
+        const scoreGrad = ctx.createLinearGradient(0, 230, width, 530);
+        scoreGrad.addColorStop(0, 'rgba(46, 198, 255, 0.18)');
+        scoreGrad.addColorStop(1, 'rgba(176, 98, 255, 0.18)');
+        ctx.fillStyle = scoreGrad;
+        ctx.fillRect(70, 230, width - 140, 300);
+
+        ctx.fillStyle = '#b5edff';
+        ctx.font = '600 34px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillText('Aurora Chance Score', 110, 300);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 132px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillText(`${score}%`, 110, 430);
+
+        ctx.font = '600 34px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillStyle = '#d9f6ff';
+        wrapText(visibility, 560, 355, 880, 46);
+
+        card(70, 570, width - 140, 360);
+        ctx.fillStyle = '#b5edff';
+        ctx.font = '700 38px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillText('Substorm Outlook', 110, 640);
+
+        ctx.font = '600 30px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillStyle = '#d9f6ff';
+        ctx.fillText(`Status: ${substormForecast?.status ?? 'QUIET'}`, 110, 705);
+        ctx.fillText(`Estimated Size: ${substormSize}`, 110, 755);
+        ctx.fillText(`Most Likely Timing: ${substormEta}`, 110, 805);
+
+        ctx.fillStyle = '#91f2bc';
+        ctx.font = '700 30px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillText(`Chance in 30 min: ${chance30}%`, 820, 705);
+        ctx.fillText(`Chance in 60 min: ${chance60}%`, 820, 755);
+        ctx.fillText(`Current chance: ${chanceNow}%`, 820, 805);
+
+        ctx.fillStyle = '#9ad8ff';
+        ctx.font = '500 24px Inter, Segoe UI, Arial, sans-serif';
+        wrapText(substormWindow, 110, 865, width - 220, 34);
+
+        card(70, 970, width - 140, 610);
+        ctx.fillStyle = '#b5edff';
+        ctx.font = '700 38px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillText('Live Space Weather Stats', 110, 1040);
+
+        const statItems = [
+            ['Solar Wind Speed', speed !== null ? `${speed.toFixed(0)} km/s` : '—'],
+            ['Solar Wind Density', density !== null ? `${density.toFixed(1)} p/cm³` : '—'],
+            ['Magnetic Field Bt', bt !== null ? `${bt.toFixed(1)} nT` : '—'],
+            ['Magnetic Field Bz', bz !== null ? `${bz.toFixed(1)} nT` : '—'],
+            ['Hemispheric Power', hp !== null ? `${hp.toFixed(0)} GW` : '—'],
+            ['Last Forecast Update', lastUpdated || '—'],
+        ] as const;
+
+        const colX = [110, 820];
+        statItems.forEach(([label, value], index) => {
+            const col = index % 2;
+            const row = Math.floor(index / 2);
+            const x = colX[col];
+            const y = 1120 + row * 145;
+            ctx.fillStyle = 'rgba(92, 180, 255, 0.15)';
+            ctx.fillRect(x, y, 670, 110);
+            ctx.strokeStyle = 'rgba(135, 211, 255, 0.22)';
+            ctx.strokeRect(x, y, 670, 110);
+
+            ctx.fillStyle = '#8fd5ff';
+            ctx.font = '600 24px Inter, Segoe UI, Arial, sans-serif';
+            ctx.fillText(label, x + 24, y + 38);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 36px Inter, Segoe UI, Arial, sans-serif';
+            ctx.fillText(value, x + 24, y + 86);
+        });
+
+        ctx.fillStyle = '#89c4e5';
+        ctx.font = '500 24px Inter, Segoe UI, Arial, sans-serif';
+        wrapText(
+            'Forecast guidance for New Zealand. Conditions can change quickly — use this snapshot with real-time sky and cloud checks.',
+            110,
+            1640,
+            width - 220,
+            34
+        );
+
+        ctx.font = '700 34px Inter, Segoe UI, Arial, sans-serif';
+        ctx.fillStyle = '#d8f6ff';
+        ctx.fillText('www.spottheaurora.co.nz', 110, 1880);
+
+        const link = document.createElement('a');
+        link.download = `spottheaurora-forecast-snapshot-${now.toISOString().replace(/:/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }, [auroraScore, gaugeData, isDaylight, substormForecast, lastUpdated]);
 
     const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
         <div class='space-y-3 text-left'>
