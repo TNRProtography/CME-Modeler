@@ -27,8 +27,16 @@ interface SolarActivitySummary {
 }
 
 // --- CONSTANTS ---
-const NOAA_XRAY_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
-const NOAA_PROTON_FLUX_URL = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json';
+const NOAA_XRAY_FLUX_URLS = [
+  'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json',
+];
+const NOAA_PROTON_FLUX_URLS = [
+  'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/integral-protons-plot-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
+];
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
@@ -142,7 +150,16 @@ const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
 
 // --- REUSABLE COMPONENTS ---
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
-  const timeRanges = [ { label: '1 Hr', hours: 1 }, { label: '2 Hr', hours: 2 }, { label: '4 Hr', hours: 4 }, { label: '6 Hr', hours: 6 }, { label: '12 Hr', hours: 12 }, { label: '24 Hr', hours: 24 } ];
+  const timeRanges = [
+    { label: '1 Hr', hours: 1 },
+    { label: '3 Hr', hours: 3 },
+    { label: '6 Hr', hours: 6 },
+    { label: '12 Hr', hours: 12 },
+    { label: '1 Day', hours: 24 },
+    { label: '3 Day', hours: 72 },
+    { label: '5 Day', hours: 120 },
+    { label: '7 Day', hours: 168 },
+  ];
   return (
     <div className="flex justify-center gap-2 my-2 flex-wrap">
       {timeRanges.map(({ label, hours }) => (
@@ -254,10 +271,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Chart state
   const [allXrayData, setAllXrayData] = useState<any[]>([]);
   const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
-  const [xrayTimeRange, setXrayTimeRange] = useState<number>(24 * 60 * 60 * 1000);
+  const [xrayTimeRange, setXrayTimeRange] = useState<number>(7 * 24 * 60 * 60 * 1000);
   const [allProtonData, setAllProtonData] = useState<any[]>([]);
   const [loadingProton, setLoadingProton] = useState<string | null>('Loading proton flux data...');
-  const [protonTimeRange, setProtonTimeRange] = useState<number>(24 * 60 * 60 * 1000);
+  const [protonTimeRange, setProtonTimeRange] = useState<number>(7 * 24 * 60 * 60 * 1000);
 
   // Flares
   const [solarFlares, setSolarFlares] = useState<SolarFlare[]>([]);
@@ -393,13 +410,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
   }, []);
 
-  const fetchXrayFlux = useCallback(() => {
+
+  const fetchFirstAvailableJson = useCallback(async (urls: string[]) => {
+    let lastError: Error | null = null;
+    for (const url of urls) {
+      try {
+        const res = await fetch(`${url}?_=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+        return await res.json();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      }
+    }
+    throw lastError ?? new Error('No data endpoint available');
+  }, []);
+
+  const fetchXrayFlux = useCallback(async () => {
     if (isInitialLoad.current) {
         setLoadingXray('Loading X-ray flux data...');
     }
-    fetch(`${NOAA_XRAY_FLUX_URL}?_=${new Date().getTime()}`)
-      .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
-      .then(rawData => {
+    try {
+      const rawData = await fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS);
         const groupedData = new Map();
         rawData.forEach((d: any) => {
           const time = new Date(d.time_tag).getTime();
@@ -423,22 +454,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         setLatestXrayFlux(latestFluxValue);
         setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) });
         setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
-      }).catch(e => {
-        console.error('Error fetching X-ray flux:', e);
-        setLoadingXray(`Error: ${e.message}`);
-        setLatestXrayFlux(null);
-        setCurrentXraySummary({ flux: null, class: 'N/A' });
-        setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
-      });
-  }, [setLatestXrayFlux]);
+    } catch (e: any) {
+      console.error('Error fetching X-ray flux:', e);
+      setLoadingXray(`Error: ${e?.message || 'Unknown error'}`);
+      setLatestXrayFlux(null);
+      setCurrentXraySummary({ flux: null, class: 'N/A' });
+      setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+    }
+  }, [fetchFirstAvailableJson, setLatestXrayFlux]);
 
-  const fetchProtonFlux = useCallback(() => {
+  const fetchProtonFlux = useCallback(async () => {
     if (isInitialLoad.current) {
         setLoadingProton('Loading proton flux data...');
     }
-    fetch(`${NOAA_PROTON_FLUX_URL}?_=${new Date().getTime()}`)
-      .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
-      .then(rawData => {
+    try {
+      const rawData = await fetchFirstAvailableJson(NOAA_PROTON_FLUX_URLS);
         const processedData = rawData
           .filter((d: any) => d.energy === ">=10 MeV" && d.flux !== null && !isNaN(d.flux))
           .map((d: any) => ({ time: new Date(d.time_tag).getTime(), flux: parseFloat(d.flux) }))
@@ -455,13 +485,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const latestFluxValue = processedData[processedData.length - 1].flux;
         setCurrentProtonSummary({ flux: latestFluxValue, class: getProtonClass(latestFluxValue) });
         setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
-      }).catch(e => {
-        console.error('Error fetching proton flux:', e);
-        setLoadingProton(`Error: ${e.message}`);
-        setCurrentProtonSummary({ flux: null, class: 'N/A' });
-        setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
-      });
-  }, []);
+    } catch (e: any) {
+      console.error('Error fetching proton flux:', e);
+      setLoadingProton(`Error: ${e?.message || 'Unknown error'}`);
+      setCurrentProtonSummary({ flux: null, class: 'N/A' });
+      setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+    }
+  }, [fetchFirstAvailableJson]);
 
   const fetchFlares = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -565,7 +595,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         annotation: { annotations: midnightAnnotations }
       },
       scales: {
-        x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
+        x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: xrayTimeRange > 3 * 24 * 3600000 ? 'day' : 'hour', tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, min: startTime, max: now, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
         y: { type: 'logarithmic', min: 1e-9, max: 1e-3, ticks: { color: '#71717a', callback: (v: any) => { if(v===1e-4) return 'X'; if(v===1e-5) return 'M'; if(v===1e-6) return 'C'; if(v===1e-7) return 'B'; if(v===1e-8) return 'A'; return null; } }, grid: { color: '#3f3f46' } }
       }
     };
@@ -614,7 +644,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         annotation: { annotations: midnightAnnotations }
       },
       scales: {
-        x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } }, min: startTime, max: now, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
+        x: { type: 'time', adapters: { date: { locale: enNZ } }, time: { unit: protonTimeRange > 3 * 24 * 3600000 ? 'day' : 'hour', tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, min: startTime, max: now, ticks: { color: '#71717a' }, grid: { color: '#3f3f46' } },
         y: { type: 'logarithmic', min: 1e-4, max: 1000000, ticks: { color: '#71717a', callback: (value: any) => { if (value === 100000) return 'S5'; if (value === 10000) return 'S4'; if (value === 1000) return 'S3'; if (value === 100) return 'S2'; if (value === 10) return 'S1'; if (value === 1) return 'S0'; if (value === 0.1 || value === 0.01 || value === 0.001 || value === 0.0001) return value.toString(); return null; } }, grid: { color: '#3f3f46' } }
       }
     };
