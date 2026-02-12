@@ -77,6 +77,14 @@ const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 
+const ALLOWED_SDO_PROXY_HOSTS = ['localhost', '127.0.0.1', 'spottheaurora.co.nz', 'www.spottheaurora.co.nz'];
+
+const canUseSdoProxyOnCurrentHost = (): boolean => {
+  if (typeof window === 'undefined') return true;
+  const host = window.location.hostname.toLowerCase();
+  return ALLOWED_SDO_PROXY_HOSTS.includes(host);
+};
+
 // --- HELPERS ---
 const getCssVar = (name: string): string => {
   try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch { return ''; }
@@ -639,6 +647,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
     }
 
+    if (!isVideo && url.startsWith(SDO_PROXY_BASE_URL) && !canUseSdoProxyOnCurrentHost()) {
+      setState({ url: '/placeholder.png', loading: 'SDO imagery unavailable on this preview domain.' });
+      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+      return;
+    }
+
     const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
 
     if (isVideo) {
@@ -872,6 +886,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
     } catch (error) {
       console.error('Error fetching active sunspot regions:', error);
+      setActiveSunspotRegions([]);
       setLoadingSunspotRegions(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
     }
