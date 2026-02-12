@@ -809,8 +809,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         .filter((region: any): region is Omit<ActiveSunspotRegion, 'trend'> => Boolean(region));
 
       const earthFacingParsed = parsed.filter((item) => item.longitude !== null && Math.abs(item.longitude) <= 90);
+      const latestObservedTime = earthFacingParsed.reduce((max, item) => (
+        item.observedTime !== null && item.observedTime > max ? item.observedTime : max
+      ), 0);
+      const currentWindowMs = 18 * 60 * 60 * 1000;
+      const currentEarthFacingParsed = latestObservedTime > 0
+        ? earthFacingParsed.filter((item) => item.observedTime !== null && item.observedTime >= (latestObservedTime - currentWindowMs))
+        : earthFacingParsed;
+      const filteredCurrent = currentEarthFacingParsed.length > 0 ? currentEarthFacingParsed : earthFacingParsed;
 
-      const grouped = earthFacingParsed.reduce((acc, item) => {
+      const grouped = filteredCurrent.reduce((acc, item) => {
         const bucket = acc.get(item.region) ?? [];
         bucket.push(item);
         acc.set(item.region, bucket);
@@ -917,54 +925,60 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
       const width = source.naturalWidth || 1024;
       const height = source.naturalHeight || 1024;
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
+      const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
 
-      if (!ctx) {
-        setOverviewGeometry({ width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 });
-        return;
-      }
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
 
-      ctx.drawImage(source, 0, 0, width, height);
-      const imageData = ctx.getImageData(0, 0, width, height).data;
-      const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
+        if (!ctx) {
+          setOverviewGeometry(fallback);
+          return;
+        }
 
-      const isDiskPixel = (x: number, y: number) => {
-        const i = (y * width + x) * 4;
-        const r = imageData[i];
-        const g = imageData[i + 1];
-        const b = imageData[i + 2];
-        const a = imageData[i + 3];
-        return a > 0 && (r + g + b) > 24;
-      };
+        ctx.drawImage(source, 0, 0, width, height);
+        const imageData = ctx.getImageData(0, 0, width, height).data;
+        const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
 
-      let left = width;
-      let right = 0;
-      let top = height;
-      let bottom = 0;
+        const isDiskPixel = (x: number, y: number) => {
+          const i = (y * width + x) * 4;
+          const r = imageData[i];
+          const g = imageData[i + 1];
+          const b = imageData[i + 2];
+          const a = imageData[i + 3];
+          return a > 0 && (r + g + b) > 24;
+        };
 
-      for (let y = 0; y < height; y += step) {
-        for (let x = 0; x < width; x += step) {
-          if (isDiskPixel(x, y)) {
-            if (x < left) left = x;
-            if (x > right) right = x;
-            if (y < top) top = y;
-            if (y > bottom) bottom = y;
+        let left = width;
+        let right = 0;
+        let top = height;
+        let bottom = 0;
+
+        for (let y = 0; y < height; y += step) {
+          for (let x = 0; x < width; x += step) {
+            if (isDiskPixel(x, y)) {
+              if (x < left) left = x;
+              if (x > right) right = x;
+              if (y < top) top = y;
+              if (y > bottom) bottom = y;
+            }
           }
         }
-      }
 
-      if (left >= right || top >= bottom) {
-        setOverviewGeometry({ width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 });
-        return;
-      }
+        if (left >= right || top >= bottom) {
+          setOverviewGeometry(fallback);
+          return;
+        }
 
-      const cx = (left + right) / 2;
-      const cy = (top + bottom) / 2;
-      const radius = Math.max((right - left), (bottom - top)) / 2;
-      setOverviewGeometry({ width, height, cx, cy, radius });
+        const cx = (left + right) / 2;
+        const cy = (top + bottom) / 2;
+        const radius = Math.max((right - left), (bottom - top)) / 2;
+        setOverviewGeometry({ width, height, cx, cy, radius });
+      } catch {
+        setOverviewGeometry(fallback);
+      }
     };
 
     source.onerror = () => {
@@ -993,9 +1007,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           classColor: getSunspotClassColor(region.magneticClass),
         };
       })
-      .filter((region) => region.onDisk)
-      .slice(0, 16);
+      .filter((region) => region.onDisk);
   }, [activeSunspotRegions, overviewGeometry]);
+
+  const displayedSunspotRegions = useMemo(() => {
+    const visible = new Set(plottedSunspots.map((spot) => spot.region));
+    return activeSunspotRegions
+      .filter((region) => visible.has(region.region))
+      .sort((a, b) => (b.area ?? -1) - (a.area ?? -1));
+  }, [activeSunspotRegions, plottedSunspots]);
 
   const selectedSunspotPreview = useMemo(() => {
     if (!selectedSunspotRegion || !overviewGeometry || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
@@ -1425,9 +1445,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 overflow-y-auto styled-scrollbar h-[420px]">
                   {loadingSunspotRegions ? (
                     <LoadingSpinner message={loadingSunspotRegions} />
-                  ) : activeSunspotRegions.length > 0 ? (
+                  ) : displayedSunspotRegions.length > 0 ? (
                     <ul className="space-y-2">
-                      {activeSunspotRegions.map((region) => (
+                      {displayedSunspotRegions.map((region) => (
                         <li key={`${region.region}-${region.location}`} className="rounded-md bg-neutral-800/80 border border-neutral-700 px-3 py-2 text-sm">
                           <div className="flex items-center justify-between">
                             <button
@@ -1451,7 +1471,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-neutral-400 italic text-sm">No active sunspot region data available right now.</p>
+                    <p className="text-neutral-400 italic text-sm">No current Earth-facing sunspot regions available right now.</p>
                   )}
                 </div>
               </div>
