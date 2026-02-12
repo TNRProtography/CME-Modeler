@@ -189,7 +189,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             (err) => {
                 setGpsError(`GPS is required to report sightings. Enable location and try again. (${err.message})`);
                 setHasGpsLock(false);
-                console.warn(`Geolocation error: ${err.message}.`);
+                if (err.code !== err.PERMISSION_DENIED) {
+                    console.warn(`Geolocation error: ${err.message}.`);
+                }
             },
             { timeout: 15000, enableHighAccuracy: true }
         );
