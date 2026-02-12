@@ -90,7 +90,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   useEffect(() => {
     const fetchGlobalBanner = async () => {
       try {
-        const response = await fetch(BANNER_API_URL, { headers: { 'Cache-Control': 'no-cache' } });
+        const response = await fetch(`${BANNER_API_URL}?_=${Date.now()}`);
         if (!response.ok) {
           setGlobalBanner(null);
           setIsGlobalBannerDismissed(false);

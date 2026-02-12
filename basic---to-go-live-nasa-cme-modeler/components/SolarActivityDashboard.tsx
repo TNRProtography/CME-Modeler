@@ -527,22 +527,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (isInitialLoad.current) {
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
     }
-    try {
-      const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
-      const res = await fetch(fetchUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-      if (isVideo) {
-        setState({ url: url, loading: null });
-      } else {
-        const blob = await res.blob();
-        const objectURL = URL.createObjectURL(blob);
-        setState({ url: objectURL, loading: null });
-      }
+
+    const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
+
+    if (isVideo) {
+      setState({ url, loading: null });
       setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
-    } catch (error) {
-      console.error(`Error fetching ${url}:`, error);
-      setState({ url: isVideo ? '' : '/error.png', loading: `${isVideo ? 'Video' : 'Image'} failed to load.` });
+      return;
     }
+
+    // Use direct image URLs to avoid CORS fetch failures for third-party image hosts.
+    setState({ url: fetchUrl, loading: null });
+    setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
   }, []);
 
 
