@@ -43,7 +43,7 @@ const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
 const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
-const SUVI_FRAME_INTERVAL_MINUTES = 4;
+const SUVI_FRAME_INTERVAL_MINUTES = 10;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
@@ -313,79 +313,72 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return urls;
   }, []);
 
-  const probeImageUrl = useCallback((url: string, timeoutMs: number = 2500) => (
-    new Promise<boolean>((resolve) => {
+  const probeImageUrl = useCallback((url: string, timeoutMs: number = 1200) => (
+    new Promise<string | null>((resolve) => {
       const img = new Image();
-      const timer = window.setTimeout(() => resolve(false), timeoutMs);
+      const timer = window.setTimeout(() => resolve(null), timeoutMs);
       img.onload = () => {
         window.clearTimeout(timer);
-        resolve(true);
+        resolve(url);
       };
       img.onerror = () => {
         window.clearTimeout(timer);
-        resolve(false);
+        resolve(null);
       };
       img.src = url;
     })
   ), []);
 
-  const toSuviToken = (date: Date) => {
-    const y = date.getUTCFullYear();
-    const mo = `${date.getUTCMonth() + 1}`.padStart(2, '0');
-    const d = `${date.getUTCDate()}`.padStart(2, '0');
-    const h = `${date.getUTCHours()}`.padStart(2, '0');
-    const mi = `${date.getUTCMinutes()}`.padStart(2, '0');
-    const s = `${date.getUTCSeconds()}`.padStart(2, '0');
-    return `${y}${mo}${d}T${h}${mi}${s}Z`;
-  };
-
-  const buildSuviFrameCandidates = useCallback((mode: 'SUVI_131' | 'SUVI_304') => {
-    const channel = mode === 'SUVI_131' ? '131' : '304';
-    const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : SUVI_304_INDEX_URL;
+  const extractSuviFramesFromIndex = useCallback((html: string, indexUrl: string) => {
+    const regex = /href="([^"]+\.png)"/gi;
     const now = Date.now();
     const sixHoursAgo = now - (6 * 60 * 60 * 1000);
-    const intervalMs = SUVI_FRAME_INTERVAL_MINUTES * 60 * 1000;
-    const roundedStart = Math.floor(sixHoursAgo / intervalMs) * intervalMs;
-    const frameTimes: number[] = [];
+    const frames: { url: string; t: number }[] = [];
+    let match: RegExpExecArray | null;
 
-    for (let t = roundedStart; t <= now; t += intervalMs) {
-      frameTimes.push(t);
+    while ((match = regex.exec(html)) !== null) {
+      const name = match[1];
+      if (name === 'latest.png') continue;
+      const startToken = name.match(/_s(\d{8}T\d{6})_/i)?.[1];
+      if (!startToken) continue;
+      const iso = `${startToken.slice(0,4)}-${startToken.slice(4,6)}-${startToken.slice(6,8)}T${startToken.slice(9,11)}:${startToken.slice(11,13)}:${startToken.slice(13,15)}Z`;
+      const t = Date.parse(iso);
+      if (!Number.isFinite(t) || t < sixHoursAgo || t > now + 10 * 60 * 1000) continue;
+      frames.push({ url: `${indexUrl}${name}`, t });
     }
 
-    return frameTimes.map((startMs) => {
-      const endMs = startMs + intervalMs;
-      const startToken = toSuviToken(new Date(startMs));
-      const endToken = toSuviToken(new Date(endMs));
-      return [
-        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`,
-        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-2.png`,
-        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-1.png`,
-        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-1.png`,
-      ];
-    });
+    return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
   }, []);
 
   const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_304', latestUrl: string) => {
-    const candidateGroups = buildSuviFrameCandidates(mode);
-    const resolved: string[] = [];
+    const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : SUVI_304_INDEX_URL;
 
-    for (const group of candidateGroups) {
-      let matched: string | null = null;
-      for (const url of group) {
-        // eslint-disable-next-line no-await-in-loop
-        const ok = await probeImageUrl(url);
-        if (ok) {
-          matched = url;
-          break;
-        }
+    try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 1800);
+      const response = await fetch(`${indexUrl}?_=${Date.now()}`, { signal: controller.signal });
+      window.clearTimeout(timeout);
+      if (response.ok) {
+        const html = await response.text();
+        const parsed = extractSuviFramesFromIndex(html, indexUrl);
+        if (parsed.length > 1) return parsed;
       }
-      if (matched) resolved.push(matched);
+    } catch (error) {
+      console.warn('SUVI directory listing unavailable, falling back to candidate probing.', error);
     }
+
+    const candidateGroups = buildSuviFrameCandidates(mode);
+    const resolved = (await Promise.all(
+      candidateGroups.map(async (group) => {
+        const attempts = await Promise.all(group.map((url) => probeImageUrl(url)));
+        return attempts.find(Boolean) ?? null;
+      })
+    )).filter((url): url is string => Boolean(url));
 
     if (resolved.length > 1) return resolved;
 
-    return buildSixHourAnimationUrls(latestUrl);
-  }, [buildSixHourAnimationUrls, buildSuviFrameCandidates, probeImageUrl]);
+    return buildSixHourAnimationUrls(latestUrl, SUVI_FRAME_INTERVAL_MINUTES);
+  }, [buildSixHourAnimationUrls, buildSuviFrameCandidates, extractSuviFramesFromIndex, probeImageUrl]);
 
   const solarAnimationSources = useMemo<Record<SolarImageryMode, string>>(() => ({
     SUVI_131: SUVI_131_URL,
@@ -407,19 +400,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const sourceUrl = solarAnimationSources[mode];
     if (!sourceUrl) return;
 
-    let urls: string[] = [];
-    if (mode === 'SUVI_131') {
-      urls = await fetchSuviAnimationFrames('SUVI_131', SUVI_131_URL);
-    } else if (mode === 'SUVI_304') {
-      urls = await fetchSuviAnimationFrames('SUVI_304', SUVI_304_URL);
-    } else {
-      urls = buildSixHourAnimationUrls(sourceUrl);
-    }
-
+    const quickFallbackUrls = buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
     setViewerMedia({
       type: 'animation',
-      urls,
+      urls: quickFallbackUrls,
     });
+
+    if (mode === 'SUVI_131' || mode === 'SUVI_304') {
+      const resolved = await fetchSuviAnimationFrames(mode, sourceUrl);
+      if (resolved.length > 1) {
+        setViewerMedia({
+          type: 'animation',
+          urls: resolved,
+        });
+      }
+    }
   }, [buildSixHourAnimationUrls, fetchSuviAnimationFrames, setViewerMedia, solarAnimationSources]);
 
   // Tooltips
