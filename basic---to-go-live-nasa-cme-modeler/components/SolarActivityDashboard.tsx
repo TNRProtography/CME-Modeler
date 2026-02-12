@@ -342,6 +342,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
   const [loadingSunspotCloseup, setLoadingSunspotCloseup] = useState(false);
+  const [overviewGeometry, setOverviewGeometry] = useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
 
   // General state
   const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
@@ -798,7 +799,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         })
         .filter((region: any): region is Omit<ActiveSunspotRegion, 'trend'> => Boolean(region));
 
-      const grouped = parsed.reduce((acc, item) => {
+      const recentCutoff = Date.now() - (24 * 60 * 60 * 1000);
+      const recentParsed = parsed.filter((item) => item.observedTime !== null && item.observedTime >= recentCutoff);
+
+      const grouped = recentParsed.reduce((acc, item) => {
         const bucket = acc.get(item.region) ?? [];
         bucket.push(item);
         acc.set(item.region, bucket);
@@ -890,39 +894,121 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const sunspotOverviewImage = sunspotImageryMode === 'intensity' ? sdoHmiIf1024 : sdoHmiBc1024;
 
+  useEffect(() => {
+    if (!sunspotOverviewImage.url || sunspotOverviewImage.url === '/placeholder.png' || sunspotOverviewImage.url === '/error.png') {
+      setOverviewGeometry(null);
+      return;
+    }
+
+    let cancelled = false;
+    const source = new Image();
+    source.crossOrigin = 'anonymous';
+
+    source.onload = () => {
+      if (cancelled) return;
+
+      const width = source.naturalWidth || 1024;
+      const height = source.naturalHeight || 1024;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        setOverviewGeometry({ width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 });
+        return;
+      }
+
+      ctx.drawImage(source, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height).data;
+      const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
+
+      const isDiskPixel = (x: number, y: number) => {
+        const i = (y * width + x) * 4;
+        const r = imageData[i];
+        const g = imageData[i + 1];
+        const b = imageData[i + 2];
+        const a = imageData[i + 3];
+        return a > 0 && (r + g + b) > 24;
+      };
+
+      let left = width;
+      let right = 0;
+      let top = height;
+      let bottom = 0;
+
+      for (let y = 0; y < height; y += step) {
+        for (let x = 0; x < width; x += step) {
+          if (isDiskPixel(x, y)) {
+            if (x < left) left = x;
+            if (x > right) right = x;
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+          }
+        }
+      }
+
+      if (left >= right || top >= bottom) {
+        setOverviewGeometry({ width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 });
+        return;
+      }
+
+      const cx = (left + right) / 2;
+      const cy = (top + bottom) / 2;
+      const radius = Math.max((right - left), (bottom - top)) / 2;
+      setOverviewGeometry({ width, height, cx, cy, radius });
+    };
+
+    source.onerror = () => {
+      if (!cancelled) setOverviewGeometry(null);
+    };
+
+    source.src = sunspotOverviewImage.url;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sunspotOverviewImage.url]);
+
   const plottedSunspots = useMemo(() => {
+    if (!overviewGeometry) return [];
+
     return activeSunspotRegions
       .filter((region) => region.latitude !== null && region.longitude !== null)
       .map((region) => {
-        const lat = region.latitude as number;
-        const lon = region.longitude as number;
-        const latRad = lat * (Math.PI / 180);
-        const lonRad = lon * (Math.PI / 180);
-        const xPercent = 50 + (46 * Math.cos(latRad) * Math.sin(lonRad));
-        const yPercent = 50 - (46 * Math.sin(latRad));
-        const onDisk = ((xPercent - 50) ** 2 + (yPercent - 50) ** 2) <= (46 ** 2);
+        const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, overviewGeometry.cx, overviewGeometry.cy, overviewGeometry.radius);
         return {
           ...region,
-          xPercent,
-          yPercent,
-          onDisk,
+          xPercent: (pos.x / overviewGeometry.width) * 100,
+          yPercent: (pos.y / overviewGeometry.height) * 100,
+          onDisk: pos.onDisk,
           classColor: getSunspotClassColor(region.magneticClass),
         };
       })
       .filter((region) => region.onDisk)
       .slice(0, 16);
-  }, [activeSunspotRegions]);
+  }, [activeSunspotRegions, overviewGeometry]);
 
   const selectedSunspotPreview = useMemo(() => {
-    if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
+    if (!selectedSunspotRegion || !overviewGeometry || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
       return null;
     }
-    const latRad = selectedSunspotRegion.latitude * (Math.PI / 180);
-    const lonRad = selectedSunspotRegion.longitude * (Math.PI / 180);
-    const xPercent = 50 + (46 * Math.cos(latRad) * Math.sin(lonRad));
-    const yPercent = 50 - (46 * Math.sin(latRad));
-    return { xPercent, yPercent };
-  }, [selectedSunspotRegion]);
+
+    const pos = solarCoordsToPixel(
+      selectedSunspotRegion.latitude,
+      selectedSunspotRegion.longitude,
+      overviewGeometry.cx,
+      overviewGeometry.cy,
+      overviewGeometry.radius
+    );
+
+    return {
+      xPercent: (pos.x / overviewGeometry.width) * 100,
+      yPercent: (pos.y / overviewGeometry.height) * 100,
+      xPx: pos.x,
+      yPx: pos.y,
+    };
+  }, [selectedSunspotRegion, overviewGeometry]);
 
   useEffect(() => {
     if (!selectedSunspotRegion) {
@@ -962,16 +1048,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
         const width = source.naturalWidth || 1024;
         const height = source.naturalHeight || 1024;
-        const cx = width / 2;
-        const cy = height / 2;
-        const radius = Math.min(width, height) * 0.46;
-        const pos = solarCoordsToPixel(latitude, longitude, cx, cy, radius);
+        const geometry = overviewGeometry ?? { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
+        const pos = solarCoordsToPixel(latitude, longitude, geometry.cx, geometry.cy, geometry.radius);
 
         const srcSize = Math.min(width, height) * 0.22;
-        const sx = Math.max(0, Math.min(width - srcSize, pos.x - srcSize / 2));
-        const sy = Math.max(0, Math.min(height - srcSize, pos.y - srcSize / 2));
 
-        ctx.drawImage(source, sx, sy, srcSize, srcSize, 0, 0, cropSize, cropSize);
+        const padded = document.createElement('canvas');
+        const pad = srcSize;
+        padded.width = Math.round(width + pad * 2);
+        padded.height = Math.round(height + pad * 2);
+        const pctx = padded.getContext('2d');
+        if (!pctx) throw new Error('Padded canvas context unavailable');
+        pctx.fillStyle = '#000';
+        pctx.fillRect(0, 0, padded.width, padded.height);
+        pctx.drawImage(source, pad, pad, width, height);
+
+        const sx = pos.x + pad - srcSize / 2;
+        const sy = pos.y + pad - srcSize / 2;
+
+        ctx.drawImage(padded, sx, sy, srcSize, srcSize, 0, 0, cropSize, cropSize);
 
         ctx.strokeStyle = getSunspotClassColor(selectedSunspotRegion.magneticClass);
         ctx.lineWidth = 3;
@@ -998,7 +1093,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return () => {
       cancelled = true;
     };
-  }, [selectedSunspotRegion, sunspotOverviewImage]);
+  }, [overviewGeometry, selectedSunspotRegion, sunspotOverviewImage]);
 
   // Chart options/data
   const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
@@ -1290,7 +1385,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   {sunspotOverviewImage.loading ? (
                     <LoadingSpinner message={sunspotOverviewImage.loading} />
                   ) : sunspotOverviewImage.url && sunspotOverviewImage.url !== '/error.png' ? (
-                    <div className="relative w-full max-w-[760px] aspect-square">
+                    <div className="relative w-full h-full max-h-full" style={{ aspectRatio: overviewGeometry ? `${overviewGeometry.width}/${overviewGeometry.height}` : undefined }}>
                       <img
                         src={sunspotOverviewImage.url}
                         alt={`Sunspot overview ${sunspotImageryMode}`}
