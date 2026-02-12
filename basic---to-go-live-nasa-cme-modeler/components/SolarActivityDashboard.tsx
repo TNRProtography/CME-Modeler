@@ -169,7 +169,8 @@ const parseLongitude = (loc?: string | null): number | null => {
 
 const parseLatitudeLongitude = (location?: string | null): { latitude: number | null; longitude: number | null } => {
   if (!location) return { latitude: null, longitude: null };
-  const m = String(location).match(/^([NS])(\d{1,2})([EW])(\d{1,3})$/i);
+  const normalized = String(location).toUpperCase().replace(/\s+/g, '');
+  const m = normalized.match(/([NS])(\d{1,2})([EW])(\d{1,3})/i);
   if (!m) return { latitude: null, longitude: null };
   const latMag = parseInt(m[2], 10);
   const lonMag = parseInt(m[4], 10);
@@ -775,11 +776,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             : [];
 
       const parsed = regionArray
-        .map((item: any) => {
+        .map((item: any, idx: number) => {
           const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
           const region = rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
           const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
           const coords = parseLatitudeLongitude(location);
+
+          const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat;
+          const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon;
+          const latFromNumeric = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
+          const lonFromNumeric = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
 
           const areaCandidate = item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
           const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
@@ -790,33 +796,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
           const xFlareCandidate = item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x;
 
-          if (!region || !location) return null;
+          if (!region) return null;
 
           return {
             region,
-            location,
+            location: location || 'N/A',
             area: Number.isFinite(Number(areaCandidate)) ? Number(areaCandidate) : null,
             spotCount: Number.isFinite(Number(spotCountCandidate)) ? Number(spotCountCandidate) : null,
             magneticClass: magneticClassCandidate ? String(magneticClassCandidate) : null,
-            latitude: coords.latitude,
-            longitude: coords.longitude,
+            latitude: coords.latitude ?? latFromNumeric,
+            longitude: coords.longitude ?? lonFromNumeric,
             observedTime: Number.isFinite(observedTime) ? observedTime : null,
             cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
             mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
             xFlareProbability: Number.isFinite(Number(xFlareCandidate)) ? Number(xFlareCandidate) : null,
+            _sourceIndex: idx,
           };
         })
         .filter((region: any): region is Omit<ActiveSunspotRegion, 'trend'> => Boolean(region));
 
       const earthFacingParsed = parsed.filter((item) => item.longitude !== null && Math.abs(item.longitude) <= 90);
-      const latestObservedTime = earthFacingParsed.reduce((max, item) => (
-        item.observedTime !== null && item.observedTime > max ? item.observedTime : max
-      ), 0);
-      const currentWindowMs = 18 * 60 * 60 * 1000;
-      const currentEarthFacingParsed = latestObservedTime > 0
-        ? earthFacingParsed.filter((item) => item.observedTime !== null && item.observedTime >= (latestObservedTime - currentWindowMs))
-        : earthFacingParsed;
-      const filteredCurrent = currentEarthFacingParsed.length > 0 ? currentEarthFacingParsed : earthFacingParsed;
+      const activeEarthFacing = earthFacingParsed.filter((item) => {
+        const hasSpots = (item.spotCount ?? 0) > 0;
+        const hasArea = (item.area ?? 0) > 0;
+        const hasMag = Boolean(item.magneticClass && item.magneticClass !== 'N/A');
+        return hasSpots || hasArea || hasMag;
+      });
+      const filteredCurrent = activeEarthFacing.length > 0 ? activeEarthFacing : earthFacingParsed;
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         const bucket = acc.get(item.region) ?? [];
@@ -829,7 +835,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const sorted = [...entries].sort((a, b) => {
           const ta = a.observedTime ?? 0;
           const tb = b.observedTime ?? 0;
-          return tb - ta;
+          if (tb !== ta) return tb - ta;
+          return ((b as any)._sourceIndex ?? 0) - ((a as any)._sourceIndex ?? 0);
         });
         const latest = sorted[0];
         const previousWithArea = sorted.slice(1).find((entry) => entry.area !== null);
@@ -841,8 +848,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           else if (delta <= -15) trend = 'Shrinking';
         }
 
+        const { _sourceIndex, ...cleanLatest } = latest as any;
         return {
-          ...latest,
+          ...cleanLatest,
           trend,
         };
       }).sort((a, b) => {
