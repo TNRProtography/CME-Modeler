@@ -45,7 +45,7 @@ const SUVI_195_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/prim
 const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
 const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
-const SUVI_FRAME_INTERVAL_MINUTES = 10;
+const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
@@ -335,7 +335,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
   }, []);
 
-  const buildSuviFrameUrls = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+  const buildSuviFrameCandidateGroups = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
     const channel = mode === 'SUVI_131' ? '131' : mode === 'SUVI_195' ? '195' : '304';
     const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
     const now = Date.now();
@@ -363,9 +363,39 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const endMs = startMs + intervalMs;
       const startToken = toToken(startMs);
       const endToken = toToken(endMs);
-      return `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`;
+      return [
+        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`,
+        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-2.png`,
+        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-1.png`,
+        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-1.png`,
+      ];
     });
   }, []);
+
+  const probeImageUrl = useCallback((url: string, timeoutMs: number = 1400) => (
+    new Promise<string | null>((resolve) => {
+      const img = new Image();
+      const timer = window.setTimeout(() => resolve(null), timeoutMs);
+      img.onload = () => {
+        window.clearTimeout(timer);
+        resolve(url);
+      };
+      img.onerror = () => {
+        window.clearTimeout(timer);
+        resolve(null);
+      };
+      img.src = url;
+    })
+  ), []);
+
+  const buildSuviFrameUrls = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+    const groups = buildSuviFrameCandidateGroups(mode);
+    const resolved = await Promise.all(groups.map(async (group) => {
+      const attempts = await Promise.all(group.map((url) => probeImageUrl(url)));
+      return attempts.find(Boolean) ?? null;
+    }));
+    return resolved.filter((url): url is string => Boolean(url));
+  }, [buildSuviFrameCandidateGroups, probeImageUrl]);
 
   const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304', latestUrl: string) => {
     const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
@@ -384,7 +414,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       console.warn('SUVI directory listing unavailable, falling back to generated SUVI filenames.', error);
     }
 
-    const generated = buildSuviFrameUrls(mode);
+    const generated = await buildSuviFrameUrls(mode);
     if (generated.length > 1) return generated;
 
     return buildSixHourAnimationUrls(latestUrl, SUVI_FRAME_INTERVAL_MINUTES);
@@ -410,9 +440,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const sourceUrl = solarAnimationSources[mode];
     if (!sourceUrl) return;
 
-    const quickFallbackUrls = mode === 'SUVI_131' || mode === 'SUVI_195' || mode === 'SUVI_304'
-      ? buildSuviFrameUrls(mode)
-      : buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
+    const quickFallbackUrls = buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
     setViewerMedia({
       type: 'animation',
       urls: quickFallbackUrls,
