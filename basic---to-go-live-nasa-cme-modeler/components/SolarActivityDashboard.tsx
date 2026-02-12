@@ -813,6 +813,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const cFlareCandidate = item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c;
           const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
           const xFlareCandidate = item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x;
+          const stationCandidate = item?.station ?? item?.observatory ?? item?.source ?? item?.source_station ?? item?.instrument ?? item?.station_id;
 
           if (!region) return null;
 
@@ -828,12 +829,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
             mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
             xFlareProbability: Number.isFinite(Number(xFlareCandidate)) ? Number(xFlareCandidate) : null,
+            _station: stationCandidate ? String(stationCandidate).trim().toUpperCase() : null,
             _sourceIndex: idx,
           };
         })
         .filter(isValidSunspotRegion);
 
-      const filteredCurrent = parsed;
+      const latestStation = parsed.reduce<{ station: string | null; observedTime: number; sourceIndex: number }>((best, item) => {
+        const station = ((item as any)?._station ?? null) as string | null;
+        if (!station) return best;
+        const observedTime = item.observedTime ?? 0;
+        const sourceIndex = ((item as any)?._sourceIndex ?? 0) as number;
+        if (observedTime > best.observedTime) return { station, observedTime, sourceIndex };
+        if (observedTime === best.observedTime && sourceIndex > best.sourceIndex) return { station, observedTime, sourceIndex };
+        return best;
+      }, { station: null, observedTime: -1, sourceIndex: -1 }).station;
+
+      const filteredCurrent = latestStation
+        ? parsed.filter((item) => ((item as any)?._station ?? null) === latestStation)
+        : parsed;
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
