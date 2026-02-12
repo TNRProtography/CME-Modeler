@@ -838,12 +838,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         .filter(isValidSunspotRegion);
 
       const earthFacingParsed = parsed.filter((item) => isCurrentlyEarthFacingRegion(item.longitude));
-      const filteredCurrent = earthFacingParsed.filter((item) => {
-        const hasSpots = (item.spotCount ?? 0) > 0;
-        const hasArea = (item.area ?? 0) > 0;
-        const hasMag = Boolean(item.magneticClass && item.magneticClass !== 'N/A');
-        return hasSpots || hasArea || hasMag;
-      });
+      const filteredCurrent = earthFacingParsed.filter((item) => (item.area ?? 0) > 0);
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
