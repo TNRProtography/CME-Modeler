@@ -42,6 +42,10 @@ interface ActiveSunspotRegion {
   xFlareProbability: number | null;
 }
 
+const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
+  return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
+};
+
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'intensity' | 'magnetogram';
 
@@ -782,8 +786,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
           const coords = parseLatitudeLongitude(location);
 
-          const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat;
-          const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon;
+          const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
+          const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
           const latFromNumeric = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
           const lonFromNumeric = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
 
@@ -813,7 +817,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             _sourceIndex: idx,
           };
         })
-        .filter((region: any): region is Omit<ActiveSunspotRegion, 'trend'> => Boolean(region));
+        .filter(isValidSunspotRegion);
 
       const earthFacingParsed = parsed.filter((item) => item.longitude !== null && Math.abs(item.longitude) <= 90);
       const activeEarthFacing = earthFacingParsed.filter((item) => {
@@ -825,6 +829,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const filteredCurrent = activeEarthFacing.length > 0 ? activeEarthFacing : earthFacingParsed;
 
       const grouped = filteredCurrent.reduce((acc, item) => {
+        if (!isValidSunspotRegion(item)) return acc;
         const bucket = acc.get(item.region) ?? [];
         bucket.push(item);
         acc.set(item.region, bucket);
@@ -832,6 +837,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       }, new Map<string, Omit<ActiveSunspotRegion, 'trend'>[]>());
 
       const dedupedLatest: ActiveSunspotRegion[] = Array.from(grouped.values()).map((entries) => {
+        if (!entries.length) return null;
+
         const sorted = [...entries].sort((a, b) => {
           const ta = a.observedTime ?? 0;
           const tb = b.observedTime ?? 0;
@@ -839,6 +846,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           return ((b as any)._sourceIndex ?? 0) - ((a as any)._sourceIndex ?? 0);
         });
         const latest = sorted[0];
+        if (!isValidSunspotRegion(latest)) return null;
         const previousWithArea = sorted.slice(1).find((entry) => entry.area !== null);
 
         let trend: ActiveSunspotRegion['trend'] = 'Stable';
@@ -853,7 +861,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           ...cleanLatest,
           trend,
         };
-      }).sort((a, b) => {
+      }).filter((region): region is ActiveSunspotRegion => Boolean(region)).sort((a, b) => {
         const areaA = a.area ?? -1;
         const areaB = b.area ?? -1;
         return areaB - areaA;
@@ -1021,8 +1029,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const displayedSunspotRegions = useMemo(() => {
     const visible = new Set(plottedSunspots.map((spot) => spot.region));
     return activeSunspotRegions
-      .filter((region) => visible.has(region.region))
-      .sort((a, b) => (b.area ?? -1) - (a.area ?? -1));
+      .filter((region): region is ActiveSunspotRegion => Boolean(region && visible.has(region.region)))
+      .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
   }, [activeSunspotRegions, plottedSunspots]);
 
   const selectedSunspotPreview = useMemo(() => {
