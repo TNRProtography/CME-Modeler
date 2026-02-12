@@ -366,23 +366,58 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             return currentY;
         };
 
-        const bgGradient = ctx.createLinearGradient(0, 0, width, height);
-        bgGradient.addColorStop(0, '#050816');
-        bgGradient.addColorStop(0.45, '#112248');
-        bgGradient.addColorStop(1, '#031124');
-        ctx.fillStyle = bgGradient;
+        const forecastBackdrop = new Image();
+        const backdropLoaded = await new Promise<boolean>((resolve) => {
+            forecastBackdrop.onload = () => resolve(true);
+            forecastBackdrop.onerror = () => resolve(false);
+            forecastBackdrop.src = '/background-aurora.jpg';
+        });
+
+        if (backdropLoaded && forecastBackdrop.width > 0 && forecastBackdrop.height > 0) {
+            const imageAspect = forecastBackdrop.width / forecastBackdrop.height;
+            const canvasAspect = width / height;
+            let drawWidth = width;
+            let drawHeight = height;
+            let drawX = 0;
+            let drawY = 0;
+
+            if (imageAspect > canvasAspect) {
+                drawHeight = height;
+                drawWidth = height * imageAspect;
+                drawX = (width - drawWidth) / 2;
+            } else {
+                drawWidth = width;
+                drawHeight = width / imageAspect;
+                drawY = (height - drawHeight) / 2;
+            }
+
+            ctx.drawImage(forecastBackdrop, drawX, drawY, drawWidth, drawHeight);
+        } else {
+            const bgGradient = ctx.createLinearGradient(0, 0, width, height);
+            bgGradient.addColorStop(0, '#050816');
+            bgGradient.addColorStop(0.45, '#112248');
+            bgGradient.addColorStop(1, '#031124');
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        const topShade = ctx.createLinearGradient(0, 0, 0, height);
+        topShade.addColorStop(0, 'rgba(3, 11, 25, 0.72)');
+        topShade.addColorStop(0.35, 'rgba(5, 16, 36, 0.64)');
+        topShade.addColorStop(1, 'rgba(1, 8, 20, 0.82)');
+        ctx.fillStyle = topShade;
         ctx.fillRect(0, 0, width, height);
 
         const glow = ctx.createRadialGradient(width * 0.78, height * 0.18, 80, width * 0.78, height * 0.18, 760);
-        glow.addColorStop(0, 'rgba(70, 220, 255, 0.35)');
+        glow.addColorStop(0, 'rgba(76, 224, 255, 0.24)');
         glow.addColorStop(1, 'rgba(70, 220, 255, 0)');
         ctx.fillStyle = glow;
         ctx.fillRect(0, 0, width, height);
 
         const card = (x: number, y: number, w: number, h: number) => {
             ctx.save();
-            ctx.fillStyle = 'rgba(10, 18, 35, 0.78)';
-            ctx.strokeStyle = 'rgba(120, 208, 255, 0.25)';
+            ctx.fillStyle = 'rgba(6, 14, 30, 0.82)';
+            ctx.strokeStyle = 'rgba(147, 224, 255, 0.36)';
             ctx.lineWidth = 2;
             const r = 24;
             ctx.beginPath();
@@ -475,9 +510,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             const row = Math.floor(index / 2);
             const x = colX[col];
             const y = 1120 + row * 145;
-            ctx.fillStyle = 'rgba(92, 180, 255, 0.15)';
+            ctx.fillStyle = 'rgba(66, 154, 220, 0.22)';
             ctx.fillRect(x, y, 670, 110);
-            ctx.strokeStyle = 'rgba(135, 211, 255, 0.22)';
+            ctx.strokeStyle = 'rgba(170, 228, 255, 0.30)';
             ctx.strokeRect(x, y, 670, 110);
 
             ctx.fillStyle = '#8fd5ff';
