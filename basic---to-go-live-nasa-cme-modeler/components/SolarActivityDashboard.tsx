@@ -46,6 +46,20 @@ const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 't
   return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
 };
 
+const normalizeSolarLongitude = (value: number | null): number | null => {
+  if (value === null || !Number.isFinite(value)) return null;
+  let normalized = value;
+  if (Math.abs(normalized) > 360) return null;
+  if (normalized > 180) normalized -= 360;
+  if (normalized < -180) normalized += 360;
+  return Math.max(-180, Math.min(180, normalized));
+};
+
+const isCurrentlyEarthFacingRegion = (longitude: number | null): boolean => {
+  const normalized = normalizeSolarLongitude(longitude);
+  return normalized !== null && normalized >= -90 && normalized <= 90;
+};
+
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'intensity' | 'magnetogram';
 
@@ -790,8 +804,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
           const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
           const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
-          const latFromNumeric = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
-          const lonFromNumeric = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
+          const latFromNumericRaw = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
+          const lonFromNumericRaw = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
+          const latFromNumeric = latFromNumericRaw !== null && Math.abs(latFromNumericRaw) <= 90 ? latFromNumericRaw : null;
+          const lonFromNumeric = normalizeSolarLongitude(lonFromNumericRaw);
 
           const areaCandidate = item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
           const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
@@ -809,9 +825,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             location: location || 'N/A',
             area: Number.isFinite(Number(areaCandidate)) ? Number(areaCandidate) : null,
             spotCount: Number.isFinite(Number(spotCountCandidate)) ? Number(spotCountCandidate) : null,
-            magneticClass: magneticClassCandidate ? String(magneticClassCandidate) : null,
+            magneticClass: magneticClassCandidate ? String(magneticClassCandidate).trim().toUpperCase() : null,
             latitude: coords.latitude ?? latFromNumeric,
-            longitude: coords.longitude ?? lonFromNumeric,
+            longitude: normalizeSolarLongitude(coords.longitude ?? lonFromNumeric),
             observedTime: Number.isFinite(observedTime) ? observedTime : null,
             cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
             mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
@@ -821,14 +837,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         })
         .filter(isValidSunspotRegion);
 
-      const earthFacingParsed = parsed.filter((item) => item.longitude !== null && Math.abs(item.longitude) <= 90);
-      const activeEarthFacing = earthFacingParsed.filter((item) => {
+      const earthFacingParsed = parsed.filter((item) => isCurrentlyEarthFacingRegion(item.longitude));
+      const filteredCurrent = earthFacingParsed.filter((item) => {
         const hasSpots = (item.spotCount ?? 0) > 0;
         const hasArea = (item.area ?? 0) > 0;
         const hasMag = Boolean(item.magneticClass && item.magneticClass !== 'N/A');
         return hasSpots || hasArea || hasMag;
       });
-      const filteredCurrent = activeEarthFacing.length > 0 ? activeEarthFacing : earthFacingParsed;
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
