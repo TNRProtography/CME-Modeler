@@ -35,6 +35,8 @@ interface ActiveSunspotRegion {
   spotCount: number | null;
   latitude: number | null;
   longitude: number | null;
+  observedTime: number | null;
+  trend: 'Growing' | 'Shrinking' | 'Stable';
 }
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
@@ -185,11 +187,10 @@ const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy:
 
 const getSunspotClassColor = (magneticClass?: string | null): string => {
   const c = String(magneticClass || '').toUpperCase();
-  if (c.includes('DELTA')) return '#f43f5e';
-  if (c.includes('GAMMA')) return '#f97316';
+  if (c.includes('DELTA') || c.includes('GAMMA')) return '#ef4444';
   if (c.includes('BETA')) return '#facc15';
   if (c.includes('ALPHA')) return '#22c55e';
-  return '#38bdf8';
+  return '#facc15';
 };
 
 // Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
@@ -770,7 +771,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             : [];
 
       const parsed = regionArray
-        .map((item: any): ActiveSunspotRegion | null => {
+        .map((item: any) => {
           const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
           const region = rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
           const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
@@ -779,6 +780,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const areaCandidate = item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
           const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
           const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification;
+          const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date;
+          const observedTime = observedTimeCandidate ? Date.parse(observedTimeCandidate) : NaN;
 
           if (!region || !location) return null;
 
@@ -790,16 +793,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             magneticClass: magneticClassCandidate ? String(magneticClassCandidate) : null,
             latitude: coords.latitude,
             longitude: coords.longitude,
+            observedTime: Number.isFinite(observedTime) ? observedTime : null,
           };
         })
-        .filter((region: ActiveSunspotRegion | null): region is ActiveSunspotRegion => Boolean(region))
-        .sort((a, b) => {
-          const areaA = a.area ?? -1;
-          const areaB = b.area ?? -1;
-          return areaB - areaA;
-        });
+        .filter((region: any): region is Omit<ActiveSunspotRegion, 'trend'> => Boolean(region));
 
-      setActiveSunspotRegions(parsed);
+      const grouped = parsed.reduce((acc, item) => {
+        const bucket = acc.get(item.region) ?? [];
+        bucket.push(item);
+        acc.set(item.region, bucket);
+        return acc;
+      }, new Map<string, Omit<ActiveSunspotRegion, 'trend'>[]>());
+
+      const dedupedLatest: ActiveSunspotRegion[] = Array.from(grouped.values()).map((entries) => {
+        const sorted = [...entries].sort((a, b) => {
+          const ta = a.observedTime ?? 0;
+          const tb = b.observedTime ?? 0;
+          return tb - ta;
+        });
+        const latest = sorted[0];
+        const previousWithArea = sorted.slice(1).find((entry) => entry.area !== null);
+
+        let trend: ActiveSunspotRegion['trend'] = 'Stable';
+        if (latest.area !== null && previousWithArea?.area !== null) {
+          const delta = latest.area - previousWithArea.area;
+          if (delta >= 15) trend = 'Growing';
+          else if (delta <= -15) trend = 'Shrinking';
+        }
+
+        return {
+          ...latest,
+          trend,
+        };
+      }).sort((a, b) => {
+        const areaA = a.area ?? -1;
+        const areaB = b.area ?? -1;
+        return areaB - areaA;
+      });
+
+      setActiveSunspotRegions(dedupedLatest);
       setLoadingSunspotRegions(null);
       setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
     } catch (error) {
@@ -1254,7 +1286,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-grow min-h-0">
-                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 min-h-[420px] flex items-center justify-center">
+                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 h-[420px] flex items-center justify-center">
                   {sunspotOverviewImage.loading ? (
                     <LoadingSpinner message={sunspotOverviewImage.loading} />
                   ) : sunspotOverviewImage.url && sunspotOverviewImage.url !== '/error.png' ? (
@@ -1287,7 +1319,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   )}
                 </div>
 
-                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 overflow-y-auto styled-scrollbar min-h-[420px]">
+                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 overflow-y-auto styled-scrollbar h-[420px]">
                   {loadingSunspotRegions ? (
                     <LoadingSpinner message={loadingSunspotRegions} />
                   ) : activeSunspotRegions.length > 0 ? (
@@ -1308,7 +1340,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                             <span>Mag class: <strong style={{ color: getSunspotClassColor(region.magneticClass) }}>{region.magneticClass || 'N/A'}</strong></span>
                             <span>Area: <strong className="text-neutral-100">{region.area ?? 'N/A'} msh</strong></span>
                             <span>Spots: <strong className="text-neutral-100">{region.spotCount ?? 'N/A'}</strong></span>
-                            <span>Coords: <strong className="text-neutral-100">{region.latitude ?? 'N/A'}°, {region.longitude ?? 'N/A'}°</strong></span>
+                            <span>Status: <strong className={region.trend === 'Growing' ? 'text-emerald-400' : region.trend === 'Shrinking' ? 'text-rose-400' : 'text-yellow-300'}>{region.trend}</strong></span>
+                            <span className="col-span-2">Coords: <strong className="text-neutral-100">{region.latitude ?? 'N/A'}°, {region.longitude ?? 'N/A'}°</strong></span>
                           </div>
                         </li>
                       ))}
@@ -1461,6 +1494,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <p><strong>Magnetic Class:</strong> <span style={{ color: getSunspotClassColor(selectedSunspotRegion.magneticClass) }}>{selectedSunspotRegion.magneticClass || 'N/A'}</span></p>
               <p><strong>Area:</strong> {selectedSunspotRegion.area ?? 'N/A'} millionths of solar hemisphere</p>
               <p><strong>Spot Count:</strong> {selectedSunspotRegion.spotCount ?? 'N/A'}</p>
+              <p><strong>Status:</strong> <span className={selectedSunspotRegion.trend === 'Growing' ? 'text-emerald-400' : selectedSunspotRegion.trend === 'Shrinking' ? 'text-rose-400' : 'text-yellow-300'}>{selectedSunspotRegion.trend}</span></p>
               <p><strong>Overview Mode:</strong> {sunspotImageryMode === 'intensity' ? 'HMI Intensity' : 'HMI Magnetogram'}</p>
 
               <div className="rounded-md border border-neutral-700 bg-neutral-900/60 p-2 min-h-[280px] flex items-center justify-center">
