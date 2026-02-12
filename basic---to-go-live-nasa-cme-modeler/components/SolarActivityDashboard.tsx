@@ -350,6 +350,43 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
   }, []);
 
+  const buildSuviFrameCandidates = useCallback((mode: 'SUVI_131' | 'SUVI_304') => {
+    const channel = mode === 'SUVI_131' ? '131' : '304';
+    const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : SUVI_304_INDEX_URL;
+    const now = Date.now();
+    const sixHoursAgo = now - (6 * 60 * 60 * 1000);
+    const intervalMs = SUVI_FRAME_INTERVAL_MINUTES * 60 * 1000;
+    const roundedStart = Math.floor(sixHoursAgo / intervalMs) * intervalMs;
+    const frameTimes: number[] = [];
+
+    for (let t = roundedStart; t <= now; t += intervalMs) {
+      frameTimes.push(t);
+    }
+
+    const toToken = (timestamp: number) => {
+      const d = new Date(timestamp);
+      const y = d.getUTCFullYear();
+      const mo = `${d.getUTCMonth() + 1}`.padStart(2, '0');
+      const day = `${d.getUTCDate()}`.padStart(2, '0');
+      const h = `${d.getUTCHours()}`.padStart(2, '0');
+      const m = `${d.getUTCMinutes()}`.padStart(2, '0');
+      const s = `${d.getUTCSeconds()}`.padStart(2, '0');
+      return `${y}${mo}${day}T${h}${m}${s}Z`;
+    };
+
+    return frameTimes.map((startMs) => {
+      const endMs = startMs + intervalMs;
+      const startToken = toToken(startMs);
+      const endToken = toToken(endMs);
+      return [
+        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`,
+        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-2.png`,
+        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-1.png`,
+        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-1.png`,
+      ];
+    });
+  }, []);
+
   const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_304', latestUrl: string) => {
     const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : SUVI_304_INDEX_URL;
 
