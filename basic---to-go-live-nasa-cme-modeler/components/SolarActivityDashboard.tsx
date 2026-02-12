@@ -77,13 +77,6 @@ const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 
-const ALLOWED_SDO_PROXY_HOSTS = ['localhost', '127.0.0.1', 'spottheaurora.co.nz', 'www.spottheaurora.co.nz'];
-
-const canUseSdoProxyOnCurrentHost = (): boolean => {
-  if (typeof window === 'undefined') return true;
-  const host = window.location.hostname.toLowerCase();
-  return ALLOWED_SDO_PROXY_HOSTS.includes(host);
-};
 
 // --- HELPERS ---
 const getCssVar = (name: string): string => {
@@ -647,11 +640,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
     }
 
-    if (!isVideo && url.startsWith(SDO_PROXY_BASE_URL) && !canUseSdoProxyOnCurrentHost()) {
-      setState({ url: '/placeholder.png', loading: 'SDO imagery unavailable on this preview domain.' });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
-      return;
-    }
 
     const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
 
@@ -850,36 +838,39 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         return acc;
       }, new Map<string, Omit<ActiveSunspotRegion, 'trend'>[]>());
 
-      const dedupedLatest: ActiveSunspotRegion[] = Array.from(grouped.values()).map((entries) => {
-        if (!entries.length) return null;
+      const dedupedLatest: ActiveSunspotRegion[] = Array.from(grouped.values())
+        .map((entries) => {
+          if (!Array.isArray(entries) || entries.length === 0) return null;
 
-        const sorted = [...entries].sort((a, b) => {
-          const ta = a.observedTime ?? 0;
-          const tb = b.observedTime ?? 0;
-          if (tb !== ta) return tb - ta;
-          return ((b as any)._sourceIndex ?? 0) - ((a as any)._sourceIndex ?? 0);
-        });
-        const latest = sorted[0];
-        if (!isValidSunspotRegion(latest)) return null;
-        const previousWithArea = sorted.slice(1).find((entry) => entry.area !== null);
+          const sorted = [...entries]
+            .filter(isValidSunspotRegion)
+            .sort((a, b) => {
+              const ta = a?.observedTime ?? 0;
+              const tb = b?.observedTime ?? 0;
+              if (tb !== ta) return tb - ta;
+              return ((b as any)?._sourceIndex ?? 0) - ((a as any)?._sourceIndex ?? 0);
+            });
 
-        let trend: ActiveSunspotRegion['trend'] = 'Stable';
-        if (latest.area !== null && previousWithArea?.area !== null) {
-          const delta = latest.area - previousWithArea.area;
-          if (delta >= 15) trend = 'Growing';
-          else if (delta <= -15) trend = 'Shrinking';
-        }
+          const latest = sorted[0];
+          if (!isValidSunspotRegion(latest)) return null;
 
-        const { _sourceIndex, ...cleanLatest } = latest as any;
-        return {
-          ...cleanLatest,
-          trend,
-        };
-      }).filter((region): region is ActiveSunspotRegion => Boolean(region)).sort((a, b) => {
-        const areaA = a.area ?? -1;
-        const areaB = b.area ?? -1;
-        return areaB - areaA;
-      });
+          const previousWithArea = sorted.slice(1).find((entry) => (entry?.area ?? null) !== null);
+
+          let trend: ActiveSunspotRegion['trend'] = 'Stable';
+          if ((latest?.area ?? null) !== null && (previousWithArea?.area ?? null) !== null) {
+            const delta = (latest.area as number) - (previousWithArea!.area as number);
+            if (delta >= 15) trend = 'Growing';
+            else if (delta <= -15) trend = 'Shrinking';
+          }
+
+          const { _sourceIndex, ...cleanLatest } = latest as any;
+          return {
+            ...cleanLatest,
+            trend,
+          };
+        })
+        .filter((region): region is ActiveSunspotRegion => Boolean(region && typeof region === 'object'))
+        .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 
       setActiveSunspotRegions(dedupedLatest);
       setLoadingSunspotRegions(null);
