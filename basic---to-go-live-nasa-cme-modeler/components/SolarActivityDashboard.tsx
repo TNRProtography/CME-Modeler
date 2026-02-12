@@ -55,10 +55,6 @@ const normalizeSolarLongitude = (value: number | null): number | null => {
   return Math.max(-180, Math.min(180, normalized));
 };
 
-const isCurrentlyEarthFacingRegion = (longitude: number | null): boolean => {
-  const normalized = normalizeSolarLongitude(longitude);
-  return normalized !== null && normalized >= -90 && normalized <= 90;
-};
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'intensity' | 'magnetogram';
@@ -837,8 +833,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         })
         .filter(isValidSunspotRegion);
 
-      const earthFacingParsed = parsed.filter((item) => isCurrentlyEarthFacingRegion(item.longitude));
-      const filteredCurrent = earthFacingParsed.filter((item) => (item.area ?? 0) > 0);
+      const filteredCurrent = parsed;
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
