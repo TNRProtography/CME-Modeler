@@ -26,6 +26,8 @@ interface SolarActivitySummary {
   flareCounts: { x: number; m: number; potentialCMEs: number; };
 }
 
+type SolarImageryMode = 'SUVI_131' | 'SUVI_304' | 'SDO_AIA193_2048' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
+
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
@@ -266,7 +268,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [sdoAia193_2048, setSdoAia193_2048] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
-  const [activeSunImage, setActiveSunImage] = useState<string>('SUVI_131');
+  const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   // Chart state
   const [allXrayData, setAllXrayData] = useState<any[]>([]);
@@ -293,6 +295,49 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
   const initialLoadNotifiedRef = useRef(false);
+
+  const buildSixHourAnimationUrls = useCallback((baseUrl: string, stepMinutes: number = 10) => {
+    const now = Date.now();
+    const sixHoursAgo = now - (6 * 60 * 60 * 1000);
+    const urls: string[] = [];
+
+    for (let ts = sixHoursAgo; ts <= now; ts += stepMinutes * 60 * 1000) {
+      const iso = new Date(ts).toISOString();
+      const u = new URL(baseUrl);
+      u.searchParams.set('time', iso);
+      u.searchParams.set('date', iso);
+      u.searchParams.set('ts', String(ts));
+      u.searchParams.set('_', String(ts));
+      urls.push(u.toString());
+    }
+
+    return urls;
+  }, []);
+
+  const solarAnimationSources = useMemo<Record<SolarImageryMode, string>>(() => ({
+    SUVI_131: SUVI_131_URL,
+    SUVI_304: SUVI_304_URL,
+    SDO_AIA193_2048: `${SDO_AIA_193_2048_URL}?hours=6&format=gif`,
+    SDO_HMIBC_1024: `${SDO_HMI_BC_1024_URL}?hours=6&format=gif`,
+    SDO_HMIIF_1024: `${SDO_HMI_IF_1024_URL}?hours=6&format=gif`,
+  }), []);
+
+  const imageryModeLabels: Record<SolarImageryMode, string> = {
+    SUVI_131: 'SUVI 131Å',
+    SUVI_304: 'SUVI 304Å',
+    SDO_AIA193_2048: 'SDO AIA 193Å',
+    SDO_HMIBC_1024: 'SDO HMI Continuum',
+    SDO_HMIIF_1024: 'SDO HMI Intensitygram',
+  };
+
+  const openSolarImageryAnimation = useCallback((mode: SolarImageryMode) => {
+    const sourceUrl = solarAnimationSources[mode];
+    if (!sourceUrl) return;
+    setViewerMedia({
+      type: 'animation',
+      urls: buildSixHourAnimationUrls(sourceUrl),
+    });
+  }, [buildSixHourAnimationUrls, setViewerMedia, solarAnimationSources]);
 
   // Tooltips
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
@@ -771,6 +816,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setActiveSunImage('SDO_AIA193_2048')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_AIA193_2048' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO AIA 193Å</button>
                 <button onClick={() => setActiveSunImage('SDO_HMIBC_1024')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO HMI Cont.</button>
                 <button onClick={() => setActiveSunImage('SDO_HMIIF_1024')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO HMI Int.</button>
+              </div>
+
+              <div className="flex justify-center mb-3">
+                <button
+                  onClick={() => openSolarImageryAnimation(activeSunImage)}
+                  className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-semibold transition-colors"
+                  title="Play a generated 6-hour animation for the selected solar imagery mode"
+                >
+                  Animate last 6 hours ({imageryModeLabels[activeSunImage]})
+                </button>
               </div>
 
               <div className="flex-grow flex justify-center items-center relative w-full h-full min-h-[500px]">
