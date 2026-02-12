@@ -314,22 +314,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return urls;
   }, []);
 
-  const probeImageUrl = useCallback((url: string, timeoutMs: number = 1200) => (
-    new Promise<string | null>((resolve) => {
-      const img = new Image();
-      const timer = window.setTimeout(() => resolve(null), timeoutMs);
-      img.onload = () => {
-        window.clearTimeout(timer);
-        resolve(url);
-      };
-      img.onerror = () => {
-        window.clearTimeout(timer);
-        resolve(null);
-      };
-      img.src = url;
-    })
-  ), []);
-
   const extractSuviFramesFromIndex = useCallback((html: string, indexUrl: string) => {
     const regex = /href="([^"]+\.png)"/gi;
     const now = Date.now();
@@ -351,7 +335,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
   }, []);
 
-  const buildSuviFrameCandidates = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+  const buildSuviFrameUrls = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
     const channel = mode === 'SUVI_131' ? '131' : mode === 'SUVI_195' ? '195' : '304';
     const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
     const now = Date.now();
@@ -379,12 +363,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const endMs = startMs + intervalMs;
       const startToken = toToken(startMs);
       const endToken = toToken(endMs);
-      return [
-        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`,
-        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-2.png`,
-        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-1.png`,
-        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-1.png`,
-      ];
+      return `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`;
     });
   }, []);
 
@@ -402,21 +381,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         if (parsed.length > 1) return parsed;
       }
     } catch (error) {
-      console.warn('SUVI directory listing unavailable, falling back to candidate probing.', error);
+      console.warn('SUVI directory listing unavailable, falling back to generated SUVI filenames.', error);
     }
 
-    const candidateGroups = buildSuviFrameCandidates(mode);
-    const resolved = (await Promise.all(
-      candidateGroups.map(async (group) => {
-        const attempts = await Promise.all(group.map((url) => probeImageUrl(url)));
-        return attempts.find(Boolean) ?? null;
-      })
-    )).filter((url): url is string => Boolean(url));
-
-    if (resolved.length > 1) return resolved;
+    const generated = buildSuviFrameUrls(mode);
+    if (generated.length > 1) return generated;
 
     return buildSixHourAnimationUrls(latestUrl, SUVI_FRAME_INTERVAL_MINUTES);
-  }, [buildSixHourAnimationUrls, buildSuviFrameCandidates, extractSuviFramesFromIndex, probeImageUrl]);
+  }, [buildSixHourAnimationUrls, buildSuviFrameUrls, extractSuviFramesFromIndex]);
 
   const solarAnimationSources = useMemo<Record<SolarImageryMode, string>>(() => ({
     SUVI_131: SUVI_131_URL,
@@ -438,7 +410,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const sourceUrl = solarAnimationSources[mode];
     if (!sourceUrl) return;
 
-    const quickFallbackUrls = buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
+    const quickFallbackUrls = mode === 'SUVI_131' || mode === 'SUVI_195' || mode === 'SUVI_304'
+      ? buildSuviFrameUrls(mode)
+      : buildSixHourAnimationUrls(sourceUrl, SUVI_FRAME_INTERVAL_MINUTES);
     setViewerMedia({
       type: 'animation',
       urls: quickFallbackUrls,
@@ -453,7 +427,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         });
       }
     }
-  }, [buildSixHourAnimationUrls, fetchSuviAnimationFrames, setViewerMedia, solarAnimationSources]);
+  }, [buildSixHourAnimationUrls, buildSuviFrameUrls, fetchSuviAnimationFrames, setViewerMedia, solarAnimationSources]);
 
   // Tooltips
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
