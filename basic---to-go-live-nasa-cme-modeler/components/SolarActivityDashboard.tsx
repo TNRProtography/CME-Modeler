@@ -1476,15 +1476,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-grow min-h-0">
-                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 h-[420px] flex items-center justify-center">
+                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 flex items-start justify-center min-h-[420px]">
                   {sunspotOverviewImage.loading ? (
                     <LoadingSpinner message={sunspotOverviewImage.loading} />
                   ) : sunspotOverviewImage.url && sunspotOverviewImage.url !== '/error.png' ? (
-                    <div className="relative w-full h-full max-h-full" style={{ aspectRatio: '1 / 1' }}>
+                    <div className="relative w-[420px] max-w-full aspect-square overflow-hidden rounded">
                       <img
                         src={sunspotOverviewImage.url}
                         alt={`Sunspot overview ${sunspotImageryMode}`}
-                        className="absolute inset-0 w-full h-full object-contain rounded"
+                        className="absolute inset-0 w-full h-full object-cover rounded"
                       />
 
                       {plottedSunspots.map((region) => (
@@ -1510,7 +1510,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   )}
                 </div>
 
-                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 overflow-y-auto styled-scrollbar h-[420px]">
+                <div className="rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3 overflow-y-auto styled-scrollbar min-h-[420px] max-h-[520px]">
                   {loadingSunspotRegions ? (
                     <LoadingSpinner message={loadingSunspotRegions} />
                   ) : displayedSunspotRegions.length > 0 ? (
