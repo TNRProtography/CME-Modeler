@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/GlobalBanner.tsx ---
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { SubstormActivity, InterplanetaryShock } from '../types';
 
 // Define the shape of the banner object returned by your worker
@@ -87,10 +87,21 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   const lastProcessedBannerUniqueIdRef = useRef<string | undefined>(undefined);
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
 
+  const shouldFetchRemoteBanner = useMemo(() => {
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
+  }, []);
+
   useEffect(() => {
+    if (!shouldFetchRemoteBanner) {
+      setGlobalBanner(null);
+      setIsGlobalBannerDismissed(false);
+      return;
+    }
+
     const fetchGlobalBanner = async () => {
       try {
-        const response = await fetch(BANNER_API_URL, { headers: { 'Cache-Control': 'no-cache' } });
+        const response = await fetch(`${BANNER_API_URL}?_=${Date.now()}`);
         if (!response.ok) {
           setGlobalBanner(null);
           setIsGlobalBannerDismissed(false);
@@ -112,7 +123,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     fetchGlobalBanner();
     const interval = setInterval(fetchGlobalBanner, 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [shouldFetchRemoteBanner]);
 
   useEffect(() => {
     setActiveAlertIndex(0);

@@ -1,6 +1,6 @@
 // --- START OF FILE App.tsx ---
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
@@ -33,8 +33,6 @@ import SettingsModal from './components/SettingsModal';
 import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
-import SolarSurferGame from './components/SolarSurferGame';
-import ImpactGraphModal from './components/ImpactGraphModal'; // --- NEW: Import the graph modal ---
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
@@ -92,6 +90,9 @@ type InitialLoadTaskKey = 'forecastData' | 'solarData' | 'modelerCmeData';
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.4';
+
+const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
+const ImpactGraphModal = lazy(() => import('./components/ImpactGraphModal'));
 
 
 const App: React.FC = () => {
@@ -1149,14 +1150,16 @@ const App: React.FC = () => {
               setViewerMedia={setViewerMedia}
           />
 
-          {/* --- NEW: Render the ImpactGraphModal --- */}
-          <ImpactGraphModal
-            isOpen={isImpactGraphOpen}
-            onClose={() => setIsImpactGraphOpen(false)}
-            data={impactGraphData}
-          />
+          <Suspense fallback={null}>
+            {/* --- NEW: Render the ImpactGraphModal --- */}
+            <ImpactGraphModal
+              isOpen={isImpactGraphOpen}
+              onClose={() => setIsImpactGraphOpen(false)}
+              data={impactGraphData}
+            />
 
-          {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
+            {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
+          </Suspense>
 
           {showIabBanner && (
             <div

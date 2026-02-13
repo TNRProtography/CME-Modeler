@@ -35,12 +35,15 @@ root.render(
 );
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(registration => {
-      console.log('SW registered with scope: ', registration.scope);
-    }).catch(registrationError => {
-      console.log('SW registration failed: ', registrationError);
+  const host = window.location.hostname;
+  const shouldRegisterServiceWorker = host === 'localhost' || host === '127.0.0.1' || host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
+
+  if (shouldRegisterServiceWorker) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+        // Silently ignore SW registration issues on unsupported browser states.
+      });
     });
-  });
+  }
 }
 // --- END OF FILE index.tsx ---
