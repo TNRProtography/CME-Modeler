@@ -63,6 +63,23 @@ const parseNoaaUtcTimestamp = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const getNzOffsetMs = (timestamp: number): number => {
+  const parts = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: 'Pacific/Auckland',
+    timeZoneName: 'shortOffset',
+    hour: '2-digit',
+  }).formatToParts(new Date(timestamp));
+  const label = parts.find((part) => part.type === 'timeZoneName')?.value || 'UTC+0';
+  const match = label.match(/(?:GMT|UTC)([+-])(\d{1,2})(?::(\d{2}))?/i);
+  if (!match) return 0;
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2]) || 0;
+  const minutes = Number(match[3] || '0');
+  return sign * ((hours * 60 + minutes) * 60 * 1000);
+};
+
+const toNzEpochMs = (timestamp: number): number => timestamp + getNzOffsetMs(timestamp);
+
 const normalizeSolarLongitude = (value: number | null): number | null => {
   if (value === null || !Number.isFinite(value)) return null;
   let normalized = value;
@@ -105,7 +122,7 @@ const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 const HMI_IMAGE_SIZE = 1024;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const NZ_UTC_OFFSET_MS = 13 * 60 * 60 * 1000;
+const ACTIVE_REGION_MIN_AREA_MSH = 0;
 
 
 // --- HELPERS ---
@@ -887,13 +904,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         })
         .filter(isValidSunspotRegion);
 
-      const nzNow = Date.now() + NZ_UTC_OFFSET_MS;
+      const nzNow = toNzEpochMs(Date.now());
       const cutoff = nzNow - ACTIVE_REGION_MAX_AGE_MS;
       const filteredCurrent = parsed.filter((region) => {
         const observed = region.observedTime ?? null;
         if (observed === null) return false;
-        const observedNz = observed + NZ_UTC_OFFSET_MS;
+        const observedNz = toNzEpochMs(observed);
         if (observedNz < cutoff || observedNz > nzNow + 60 * 60 * 1000) return false;
+        if ((region.area ?? 0) < ACTIVE_REGION_MIN_AREA_MSH) return false;
         return isEarthVisibleCoordinate(region.latitude, region.longitude);
       });
 
