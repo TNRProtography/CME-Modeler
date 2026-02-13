@@ -51,6 +51,18 @@ const isEarthVisibleCoordinate = (latitude: number | null, longitude: number | n
   return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 90;
 };
 
+const parseNoaaUtcTimestamp = (value: unknown): number | null => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // NOAA feeds are UTC; if the timestamp lacks an explicit zone, force UTC.
+  const hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const normalized = hasExplicitZone ? raw : `${raw}Z`;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const normalizeSolarLongitude = (value: number | null): number | null => {
   if (value === null || !Number.isFinite(value)) return null;
   let normalized = value;
@@ -93,6 +105,7 @@ const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 const HMI_IMAGE_SIZE = 1024;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const NZ_UTC_OFFSET_MS = 13 * 60 * 60 * 1000;
 
 
 // --- HELPERS ---
@@ -850,7 +863,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
           const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification;
           const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date;
-          const observedTime = observedTimeCandidate ? Date.parse(observedTimeCandidate) : NaN;
+          const observedTime = parseNoaaUtcTimestamp(observedTimeCandidate);
           const cFlareCandidate = item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c;
           const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
           const xFlareCandidate = item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x;
@@ -865,7 +878,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             magneticClass: magneticClassCandidate ? String(magneticClassCandidate).trim().toUpperCase() : null,
             latitude: coords.latitude ?? latFromNumeric,
             longitude: normalizeSolarLongitude(coords.longitude ?? lonFromNumeric),
-            observedTime: Number.isFinite(observedTime) ? observedTime : null,
+            observedTime,
             cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
             mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
             xFlareProbability: Number.isFinite(Number(xFlareCandidate)) ? Number(xFlareCandidate) : null,
@@ -874,12 +887,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         })
         .filter(isValidSunspotRegion);
 
-      const now = Date.now();
-      const cutoff = now - ACTIVE_REGION_MAX_AGE_MS;
+      const nzNow = Date.now() + NZ_UTC_OFFSET_MS;
+      const cutoff = nzNow - ACTIVE_REGION_MAX_AGE_MS;
       const filteredCurrent = parsed.filter((region) => {
         const observed = region.observedTime ?? null;
         if (observed === null) return false;
-        if (observed < cutoff || observed > now + 60 * 60 * 1000) return false;
+        const observedNz = observed + NZ_UTC_OFFSET_MS;
+        if (observedNz < cutoff || observedNz > nzNow + 60 * 60 * 1000) return false;
         return isEarthVisibleCoordinate(region.latitude, region.longitude);
       });
 
