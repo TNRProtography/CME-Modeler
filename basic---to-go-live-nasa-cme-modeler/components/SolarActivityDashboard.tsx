@@ -793,27 +793,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
       const parsed = regionArray
         .map((item: any, idx: number) => {
-          const rawRegion = item?.region ?? item?.Region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
+          const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
           const region = rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
-          const location = (item?.location ?? item?.Location ?? item?.report_location ?? item?.Report_Location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
+          const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
           const coords = parseLatitudeLongitude(location);
 
-          const latCandidate = item?.latitude ?? item?.Latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
-          const lonCandidate = item?.longitude ?? item?.Longitude ?? item?.report_longitude ?? item?.Report_Longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
+          const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
+          const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
           const latFromNumericRaw = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
           const lonFromNumericRaw = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
           const latFromNumeric = latFromNumericRaw !== null && Math.abs(latFromNumericRaw) <= 90 ? latFromNumericRaw : null;
           const lonFromNumeric = normalizeSolarLongitude(lonFromNumericRaw);
 
-          const areaCandidate = item?.area ?? item?.Area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
-          const spotCountCandidate = item?.spot_count ?? item?.Numspot ?? item?.spotCount ?? item?.number_spots;
-          const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.Magclass ?? item?.Spotclass ?? item?.zurich_classification;
-          const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.Time_Tag ?? item?.Obsdate ?? item?.date;
+          const areaCandidate = item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
+          const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
+          const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification;
+          const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date;
           const observedTime = observedTimeCandidate ? Date.parse(observedTimeCandidate) : NaN;
           const cFlareCandidate = item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c;
           const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
           const xFlareCandidate = item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x;
-          const stationCandidate = item?.station ?? item?.Station ?? item?.observatory ?? item?.Observatory ?? item?.source ?? item?.source_station ?? item?.instrument ?? item?.station_id;
 
           if (!region) return null;
 
@@ -829,30 +828,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
             mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
             xFlareProbability: Number.isFinite(Number(xFlareCandidate)) ? Number(xFlareCandidate) : null,
-            _station: stationCandidate ? String(stationCandidate).trim().toUpperCase() : null,
-            _observatory: (item?.observatory ?? item?.Observatory ?? stationCandidate ?? null) ? String(item?.observatory ?? item?.Observatory ?? stationCandidate).trim().toUpperCase() : null,
             _sourceIndex: idx,
           };
         })
         .filter(isValidSunspotRegion);
 
-      const mostRecentObservedTime = parsed.reduce((best, item) => Math.max(best, item.observedTime ?? -1), -1);
-      const rollingReferenceTime = mostRecentObservedTime > 0 ? mostRecentObservedTime : Date.now();
-      const last24HoursRows = parsed.filter((item) => (item.observedTime ?? -1) >= (rollingReferenceTime - (24 * 60 * 60 * 1000)));
-
-      const latestObservatory = last24HoursRows.reduce<{ observatory: string | null; observedTime: number; sourceIndex: number }>((best, item) => {
-        const observatory = ((item as any)?._observatory ?? null) as string | null;
-        if (!observatory) return best;
-        const observedTime = item.observedTime ?? 0;
-        const sourceIndex = ((item as any)?._sourceIndex ?? 0) as number;
-        if (observedTime > best.observedTime) return { observatory, observedTime, sourceIndex };
-        if (observedTime === best.observedTime && sourceIndex > best.sourceIndex) return { observatory, observedTime, sourceIndex };
-        return best;
-      }, { observatory: null, observedTime: -1, sourceIndex: -1 }).observatory;
-
-      const filteredCurrent = latestObservatory
-        ? last24HoursRows.filter((item) => ((item as any)?._observatory ?? null) === latestObservatory)
-        : last24HoursRows;
+      const filteredCurrent = parsed;
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
@@ -1521,7 +1502,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-neutral-400 italic text-sm">No active sunspot regions found for the last 24 hours from the latest observatory.</p>
+                    <p className="text-neutral-400 italic text-sm">No active sunspot region data returned by the NOAA feed right now.</p>
                   )}
                 </div>
               </div>
