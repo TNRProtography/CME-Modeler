@@ -46,6 +46,11 @@ const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 't
   return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
 };
 
+const isEarthVisibleCoordinate = (latitude: number | null, longitude: number | null): boolean => {
+  if (latitude === null || longitude === null) return false;
+  return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 90;
+};
+
 const normalizeSolarLongitude = (value: number | null): number | null => {
   if (value === null || !Number.isFinite(value)) return null;
   let normalized = value;
@@ -87,6 +92,7 @@ const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 const HMI_IMAGE_SIZE = 1024;
+const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 
 // --- HELPERS ---
@@ -868,7 +874,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         })
         .filter(isValidSunspotRegion);
 
-      const filteredCurrent = parsed;
+      const now = Date.now();
+      const cutoff = now - ACTIVE_REGION_MAX_AGE_MS;
+      const filteredCurrent = parsed.filter((region) => {
+        const observed = region.observedTime ?? null;
+        if (observed === null) return false;
+        if (observed < cutoff || observed > now + 60 * 60 * 1000) return false;
+        return isEarthVisibleCoordinate(region.latitude, region.longitude);
+      });
 
       const grouped = filteredCurrent.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
@@ -909,12 +922,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           return {
             ...cleanLatest,
             location: cleanLatest.location || fallbackWithLocation?.location || 'N/A',
-            latitude: cleanLatest.latitude ?? fallbackWithCoords?.latitude ?? null,
-            longitude: cleanLatest.longitude ?? fallbackWithCoords?.longitude ?? null,
+            latitude: (() => {
+              const lat = cleanLatest.latitude ?? fallbackWithCoords?.latitude ?? null;
+              return lat !== null && Math.abs(lat) <= 90 ? lat : null;
+            })(),
+            longitude: (() => {
+              const lon = cleanLatest.longitude ?? fallbackWithCoords?.longitude ?? null;
+              return lon !== null && Math.abs(lon) <= 90 ? lon : null;
+            })(),
             trend,
           };
         })
         .filter((region): region is ActiveSunspotRegion => Boolean(region && typeof region === 'object'))
+        .filter((region) => isEarthVisibleCoordinate(region.latitude, region.longitude))
         .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 
       setActiveSunspotRegions(dedupedLatest);
