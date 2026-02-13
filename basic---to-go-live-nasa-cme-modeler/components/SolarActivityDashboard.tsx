@@ -197,16 +197,18 @@ const parseLatitudeLongitude = (location?: string | null): { latitude: number | 
 
 const clampToRange = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
-const constrainToSquareImage = (
+const constrainToSolarDiskBounds = (
   x: number,
   y: number,
-  geometry: { width: number; height: number }
-): { x: number; y: number; size: number } => {
-  const size = Math.max(1, Math.min(geometry.width, geometry.height));
+  geometry: { cx: number; cy: number; radius: number }
+): { x: number; y: number } => {
+  const minX = geometry.cx - geometry.radius;
+  const maxX = geometry.cx + geometry.radius;
+  const minY = geometry.cy - geometry.radius;
+  const maxY = geometry.cy + geometry.radius;
   return {
-    x: clampToRange(x, 0, size),
-    y: clampToRange(y, 0, size),
-    size,
+    x: clampToRange(x, minX, maxX),
+    y: clampToRange(y, minY, maxY),
   };
 };
 
@@ -1057,22 +1059,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [sunspotOverviewImage.url]);
 
   const plottedSunspots = useMemo(() => {
-    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 492 };
+    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 470 };
 
     return activeSunspotRegions
       .filter((region) => region.latitude !== null && region.longitude !== null)
       .map((region) => {
         const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, geometry.cx, geometry.cy, geometry.radius);
-        const constrained = constrainToSquareImage(pos.x, pos.y, geometry);
+        const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
         return {
           ...region,
-          xPercent: (constrained.x / constrained.size) * 100,
-          yPercent: (constrained.y / constrained.size) * 100,
+          xPercent: (constrained.x / geometry.width) * 100,
+          yPercent: (constrained.y / geometry.height) * 100,
           onDisk: pos.onDisk,
           labelStyle: getSunspotLabelStyle(region),
         };
       })
-      .filter((region) => Number.isFinite(region.xPercent) && Number.isFinite(region.yPercent));
+      .filter((region) => region.onDisk && Number.isFinite(region.xPercent) && Number.isFinite(region.yPercent));
   }, [activeSunspotRegions, overviewGeometry]);
 
   const displayedSunspotRegions = useMemo(() => {
@@ -1086,7 +1088,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return null;
     }
 
-    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 492 };
+    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 470 };
     const pos = solarCoordsToPixel(
       selectedSunspotRegion.latitude,
       selectedSunspotRegion.longitude,
@@ -1094,11 +1096,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       geometry.cy,
       geometry.radius
     );
-    const constrained = constrainToSquareImage(pos.x, pos.y, geometry);
+    const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
 
     return {
-      xPercent: (constrained.x / constrained.size) * 100,
-      yPercent: (constrained.y / constrained.size) * 100,
+      xPercent: (constrained.x / geometry.width) * 100,
+      yPercent: (constrained.y / geometry.height) * 100,
       xPx: constrained.x,
       yPx: constrained.y,
     };
