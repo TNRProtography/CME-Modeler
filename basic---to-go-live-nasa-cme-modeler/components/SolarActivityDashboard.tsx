@@ -86,6 +86,7 @@ const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
+const HMI_IMAGE_SIZE = 1024;
 
 
 // --- HELPERS ---
@@ -1059,7 +1060,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [sunspotOverviewImage.url]);
 
   const plottedSunspots = useMemo(() => {
-    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 470 };
+    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
 
     return activeSunspotRegions
       .filter((region) => region.latitude !== null && region.longitude !== null)
@@ -1068,8 +1069,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
         return {
           ...region,
-          xPercent: (constrained.x / geometry.width) * 100,
-          yPercent: (constrained.y / geometry.height) * 100,
+          xPercent: (constrained.x / HMI_IMAGE_SIZE) * 100,
+          yPercent: (constrained.y / HMI_IMAGE_SIZE) * 100,
           onDisk: pos.onDisk,
           labelStyle: getSunspotLabelStyle(region),
         };
@@ -1088,7 +1089,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return null;
     }
 
-    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 470 };
+    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
     const pos = solarCoordsToPixel(
       selectedSunspotRegion.latitude,
       selectedSunspotRegion.longitude,
@@ -1099,8 +1100,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
 
     return {
-      xPercent: (constrained.x / geometry.width) * 100,
-      yPercent: (constrained.y / geometry.height) * 100,
+      xPercent: (constrained.x / HMI_IMAGE_SIZE) * 100,
+      yPercent: (constrained.y / HMI_IMAGE_SIZE) * 100,
       xPx: constrained.x,
       yPx: constrained.y,
     };
@@ -1479,7 +1480,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   {sunspotOverviewImage.loading ? (
                     <LoadingSpinner message={sunspotOverviewImage.loading} />
                   ) : sunspotOverviewImage.url && sunspotOverviewImage.url !== '/error.png' ? (
-                    <div className="relative w-full h-full max-h-full" style={{ aspectRatio: overviewGeometry ? `${overviewGeometry.width}/${overviewGeometry.height}` : undefined }}>
+                    <div className="relative w-full h-full max-h-full" style={{ aspectRatio: '1 / 1' }}>
                       <img
                         src={sunspotOverviewImage.url}
                         alt={`Sunspot overview ${sunspotImageryMode}`}
