@@ -1471,7 +1471,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <button
                           key={`${region.region}-${region.location}`}
                           onClick={() => setSelectedSunspotRegion(region)}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-extrabold border border-black/60 shadow"
+                          className="absolute z-20 -translate-x-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-extrabold border border-black/60 shadow hover:scale-105 transition-transform"
                           style={{
                             left: `${region.xPercent}%`,
                             top: `${region.yPercent}%`,
@@ -1496,12 +1496,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   ) : displayedSunspotRegions.length > 0 ? (
                     <ul className="space-y-2">
                       {displayedSunspotRegions.map((region) => (
-                        <li key={`${region.region}-${region.location}`} className="rounded-md bg-neutral-800/80 border border-neutral-700 px-3 py-2 text-sm">
+                        <li key={`${region.region}-${region.location}`} onClick={() => setSelectedSunspotRegion(region)} className="rounded-md bg-neutral-800/80 border border-neutral-700 px-3 py-2 text-sm cursor-pointer hover:border-sky-500/70">
                           <div className="flex items-center justify-between">
                             <button
                               className="font-semibold hover:underline"
                               style={{ color: getSunspotClassColor(region.magneticClass) }}
-                              onClick={() => setSelectedSunspotRegion(region)}
                             >
                               AR {region.region}
                             </button>
@@ -1522,6 +1521,43 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     <p className="text-neutral-400 italic text-sm">No active sunspot region data returned by the NOAA feed right now.</p>
                   )}
                 </div>
+              </div>
+
+
+              <div className="mt-4 rounded-lg border border-neutral-700/70 bg-neutral-900/50 p-3">
+                <h3 className="text-sm font-semibold text-neutral-100 mb-2">Selected Region Close-up</h3>
+                {selectedSunspotRegion ? (
+                  <div className="grid grid-cols-1 md:grid-cols-[320px,1fr] gap-4 items-start">
+                    <div className="rounded-md border border-neutral-700 bg-neutral-900/60 p-2 min-h-[280px] flex items-center justify-center">
+                      {loadingSunspotCloseup ? (
+                        <LoadingSpinner message="Generating sunspot close-up..." />
+                      ) : selectedSunspotCloseupUrl ? (
+                        <img src={selectedSunspotCloseupUrl} alt={`Close-up AR ${selectedSunspotRegion.region}`} className="max-w-full max-h-[300px] rounded" />
+                      ) : selectedSunspotPreview && sunspotOverviewImage.url && sunspotOverviewImage.url !== '/placeholder.png' && sunspotOverviewImage.url !== '/error.png' ? (
+                        <div
+                          className="w-[280px] h-[280px] rounded border border-neutral-700"
+                          style={{
+                            backgroundImage: `url(${sunspotOverviewImage.url})`,
+                            backgroundSize: '450% 450%',
+                            backgroundPosition: `${selectedSunspotPreview.xPercent}% ${selectedSunspotPreview.yPercent}%`,
+                            backgroundRepeat: 'no-repeat',
+                          }}
+                        />
+                      ) : (
+                        <p className="text-sm text-neutral-400 italic">Close-up unavailable for this region.</p>
+                      )}
+                    </div>
+                    <div className="text-sm text-neutral-200 space-y-1">
+                      <p><strong>Region:</strong> AR {selectedSunspotRegion.region}</p>
+                      <p><strong>Location:</strong> {selectedSunspotRegion.location}</p>
+                      <p><strong>Magnetic Class:</strong> <span style={{ color: getSunspotClassColor(selectedSunspotRegion.magneticClass) }}>{selectedSunspotRegion.magneticClass || 'N/A'}</span></p>
+                      <p><strong>Status:</strong> <span className={selectedSunspotRegion.trend === 'Growing' ? 'text-emerald-400' : selectedSunspotRegion.trend === 'Shrinking' ? 'text-rose-400' : 'text-yellow-300'}>{selectedSunspotRegion.trend}</span></p>
+                      <p><strong>Flare Probability:</strong> C {selectedSunspotRegion.cFlareProbability ?? 'N/A'}% · M {selectedSunspotRegion.mFlareProbability ?? 'N/A'}% · X {selectedSunspotRegion.xFlareProbability ?? 'N/A'}%</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-400 italic">Click a region in the list or on the HMI image labels to show its close-up.</p>
+                )}
               </div>
 
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastSunspotRegionsUpdate || 'N/A'}</div>
@@ -1649,46 +1685,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   View in CME Visualization
                 </button>
               )}
-            </div>
-          )
-        }
-      />
-
-      <InfoModal
-        isOpen={!!selectedSunspotRegion}
-        onClose={() => setSelectedSunspotRegion(null)}
-        title={selectedSunspotRegion ? `Sunspot Details: AR ${selectedSunspotRegion.region}` : 'Sunspot Details'}
-        content={
-          selectedSunspotRegion && (
-            <div className="space-y-3">
-              <p><strong>Region:</strong> AR {selectedSunspotRegion.region}</p>
-              <p><strong>Location:</strong> {selectedSunspotRegion.location}</p>
-              <p><strong>Magnetic Class:</strong> <span style={{ color: getSunspotClassColor(selectedSunspotRegion.magneticClass) }}>{selectedSunspotRegion.magneticClass || 'N/A'}</span></p>
-              <p><strong>Area:</strong> {selectedSunspotRegion.area ?? 'N/A'} millionths of solar hemisphere</p>
-              <p><strong>Spot Count:</strong> {selectedSunspotRegion.spotCount ?? 'N/A'}</p>
-              <p><strong>Status:</strong> <span className={selectedSunspotRegion.trend === 'Growing' ? 'text-emerald-400' : selectedSunspotRegion.trend === 'Shrinking' ? 'text-rose-400' : 'text-yellow-300'}>{selectedSunspotRegion.trend}</span></p>
-              <p><strong>Flare Probability:</strong> C {selectedSunspotRegion.cFlareProbability ?? 'N/A'}% · M {selectedSunspotRegion.mFlareProbability ?? 'N/A'}% · X {selectedSunspotRegion.xFlareProbability ?? 'N/A'}%</p>
-              <p><strong>Overview Mode:</strong> {sunspotImageryMode === 'intensity' ? 'HMI Intensity' : 'HMI Magnetogram'}</p>
-
-              <div className="rounded-md border border-neutral-700 bg-neutral-900/60 p-2 min-h-[280px] flex items-center justify-center">
-                {loadingSunspotCloseup ? (
-                  <LoadingSpinner message="Generating sunspot close-up..." />
-                ) : selectedSunspotCloseupUrl ? (
-                  <img src={selectedSunspotCloseupUrl} alt={`Close-up AR ${selectedSunspotRegion.region}`} className="max-w-full max-h-[320px] rounded" />
-                ) : selectedSunspotPreview && sunspotOverviewImage.url && sunspotOverviewImage.url !== '/placeholder.png' && sunspotOverviewImage.url !== '/error.png' ? (
-                  <div
-                    className="w-[280px] h-[280px] rounded border border-neutral-700"
-                    style={{
-                      backgroundImage: `url(${sunspotOverviewImage.url})`,
-                      backgroundSize: '450% 450%',
-                      backgroundPosition: `${selectedSunspotPreview.xPercent}% ${selectedSunspotPreview.yPercent}%`,
-                      backgroundRepeat: 'no-repeat',
-                    }}
-                  />
-                ) : (
-                  <p className="text-sm text-neutral-400 italic">Close-up unavailable for this region.</p>
-                )}
-              </div>
             </div>
           )
         }
