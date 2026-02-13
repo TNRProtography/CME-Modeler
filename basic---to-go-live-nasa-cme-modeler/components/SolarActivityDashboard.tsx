@@ -207,9 +207,26 @@ const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy:
 const getSunspotClassColor = (magneticClass?: string | null): string => {
   const c = String(magneticClass || '').toUpperCase();
   if (c.includes('DELTA') || c.includes('GAMMA')) return '#ef4444';
-  if (c.includes('BETA')) return '#facc15';
+  if (c.includes('BETA')) return '#f97316';
   if (c.includes('ALPHA')) return '#22c55e';
   return '#facc15';
+};
+
+const getSunspotLabelStyle = (region: ActiveSunspotRegion): { background: string; text: string } => {
+  const magneticTone = getSunspotClassColor(region.magneticClass);
+  const maxFlareOdds = Math.max(region.cFlareProbability ?? 0, region.mFlareProbability ?? 0, region.xFlareProbability ?? 0);
+
+  if (maxFlareOdds >= 50 || (region.magneticClass || '').toUpperCase().includes('DELTA')) {
+    return { background: '#ef4444', text: '#ffffff' };
+  }
+  if (maxFlareOdds >= 25 || (region.magneticClass || '').toUpperCase().includes('GAMMA')) {
+    return { background: '#f97316', text: '#111827' };
+  }
+  if (maxFlareOdds >= 10) {
+    return { background: '#facc15', text: '#111827' };
+  }
+
+  return { background: magneticTone, text: magneticTone === '#22c55e' ? '#052e16' : '#111827' };
 };
 
 // Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
@@ -1037,6 +1054,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           yPercent: (pos.y / overviewGeometry.height) * 100,
           onDisk: pos.onDisk,
           classColor: getSunspotClassColor(region.magneticClass),
+          labelStyle: getSunspotLabelStyle(region),
         };
       })
       .filter((region) => region.onDisk);
@@ -1355,8 +1373,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setActiveSunImage('SUVI_131')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 131Å</button>
                 <button onClick={() => setActiveSunImage('SUVI_304')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 304Å</button>
                 <button onClick={() => setActiveSunImage('SUVI_195')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_195' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 195Å</button>
-                <button onClick={() => setActiveSunImage('SDO_HMIBC_1024')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIBC_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO HMI Cont.</button>
-                <button onClick={() => setActiveSunImage('SDO_HMIIF_1024')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SDO_HMIIF_1024' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SDO HMI Int.</button>
               </div>
 
               <div className="flex justify-center mb-3">
@@ -1455,16 +1471,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <button
                           key={`${region.region}-${region.location}`}
                           onClick={() => setSelectedSunspotRegion(region)}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[11px] font-bold border border-black/40 shadow"
+                          className="absolute -translate-x-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-extrabold border border-black/60 shadow"
                           style={{
                             left: `${region.xPercent}%`,
                             top: `${region.yPercent}%`,
-                            color: '#0b0f14',
-                            backgroundColor: region.classColor,
+                            color: region.labelStyle.text,
+                            backgroundColor: region.labelStyle.background,
+                            textShadow: '0 1px 2px rgba(0,0,0,0.55)',
                           }}
-                          title={`AR ${region.region} (${region.location})`}
+                          title={`AR ${region.region} (${region.location}) · ${region.magneticClass || 'Unknown class'}`}
                         >
-                          {region.region}
+                          AR {region.region}
                         </button>
                       ))}
                     </div>
