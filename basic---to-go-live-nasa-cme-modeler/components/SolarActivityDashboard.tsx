@@ -1042,22 +1042,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [sunspotOverviewImage.url]);
 
   const plottedSunspots = useMemo(() => {
-    if (!overviewGeometry) return [];
+    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 492 };
 
     return activeSunspotRegions
       .filter((region) => region.latitude !== null && region.longitude !== null)
       .map((region) => {
-        const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, overviewGeometry.cx, overviewGeometry.cy, overviewGeometry.radius);
+        const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, geometry.cx, geometry.cy, geometry.radius);
         return {
           ...region,
-          xPercent: (pos.x / overviewGeometry.width) * 100,
-          yPercent: (pos.y / overviewGeometry.height) * 100,
+          xPercent: Math.max(0, Math.min(100, (pos.x / geometry.width) * 100)),
+          yPercent: Math.max(0, Math.min(100, (pos.y / geometry.height) * 100)),
           onDisk: pos.onDisk,
-          classColor: getSunspotClassColor(region.magneticClass),
           labelStyle: getSunspotLabelStyle(region),
         };
       })
-      .filter((region) => region.onDisk);
+      .filter((region) => Number.isFinite(region.xPercent) && Number.isFinite(region.yPercent));
   }, [activeSunspotRegions, overviewGeometry]);
 
   const displayedSunspotRegions = useMemo(() => {
@@ -1067,21 +1066,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeSunspotRegions]);
 
   const selectedSunspotPreview = useMemo(() => {
-    if (!selectedSunspotRegion || !overviewGeometry || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
+    if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
       return null;
     }
 
+    const geometry = overviewGeometry ?? { width: 1024, height: 1024, cx: 512, cy: 512, radius: 492 };
     const pos = solarCoordsToPixel(
       selectedSunspotRegion.latitude,
       selectedSunspotRegion.longitude,
-      overviewGeometry.cx,
-      overviewGeometry.cy,
-      overviewGeometry.radius
+      geometry.cx,
+      geometry.cy,
+      geometry.radius
     );
 
     return {
-      xPercent: (pos.x / overviewGeometry.width) * 100,
-      yPercent: (pos.y / overviewGeometry.height) * 100,
+      xPercent: Math.max(0, Math.min(100, (pos.x / geometry.width) * 100)),
+      yPercent: Math.max(0, Math.min(100, (pos.y / geometry.height) * 100)),
       xPx: pos.x,
       yPx: pos.y,
     };
