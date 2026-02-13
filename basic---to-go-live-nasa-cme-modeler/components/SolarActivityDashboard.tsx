@@ -105,6 +105,7 @@ const NOAA_PROTON_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
 ];
 const NOAA_ACTIVE_REGIONS_URLS = [
+  'https://services.swpc.noaa.gov/json/sunspot_report.json',
   'https://services.swpc.noaa.gov/json/solar_regions.json',
   'https://services.swpc.noaa.gov/products/solar-region-summary.json',
 ];
