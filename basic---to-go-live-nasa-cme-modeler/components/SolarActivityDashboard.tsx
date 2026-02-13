@@ -890,23 +890,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
       const parsed = regionArray
         .map((item: any, idx: number) => {
-          const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
+          const rawRegion = item?.region ?? item?.Region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.NOAA ?? item?.ar ?? item?.activeRegionNum;
           const region = rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
-          const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
+          const location = (item?.location ?? item?.Location ?? item?.report_location ?? item?.Report_Location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
           const coords = parseLatitudeLongitude(location);
 
-          const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
-          const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
+          const latCandidate = item?.latitude ?? item?.Latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
+          const lonCandidate = item?.longitude ?? item?.Longitude ?? item?.report_longitude ?? item?.Report_Longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
           const latFromNumericRaw = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
           const lonFromNumericRaw = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
           const latFromNumeric = latFromNumericRaw !== null && Math.abs(latFromNumericRaw) <= 90 ? latFromNumericRaw : null;
           const lonFromNumeric = normalizeSolarLongitude(lonFromNumericRaw);
 
-          const areaCandidate = item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
-          const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
-          const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification;
-          const spotClassCandidate = item?.spotclass ?? item?.spot_class ?? item?.zurich ?? item?.zurich_class;
-          const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date;
+          const areaCandidate = item?.area ?? item?.Area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
+          const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.Numspot ?? item?.number_spots;
+          const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.Magclass ?? item?.zurich_classification;
+          const spotClassCandidate = item?.spotclass ?? item?.Spotclass ?? item?.spot_class ?? item?.zurich ?? item?.Zurich ?? item?.zurich_class;
+          const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.Obsdate ?? item?.date;
           const observedTime = parseNoaaUtcTimestamp(observedTimeCandidate);
           const cFlareCandidate = item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c;
           const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
