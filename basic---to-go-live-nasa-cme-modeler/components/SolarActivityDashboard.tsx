@@ -195,6 +195,21 @@ const parseLatitudeLongitude = (location?: string | null): { latitude: number | 
   return { latitude, longitude };
 };
 
+const clampToRange = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+const constrainToSquareImage = (
+  x: number,
+  y: number,
+  geometry: { width: number; height: number }
+): { x: number; y: number; size: number } => {
+  const size = Math.max(1, Math.min(geometry.width, geometry.height));
+  return {
+    x: clampToRange(x, 0, size),
+    y: clampToRange(y, 0, size),
+    size,
+  };
+};
+
 const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy: number, radius: number) => {
   const latRad = latitude * (Math.PI / 180);
   const lonRad = longitude * (Math.PI / 180);
@@ -1048,10 +1063,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       .filter((region) => region.latitude !== null && region.longitude !== null)
       .map((region) => {
         const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, geometry.cx, geometry.cy, geometry.radius);
+        const constrained = constrainToSquareImage(pos.x, pos.y, geometry);
         return {
           ...region,
-          xPercent: Math.max(0, Math.min(100, (pos.x / geometry.width) * 100)),
-          yPercent: Math.max(0, Math.min(100, (pos.y / geometry.height) * 100)),
+          xPercent: (constrained.x / constrained.size) * 100,
+          yPercent: (constrained.y / constrained.size) * 100,
           onDisk: pos.onDisk,
           labelStyle: getSunspotLabelStyle(region),
         };
@@ -1078,12 +1094,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       geometry.cy,
       geometry.radius
     );
+    const constrained = constrainToSquareImage(pos.x, pos.y, geometry);
 
     return {
-      xPercent: Math.max(0, Math.min(100, (pos.x / geometry.width) * 100)),
-      yPercent: Math.max(0, Math.min(100, (pos.y / geometry.height) * 100)),
-      xPx: pos.x,
-      yPx: pos.y,
+      xPercent: (constrained.x / constrained.size) * 100,
+      yPercent: (constrained.y / constrained.size) * 100,
+      xPx: constrained.x,
+      yPx: constrained.y,
     };
   }, [selectedSunspotRegion, overviewGeometry]);
 
