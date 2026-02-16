@@ -395,6 +395,43 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
         };
     }, [bt, by, bz]);
 
+
+    const imfForecast = useMemo(() => {
+        const latestTime = Number.isFinite(latestPoint?.time) ? latestPoint.time as number : Date.now();
+        const validUntil = latestTime + 30 * 60 * 1000;
+        const validWindow = `${new Date(latestTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}–${new Date(validUntil).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
+
+        if (bz == null || by == null || bt == null) {
+            return {
+                size: 'Unknown',
+                likelihood: 'Low confidence (insufficient live IMF vectors)',
+                validWindow
+            };
+        }
+
+        if (bz <= -10 && bt >= 15) {
+            return {
+                size: 'Large potential',
+                likelihood: 'High confidence for stronger coupling if dark and clear',
+                validWindow
+            };
+        }
+
+        if ((bz <= -5 && bt >= 9) || (bz > 0 && by < -4 && bt >= 9)) {
+            return {
+                size: 'Moderate potential',
+                likelihood: 'Moderate confidence; negative By can help even with northward Bz',
+                validWindow
+            };
+        }
+
+        return {
+            size: 'Small potential',
+            likelihood: 'Lower confidence right now; monitor for a southward turn',
+            validWindow
+        };
+    }, [bt, by, bz, latestPoint]);
+
     return (
         <div className="h-full flex flex-col justify-center">
             <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-4">
@@ -421,6 +458,17 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
                             Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
                         </p>
                     </div>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-sky-400/30 bg-sky-500/10 p-3">
+                    <div className="text-[11px] uppercase tracking-wide text-sky-200 font-semibold">IMF clock forecast</div>
+                    <div className="text-sm text-white mt-1">
+                        Potential size: <strong>{imfForecast.size}</strong>
+                    </div>
+                    <div className="text-xs text-neutral-200 mt-1">
+                        Valid time window (approx): <strong>{imfForecast.validWindow} NZT</strong>
+                    </div>
+                    <div className="text-xs text-neutral-300 mt-1">{imfForecast.likelihood}</div>
                 </div>
             </div>
         </div>

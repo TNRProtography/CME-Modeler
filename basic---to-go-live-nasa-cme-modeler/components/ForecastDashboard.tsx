@@ -600,9 +600,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ),
         'imf-clock': buildStatTooltip(
             'IMF Clock',
-            'A compass-style angle showing IMF direction in the By/Bz plane.',
+            'A compass-style angle showing IMF direction in the By/Bz plane, with a short-term (~30 min) potential-size outlook.',
             'When the clock pointer sits in the southward half, aurora chances usually improve. If Bz is positive but By turns negative, conditions can still be somewhat supportive.',
-            'Clock angle condenses By/Bz orientation into a single phase metric; energy coupling still depends on |B|, flow speed, and the persistence of that orientation.'
+            'Clock angle condenses By/Bz orientation into a single phase metric; the size outlook is a short-horizon heuristic and should be re-checked as new data arrives.'
         ),
         'moon': buildStatTooltip(
             'Moon Illumination & Arc',
