@@ -600,9 +600,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ),
         'imf-clock': buildStatTooltip(
             'IMF Clock',
-            'A compass-style angle showing IMF direction in the By/Bz plane, with an Earth-centered core graphic (Sun-left, Earth-center, tail-right) and a short-term (~30 min) potential-size outlook.',
-            'When the clock pointer sits in the southward half, aurora chances usually improve. If Bz is positive but By turns negative, conditions can still be somewhat supportive.',
-            'Clock angle condenses By/Bz orientation into a single phase metric; the size outlook is a short-horizon heuristic and should be re-checked as new data arrives.'
+            'A compass-style angle showing IMF direction in the By/Bz plane, with an Earth-centered core graphic and a storm-phase estimate (shock/core/wake/ambient/HSS).',
+            'When the clock pointer sits in the southward half, aurora chances usually improve. The phase graphic helps show whether we are in a storm front, core, wake, calm, or fast-stream regime.',
+            'Phase labels are heuristic, inferred from density/speed/temperature/IMF structure. Use as operational context, not a deterministic CME in-situ classifier.'
         ),
         'moon': buildStatTooltip(
             'Moon Illumination & Arc',
@@ -784,7 +784,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
                                 lastDataReceived={imfLastReceived}
                             >
-                                <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} />
+                                <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} speedData={allSpeedData} densityData={allDensityData} tempData={allTempData} />
                             </ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
                             <ForecastChartPanel

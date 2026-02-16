@@ -330,7 +330,20 @@ export const SolarWindTemperatureChart: React.FC<{ data: any[] }> = ({ data }) =
     );
 };
 
-export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> = ({ magneticData, clockData }) => {
+export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; speedData: any[]; densityData: any[]; tempData: any[] }> = ({ magneticData, clockData, speedData, densityData, tempData }) => {
+    const latestSeriesValue = (series: any[]) => {
+        if (!series?.length) return null;
+        const v = series[series.length - 1]?.y;
+        return Number.isFinite(v) ? v : null;
+    };
+
+    const movingAvg = (series: any[], points = 8) => {
+        if (!series?.length) return null;
+        const tail = series.slice(-points).map((p) => p?.y).filter((v) => Number.isFinite(v));
+        if (!tail.length) return null;
+        return tail.reduce((a, b) => a + b, 0) / tail.length;
+    };
+
     const latestPoint = magneticData.length ? magneticData[magneticData.length - 1] : null;
     const latestClock = useMemo(() => {
         if (clockData.length) return clockData[clockData.length - 1]?.y ?? null;
@@ -358,6 +371,12 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
     const bt = Number.isFinite(latestPoint?.bt) ? latestPoint.bt : null;
     const by = Number.isFinite(latestPoint?.by) ? latestPoint.by : null;
     const bz = Number.isFinite(latestPoint?.bz) ? latestPoint.bz : null;
+    const speed = latestSeriesValue(speedData);
+    const density = latestSeriesValue(densityData);
+    const temp = latestSeriesValue(tempData);
+    const densityAvg = movingAvg(densityData, 12);
+    const speedAvg = movingAvg(speedData, 12);
+    const tempAvg = movingAvg(tempData, 12);
 
     const status = useMemo(() => {
         if (bz == null || by == null || bt == null) {
@@ -432,6 +451,57 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
         };
     }, [bt, by, bz, latestPoint]);
 
+    const stormPhase = useMemo(() => {
+        const densitySpike = density != null && densityAvg != null && density > Math.max(14, densityAvg * 1.6);
+        const speedJump = speed != null && speedAvg != null && speed > Math.max(520, speedAvg * 1.15);
+        const hotPlasma = temp != null && tempAvg != null && temp > Math.max(280000, tempAvg * 1.25);
+        const strongField = bt != null && bt >= 12;
+        const southCoupling = bz != null && bz <= -6;
+
+        if (densitySpike && speedJump && strongField) {
+            return {
+                phase: 'Shock / Sheath Arrival',
+                explanation: 'Pressure and speed just jumped. We are likely at the storm front (shock/sheath).',
+                graphic: 'croissant-front' as const,
+                color: 'text-orange-300'
+            };
+        }
+
+        if ((strongField && southCoupling && density != null && density >= 8) || (bt != null && bt >= 14 && bz != null && bz <= -8)) {
+            return {
+                phase: 'CME Core / Main Phase',
+                explanation: 'Strong field with sustained southward coupling suggests we are in the CME core/main geoeffective phase.',
+                graphic: 'croissant-core' as const,
+                color: 'text-fuchsia-300'
+            };
+        }
+
+        if (speed != null && speed >= 620 && temp != null && temp >= 280000 && density != null && density <= 7) {
+            return {
+                phase: 'Coronal Hole High-Speed Stream',
+                explanation: 'Fast, hot, lower-density wind fits a coronal-hole stream (HSS/CIR-like) regime.',
+                graphic: 'fast-wind' as const,
+                color: 'text-cyan-300'
+            };
+        }
+
+        if ((density != null && density <= 5) && (bt != null && bt <= 7) && (speed != null && speed <= 450) && !hotPlasma) {
+            return {
+                phase: 'Ambient Solar Wind',
+                explanation: 'Calmer field and flow indicate ambient background solar wind conditions.',
+                graphic: 'calm' as const,
+                color: 'text-emerald-300'
+            };
+        }
+
+        return {
+            phase: 'Wake / Recovery Transition',
+            explanation: 'Conditions look transitional after a disturbance; coupling may come in short bursts.',
+            graphic: 'wake' as const,
+            color: 'text-neutral-300'
+        };
+    }, [bt, bz, density, densityAvg, hotPlasma, speed, speedAvg, temp, tempAvg]);
+
     return (
         <div className="h-full flex flex-col justify-center">
             <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-4">
@@ -479,6 +549,51 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
                         Valid time window (approx): <strong>{imfForecast.validWindow} NZT</strong>
                     </div>
                     <div className="text-xs text-neutral-300 mt-1">{imfForecast.likelihood}</div>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-violet-400/30 bg-violet-500/10 p-3">
+                    <div className={`text-[11px] uppercase tracking-wide font-semibold ${stormPhase.color}`}>Solar-wind phase estimate</div>
+                    <div className="text-sm text-white mt-1"><strong>{stormPhase.phase}</strong></div>
+                    <div className="text-xs text-neutral-200 mt-1">{stormPhase.explanation}</div>
+
+                    <div className="mt-3 h-24 rounded-md border border-neutral-700/70 bg-neutral-950/80 relative overflow-hidden">
+                        {stormPhase.graphic === 'croissant-front' && (
+                            <>
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-amber-300/80" />
+                                <div className="absolute left-14 top-1/2 -translate-y-1/2 w-28 h-16 rounded-r-full border-2 border-orange-300 bg-orange-400/20" />
+                                <div className="absolute left-20 top-1/2 -translate-y-1/2 text-[10px] text-orange-200">Shock front hitting Earth</div>
+                            </>
+                        )}
+                        {stormPhase.graphic === 'croissant-core' && (
+                            <>
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-sky-300/80" />
+                                <div className="absolute left-12 top-1/2 -translate-y-1/2 w-[7.5rem] h-[4.5rem] rounded-r-full border-2 border-fuchsia-300 bg-fuchsia-500/20" />
+                                <div className="absolute left-20 top-1/2 -translate-y-1/2 text-[10px] text-fuchsia-200">Inside CME magnetic core</div>
+                            </>
+                        )}
+                        {stormPhase.graphic === 'fast-wind' && (
+                            <>
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-sky-300/80" />
+                                <div className="absolute left-16 top-6 right-4 h-[2px] bg-cyan-300/80" />
+                                <div className="absolute left-16 top-12 right-8 h-[2px] bg-cyan-300/80" />
+                                <div className="absolute left-16 top-[70%] right-6 h-[2px] bg-cyan-300/80" />
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-cyan-200">Fast wind stream</div>
+                            </>
+                        )}
+                        {stormPhase.graphic === 'calm' && (
+                            <>
+                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-emerald-300/70" />
+                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 text-[10px] text-emerald-100 mt-8">Calm ambient flow</div>
+                            </>
+                        )}
+                        {stormPhase.graphic === 'wake' && (
+                            <>
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-sky-300/70" />
+                                <div className="absolute left-16 top-1/2 -translate-y-1/2 w-24 h-10 rounded-r-full border border-neutral-400/70 bg-neutral-500/15" />
+                                <div className="absolute left-24 top-1/2 -translate-y-1/2 text-[10px] text-neutral-200">Wake / trailing flow</div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
