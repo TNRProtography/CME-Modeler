@@ -21,6 +21,7 @@ import {
     SolarWindSpeedChart,
     SolarWindDensityChart,
     SolarWindTemperatureChart,
+    IMFClockChart,
     MagneticFieldChart,
     HemisphericPowerChart,
     MoonArcChart,
@@ -568,10 +569,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'Trend direction reflects short-term changes in modeled geomagnetic forcing and local visibility weighting.'
         ),
         'bz': buildStatTooltip(
-            'Interplanetary Magnetic Field (Bt/Bz with optional Bx/By + IMF Clock)',
-            'Bt is total field strength. Bz is north-south, By is east-west, and Bx is sunward/anti-sunward. The IMF clock angle tracks By/Bz direction.',
-            'Sustained negative Bz (southward) usually boosts aurora odds. The Bx/By toggle helps you inspect full IMF orientation changes.',
-            'Southward IMF increases reconnection efficiency; By rotates the convection pattern and can shift where activity concentrates, while clock angle summarizes IMF sector orientation.'
+            'Interplanetary Magnetic Field (Bt/Bz and optional Bx/By)',
+            'Bt is total field strength. Bz is north-south. Bx/By are extra vector components you can toggle on for advanced analysis.',
+            'Negative (southward) Bz is the strongest helper for aurora. Also, if Bz is positive but By is negative, aurora can still get support in some situations.',
+            'Coupling is strongest for sustained southward IMF, but vector geometry matters: negative By can modulate convection patterns and partially offset less-favorable Bz windows.'
         ),
         'power': buildStatTooltip(
             'Hemispheric Power (GW)',
@@ -600,8 +601,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         'imf-clock': buildStatTooltip(
             'IMF Clock',
             'A compass-style angle showing IMF direction in the By/Bz plane.',
-            'Clock angles pointing toward southward IMF usually favor stronger aurora response.',
-            'Clock angle condenses vector orientation; coupling strength still depends on magnitude and duration, not angle alone.'
+            'When the clock pointer sits in the southward half, aurora chances usually improve. If Bz is positive but By turns negative, conditions can still be somewhat supportive.',
+            'Clock angle condenses By/Bz orientation into a single phase metric; energy coupling still depends on |B|, flow speed, and the persistence of that orientation.'
         ),
         'moon': buildStatTooltip(
             'Moon Illumination & Arc',
@@ -767,13 +768,23 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             
                             <ForecastChartPanel
                                 title="Interplanetary Magnetic Field"
-                                currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · IMF clock points: ${allImfClockData.length} · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
+                                currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
                                 emoji={gaugeData.bz.emoji}
                                 onOpenModal={() => openModal('bz')}
                                 isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
                                 lastDataReceived={imfLastReceived}
                             >
                                 <MagneticFieldChart data={allMagneticData} />
+                            </ForecastChartPanel>
+                            <ForecastChartPanel
+                                title="IMF Clock & Status"
+                                currentValue={`${allImfClockData.length ? `${allImfClockData[allImfClockData.length - 1].y.toFixed(0)}°` : 'N/A'} <span class='text-base'>clock</span><span class='text-xs block text-neutral-400'>Advanced IMF orientation aid</span>`}
+                                emoji="🧭"
+                                onOpenModal={() => openModal('imf-clock')}
+                                isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
+                                lastDataReceived={imfLastReceived}
+                            >
+                                <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} />
                             </ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
                             <ForecastChartPanel

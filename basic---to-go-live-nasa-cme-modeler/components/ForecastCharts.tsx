@@ -330,30 +330,110 @@ export const SolarWindTemperatureChart: React.FC<{ data: any[] }> = ({ data }) =
     );
 };
 
+export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> = ({ magneticData, clockData }) => {
+    const latestPoint = magneticData.length ? magneticData[magneticData.length - 1] : null;
+    const latestClock = useMemo(() => {
+        if (clockData.length) return clockData[clockData.length - 1]?.y ?? null;
+        if (!latestPoint) return null;
+        if (Number.isFinite(latestPoint?.clock)) return latestPoint.clock as number;
+        if (!Number.isFinite(latestPoint?.by) || !Number.isFinite(latestPoint?.bz)) return null;
+        return (Math.atan2(latestPoint.by, latestPoint.bz) * 180 / Math.PI + 360) % 360;
+    }, [clockData, latestPoint]);
+
+    const [animatedAngle, setAnimatedAngle] = useState<number>(latestClock ?? 0);
+
+    React.useEffect(() => {
+        if (latestClock == null) return;
+        const id = window.setInterval(() => {
+            setAnimatedAngle((prev) => {
+                let diff = latestClock - prev;
+                if (diff > 180) diff -= 360;
+                if (diff < -180) diff += 360;
+                return prev + diff * 0.2;
+            });
+        }, 60);
+        return () => window.clearInterval(id);
+    }, [latestClock]);
+
+    const bt = Number.isFinite(latestPoint?.bt) ? latestPoint.bt : null;
+    const by = Number.isFinite(latestPoint?.by) ? latestPoint.by : null;
+    const bz = Number.isFinite(latestPoint?.bz) ? latestPoint.bz : null;
+
+    const status = useMemo(() => {
+        if (bz == null || by == null || bt == null) {
+            return {
+                title: 'IMF status unavailable',
+                summary: 'Waiting for live By/Bz vectors from the merged IMF feed.',
+                color: 'text-neutral-300'
+            };
+        }
+        if (bz <= -8 && bt >= 10) {
+            return {
+                title: 'Strongly favorable IMF',
+                summary: 'Bz is strongly southward. Expect better aurora potential if skies are dark and clear.',
+                color: 'text-emerald-300'
+            };
+        }
+        if (bz > 0 && by < 0) {
+            return {
+                title: 'Mixed but still supportive',
+                summary: 'Bz is northward, but negative By can still help aurora development in some conditions.',
+                color: 'text-amber-300'
+            };
+        }
+        if (bz <= -3) {
+            return {
+                title: 'Moderately favorable IMF',
+                summary: 'Bz is southward. If this holds, aurora chances can improve over the next 20–60 minutes.',
+                color: 'text-sky-300'
+            };
+        }
+        return {
+            title: 'Less favorable IMF',
+            summary: 'IMF is mixed to northward. Aurora can still occur, but strong bursts are less likely right now.',
+            color: 'text-neutral-300'
+        };
+    }, [bt, by, bz]);
+
+    return (
+        <div className="h-full flex flex-col justify-center">
+            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-4">
+                <div className={`text-sm font-semibold ${status.color}`}>{status.title}</div>
+                <p className="text-xs text-neutral-300 mt-1 leading-relaxed">{status.summary}</p>
+
+                <div className="mt-4 flex flex-col md:flex-row items-center gap-4">
+                    <div className="relative w-40 h-40 rounded-full border-2 border-neutral-600 bg-neutral-950/80 shadow-inner shadow-sky-500/10 overflow-hidden">
+                        <div className="absolute inset-0 rounded-full border border-emerald-400/30 animate-pulse" />
+                        <div className="absolute top-1/2 left-0 right-0 border-t border-neutral-700" />
+                        <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-700" />
+                        <div className="absolute left-1/2 top-1/2 w-1 h-14 origin-bottom bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.7)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
+                        <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-300" />
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-300">North</div>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-300">South (best)</div>
+                    </div>
+
+                    <div className="text-xs text-neutral-300 space-y-1 w-full max-w-xs">
+                        <div>Clock angle: <strong>{latestClock != null ? `${latestClock.toFixed(0)}°` : '—'}</strong></div>
+                        <div>Bt: <strong>{bt != null ? `${bt.toFixed(1)} nT` : '—'}</strong></div>
+                        <div>Bz: <strong>{bz != null ? `${bz.toFixed(1)} nT` : '—'}</strong></div>
+                        <div>By: <strong>{by != null ? `${by.toFixed(1)} nT` : '—'}</strong></div>
+                        <p className="text-neutral-400 pt-2">
+                            Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const [showBxBy, setShowBxBy] = useState(false);
     const latestBt = data.length ? (data[data.length - 1]?.bt ?? 0) : 0;
     const latestBz = data.length ? (data[data.length - 1]?.bz ?? 0) : 0;
-    const latestBy = data.length ? (data[data.length - 1]?.by ?? 0) : 0;
     const btColor = getSmoothPositiveActivityColor(latestBt, GAUGE_THRESHOLDS.bt);
     const bzColor = getSmoothBzActivityColor(latestBz, GAUGE_THRESHOLDS.bz);
-
-    const clockAngle = useMemo(() => {
-        if (!data.length) return null;
-        const point = data[data.length - 1];
-        if (Number.isFinite(point?.clock)) return point.clock as number;
-        if (!Number.isFinite(point?.by) || !Number.isFinite(point?.bz)) return null;
-        return (Math.atan2(point.by, point.bz) * 180 / Math.PI + 360) % 360;
-    }, [data]);
-
-    const imfStatus = useMemo(() => {
-        if (!data.length) return 'IMF status unavailable right now.';
-        if (latestBz <= -8 && latestBt >= 10) return 'Strong southward IMF: expect better aurora potential if darkness/clouds cooperate.';
-        if (latestBz <= -3) return 'Southward IMF: expect improved chances, especially if this holds for 20–30 minutes.';
-        if (latestBz >= 4) return 'Northward IMF: expect aurora to stay weaker or retreat poleward.';
-        return 'Mixed IMF: expect variable aurora conditions with short-lived bursts possible.';
-    }, [data, latestBz, latestBt]);
 
     const chartData = useMemo(() => ({
         datasets: [
@@ -406,21 +486,8 @@ export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
 
     return (
         <div className="h-full flex flex-col">
-            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-3 mb-2">
-                <div className="text-xs text-neutral-400 uppercase tracking-wide mb-1">IMF status</div>
-                <div className="text-sm text-neutral-200 mb-3">{imfStatus}</div>
-                <div className="flex items-center justify-between gap-4">
-                    <div className="w-20 h-20 rounded-full border border-neutral-600 relative bg-neutral-950/70">
-                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-500">N</div>
-                        <div className="absolute left-1/2 top-1/2 w-[2px] h-8 origin-bottom bg-sky-400" style={{ transform: `translate(-50%, -100%) rotate(${clockAngle ?? 0}deg)` }} />
-                        <div className="absolute left-1/2 top-1/2 w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-300" />
-                    </div>
-                    <div className="text-xs text-neutral-300 leading-relaxed">
-                        <div>Clock angle: {clockAngle !== null ? `${clockAngle.toFixed(0)}°` : '—'}</div>
-                        <div>Bz: {latestBz.toFixed(1)} nT · By: {latestBy.toFixed(1)} nT</div>
-                    </div>
-                    <ToggleSwitch label="Show Bx/By" checked={showBxBy} onChange={setShowBxBy} />
-                </div>
+            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-2 mb-2 flex justify-end">
+                <ToggleSwitch label="Show Bx/By" checked={showBxBy} onChange={setShowBxBy} />
             </div>
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
