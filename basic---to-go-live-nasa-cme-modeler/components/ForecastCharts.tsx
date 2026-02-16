@@ -556,7 +556,12 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                         <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-700" />
 
                         {/* Earth-relative core graphic */}
-                        <div className="absolute left-1/2 top-1/2 w-7 h-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-sky-300 to-blue-600 border border-sky-100/70 shadow-[0_0_12px_rgba(56,189,248,0.6)]" />
+                        <div className="absolute left-1/2 top-1/2 w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-100/80 shadow-[0_0_12px_rgba(56,189,248,0.6)] bg-[radial-gradient(circle_at_30%_25%,#8ce3ff_0%,#4ea5d8_42%,#1f4f88_100%)] overflow-hidden">
+                            <div className="absolute left-[18%] top-[34%] w-[34%] h-[22%] rounded-[55%_45%_60%_40%] bg-emerald-300/85" />
+                            <div className="absolute left-[50%] top-[22%] w-[26%] h-[18%] rounded-[45%_55%_40%_60%] bg-emerald-300/75" />
+                            <div className="absolute left-[46%] top-[56%] w-[30%] h-[20%] rounded-[60%_40%_50%_50%] bg-emerald-200/70" />
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(255,255,255,0.35),rgba(255,255,255,0)_40%)]" />
+                        </div>
                         <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-amber-300">SUN →</div>
                         <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-amber-300/80 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
                         <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, -120%)' }} />
