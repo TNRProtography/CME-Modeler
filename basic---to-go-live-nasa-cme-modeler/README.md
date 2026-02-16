@@ -56,6 +56,11 @@ A comprehensive web application designed to help users track and visualize space
     *   Roundshot (Queenstown Live Camera)
 *   **Build Tool**: Vite
 
+
+## Planning Documents
+
+- [3D CME Simulation and Visualization App Plan](docs/cme-3d-simulation-development-plan.md)
+
 ## Getting Started
 
 Follow these steps to get the project up and running on your local machine.
