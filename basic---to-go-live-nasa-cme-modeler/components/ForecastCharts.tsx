@@ -377,6 +377,7 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
     const densityAvg = movingAvg(densityData, 12);
     const speedAvg = movingAvg(speedData, 12);
     const tempAvg = movingAvg(tempData, 12);
+    const hotPlasma = temp != null && tempAvg != null && temp > Math.max(280000, tempAvg * 1.25);
 
     const status = useMemo(() => {
         if (bz == null || by == null || bt == null) {
@@ -454,7 +455,6 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
     const stormPhase = useMemo(() => {
         const densitySpike = density != null && densityAvg != null && density > Math.max(14, densityAvg * 1.6);
         const speedJump = speed != null && speedAvg != null && speed > Math.max(520, speedAvg * 1.15);
-        const hotPlasma = temp != null && tempAvg != null && temp > Math.max(280000, tempAvg * 1.25);
         const strongField = bt != null && bt >= 12;
         const southCoupling = bz != null && bz <= -6;
 
