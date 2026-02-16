@@ -161,7 +161,7 @@ const createDynamicChartOptions = (
     rangeMs: number,
     yLabel: string,
     datasets: { data: { y: number }[] }[],
-    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' },
+    scaleConfig: { type: 'speed' | 'density' | 'temp' | 'imf' | 'power' | 'substorm' | 'nzmag' },
     extraAnnotations?: any,
 ): ChartOptions<'line'> => {
     const now = Date.now();
@@ -192,6 +192,10 @@ const createDynamicChartOptions = (
         case 'density':
             min = 0;
             max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5;
+            break;
+        case 'temp':
+            min = 0;
+            max = Math.ceil(Math.max(600000, ...allYValues) / 100000) * 100000;
             break;
         case 'imf':
             const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5;
@@ -297,12 +301,59 @@ export const SolarWindDensityChart: React.FC<{ data: any[] }> = ({ data }) => {
     );
 };
 
+export const SolarWindTemperatureChart: React.FC<{ data: any[] }> = ({ data }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const latestValue = data.length ? (data[data.length - 1]?.y ?? 0) : 0;
+    const lineColor = latestValue >= 600000 ? '#f97316' : latestValue >= 250000 ? '#38bdf8' : '#a3a3a3';
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Temperature',
+            data,
+            yAxisID: 'y',
+            fill: 'origin',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            tension: 0.2,
+            borderColor: lineColor,
+            backgroundColor: 'rgba(56, 189, 248, 0.12)',
+        }]
+    }), [data, lineColor]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Temperature (K)', chartData.datasets, { type: 'temp' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+            </div>
+        </div>
+    );
+};
+
 export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const [showBxBy, setShowBxBy] = useState(false);
     const latestBt = data.length ? (data[data.length - 1]?.bt ?? 0) : 0;
     const latestBz = data.length ? (data[data.length - 1]?.bz ?? 0) : 0;
+    const latestBy = data.length ? (data[data.length - 1]?.by ?? 0) : 0;
     const btColor = getSmoothPositiveActivityColor(latestBt, GAUGE_THRESHOLDS.bt);
     const bzColor = getSmoothBzActivityColor(latestBz, GAUGE_THRESHOLDS.bz);
+
+    const clockAngle = useMemo(() => {
+        if (!data.length) return null;
+        const point = data[data.length - 1];
+        if (Number.isFinite(point?.clock)) return point.clock as number;
+        if (!Number.isFinite(point?.by) || !Number.isFinite(point?.bz)) return null;
+        return (Math.atan2(point.by, point.bz) * 180 / Math.PI + 360) % 360;
+    }, [data]);
+
+    const imfStatus = useMemo(() => {
+        if (!data.length) return 'IMF status unavailable right now.';
+        if (latestBz <= -8 && latestBt >= 10) return 'Strong southward IMF: expect better aurora potential if darkness/clouds cooperate.';
+        if (latestBz <= -3) return 'Southward IMF: expect improved chances, especially if this holds for 20–30 minutes.';
+        if (latestBz >= 4) return 'Northward IMF: expect aurora to stay weaker or retreat poleward.';
+        return 'Mixed IMF: expect variable aurora conditions with short-lived bursts possible.';
+    }, [data, latestBz, latestBt]);
 
     const chartData = useMemo(() => ({
         datasets: [
@@ -327,13 +378,50 @@ export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
                 tension: 0.2,
                 borderColor: bzColor,
                 backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true),
-            }
+            },
+            ...(showBxBy ? [{
+                label: 'By',
+                data: data.map(p => ({ x: p.time, y: p.by })),
+                borderColor: '#38bdf8',
+                backgroundColor: 'transparent',
+                fill: false,
+                borderWidth: 1.3,
+                pointRadius: 0,
+                tension: 0.2,
+                borderDash: [4, 4],
+            }, {
+                label: 'Bx',
+                data: data.map(p => ({ x: p.time, y: p.bx })),
+                borderColor: '#c084fc',
+                backgroundColor: 'transparent',
+                fill: false,
+                borderWidth: 1.3,
+                pointRadius: 0,
+                tension: 0.2,
+                borderDash: [2, 4],
+            }] : [])
         ]
-    }), [data, btColor, bzColor]);
+    }), [data, btColor, bzColor, showBxBy]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Magnetic Field (nT)', chartData.datasets, { type: 'imf' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">
+            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-3 mb-2">
+                <div className="text-xs text-neutral-400 uppercase tracking-wide mb-1">IMF status</div>
+                <div className="text-sm text-neutral-200 mb-3">{imfStatus}</div>
+                <div className="flex items-center justify-between gap-4">
+                    <div className="w-20 h-20 rounded-full border border-neutral-600 relative bg-neutral-950/70">
+                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-500">N</div>
+                        <div className="absolute left-1/2 top-1/2 w-[2px] h-8 origin-bottom bg-sky-400" style={{ transform: `translate(-50%, -100%) rotate(${clockAngle ?? 0}deg)` }} />
+                        <div className="absolute left-1/2 top-1/2 w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-300" />
+                    </div>
+                    <div className="text-xs text-neutral-300 leading-relaxed">
+                        <div>Clock angle: {clockAngle !== null ? `${clockAngle.toFixed(0)}°` : '—'}</div>
+                        <div>Bz: {latestBz.toFixed(1)} nT · By: {latestBy.toFixed(1)} nT</div>
+                    </div>
+                    <ToggleSwitch label="Show Bx/By" checked={showBxBy} onChange={setShowBxBy} />
+                </div>
+            </div>
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
                 {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
