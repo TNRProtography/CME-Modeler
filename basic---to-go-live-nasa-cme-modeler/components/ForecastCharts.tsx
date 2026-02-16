@@ -439,12 +439,21 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
                 <p className="text-xs text-neutral-300 mt-1 leading-relaxed">{status.summary}</p>
 
                 <div className="mt-4 flex flex-col md:flex-row items-center gap-4">
-                    <div className="relative w-40 h-40 rounded-full border-2 border-neutral-600 bg-neutral-950/80 shadow-inner shadow-sky-500/10 overflow-hidden">
+                    <div className="relative w-44 h-44 rounded-full border-2 border-neutral-600 bg-neutral-950/80 shadow-inner shadow-sky-500/10 overflow-hidden">
                         <div className="absolute inset-0 rounded-full border border-emerald-400/30 animate-pulse" />
                         <div className="absolute top-1/2 left-0 right-0 border-t border-neutral-700" />
                         <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-700" />
-                        <div className="absolute left-1/2 top-1/2 w-1 h-14 origin-bottom bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.7)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
-                        <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-300" />
+
+                        {/* Earth-relative core graphic */}
+                        <div className="absolute left-1/2 top-1/2 w-7 h-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-sky-300 to-blue-600 border border-sky-100/70 shadow-[0_0_12px_rgba(56,189,248,0.6)]" />
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-amber-300">SUN →</div>
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-amber-300/80 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, -120%)' }} />
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, 20%)' }} />
+                        <div className="absolute left-[72%] top-[42%] text-[9px] text-fuchsia-200">magnetotail</div>
+
+                        <div className="absolute left-1/2 top-1/2 w-1 h-[4.2rem] origin-bottom bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.7)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
+                        <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-100 border border-sky-300" />
                         <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-300">North</div>
                         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-300">South (best)</div>
                     </div>
@@ -454,6 +463,7 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[] }> 
                         <div>Bt: <strong>{bt != null ? `${bt.toFixed(1)} nT` : '—'}</strong></div>
                         <div>Bz: <strong>{bz != null ? `${bz.toFixed(1)} nT` : '—'}</strong></div>
                         <div>By: <strong>{by != null ? `${by.toFixed(1)} nT` : '—'}</strong></div>
+                        <div className="text-neutral-400">Core view: Earth in center, Sun on left, magnetotail extends right.</div>
                         <p className="text-neutral-400 pt-2">
                             Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
                         </p>
