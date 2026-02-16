@@ -502,6 +502,47 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
         };
     }, [bt, bz, density, densityAvg, hotPlasma, speed, speedAvg, temp, tempAvg]);
 
+    const phaseVisual = useMemo(() => {
+        if (stormPhase.graphic === 'croissant-front') {
+            return {
+                orb: 'from-orange-300 to-amber-500 shadow-orange-300/60',
+                pillBorder: 'border-orange-300/70',
+                pillText: 'text-orange-100',
+                label: 'Shock / sheath front'
+            };
+        }
+        if (stormPhase.graphic === 'croissant-core') {
+            return {
+                orb: 'from-fuchsia-300 to-violet-500 shadow-fuchsia-300/60',
+                pillBorder: 'border-fuchsia-300/70',
+                pillText: 'text-fuchsia-100',
+                label: 'CME magnetic core'
+            };
+        }
+        if (stormPhase.graphic === 'fast-wind') {
+            return {
+                orb: 'from-cyan-300 to-sky-500 shadow-cyan-300/60',
+                pillBorder: 'border-cyan-300/70',
+                pillText: 'text-cyan-100',
+                label: 'Fast wind stream'
+            };
+        }
+        if (stormPhase.graphic === 'calm') {
+            return {
+                orb: 'from-emerald-300 to-teal-500 shadow-emerald-300/60',
+                pillBorder: 'border-emerald-300/70',
+                pillText: 'text-emerald-100',
+                label: 'Calm ambient flow'
+            };
+        }
+        return {
+            orb: 'from-sky-300 to-indigo-500 shadow-sky-300/60',
+            pillBorder: 'border-slate-300/60',
+            pillText: 'text-slate-100',
+            label: 'Wake / trailing flow'
+        };
+    }, [stormPhase.graphic]);
+
     return (
         <div className="h-full flex flex-col justify-center">
             <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-4">
@@ -556,42 +597,23 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                     <div className="text-sm text-white mt-1"><strong>{stormPhase.phase}</strong></div>
                     <div className="text-xs text-neutral-200 mt-1">{stormPhase.explanation}</div>
 
-                    <div className="mt-3 h-24 rounded-md border border-neutral-700/70 bg-neutral-950/80 relative overflow-hidden">
-                        {stormPhase.graphic === 'croissant-front' && (
-                            <>
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-amber-300/80" />
-                                <div className="absolute left-14 top-1/2 -translate-y-1/2 w-28 h-16 rounded-r-full border-2 border-orange-300 bg-orange-400/20" />
-                                <div className="absolute left-20 top-1/2 -translate-y-1/2 text-[10px] text-orange-200">Shock front hitting Earth</div>
-                            </>
-                        )}
-                        {stormPhase.graphic === 'croissant-core' && (
-                            <>
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-sky-300/80" />
-                                <div className="absolute left-12 top-1/2 -translate-y-1/2 w-[7.5rem] h-[4.5rem] rounded-r-full border-2 border-fuchsia-300 bg-fuchsia-500/20" />
-                                <div className="absolute left-20 top-1/2 -translate-y-1/2 text-[10px] text-fuchsia-200">Inside CME magnetic core</div>
-                            </>
-                        )}
+                    <div className="mt-3 rounded-xl border border-neutral-700/70 bg-gradient-to-r from-neutral-950 via-[#0b0a1a] to-neutral-950/95 relative overflow-hidden p-3">
+                        <div className="absolute -left-8 -top-10 h-24 w-24 rounded-full bg-violet-500/20 blur-2xl" />
+                        <div className="absolute right-0 top-0 h-full w-20 bg-gradient-to-l from-violet-500/10 to-transparent" />
+
+                        <div className="relative flex items-center gap-3">
+                            <div className={`h-12 w-12 rounded-full bg-gradient-to-br ${phaseVisual.orb} shadow-[0_0_18px] animate-pulse`} />
+                            <div className={`flex-1 rounded-full border ${phaseVisual.pillBorder} bg-black/35 px-4 py-2.5 backdrop-blur-sm`}>
+                                <div className={`text-sm font-semibold ${phaseVisual.pillText}`}>{phaseVisual.label}</div>
+                                <div className="text-[11px] text-neutral-300">{stormPhase.phase}</div>
+                            </div>
+                        </div>
+
                         {stormPhase.graphic === 'fast-wind' && (
-                            <>
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-sky-300/80" />
-                                <div className="absolute left-16 top-6 right-4 h-[2px] bg-cyan-300/80" />
-                                <div className="absolute left-16 top-12 right-8 h-[2px] bg-cyan-300/80" />
-                                <div className="absolute left-16 top-[70%] right-6 h-[2px] bg-cyan-300/80" />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-cyan-200">Fast wind stream</div>
-                            </>
-                        )}
-                        {stormPhase.graphic === 'calm' && (
-                            <>
-                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-emerald-300/70" />
-                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 text-[10px] text-emerald-100 mt-8">Calm ambient flow</div>
-                            </>
-                        )}
-                        {stormPhase.graphic === 'wake' && (
-                            <>
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-sky-300/70" />
-                                <div className="absolute left-16 top-1/2 -translate-y-1/2 w-24 h-10 rounded-r-full border border-neutral-400/70 bg-neutral-500/15" />
-                                <div className="absolute left-24 top-1/2 -translate-y-1/2 text-[10px] text-neutral-200">Wake / trailing flow</div>
-                            </>
+                            <div className="relative mt-2 h-4">
+                                <div className="absolute left-16 right-4 top-1 h-[2px] bg-cyan-300/80" />
+                                <div className="absolute left-20 right-8 top-3 h-[2px] bg-cyan-300/60" />
+                            </div>
                         )}
                     </div>
                 </div>
