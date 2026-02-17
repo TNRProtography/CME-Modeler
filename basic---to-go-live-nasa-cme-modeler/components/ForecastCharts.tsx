@@ -161,7 +161,7 @@ const createDynamicChartOptions = (
     rangeMs: number,
     yLabel: string,
     datasets: { data: { y: number }[] }[],
-    scaleConfig: { type: 'speed' | 'density' | 'imf' | 'power' | 'substorm' | 'nzmag' },
+    scaleConfig: { type: 'speed' | 'density' | 'temp' | 'imf' | 'power' | 'substorm' | 'nzmag' },
     extraAnnotations?: any,
 ): ChartOptions<'line'> => {
     const now = Date.now();
@@ -192,6 +192,10 @@ const createDynamicChartOptions = (
         case 'density':
             min = 0;
             max = Math.ceil(Math.max(30, ...allYValues) / 5) * 5;
+            break;
+        case 'temp':
+            min = 0;
+            max = Math.ceil(Math.max(600000, ...allYValues) / 100000) * 100000;
             break;
         case 'imf':
             const maxAbs = Math.ceil(Math.max(25, ...allYValues.map(Math.abs)) / 5) * 5;
@@ -297,8 +301,335 @@ export const SolarWindDensityChart: React.FC<{ data: any[] }> = ({ data }) => {
     );
 };
 
+export const SolarWindTemperatureChart: React.FC<{ data: any[] }> = ({ data }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const latestValue = data.length ? (data[data.length - 1]?.y ?? 0) : 0;
+    const lineColor = latestValue >= 600000 ? '#f97316' : latestValue >= 250000 ? '#38bdf8' : '#a3a3a3';
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Temperature',
+            data,
+            yAxisID: 'y',
+            fill: 'origin',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            tension: 0.2,
+            borderColor: lineColor,
+            backgroundColor: 'rgba(56, 189, 248, 0.12)',
+        }]
+    }), [data, lineColor]);
+    const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Temperature (K)', chartData.datasets, { type: 'temp' }), [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}
+            </div>
+        </div>
+    );
+};
+
+export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; speedData: any[]; densityData: any[]; tempData: any[] }> = ({ magneticData, clockData, speedData, densityData, tempData }) => {
+    const latestSeriesValue = (series: any[]) => {
+        if (!series?.length) return null;
+        const v = series[series.length - 1]?.y;
+        return Number.isFinite(v) ? v : null;
+    };
+
+    const movingAvg = (series: any[], points = 8) => {
+        if (!series?.length) return null;
+        const tail = series.slice(-points).map((p) => p?.y).filter((v) => Number.isFinite(v));
+        if (!tail.length) return null;
+        return tail.reduce((a, b) => a + b, 0) / tail.length;
+    };
+
+    const latestPoint = magneticData.length ? magneticData[magneticData.length - 1] : null;
+    const latestClock = useMemo(() => {
+        if (clockData.length) return clockData[clockData.length - 1]?.y ?? null;
+        if (!latestPoint) return null;
+        if (Number.isFinite(latestPoint?.clock)) return latestPoint.clock as number;
+        if (!Number.isFinite(latestPoint?.by) || !Number.isFinite(latestPoint?.bz)) return null;
+        return (Math.atan2(latestPoint.by, latestPoint.bz) * 180 / Math.PI + 360) % 360;
+    }, [clockData, latestPoint]);
+
+    const [animatedAngle, setAnimatedAngle] = useState<number>(latestClock ?? 0);
+
+    React.useEffect(() => {
+        if (latestClock == null) return;
+        const id = window.setInterval(() => {
+            setAnimatedAngle((prev) => {
+                let diff = latestClock - prev;
+                if (diff > 180) diff -= 360;
+                if (diff < -180) diff += 360;
+                return prev + diff * 0.2;
+            });
+        }, 60);
+        return () => window.clearInterval(id);
+    }, [latestClock]);
+
+    const bt = Number.isFinite(latestPoint?.bt) ? latestPoint.bt : null;
+    const by = Number.isFinite(latestPoint?.by) ? latestPoint.by : null;
+    const bz = Number.isFinite(latestPoint?.bz) ? latestPoint.bz : null;
+    const speed = latestSeriesValue(speedData);
+    const density = latestSeriesValue(densityData);
+    const temp = latestSeriesValue(tempData);
+    const densityAvg = movingAvg(densityData, 12);
+    const speedAvg = movingAvg(speedData, 12);
+    const tempAvg = movingAvg(tempData, 12);
+    const hotPlasma = temp != null && tempAvg != null && temp > Math.max(280000, tempAvg * 1.25);
+
+    const status = useMemo(() => {
+        if (bz == null || by == null || bt == null) {
+            return {
+                title: 'IMF status unavailable',
+                summary: 'Waiting for live By/Bz vectors from the merged IMF feed.',
+                color: 'text-neutral-300'
+            };
+        }
+        if (bz <= -8 && bt >= 10) {
+            return {
+                title: 'Strongly favorable IMF',
+                summary: 'Bz is strongly southward. Expect better aurora potential if skies are dark and clear.',
+                color: 'text-emerald-300'
+            };
+        }
+        if (bz > 0 && by < 0) {
+            return {
+                title: 'Mixed but still supportive',
+                summary: 'Bz is northward, but negative By can still help aurora development in some conditions.',
+                color: 'text-amber-300'
+            };
+        }
+        if (bz <= -3) {
+            return {
+                title: 'Moderately favorable IMF',
+                summary: 'Bz is southward. If this holds, aurora chances can improve over the next 20–60 minutes.',
+                color: 'text-sky-300'
+            };
+        }
+        return {
+            title: 'Less favorable IMF',
+            summary: 'IMF is mixed to northward. Aurora can still occur, but strong bursts are less likely right now.',
+            color: 'text-neutral-300'
+        };
+    }, [bt, by, bz]);
+
+
+    const imfForecast = useMemo(() => {
+        const latestTime = Number.isFinite(latestPoint?.time) ? latestPoint.time as number : Date.now();
+        const validUntil = latestTime + 30 * 60 * 1000;
+        const validWindow = `${new Date(latestTime).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}–${new Date(validUntil).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}`;
+
+        if (bz == null || by == null || bt == null) {
+            return {
+                size: 'Unknown',
+                likelihood: 'Low confidence (insufficient live IMF vectors)',
+                validWindow
+            };
+        }
+
+        if (bz <= -10 && bt >= 15) {
+            return {
+                size: 'Large potential',
+                likelihood: 'High confidence for stronger coupling if dark and clear',
+                validWindow
+            };
+        }
+
+        if ((bz <= -5 && bt >= 9) || (bz > 0 && by < -4 && bt >= 9)) {
+            return {
+                size: 'Moderate potential',
+                likelihood: 'Moderate confidence; negative By can help even with northward Bz',
+                validWindow
+            };
+        }
+
+        return {
+            size: 'Small potential',
+            likelihood: 'Lower confidence right now; monitor for a southward turn',
+            validWindow
+        };
+    }, [bt, by, bz, latestPoint]);
+
+    const stormPhase = useMemo(() => {
+        const densitySpike = density != null && densityAvg != null && density > Math.max(14, densityAvg * 1.6);
+        const speedJump = speed != null && speedAvg != null && speed > Math.max(520, speedAvg * 1.15);
+        const strongField = bt != null && bt >= 12;
+        const southCoupling = bz != null && bz <= -6;
+
+        if (densitySpike && speedJump && strongField) {
+            return {
+                phase: 'Shock / Sheath Arrival',
+                explanation: 'Pressure and speed just jumped. We are likely at the storm front (shock/sheath).',
+                graphic: 'croissant-front' as const,
+                color: 'text-orange-300'
+            };
+        }
+
+        if ((strongField && southCoupling && density != null && density >= 8) || (bt != null && bt >= 14 && bz != null && bz <= -8)) {
+            return {
+                phase: 'CME Core / Main Phase',
+                explanation: 'Strong field with sustained southward coupling suggests we are in the CME core/main geoeffective phase.',
+                graphic: 'croissant-core' as const,
+                color: 'text-fuchsia-300'
+            };
+        }
+
+        if (speed != null && speed >= 620 && temp != null && temp >= 280000 && density != null && density <= 7) {
+            return {
+                phase: 'Coronal Hole High-Speed Stream',
+                explanation: 'Fast, hot, lower-density wind fits a coronal-hole stream (HSS/CIR-like) regime.',
+                graphic: 'fast-wind' as const,
+                color: 'text-cyan-300'
+            };
+        }
+
+        if ((density != null && density <= 5) && (bt != null && bt <= 7) && (speed != null && speed <= 450) && !hotPlasma) {
+            return {
+                phase: 'Ambient Solar Wind',
+                explanation: 'Calmer field and flow indicate ambient background solar wind conditions.',
+                graphic: 'calm' as const,
+                color: 'text-emerald-300'
+            };
+        }
+
+        return {
+            phase: 'Wake / Recovery Transition',
+            explanation: 'Conditions look transitional after a disturbance; coupling may come in short bursts.',
+            graphic: 'wake' as const,
+            color: 'text-neutral-300'
+        };
+    }, [bt, bz, density, densityAvg, hotPlasma, speed, speedAvg, temp, tempAvg]);
+
+    const phaseVisual = useMemo(() => {
+        if (stormPhase.graphic === 'croissant-front') {
+            return {
+                orb: 'from-orange-300 to-amber-500 shadow-orange-300/60',
+                pillBorder: 'border-orange-300/70',
+                pillText: 'text-orange-100',
+                label: 'Shock / sheath front'
+            };
+        }
+        if (stormPhase.graphic === 'croissant-core') {
+            return {
+                orb: 'from-fuchsia-300 to-violet-500 shadow-fuchsia-300/60',
+                pillBorder: 'border-fuchsia-300/70',
+                pillText: 'text-fuchsia-100',
+                label: 'CME magnetic core'
+            };
+        }
+        if (stormPhase.graphic === 'fast-wind') {
+            return {
+                orb: 'from-cyan-300 to-sky-500 shadow-cyan-300/60',
+                pillBorder: 'border-cyan-300/70',
+                pillText: 'text-cyan-100',
+                label: 'Fast wind stream'
+            };
+        }
+        if (stormPhase.graphic === 'calm') {
+            return {
+                orb: 'from-emerald-300 to-teal-500 shadow-emerald-300/60',
+                pillBorder: 'border-emerald-300/70',
+                pillText: 'text-emerald-100',
+                label: 'Calm ambient flow'
+            };
+        }
+        return {
+            orb: 'from-sky-300 to-indigo-500 shadow-sky-300/60',
+            pillBorder: 'border-slate-300/60',
+            pillText: 'text-slate-100',
+            label: 'Wake / trailing flow'
+        };
+    }, [stormPhase.graphic]);
+
+    return (
+        <div className="h-full flex flex-col justify-center">
+            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-4">
+                <div className={`text-sm font-semibold ${status.color}`}>{status.title}</div>
+                <p className="text-xs text-neutral-300 mt-1 leading-relaxed">{status.summary}</p>
+
+                <div className="mt-4 flex flex-col md:flex-row items-center gap-4">
+                    <div className="relative w-44 h-44 rounded-full border-2 border-neutral-600 bg-neutral-950/80 shadow-inner shadow-sky-500/10 overflow-hidden">
+                        <div className="absolute inset-0 rounded-full border border-emerald-400/30 animate-pulse" />
+                        <div className="absolute top-1/2 left-0 right-0 border-t border-neutral-700" />
+                        <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-700" />
+
+                        {/* Earth-relative core graphic */}
+                        <div className="absolute left-1/2 top-1/2 w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-100/80 shadow-[0_0_12px_rgba(56,189,248,0.6)] bg-[radial-gradient(circle_at_30%_25%,#8ce3ff_0%,#4ea5d8_42%,#1f4f88_100%)] overflow-hidden">
+                            <div className="absolute left-[18%] top-[34%] w-[34%] h-[22%] rounded-[55%_45%_60%_40%] bg-emerald-300/85" />
+                            <div className="absolute left-[50%] top-[22%] w-[26%] h-[18%] rounded-[45%_55%_40%_60%] bg-emerald-300/75" />
+                            <div className="absolute left-[46%] top-[56%] w-[30%] h-[20%] rounded-[60%_40%_50%_50%] bg-emerald-200/70" />
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(255,255,255,0.35),rgba(255,255,255,0)_40%)]" />
+                        </div>
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-amber-300">SUN →</div>
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-amber-300/80 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, -120%)' }} />
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, 20%)' }} />
+                        <div className="absolute left-[72%] top-[42%] text-[9px] text-fuchsia-200">magnetotail</div>
+
+                        <div className="absolute left-1/2 top-1/2 w-1 h-[4.2rem] origin-bottom bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.7)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
+                        <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-100 border border-sky-300" />
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-300">North</div>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-300">South (best)</div>
+                    </div>
+
+                    <div className="text-xs text-neutral-300 space-y-1 w-full max-w-xs">
+                        <div>Clock angle: <strong>{latestClock != null ? `${latestClock.toFixed(0)}°` : '—'}</strong></div>
+                        <div>Bt: <strong>{bt != null ? `${bt.toFixed(1)} nT` : '—'}</strong></div>
+                        <div>Bz: <strong>{bz != null ? `${bz.toFixed(1)} nT` : '—'}</strong></div>
+                        <div>By: <strong>{by != null ? `${by.toFixed(1)} nT` : '—'}</strong></div>
+                        <div className="text-neutral-400">Core view: Earth in center, Sun on left, magnetotail extends right.</div>
+                        <p className="text-neutral-400 pt-2">
+                            Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-sky-400/30 bg-sky-500/10 p-3">
+                    <div className="text-[11px] uppercase tracking-wide text-sky-200 font-semibold">IMF clock forecast</div>
+                    <div className="text-sm text-white mt-1">
+                        Potential size: <strong>{imfForecast.size}</strong>
+                    </div>
+                    <div className="text-xs text-neutral-200 mt-1">
+                        Valid time window (approx): <strong>{imfForecast.validWindow} NZT</strong>
+                    </div>
+                    <div className="text-xs text-neutral-300 mt-1">{imfForecast.likelihood}</div>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-violet-400/30 bg-violet-500/10 p-3">
+                    <div className={`text-[11px] uppercase tracking-wide font-semibold ${stormPhase.color}`}>Solar-wind phase estimate</div>
+                    <div className="text-sm text-white mt-1"><strong>{stormPhase.phase}</strong></div>
+                    <div className="text-xs text-neutral-200 mt-1">{stormPhase.explanation}</div>
+
+                    <div className="mt-3 rounded-xl border border-neutral-700/70 bg-gradient-to-r from-neutral-950 via-[#0b0a1a] to-neutral-950/95 relative overflow-hidden p-3">
+                        <div className="absolute -left-8 -top-10 h-24 w-24 rounded-full bg-violet-500/20 blur-2xl" />
+                        <div className="absolute right-0 top-0 h-full w-20 bg-gradient-to-l from-violet-500/10 to-transparent" />
+
+                        <div className="relative flex items-center gap-3">
+                            <div className={`h-12 w-12 rounded-full bg-gradient-to-br ${phaseVisual.orb} shadow-[0_0_18px] animate-pulse`} />
+                            <div className={`flex-1 rounded-full border ${phaseVisual.pillBorder} bg-black/35 px-4 py-2.5 backdrop-blur-sm`}>
+                                <div className={`text-sm font-semibold ${phaseVisual.pillText}`}>{phaseVisual.label}</div>
+                                <div className="text-[11px] text-neutral-300">{stormPhase.phase}</div>
+                            </div>
+                        </div>
+
+                        {stormPhase.graphic === 'fast-wind' && (
+                            <div className="relative mt-2 h-4">
+                                <div className="absolute left-16 right-4 top-1 h-[2px] bg-cyan-300/80" />
+                                <div className="absolute left-20 right-8 top-3 h-[2px] bg-cyan-300/60" />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
+    const [showBxBy, setShowBxBy] = useState(false);
     const latestBt = data.length ? (data[data.length - 1]?.bt ?? 0) : 0;
     const latestBz = data.length ? (data[data.length - 1]?.bz ?? 0) : 0;
     const btColor = getSmoothPositiveActivityColor(latestBt, GAUGE_THRESHOLDS.bt);
@@ -327,13 +658,37 @@ export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
                 tension: 0.2,
                 borderColor: bzColor,
                 backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.bz, true),
-            }
+            },
+            ...(showBxBy ? [{
+                label: 'By',
+                data: data.map(p => ({ x: p.time, y: p.by })),
+                borderColor: '#38bdf8',
+                backgroundColor: 'transparent',
+                fill: false,
+                borderWidth: 1.3,
+                pointRadius: 0,
+                tension: 0.2,
+                borderDash: [4, 4],
+            }, {
+                label: 'Bx',
+                data: data.map(p => ({ x: p.time, y: p.bx })),
+                borderColor: '#c084fc',
+                backgroundColor: 'transparent',
+                fill: false,
+                borderWidth: 1.3,
+                pointRadius: 0,
+                tension: 0.2,
+                borderDash: [2, 4],
+            }] : [])
         ]
-    }), [data, btColor, bzColor]);
+    }), [data, btColor, bzColor, showBxBy]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Magnetic Field (nT)', chartData.datasets, { type: 'imf' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">
+            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-2 mb-2 flex justify-end">
+                <ToggleSwitch label="Show Bx/By" checked={showBxBy} onChange={setShowBxBy} />
+            </div>
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
             <div className="flex-grow relative mt-2 min-h-[250px]">
                 {data.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">Data unavailable.</p>}

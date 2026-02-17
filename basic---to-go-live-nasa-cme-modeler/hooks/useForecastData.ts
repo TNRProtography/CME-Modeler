@@ -55,7 +55,7 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
-const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
@@ -285,11 +285,14 @@ export const useForecastData = (
     moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
     speed: { value: '...', unit: 'km/s', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
     density: { value: '...', unit: 'p/cm³', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
+    temp: { value: '...', unit: 'K', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
   });
   const [celestialTimes, setCelestialTimes] = useState<CelestialTimeData>({});
   const [isDaylight, setIsDaylight] = useState(false);
   const [allSpeedData, setAllSpeedData] = useState<any[]>([]);
   const [allDensityData, setAllDensityData] = useState<any[]>([]);
+  const [allTempData, setAllTempData] = useState<any[]>([]);
+  const [allImfClockData, setAllImfClockData] = useState<any[]>([]);
   const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
   const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
   const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
@@ -528,8 +531,14 @@ export const useForecastData = (
       if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
     
-    if (solarWindResult.status === 'fulfilled' && solarWindResult.value?.ok && Array.isArray(solarWindResult.value.data)) {
-      const solarWindData = solarWindResult.value.data as Array<{
+    if (solarWindResult.status === 'fulfilled') {
+      const solarWindPayload = solarWindResult.value;
+      const solarWindRows = Array.isArray(solarWindPayload)
+        ? solarWindPayload
+        : (solarWindPayload?.ok && Array.isArray(solarWindPayload.data) ? solarWindPayload.data : []);
+      if (Array.isArray(solarWindRows) && solarWindRows.length > 0) {
+
+      const solarWindData = solarWindRows as Array<{
         time_utc?: string;
         time_nz?: string;
         speed?: number | null;
@@ -546,7 +555,9 @@ export const useForecastData = (
 
       const speedPoints: { time: number; value: number; source: string }[] = [];
       const densityPoints: { time: number; value: number; source: string }[] = [];
-      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number }[] = [];
+      const tempPoints: { time: number; value: number; source: string }[] = [];
+      const clockPoints: { time: number; value: number; source: string }[] = [];
+      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null }[] = [];
 
       for (const entry of solarWindData) {
         const timeValue = entry.time_utc ?? entry.time_nz;
@@ -559,31 +570,46 @@ export const useForecastData = (
         if (Number.isFinite(entry.density ?? NaN) && (entry.density ?? 0) >= 0) {
           densityPoints.push({ time: t, value: entry.density as number, source: getSourceLabel(entry.src?.density) });
         }
+        if (Number.isFinite(entry.temp ?? NaN) && (entry.temp ?? 0) >= 0) {
+          tempPoints.push({ time: t, value: entry.temp as number, source: getSourceLabel(entry.src?.temp) });
+        }
 
         const by = Number.isFinite(entry.by ?? NaN) ? (entry.by as number) : null;
         const bz = Number.isFinite(entry.bz ?? NaN) ? (entry.bz as number) : null;
         const bx = Number.isFinite(entry.bx ?? NaN) ? (entry.bx as number) : null;
+        const clock = Number.isFinite(entry.clock ?? NaN)
+          ? (entry.clock as number)
+          : (by != null && bz != null ? (Math.atan2(by, bz) * 180 / Math.PI + 360) % 360 : null);
         const computedBt = Number.isFinite(entry.bt ?? NaN)
           ? (entry.bt as number)
           : (by != null && bz != null ? Math.sqrt(by ** 2 + bz ** 2) : null);
 
+        if (clock != null) {
+          clockPoints.push({ time: t, value: clock, source: getSourceLabel(entry.src?.clock ?? entry.src?.by ?? entry.src?.bz) });
+        }
+
         if (computedBt != null && by != null && bz != null && computedBt >= 0) {
-          magneticPoints.push({ time: t, bt: computedBt, by, bz, bx: bx ?? 0 });
+          magneticPoints.push({ time: t, bt: computedBt, by, bz, bx: bx ?? 0, clock });
         }
       }
 
       speedPoints.sort((a, b) => a.time - b.time);
       densityPoints.sort((a, b) => a.time - b.time);
+      tempPoints.sort((a, b) => a.time - b.time);
+      clockPoints.sort((a, b) => a.time - b.time);
       magneticPoints.sort((a, b) => a.time - b.time);
 
       setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
       setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
+      setAllTempData(tempPoints.map(p => ({ x: p.time, y: p.value })));
+      setAllImfClockData(clockPoints.map(p => ({ x: p.time, y: p.value })));
       setAllMagneticData(magneticPoints);
 
       const latestSpeed = speedPoints.at(-1);
       const latestDensity = densityPoints.at(-1);
+      const latestTemp = tempPoints.at(-1);
       const latestMagneticPoint = magneticPoints.at(-1);
-      const latestMagEntry = [...solarWindData].reverse().find((entry) => entry && (entry.bt != null || entry.bz != null || entry.by != null));
+      const latestMagEntry = [...solarWindRows].reverse().find((entry: any) => entry && (entry.bt != null || entry.bz != null || entry.by != null));
       const latestMagSource = latestMagEntry?.src;
 
       setGaugeData(prev => ({
@@ -594,6 +620,9 @@ export const useForecastData = (
         density: latestDensity
           ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}`, source: latestDensity.source }
           : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+        temp: latestTemp
+          ? { ...prev.temp, value: latestTemp.value.toFixed(0), emoji: latestTemp.value > 600000 ? '🔥' : latestTemp.value > 250000 ? '🌡️' : '🧊', percentage: 0, color: '#38bdf8', lastUpdated: `Updated: ${formatNZTimestamp(latestTemp.time)}`, source: latestTemp.source }
+          : { ...prev.temp, value: 'N/A', emoji: '❓', lastUpdated: 'Updated: N/A', source: '—' },
         bt: latestMagneticPoint
           ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bt) }
           : { ...prev.bt, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
@@ -601,6 +630,7 @@ export const useForecastData = (
           ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bz) }
           : { ...prev.bz, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' }
       }));
+      }
     }
 
     let anyGoesDataFound = false;
@@ -715,6 +745,8 @@ export const useForecastData = (
     isDaylight,
     allSpeedData,
     allDensityData,
+    allTempData,
+    allImfClockData,
     allMagneticData,
     goes18Data,
     goes19Data,

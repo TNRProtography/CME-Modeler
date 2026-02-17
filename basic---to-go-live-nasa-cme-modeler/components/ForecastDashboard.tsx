@@ -20,6 +20,8 @@ import {
     ForecastTrendChart,
     SolarWindSpeedChart,
     SolarWindDensityChart,
+    SolarWindTemperatureChart,
+    IMFClockChart,
     MagneticFieldChart,
     HemisphericPowerChart,
     MoonArcChart,
@@ -241,7 +243,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
-        owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allMagneticData, hemisphericPowerHistory,
+        owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, activitySummary, interplanetaryShockData
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
     
@@ -498,6 +500,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const statItems = [
             ['Solar Wind Speed', speed !== null ? `${speed.toFixed(0)} km/s` : '—'],
             ['Solar Wind Density', density !== null ? `${density.toFixed(1)} p/cm³` : '—'],
+            ['Solar Wind Temp', gaugeData?.temp?.value !== 'N/A' ? `${gaugeData.temp.value} K` : '—'],
             ['Magnetic Field Bt', bt !== null ? `${bt.toFixed(1)} nT` : '—'],
             ['Magnetic Field Bz', bz !== null ? `${bz.toFixed(1)} nT` : '—'],
             ['Hemispheric Power', hp !== null ? `${hp.toFixed(0)} GW` : '—'],
@@ -566,10 +569,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'Trend direction reflects short-term changes in modeled geomagnetic forcing and local visibility weighting.'
         ),
         'bz': buildStatTooltip(
-            'Interplanetary Magnetic Field (Bt/Bz)',
-            'Bt is total magnetic strength in the solar wind. Bz is the north-south part of that field.',
-            'Strong negative Bz (southward) helps energy enter Earth’s magnetosphere and can rapidly grow aurora activity.',
-            'Southward IMF increases dayside reconnection efficiency; sustained negative Bz with elevated |B| boosts coupling and substorm likelihood.'
+            'Interplanetary Magnetic Field (Bt/Bz and optional Bx/By)',
+            'Bt is total field strength. Bz is north-south. Bx/By are extra vector components you can toggle on for advanced analysis.',
+            'Negative (southward) Bz is the strongest helper for aurora. Also, if Bz is positive but By is negative, aurora can still get support in some situations.',
+            'Coupling is strongest for sustained southward IMF, but vector geometry matters: negative By can modulate convection patterns and partially offset less-favorable Bz windows.'
         ),
         'power': buildStatTooltip(
             'Hemispheric Power (GW)',
@@ -588,6 +591,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'How many particles are in the solar wind stream.',
             'Higher density can increase pressure on Earth’s magnetic field and trigger sharper responses, especially during shocks.',
             'Density spikes raise dynamic pressure (with speed), causing magnetopause compression and transient geomagnetic enhancements.'
+        ),
+        'temp': buildStatTooltip(
+            'Solar Wind Temperature',
+            'How hot the solar wind plasma is, measured in Kelvin.',
+            'Hotter streams often come with faster, more turbulent flow that can support active aurora when Bz turns south.',
+            'Temperature helps identify stream regime/structure (e.g., shock-heated or high-speed stream plasma) and adds context to speed-density changes.'
+        ),
+        'imf-clock': buildStatTooltip(
+            'IMF Clock',
+            'A compass-style angle showing IMF direction in the By/Bz plane, with an Earth-centered core graphic and a storm-phase estimate (shock/core/wake/ambient/HSS).',
+            'When the clock pointer sits in the southward half, aurora chances usually improve. The phase graphic helps show whether we are in a storm front, core, wake, calm, or fast-stream regime.',
+            'Phase labels are heuristic, inferred from density/speed/temperature/IMF structure. Use as operational context, not a deterministic CME in-situ classifier.'
         ),
         'moon': buildStatTooltip(
             'Moon Illumination & Arc',
@@ -632,6 +647,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const powerLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(hemisphericPowerHistory.map((p) => ({ timestamp: p.timestamp })))), [hemisphericPowerHistory]);
     const speedLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allSpeedData)), [allSpeedData]);
     const densityLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allDensityData)), [allDensityData]);
+    const tempLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allTempData)), [allTempData]);
 
     const simpleViewStatus = useMemo(() => {
         const score = auroraScore ?? 0;
@@ -752,13 +768,23 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             
                             <ForecastChartPanel
                                 title="Interplanetary Magnetic Field"
-                                currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
+                                currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
                                 emoji={gaugeData.bz.emoji}
                                 onOpenModal={() => openModal('bz')}
                                 isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
                                 lastDataReceived={imfLastReceived}
                             >
                                 <MagneticFieldChart data={allMagneticData} />
+                            </ForecastChartPanel>
+                            <ForecastChartPanel
+                                title="IMF Clock & Status"
+                                currentValue={`${allImfClockData.length ? `${allImfClockData[allImfClockData.length - 1].y.toFixed(0)}°` : 'N/A'} <span class='text-base'>clock</span><span class='text-xs block text-neutral-400'>Advanced IMF orientation aid</span>`}
+                                emoji="🧭"
+                                onOpenModal={() => openModal('imf-clock')}
+                                isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
+                                lastDataReceived={imfLastReceived}
+                            >
+                                <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} speedData={allSpeedData} densityData={allDensityData} tempData={allTempData} />
                             </ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
                             <ForecastChartPanel
@@ -780,6 +806,16 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 lastDataReceived={densityLastReceived}
                             >
                                 <SolarWindDensityChart data={allDensityData} />
+                            </ForecastChartPanel>
+                            <ForecastChartPanel
+                                title="Solar Wind Temperature"
+                                currentValue={`${gaugeData.temp?.value ?? 'N/A'} <span class='text-base'>K</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.temp?.source ?? '—'}</span>`}
+                                emoji={gaugeData.temp?.emoji ?? '❓'}
+                                onOpenModal={() => openModal('temp')}
+                                isImap={isImapSource(gaugeData.temp?.source)}
+                                lastDataReceived={tempLastReceived}
+                            >
+                                <SolarWindTemperatureChart data={allTempData} />
                             </ForecastChartPanel>
                             <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}><MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} /></ForecastChartPanel>
 
