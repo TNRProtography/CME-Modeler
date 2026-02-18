@@ -10,6 +10,7 @@ import {
   fetchFlareData, 
   SolarFlare
 } from '../services/nasaService';
+import { buildSunspotDashboardData } from '../services/sunspotAnalysis';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
@@ -42,23 +43,6 @@ interface ActiveSunspotRegion {
   xFlareProbability: number | null;
 }
 
-interface SunspotWorkerPayload {
-  issued_utc?: string | null;
-  regions?: Array<{
-    region_number?: string | number;
-    location?: { lat_cmd?: string | null; lat_deg?: number | null; cmd_deg?: number | null };
-    area_msh?: number | null;
-    spot_count?: number | null;
-    mcintosh_extent?: string | null;
-    magnetic_class?: string | null;
-    flare_probability?: { c_percent?: number | null; m_percent?: number | null; x_percent?: number | null };
-    observed_time?: string | null;
-  }>;
-  imagery?: {
-    png_intensity_fast?: string;
-    png_magnetogram_fast?: string;
-  };
-}
 
 const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
   return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
@@ -136,7 +120,6 @@ const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
-const SUNSPOT_DETECTOR_BASE_URL = (import.meta.env.VITE_SUNSPOT_WORKER_URL as string | undefined)?.replace(/\/$/, '') || SDO_PROXY_BASE_URL;
 const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
 const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
@@ -301,38 +284,6 @@ const getSunspotLabelStyle = (region: ActiveSunspotRegion): { background: string
   }
 
   return { background: magneticTone, text: magneticTone === '#22c55e' ? '#052e16' : '#111827' };
-};
-
-const parseWorkerSunspotRegions = (payload: SunspotWorkerPayload): ActiveSunspotRegion[] => {
-  const regions = Array.isArray(payload?.regions) ? payload.regions : [];
-
-  return regions
-    .map((region) => {
-      const regionNumber = region?.region_number;
-      if (regionNumber === undefined || regionNumber === null) return null;
-
-      const location = String(region?.location?.lat_cmd || '').trim().toUpperCase();
-      const cmd = Number(region?.location?.cmd_deg);
-      const trend: ActiveSunspotRegion['trend'] = 'Stable';
-
-      return {
-        region: String(regionNumber),
-        location: location || 'N/A',
-        area: Number.isFinite(Number(region?.area_msh)) ? Number(region?.area_msh) : null,
-        magneticClass: region?.magnetic_class ? String(region.magnetic_class).toUpperCase() : null,
-        spotCount: Number.isFinite(Number(region?.spot_count)) ? Number(region?.spot_count) : null,
-        latitude: Number.isFinite(Number(region?.location?.lat_deg)) ? Number(region?.location?.lat_deg) : null,
-        longitude: Number.isFinite(cmd) ? normalizeSolarLongitude(cmd) : null,
-        observedTime: parseNoaaUtcTimestamp(region?.observed_time || payload?.issued_utc || null),
-        trend,
-        cFlareProbability: Number.isFinite(Number(region?.flare_probability?.c_percent)) ? Number(region?.flare_probability?.c_percent) : null,
-        mFlareProbability: Number.isFinite(Number(region?.flare_probability?.m_percent)) ? Number(region?.flare_probability?.m_percent) : null,
-        xFlareProbability: Number.isFinite(Number(region?.flare_probability?.x_percent)) ? Number(region?.flare_probability?.x_percent) : null,
-      };
-    })
-    .filter((region): region is ActiveSunspotRegion => Boolean(region))
-    .filter((region) => isEarthVisibleCoordinate(region.latitude, region.longitude))
-    .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 };
 
 
@@ -907,22 +858,35 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
 
     try {
-      const workerResponse = await fetch(`${SUNSPOT_DETECTOR_BASE_URL}/api/sunspots?res=1024&_=${Date.now()}`);
-      if (workerResponse.ok) {
-        const workerPayload = await workerResponse.json() as SunspotWorkerPayload;
-        const workerRegions = parseWorkerSunspotRegions(workerPayload);
+      const data = await buildSunspotDashboardData();
+      const regions = data.regions
+        .map((region) => ({
+          region: String(region.region_number),
+          location: String(region.location?.lat_cmd || 'N/A').toUpperCase(),
+          area: Number.isFinite(Number(region.area_msh)) ? Number(region.area_msh) : null,
+          spotCount: Number.isFinite(Number(region.spot_count)) ? Number(region.spot_count) : null,
+          magneticClass: region.magnetic_class ? String(region.magnetic_class).toUpperCase() : null,
+          latitude: Number.isFinite(Number(region.location?.lat_deg)) ? Number(region.location?.lat_deg) : null,
+          longitude: Number.isFinite(Number(region.location?.cmd_deg)) ? normalizeSolarLongitude(Number(region.location?.cmd_deg)) : null,
+          observedTime: parseNoaaUtcTimestamp(data.issued_utc),
+          trend: 'Stable' as ActiveSunspotRegion['trend'],
+          cFlareProbability: Number.isFinite(Number(region.flare_probability?.c_percent)) ? Number(region.flare_probability?.c_percent) : null,
+          mFlareProbability: Number.isFinite(Number(region.flare_probability?.m_percent)) ? Number(region.flare_probability?.m_percent) : null,
+          xFlareProbability: Number.isFinite(Number(region.flare_probability?.x_percent)) ? Number(region.flare_probability?.x_percent) : null,
+        }))
+        .filter((region) => isEarthVisibleCoordinate(region.latitude, region.longitude))
+        .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 
-        setSunspotOverlayUrls({
-          intensity: workerPayload?.imagery?.png_intensity_fast ?? `${SUNSPOT_DETECTOR_BASE_URL}/png/hmi/intensity?res=1024`,
-          magnetogram: workerPayload?.imagery?.png_magnetogram_fast ?? `${SUNSPOT_DETECTOR_BASE_URL}/png/hmi/magnetogram?res=1024`,
-        });
-        setActiveSunspotRegions(workerRegions);
-        setLoadingSunspotRegions(null);
-        setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
-        return;
-      }
-    } catch (workerError) {
-      console.warn('Sunspot worker unavailable, falling back to NOAA raw feeds.', workerError);
+      setSunspotOverlayUrls({
+        intensity: data.imagery.png_intensity_fast,
+        magnetogram: data.imagery.png_magnetogram_fast,
+      });
+      setActiveSunspotRegions(regions);
+      setLoadingSunspotRegions(null);
+      setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
+      return;
+    } catch (workerlessError) {
+      console.warn('Local sunspot processing failed, falling back to NOAA raw feeds.', workerlessError);
     }
 
     try {
