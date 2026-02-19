@@ -40,6 +40,8 @@ interface ActiveSunspotRegion {
   cFlareProbability: number | null;
   mFlareProbability: number | null;
   xFlareProbability: number | null;
+  classification: string | null;
+  source: string | null;
 }
 
 const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
@@ -386,6 +388,57 @@ const normalizeMagneticClass = (value?: string | null): string | null => {
   return map[compact] || raw;
 };
 
+const toNumberOrNull = (value: unknown): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const extractRegionFromAny = (item: any): string => {
+  const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
+  return rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
+};
+
+const extractActiveRegionEntries = (raw: any, source: string) => {
+  const regionArray = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.regions)
+      ? raw.regions
+      : Array.isArray(raw?.activeRegions)
+        ? raw.activeRegions
+        : [];
+
+  return regionArray
+    .map((item: any, idx: number) => {
+      const region = extractRegionFromAny(item);
+      if (!region) return null;
+
+      const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
+      const coords = parseLatitudeLongitude(location);
+
+      const lat = toNumberOrNull(item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic);
+      const lon = normalizeSolarLongitude(toNumberOrNull(item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic));
+      const observedTime = parseNoaaUtcTimestamp(item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date);
+
+      return {
+        region,
+        location: location || 'N/A',
+        area: toNumberOrNull(item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths),
+        spotCount: toNumberOrNull(item?.spot_count ?? item?.spotCount ?? item?.number_spots),
+        magneticClass: normalizeMagneticClass(item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification),
+        classification: (item?.classification ?? item?.region_classification ?? item?.zurich_classification ?? '').toString().trim() || null,
+        latitude: coords.latitude ?? lat,
+        longitude: normalizeSolarLongitude(coords.longitude ?? lon),
+        observedTime,
+        cFlareProbability: toNumberOrNull(item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c),
+        mFlareProbability: toNumberOrNull(item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m),
+        xFlareProbability: toNumberOrNull(item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x),
+        _sourceIndex: idx,
+        source,
+      };
+    })
+    .filter(isValidSunspotRegion);
+};
+
 const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number })[] => {
   const lines = raw.split(/\r?\n/);
   return lines
@@ -417,6 +470,8 @@ const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'tre
         cFlareProbability: null,
         mFlareProbability: null,
         xFlareProbability: null,
+        classification: null,
+        source: 'solar-regions.txt',
         _sourceIndex: idx,
       };
     })
@@ -576,6 +631,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
   const [overviewGeometry, setOverviewGeometry] = useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
 
   // General state
   const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
@@ -1019,80 +1075,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
 
     try {
-      let parsed: (Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number })[] = [];
+      const rawText = await fetchFirstAvailableText([NOAA_ACTIVE_REGIONS_TEXT_URL]);
+      const textRegions = parseNoaaSolarRegionsText(rawText);
+      const textRegionIds = new Set(textRegions.map((region) => region.region));
 
-      try {
-        const rawText = await fetchFirstAvailableText([NOAA_ACTIVE_REGIONS_TEXT_URL]);
-        parsed = parseNoaaSolarRegionsText(rawText);
-      } catch {
-        // Fallback to JSON feeds if text endpoint is unavailable.
-      }
+      const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
+        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']),
+        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']),
+      ]);
 
-      if (!parsed.length) {
-        const raw = await fetchFirstAvailableJson(NOAA_ACTIVE_REGIONS_URLS);
-        const regionArray = Array.isArray(raw)
-          ? raw
-          : Array.isArray(raw?.regions)
-            ? raw.regions
-            : Array.isArray(raw?.activeRegions)
-              ? raw.activeRegions
-              : [];
-
-        parsed = regionArray
-          .map((item: any, idx: number) => {
-          const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
-          const region = rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
-          const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
-          const coords = parseLatitudeLongitude(location);
-
-          const latCandidate = item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic;
-          const lonCandidate = item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic;
-          const latFromNumericRaw = Number.isFinite(Number(latCandidate)) ? Number(latCandidate) : null;
-          const lonFromNumericRaw = Number.isFinite(Number(lonCandidate)) ? Number(lonCandidate) : null;
-          const latFromNumeric = latFromNumericRaw !== null && Math.abs(latFromNumericRaw) <= 90 ? latFromNumericRaw : null;
-          const lonFromNumeric = normalizeSolarLongitude(lonFromNumericRaw);
-
-          const areaCandidate = item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths;
-          const spotCountCandidate = item?.spot_count ?? item?.spotCount ?? item?.number_spots;
-          const magneticClassCandidate = item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification;
-          const observedTimeCandidate = item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date;
-          const observedTime = parseNoaaUtcTimestamp(observedTimeCandidate);
-          const cFlareCandidate = item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c;
-          const mFlareCandidate = item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m;
-          const xFlareCandidate = item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x;
-
-          if (!region) return null;
-
-          return {
-            region,
-            location: location || 'N/A',
-            area: Number.isFinite(Number(areaCandidate)) ? Number(areaCandidate) : null,
-            spotCount: Number.isFinite(Number(spotCountCandidate)) ? Number(spotCountCandidate) : null,
-            magneticClass: normalizeMagneticClass(magneticClassCandidate),
-            latitude: coords.latitude ?? latFromNumeric,
-            longitude: normalizeSolarLongitude(coords.longitude ?? lonFromNumeric),
-            observedTime,
-            cFlareProbability: Number.isFinite(Number(cFlareCandidate)) ? Number(cFlareCandidate) : null,
-            mFlareProbability: Number.isFinite(Number(mFlareCandidate)) ? Number(mFlareCandidate) : null,
-            xFlareProbability: Number.isFinite(Number(xFlareCandidate)) ? Number(xFlareCandidate) : null,
-            _sourceIndex: idx,
-          };
-        })
-        .filter(isValidSunspotRegion);
-      }
+      const combined = [
+        ...extractActiveRegionEntries(sunspotReportRaw, 'sunspot_report.json'),
+        ...extractActiveRegionEntries(solarRegionsRaw, 'solar_regions.json'),
+        ...textRegions,
+      ].filter((entry) => textRegionIds.has(entry.region));
 
       const nzNow = toNzEpochMs(Date.now());
       const cutoff = nzNow - ACTIVE_REGION_MAX_AGE_MS;
-      const filteredCurrent = parsed.filter((region) => {
-        const observed = region.observedTime ?? null;
-        if (observed === null) return false;
-        const observedNz = toNzEpochMs(observed);
-        if (observedNz < cutoff || observedNz > nzNow + 60 * 60 * 1000) return false;
-        if ((region.area ?? 0) < ACTIVE_REGION_MIN_AREA_MSH) return false;
-        return isEarthFacingCoordinate(region.latitude, region.longitude);
-      });
 
-      const grouped = filteredCurrent.reduce((acc, item) => {
+      const grouped = combined.reduce((acc, item) => {
         if (!isValidSunspotRegion(item)) return acc;
         const bucket = acc.get(item.region) ?? [];
         bucket.push(item);
@@ -1127,6 +1128,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             else if (delta <= -15) trend = 'Shrinking';
           }
 
+          const observed = latest.observedTime ?? null;
+          const observedNz = observed ? toNzEpochMs(observed) : null;
+          if (observedNz !== null && (observedNz < cutoff || observedNz > nzNow + 60 * 60 * 1000)) return null;
+
           const { _sourceIndex, ...cleanLatest } = latest as any;
           return {
             ...cleanLatest,
@@ -1139,11 +1144,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               const lon = cleanLatest.longitude ?? fallbackWithCoords?.longitude ?? null;
               return lon !== null && Math.abs(lon) <= 90 ? lon : null;
             })(),
+            classification: cleanLatest.classification ?? null,
+            source: cleanLatest.source ?? 'NOAA',
             trend,
           };
         })
         .filter((region): region is ActiveSunspotRegion => Boolean(region && typeof region === 'object'))
         .filter((region) => isEarthFacingCoordinate(region.latitude, region.longitude))
+        .filter((region) => (region.area ?? 0) >= ACTIVE_REGION_MIN_AREA_MSH)
         .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 
       setActiveSunspotRegions(dedupedLatest);
@@ -1301,6 +1309,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       .filter((region): region is ActiveSunspotRegion => Boolean(region))
       .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
   }, [activeSunspotRegions]);
+
+  const cycleSunspotImageryMode = useCallback((direction: 1 | -1) => {
+    const modes: SunspotImageryMode[] = ['colorized', 'magnetogram', 'intensity'];
+    const currentIndex = modes.indexOf(sunspotImageryMode);
+    const nextIndex = (currentIndex + direction + modes.length) % modes.length;
+    setSunspotImageryMode(modes[nextIndex]);
+  }, [sunspotImageryMode]);
+
+  const goToNextSunspot = useCallback(() => {
+    if (displayedSunspotRegions.length === 0) return;
+    if (!selectedSunspotRegion) {
+      setSelectedSunspotRegion(displayedSunspotRegions[0]);
+      return;
+    }
+
+    const currentIndex = displayedSunspotRegions.findIndex((region) => region.region === selectedSunspotRegion.region);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % displayedSunspotRegions.length : 0;
+    setSelectedSunspotRegion(displayedSunspotRegions[nextIndex]);
+  }, [displayedSunspotRegions, selectedSunspotRegion]);
 
   const selectedSunspotPreview = useMemo(() => {
     if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
@@ -1614,10 +1641,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <div className="ml-auto text-[11px] text-neutral-500">{displayedSunspotRegions.length} Earth-facing regions</div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 flex-grow">
-                <div className="xl:col-span-8 rounded-lg border border-neutral-800 bg-black/80 p-3">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow">
+                <div className="lg:col-span-8 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-[480px]">
                   <div
-                    className="relative aspect-square w-full max-h-[560px] mx-auto cursor-zoom-in"
+                    className="relative aspect-square w-full max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
                     onClick={() => sunspotOverviewImage4k.url !== '/placeholder.png' && sunspotOverviewImage4k.url !== '/error.png' && setViewerMedia({ url: sunspotOverviewImage4k.url, type: 'image' })}
                   >
@@ -1658,18 +1685,38 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   </div>
                 </div>
 
-                <div className="xl:col-span-4 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-[450px]">
+                <div className="lg:col-span-4 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-[480px]">
                   {selectedSunspotRegion ? (
                     <>
-                      <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-start justify-between mb-3 gap-2">
                         <div>
                           <div className="text-lg text-amber-300 font-bold">AR {selectedSunspotRegion.region}</div>
                           <div className="text-xs text-neutral-400">{selectedSunspotRegion.location || 'Unknown location'}</div>
                         </div>
-                        <button className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700" onClick={() => setSelectedSunspotRegion(null)}>Clear</button>
+                        <button className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700" onClick={() => setSelectedSunspotRegion(null)}>Back to all sunspots</button>
                       </div>
 
-                      <div className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3">
+                      <div className="flex gap-2 mb-3">
+                        <button className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600" onClick={goToNextSunspot}>Next sunspot</button>
+                        <span className="text-[11px] text-neutral-400 self-center">Swipe close-up to switch imagery</span>
+                      </div>
+
+                      <div
+                        className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3 cursor-zoom-in"
+                        onClick={() => selectedSunspotCloseupUrl && setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' })}
+                        onTouchStart={(event) => {
+                          touchStartXRef.current = event.touches[0]?.clientX ?? null;
+                        }}
+                        onTouchEnd={(event) => {
+                          const startX = touchStartXRef.current;
+                          const endX = event.changedTouches[0]?.clientX ?? null;
+                          touchStartXRef.current = null;
+                          if (startX === null || endX === null) return;
+                          const delta = endX - startX;
+                          if (Math.abs(delta) < 40) return;
+                          cycleSunspotImageryMode(delta < 0 ? 1 : -1);
+                        }}
+                      >
                         {selectedSunspotCloseupUrl && selectedSunspotPreview ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
                             {(() => {
@@ -1701,11 +1748,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Classification</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.classification || '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Observed (NZ)</span><span className="text-neutral-100 font-semibold">{formatNZTimestamp(selectedSunspotRegion.observedTime)}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Source</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.source || 'NOAA'}</span></div>
                       </div>
                     </>
                   ) : (
