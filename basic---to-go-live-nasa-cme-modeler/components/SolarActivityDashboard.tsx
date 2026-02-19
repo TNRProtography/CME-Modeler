@@ -91,7 +91,7 @@ const normalizeSolarLongitude = (value: number | null): number | null => {
 
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
-type SunspotImageryMode = 'intensity' | 'magnetogram';
+type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URLS = [
@@ -104,6 +104,7 @@ const NOAA_PROTON_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/integral-protons-plot-7-day.json',
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
 ];
+const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
 const NOAA_ACTIVE_REGIONS_URLS = [
   'https://services.swpc.noaa.gov/json/sunspot_report.json',
   'https://services.swpc.noaa.gov/json/solar_regions.json',
@@ -117,11 +118,11 @@ const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
-const SDO_PROXY_BASE_URL = 'https://sdo-imagery-proxy.thenamesrock.workers.dev';
-const SDO_HMI_BC_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmibc-1024`;
-const SDO_HMI_IF_1024_URL = `${SDO_PROXY_BASE_URL}/sdo-hmiif-1024`;
+const SDO_HMI_BC_1024_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIBC.jpg';
+const SDO_HMI_IF_1024_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMII.jpg';
+const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
-const HMI_IMAGE_SIZE = 1024;
+const HMI_IMAGE_SIZE = 4096;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
 
@@ -294,6 +295,66 @@ const getSunspotRiskBand = (region: ActiveSunspotRegion): { label: string; color
   return { label: 'MINIMAL', color: '#22c55e' };
 };
 
+const normalizeMagneticClass = (value?: string | null): string | null => {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return null;
+  const compact = raw.replace(/[^A-Z]/g, '');
+  const map: Record<string, string> = {
+    A: 'ALPHA',
+    ALPHA: 'ALPHA',
+    B: 'BETA',
+    BETA: 'BETA',
+    BG: 'BETA-GAMMA',
+    BETAGAMMA: 'BETA-GAMMA',
+    BD: 'BETA-DELTA',
+    BETADELTA: 'BETA-DELTA',
+    BGD: 'BETA-GAMMA-DELTA',
+    BETAGAMMADELTA: 'BETA-GAMMA-DELTA',
+    G: 'GAMMA',
+    GAMMA: 'GAMMA',
+    D: 'DELTA',
+    DELTA: 'DELTA',
+  };
+  return map[compact] || raw;
+};
+
+const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number })[] => {
+  const lines = raw.split(/\r?\n/);
+  return lines
+    .map((line, idx) => {
+      const l = line.trim();
+      if (!/^\d{4,5}\s+/.test(l)) return null;
+      const parts = l.split(/\s+/);
+      if (parts.length < 8) return null;
+
+      const region = String(parts[0]).replace(/[^0-9A-Za-z]/g, '');
+      const location = String(parts[1] || '').toUpperCase();
+      const coords = parseLatitudeLongitude(location);
+
+      const area = Number.isFinite(Number(parts[3])) ? Number(parts[3]) : null;
+      const spotCount = Number.isFinite(Number(parts[6])) ? Number(parts[6]) : null;
+      const magneticClass = normalizeMagneticClass(parts[7] || null);
+
+      if (!region || coords.latitude === null || coords.longitude === null) return null;
+
+      return {
+        region,
+        location,
+        area,
+        magneticClass,
+        spotCount,
+        latitude: coords.latitude,
+        longitude: normalizeSolarLongitude(coords.longitude),
+        observedTime: Date.now(),
+        cFlareProbability: null,
+        mFlareProbability: null,
+        xFlareProbability: null,
+        _sourceIndex: idx,
+      };
+    })
+    .filter((item): item is Omit<ActiveSunspotRegion, 'trend'> => Boolean(item));
+};
+
 // Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
 const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
   // @ts-ignore - we compute hasCME when processing flares
@@ -418,6 +479,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+  const [sdoHmiB1024, setSdoHmiB1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [suvi195, setSuvi195] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
   const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
@@ -439,7 +501,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [activeSunspotRegions, setActiveSunspotRegions] = useState<ActiveSunspotRegion[]>([]);
   const [loadingSunspotRegions, setLoadingSunspotRegions] = useState<string | null>('Loading active sunspot regions...');
   const [lastSunspotRegionsUpdate, setLastSunspotRegionsUpdate] = useState<string | null>(null);
-  const [sunspotImageryMode, setSunspotImageryMode] = useState<SunspotImageryMode>('intensity');
+  const [sunspotImageryMode, setSunspotImageryMode] = useState<SunspotImageryMode>('colorized');
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
   const [loadingSunspotCloseup, setLoadingSunspotCloseup] = useState(false);
@@ -761,6 +823,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     throw lastError ?? new Error('No data endpoint available');
   }, []);
 
+  const fetchFirstAvailableText = useCallback(async (urls: string[]) => {
+    let lastError: Error | null = null;
+    for (const url of urls) {
+      try {
+        const res = await fetch(`${url}?_=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+        return await res.text();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      }
+    }
+    throw lastError ?? new Error('No text endpoint available');
+  }, []);
+
   const fetchXrayFlux = useCallback(async () => {
     if (isInitialLoad.current) {
         setLoadingXray('Loading X-ray flux data...');
@@ -864,17 +940,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
 
     try {
-      const raw = await fetchFirstAvailableJson(NOAA_ACTIVE_REGIONS_URLS);
-      const regionArray = Array.isArray(raw)
-        ? raw
-        : Array.isArray(raw?.regions)
-          ? raw.regions
-          : Array.isArray(raw?.activeRegions)
-            ? raw.activeRegions
-            : [];
+      let parsed: (Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number })[] = [];
 
-      const parsed = regionArray
-        .map((item: any, idx: number) => {
+      try {
+        const rawText = await fetchFirstAvailableText([NOAA_ACTIVE_REGIONS_TEXT_URL]);
+        parsed = parseNoaaSolarRegionsText(rawText);
+      } catch {
+        // Fallback to JSON feeds if text endpoint is unavailable.
+      }
+
+      if (!parsed.length) {
+        const raw = await fetchFirstAvailableJson(NOAA_ACTIVE_REGIONS_URLS);
+        const regionArray = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.regions)
+            ? raw.regions
+            : Array.isArray(raw?.activeRegions)
+              ? raw.activeRegions
+              : [];
+
+        parsed = regionArray
+          .map((item: any, idx: number) => {
           const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
           const region = rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
           const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
@@ -903,7 +989,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             location: location || 'N/A',
             area: Number.isFinite(Number(areaCandidate)) ? Number(areaCandidate) : null,
             spotCount: Number.isFinite(Number(spotCountCandidate)) ? Number(spotCountCandidate) : null,
-            magneticClass: magneticClassCandidate ? String(magneticClassCandidate).trim().toUpperCase() : null,
+            magneticClass: normalizeMagneticClass(magneticClassCandidate),
             latitude: coords.latitude ?? latFromNumeric,
             longitude: normalizeSolarLongitude(coords.longitude ?? lonFromNumeric),
             observedTime,
@@ -914,6 +1000,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           };
         })
         .filter(isValidSunspotRegion);
+      }
 
       const nzNow = toNzEpochMs(Date.now());
       const cutoff = nzNow - ACTIVE_REGION_MAX_AGE_MS;
@@ -989,12 +1076,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       setLoadingSunspotRegions(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
     }
-  }, [fetchFirstAvailableJson]);
+  }, [fetchFirstAvailableJson, fetchFirstAvailableText]);
 
   const runAllUpdates = useCallback(() => {
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
     fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
+    fetchImage(SDO_HMI_B_4096_URL, setSdoHmiB1024);
     fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
@@ -1019,7 +1107,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (!onInitialLoad || initialLoadNotifiedRef.current) return;
 
     const hasInitialCoreData = !!lastXrayUpdate && !!lastProtonUpdate && !!lastFlaresUpdate;
-    const hasAnyImagery = [suvi131, suvi195, suvi304, sdoHmiBc1024, sdoHmiIf1024]
+    const hasAnyImagery = [suvi131, suvi195, suvi304, sdoHmiBc1024, sdoHmiB1024, sdoHmiIf1024]
       .some((img) => !img.loading && !!img.url);
 
     if (hasInitialCoreData && hasAnyImagery) {
@@ -1035,10 +1123,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     suvi304,
     suvi195,
     sdoHmiBc1024,
+    sdoHmiB1024,
     sdoHmiIf1024,
   ]);
 
-  const sunspotOverviewImage = sunspotImageryMode === 'intensity' ? sdoHmiIf1024 : sdoHmiBc1024;
+  const sunspotOverviewImage = sunspotImageryMode === 'intensity'
+    ? sdoHmiIf1024
+    : sunspotImageryMode === 'magnetogram'
+      ? sdoHmiB1024
+      : sdoHmiBc1024;
 
   useEffect(() => {
     if (!sunspotOverviewImage.url || sunspotOverviewImage.url === '/placeholder.png' || sunspotOverviewImage.url === '/error.png') {
@@ -1132,8 +1225,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
         return {
           ...region,
-          xPercent: (constrained.x / HMI_IMAGE_SIZE) * 100,
-          yPercent: (constrained.y / HMI_IMAGE_SIZE) * 100,
+          xPercent: (constrained.x / geometry.width) * 100,
+          yPercent: (constrained.y / geometry.height) * 100,
           onDisk: pos.onDisk,
           labelStyle: getSunspotLabelStyle(region),
         };
@@ -1163,8 +1256,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
 
     return {
-      xPercent: (constrained.x / HMI_IMAGE_SIZE) * 100,
-      yPercent: (constrained.y / HMI_IMAGE_SIZE) * 100,
+      xPercent: (constrained.x / geometry.width) * 100,
+      yPercent: (constrained.y / geometry.height) * 100,
       xPx: constrained.x,
       yPx: constrained.y,
     };
@@ -1524,8 +1617,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
 
               <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <button onClick={() => setSunspotImageryMode('intensity')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'intensity' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Intensity</button>
+                <button onClick={() => setSunspotImageryMode('colorized')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'colorized' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Colorized</button>
                 <button onClick={() => setSunspotImageryMode('magnetogram')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'magnetogram' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Magnetogram</button>
+                <button onClick={() => setSunspotImageryMode('intensity')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'intensity' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Intensity</button>
                 <div className="ml-auto text-[11px] text-neutral-500">{displayedSunspotRegions.length} Earth-facing regions</div>
               </div>
 
