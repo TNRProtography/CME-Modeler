@@ -284,6 +284,16 @@ const getSunspotLabelStyle = (region: ActiveSunspotRegion): { background: string
   return { background: magneticTone, text: magneticTone === '#22c55e' ? '#052e16' : '#111827' };
 };
 
+const getSunspotRiskBand = (region: ActiveSunspotRegion): { label: string; color: string } => {
+  const c = String(region.magneticClass || '').toUpperCase();
+  const m = region.mFlareProbability ?? 0;
+  const x = region.xFlareProbability ?? 0;
+  if (c.includes('DELTA') || x >= 10 || m >= 50) return { label: 'HIGH', color: '#ef4444' };
+  if (c.includes('GAMMA') || m >= 20 || x >= 3) return { label: 'MODERATE', color: '#f97316' };
+  if (c.includes('BETA') || m >= 10) return { label: 'LOW', color: '#facc15' };
+  return { label: 'MINIMAL', color: '#22c55e' };
+};
+
 // Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
 const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
   // @ts-ignore - we compute hasCME when processing flares
@@ -1399,7 +1409,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     >
       <div className="absolute inset-0 bg-black/50 z-0"></div>
       <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
-        <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; }`}</style>
+        <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; } @keyframes sunspotPulse { 0%{transform:scale(1);opacity:.95} 100%{transform:scale(2.25);opacity:0} }`}</style>
         <div className="container mx-auto">
           <header className="text-center mb-8">
             <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer">
@@ -1502,6 +1512,122 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
 
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastImagesUpdate || 'N/A'}</div>
+            </div>
+
+            <div id="active-sunspots-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[680px]">
+              <div className="flex justify-between items-center gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-white">Active Sunspot Tracker</h2>
+                  <button onClick={() => openModal('active-sunspots')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about active sunspot overlays.">?</button>
+                </div>
+                <div className="text-[11px] text-neutral-500">NOAA + SDO mapped to visible disk</div>
+              </div>
+
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                <button onClick={() => setSunspotImageryMode('intensity')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'intensity' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Intensity</button>
+                <button onClick={() => setSunspotImageryMode('magnetogram')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'magnetogram' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Magnetogram</button>
+                <div className="ml-auto text-[11px] text-neutral-500">{displayedSunspotRegions.length} Earth-facing regions</div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 flex-grow">
+                <div className="xl:col-span-8 rounded-lg border border-neutral-800 bg-black/80 p-3">
+                  <div
+                    className="relative aspect-square w-full max-h-[560px] mx-auto"
+                    title={tooltipContent['active-sunspots']}
+                  >
+                    <img
+                      src={sunspotOverviewImage.url}
+                      alt="SDO sunspot overview"
+                      className="w-full h-full object-contain rounded-lg"
+                    />
+                    {loadingSunspotRegions && <LoadingSpinner message={loadingSunspotRegions} />}
+
+                    {plottedSunspots.map((region) => {
+                      const isSelected = selectedSunspotRegion?.region === region.region;
+                      const riskBand = getSunspotRiskBand(region);
+                      return (
+                        <button
+                          key={`${region.region}-${region.location}`}
+                          onClick={() => setSelectedSunspotRegion(region)}
+                          className="absolute -translate-x-1/2 -translate-y-1/2 group"
+                          style={{ left: `${region.xPercent}%`, top: `${region.yPercent}%` }}
+                          title={`AR ${region.region} · ${region.magneticClass || 'Unknown'} · ${region.location}`}
+                        >
+                          {isSelected && (
+                            <span
+                              className="absolute inset-0 w-4 h-4 rounded-full -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2"
+                              style={{ border: `1px solid ${riskBand.color}`, animation: 'sunspotPulse 1.5s ease-out infinite' }}
+                            />
+                          )}
+                          <span
+                            className="relative z-10 block w-3 h-3 rounded-full border border-white/40"
+                            style={{ backgroundColor: riskBand.color, boxShadow: `0 0 12px ${riskBand.color}` }}
+                          />
+                          <span className="absolute left-3 -top-2 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-black/75 text-sky-200 border border-sky-500/40 opacity-90 group-hover:opacity-100">
+                            AR {region.region}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="xl:col-span-4 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-[450px]">
+                  {selectedSunspotRegion ? (
+                    <>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="text-lg text-amber-300 font-bold">AR {selectedSunspotRegion.region}</div>
+                          <div className="text-xs text-neutral-400">{selectedSunspotRegion.location || 'Unknown location'}</div>
+                        </div>
+                        <button className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700" onClick={() => setSelectedSunspotRegion(null)}>Clear</button>
+                      </div>
+
+                      <div className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3">
+                        {selectedSunspotCloseupUrl ? (
+                          <img src={selectedSunspotCloseupUrl} alt={`AR ${selectedSunspotRegion.region} closeup`} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">{loadingSunspotCloseup ? 'Building close-up…' : 'Close-up unavailable'}</div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 overflow-y-auto styled-scrollbar pr-1">
+                      <div className="text-xs uppercase tracking-[0.2em] text-neutral-500 mb-2">Active Regions</div>
+                      {displayedSunspotRegions.map((region) => {
+                        const riskBand = getSunspotRiskBand(region);
+                        return (
+                          <button
+                            key={`list-${region.region}-${region.location}`}
+                            className="w-full text-left rounded-md border border-neutral-800 bg-neutral-950/70 p-2.5 mb-2 hover:bg-neutral-800/90 transition-colors"
+                            onClick={() => setSelectedSunspotRegion(region)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-neutral-100">AR {region.region}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded border" style={{ color: riskBand.color, borderColor: `${riskBand.color}80`, backgroundColor: `${riskBand.color}20` }}>{riskBand.label}</span>
+                            </div>
+                            <div className="text-[11px] text-neutral-400 mt-1">{region.location || 'Unknown'} · {region.magneticClass || 'Unclassified'}</div>
+                          </button>
+                        );
+                      })}
+                      {!loadingSunspotRegions && displayedSunspotRegions.length === 0 && (
+                        <div className="text-xs text-neutral-500 text-center py-8">No Earth-facing regions available right now.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastSunspotRegionsUpdate || 'N/A'}</div>
             </div>
 
             {/* IPS section removed entirely */}
