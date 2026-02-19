@@ -41,6 +41,11 @@ interface ActiveSunspotRegion {
   cFlareProbability: number | null;
   mFlareProbability: number | null;
   xFlareProbability: number | null;
+  protonProbability: number | null;
+  cFlareEvents24h: number | null;
+  mFlareEvents24h: number | null;
+  xFlareEvents24h: number | null;
+  previousActivity: string | null;
   classification: string | null;
   source: string | null;
 }
@@ -433,6 +438,11 @@ const extractActiveRegionEntries = (raw: any, source: string) => {
         cFlareProbability: toNumberOrNull(item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c),
         mFlareProbability: toNumberOrNull(item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m),
         xFlareProbability: toNumberOrNull(item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x),
+        protonProbability: toNumberOrNull(item?.proton_probability ?? item?.protonProbability ?? item?.s1_probability ?? item?.sep_probability),
+        cFlareEvents24h: toNumberOrNull(item?.c_flare_events_24h ?? item?.c_flare_events ?? item?.cflare_events_24h ?? item?.c_events_24h ?? item?.c_event_count),
+        mFlareEvents24h: toNumberOrNull(item?.m_flare_events_24h ?? item?.m_flare_events ?? item?.mflare_events_24h ?? item?.m_events_24h ?? item?.m_event_count),
+        xFlareEvents24h: toNumberOrNull(item?.x_flare_events_24h ?? item?.x_flare_events ?? item?.xflare_events_24h ?? item?.x_events_24h ?? item?.x_event_count),
+        previousActivity: (item?.previous_activity ?? item?.recent_activity ?? item?.activity_summary ?? item?.flare_history ?? item?.recent_events ?? '').toString().trim() || null,
         _sourceIndex: idx,
         source,
       };
@@ -471,6 +481,11 @@ const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'tre
         cFlareProbability: null,
         mFlareProbability: null,
         xFlareProbability: null,
+        protonProbability: null,
+        cFlareEvents24h: null,
+        mFlareEvents24h: null,
+        xFlareEvents24h: null,
+        previousActivity: null,
         classification: null,
         source: 'solar-regions.txt',
         _sourceIndex: idx,
@@ -486,6 +501,23 @@ const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
   const lon = parseLongitude(flare.sourceLocation);
   if (lon === null) return false;
   return Math.abs(lon) <= 30; // tweak if you want stricter/looser
+};
+
+
+const getFirstNumber = (entries: Array<any>, selector: (entry: any) => number | null): number | null => {
+  for (const entry of entries) {
+    const value = selector(entry);
+    if (value !== null && Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+const getFirstText = (entries: Array<any>, selector: (entry: any) => string | null): string | null => {
+  for (const entry of entries) {
+    const value = selector(entry);
+    if (value && value.trim()) return value;
+  }
+  return null;
 };
 
 // --- REUSABLE COMPONENTS ---
@@ -1159,6 +1191,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               return lon !== null && Math.abs(lon) <= 90 ? lon : null;
             })(),
             classification: cleanLatest.classification ?? null,
+            protonProbability: getFirstNumber(sorted, (entry) => entry?.protonProbability ?? null),
+            cFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.cFlareEvents24h ?? null),
+            mFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.mFlareEvents24h ?? null),
+            xFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.xFlareEvents24h ?? null),
+            previousActivity: getFirstText(sorted, (entry) => entry?.previousActivity ?? null),
             source: cleanLatest.source ?? 'NOAA',
             trend,
           };
@@ -1781,6 +1818,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <div className="flex justify-between"><span className="text-neutral-500">Observed (NZ)</span><span className="text-neutral-100 font-semibold">{formatNZTimestamp(selectedSunspotRegion.observedTime)}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">24h flare events</span><span className="text-neutral-100 font-semibold">C {selectedSunspotRegion.cFlareEvents24h ?? '—'} · M {selectedSunspotRegion.mFlareEvents24h ?? '—'} · X {selectedSunspotRegion.xFlareEvents24h ?? '—'}</span></div>
+                        <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Source</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.source || 'NOAA'}</span></div>
                       </div>
                     </>
