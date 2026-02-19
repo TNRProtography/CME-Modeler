@@ -51,6 +51,12 @@ const isEarthVisibleCoordinate = (latitude: number | null, longitude: number | n
   return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 90;
 };
 
+const isEarthFacingCoordinate = (latitude: number | null, longitude: number | null): boolean => {
+  if (latitude === null || longitude === null) return false;
+  return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 80;
+};
+
+
 const parseNoaaUtcTimestamp = (value: unknown): number | null => {
   if (!value) return null;
   const raw = String(value).trim();
@@ -123,6 +129,9 @@ const SDO_HMI_IF_1024_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
 const HMI_IMAGE_SIZE = 4096;
+const SDO_HMI_NATIVE_CX = 2048;
+const SDO_HMI_NATIVE_CY = 2048;
+const SDO_HMI_NATIVE_RADIUS = 1980;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
 
@@ -256,7 +265,8 @@ const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy:
   const lonRad = longitude * (Math.PI / 180);
   const x = cx + radius * Math.cos(latRad) * Math.sin(lonRad);
   const y = cy - radius * Math.sin(latRad);
-  const onDisk = (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2;
+  const visibleHemisphere = Math.cos(latRad) * Math.cos(lonRad) >= 0;
+  const onDisk = visibleHemisphere && ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2);
   return { x, y, onDisk };
 };
 
@@ -1010,7 +1020,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const observedNz = toNzEpochMs(observed);
         if (observedNz < cutoff || observedNz > nzNow + 60 * 60 * 1000) return false;
         if ((region.area ?? 0) < ACTIVE_REGION_MIN_AREA_MSH) return false;
-        return isEarthVisibleCoordinate(region.latitude, region.longitude);
+        return isEarthFacingCoordinate(region.latitude, region.longitude);
       });
 
       const grouped = filteredCurrent.reduce((acc, item) => {
@@ -1064,7 +1074,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           };
         })
         .filter((region): region is ActiveSunspotRegion => Boolean(region && typeof region === 'object'))
-        .filter((region) => isEarthVisibleCoordinate(region.latitude, region.longitude))
+        .filter((region) => isEarthFacingCoordinate(region.latitude, region.longitude))
         .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 
       setActiveSunspotRegions(dedupedLatest);
@@ -1146,62 +1156,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     source.onload = () => {
       if (cancelled) return;
 
-      const width = source.naturalWidth || 1024;
-      const height = source.naturalHeight || 1024;
-      const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
+      const width = source.naturalWidth || HMI_IMAGE_SIZE;
+      const height = source.naturalHeight || HMI_IMAGE_SIZE;
 
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
-          setOverviewGeometry(fallback);
-          return;
-        }
-
-        ctx.drawImage(source, 0, 0, width, height);
-        const imageData = ctx.getImageData(0, 0, width, height).data;
-        const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
-
-        const isDiskPixel = (x: number, y: number) => {
-          const i = (y * width + x) * 4;
-          const r = imageData[i];
-          const g = imageData[i + 1];
-          const b = imageData[i + 2];
-          const a = imageData[i + 3];
-          return a > 0 && (r + g + b) > 24;
-        };
-
-        let left = width;
-        let right = 0;
-        let top = height;
-        let bottom = 0;
-
-        for (let y = 0; y < height; y += step) {
-          for (let x = 0; x < width; x += step) {
-            if (isDiskPixel(x, y)) {
-              if (x < left) left = x;
-              if (x > right) right = x;
-              if (y < top) top = y;
-              if (y > bottom) bottom = y;
-            }
-          }
-        }
-
-        if (left >= right || top >= bottom) {
-          setOverviewGeometry(fallback);
-          return;
-        }
-
-        const cx = (left + right) / 2;
-        const cy = (top + bottom) / 2;
-        const radius = Math.max((right - left), (bottom - top)) / 2;
-        setOverviewGeometry({ width, height, cx, cy, radius });
-      } catch {
-        setOverviewGeometry(fallback);
+      // SDO 4096px HMI products have a stable native disk geometry.
+      // This keeps marker alignment stable across colorized/magnetogram/intensity views.
+      if (width >= 4000 && height >= 4000) {
+        const scaleX = width / HMI_IMAGE_SIZE;
+        const scaleY = height / HMI_IMAGE_SIZE;
+        const scale = Math.min(scaleX, scaleY);
+        setOverviewGeometry({
+          width,
+          height,
+          cx: SDO_HMI_NATIVE_CX * scaleX,
+          cy: SDO_HMI_NATIVE_CY * scaleY,
+          radius: SDO_HMI_NATIVE_RADIUS * scale,
+        });
+        return;
       }
+
+      const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
+      setOverviewGeometry(fallback);
     };
 
     source.onerror = () => {
