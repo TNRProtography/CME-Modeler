@@ -135,6 +135,8 @@ const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
 const SDO_HMI_NATIVE_CY = 2048;
 const SDO_HMI_NATIVE_RADIUS = 1980;
+const CLOSEUP_OFFSET_X_PX = 100;
+const CLOSEUP_OFFSET_Y_PX = -100;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
 
@@ -1675,19 +1677,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3">
                         {selectedSunspotCloseupUrl && selectedSunspotPreview ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
-                            <img
-                              src={selectedSunspotCloseupUrl}
-                              alt={`AR ${selectedSunspotRegion.region} closeup`}
-                              className="absolute"
-                              style={{
-                                width: '420%',
-                                height: '420%',
-                                left: `${50 - selectedSunspotPreview.xPercent * 4.2}%`,
-                                top: `${50 - selectedSunspotPreview.yPercent * 4.2}%`,
-                                objectFit: 'contain',
-                                maxWidth: 'none',
-                              }}
-                            />
+                            {(() => {
+                              const offsetXPercent = (CLOSEUP_OFFSET_X_PX / HMI_IMAGE_SIZE) * 100;
+                              const offsetYPercent = (CLOSEUP_OFFSET_Y_PX / HMI_IMAGE_SIZE) * 100;
+                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent + offsetXPercent));
+                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent + offsetYPercent));
+                              return (
+                                <img
+                                  src={selectedSunspotCloseupUrl}
+                                  alt={`AR ${selectedSunspotRegion.region} closeup`}
+                                  className="absolute"
+                                  style={{
+                                    width: '420%',
+                                    height: '420%',
+                                    left: `${50 - adjustedX * 4.2}%`,
+                                    top: `${50 - adjustedY * 4.2}%`,
+                                    objectFit: 'contain',
+                                    maxWidth: 'none',
+                                  }}
+                                />
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">Close-up unavailable</div>
