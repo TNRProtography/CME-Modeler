@@ -273,6 +273,57 @@ const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy:
   return { x, y, onDisk };
 };
 
+const detectSolarDiskGeometry = (source: HTMLImageElement): { width: number; height: number; cx: number; cy: number; radius: number } => {
+  const width = source.naturalWidth || HMI_IMAGE_SIZE;
+  const height = source.naturalHeight || HMI_IMAGE_SIZE;
+  const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return fallback;
+
+    ctx.drawImage(source, 0, 0, width, height);
+    const imageData = ctx.getImageData(0, 0, width, height).data;
+    const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
+
+    const isDiskPixel = (x: number, y: number) => {
+      const i = (y * width + x) * 4;
+      const r = imageData[i];
+      const g = imageData[i + 1];
+      const b = imageData[i + 2];
+      const a = imageData[i + 3];
+      return a > 0 && (r + g + b) > 24;
+    };
+
+    let left = width;
+    let right = 0;
+    let top = height;
+    let bottom = 0;
+
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
+        if (isDiskPixel(x, y)) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+      }
+    }
+
+    if (left >= right || top >= bottom) return fallback;
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+    const radius = Math.max((right - left), (bottom - top)) / 2;
+    return { width, height, cx, cy, radius };
+  } catch {
+    return fallback;
+  }
+};
+
 const getSunspotClassColor = (magneticClass?: string | null): string => {
   const c = String(magneticClass || '').toUpperCase();
   if (c.includes('DELTA') || c.includes('GAMMA')) return '#ef4444';
@@ -818,9 +869,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return;
     }
 
-    // Use direct image URLs to avoid CORS fetch failures for third-party image hosts.
-    setState({ url: fetchUrl, loading: null });
-    setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+    // Preload immediately so switching modes is instant once loaded.
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      setState({ url: fetchUrl, loading: null });
+      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+    };
+    img.onerror = () => {
+      setState({ url: '/error.png', loading: 'Image unavailable' });
+      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+    };
+    img.src = fetchUrl;
   }, []);
 
 
@@ -1096,12 +1156,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const runAllUpdates = useCallback(() => {
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
-    fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024);
-    fetchImage(SDO_HMI_B_1024_URL, setSdoHmiB1024);
-    fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024);
-    fetchImage(SDO_HMI_BC_4096_URL, setSdoHmiBc4096);
-    fetchImage(SDO_HMI_B_4096_URL, setSdoHmiB4096);
-    fetchImage(SDO_HMI_IF_4096_URL, setSdoHmiIf4096);
+    fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024, false, false);
+    fetchImage(SDO_HMI_B_1024_URL, setSdoHmiB1024, false, false);
+    fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024, false, false);
+    fetchImage(SDO_HMI_BC_4096_URL, setSdoHmiBc4096, false, false);
+    fetchImage(SDO_HMI_B_4096_URL, setSdoHmiB4096, false, false);
+    fetchImage(SDO_HMI_IF_4096_URL, setSdoHmiIf4096, false, false);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
@@ -1182,12 +1242,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const scaleX = width / HMI_IMAGE_SIZE;
         const scaleY = height / HMI_IMAGE_SIZE;
         const scale = Math.min(scaleX, scaleY);
+        const detected = detectSolarDiskGeometry(source);
         setOverviewGeometry({
           width,
           height,
-          cx: SDO_HMI_NATIVE_CX * scaleX,
-          cy: SDO_HMI_NATIVE_CY * scaleY,
-          radius: SDO_HMI_NATIVE_RADIUS * scale,
+          cx: (SDO_HMI_NATIVE_CX * scaleX + detected.cx) / 2,
+          cy: (SDO_HMI_NATIVE_CY * scaleY + detected.cy) / 2,
+          radius: (SDO_HMI_NATIVE_RADIUS * scale + detected.radius) / 2,
         });
         return;
       }
@@ -1602,17 +1663,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3">
                         {selectedSunspotCloseupUrl && selectedSunspotPreview ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
-                            <img
-                              src={selectedSunspotCloseupUrl}
-                              alt={`AR ${selectedSunspotRegion.region} closeup`}
-                              className="absolute"
+                            <div
+                              aria-label={`AR ${selectedSunspotRegion.region} closeup`}
+                              className="absolute inset-0"
                               style={{
-                                width: '420%',
-                                height: '420%',
-                                left: `${50 - selectedSunspotPreview.xPercent * 4.2}%`,
-                                top: `${50 - selectedSunspotPreview.yPercent * 4.2}%`,
-                                objectFit: 'contain',
-                                maxWidth: 'none',
+                                backgroundImage: `url(${selectedSunspotCloseupUrl})`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundSize: '420% 420%',
+                                backgroundPosition: `${selectedSunspotPreview.xPercent}% ${selectedSunspotPreview.yPercent}%`,
                               }}
                             />
                           </div>
