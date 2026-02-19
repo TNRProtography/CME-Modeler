@@ -60,6 +60,7 @@ const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
 type ViewerMedia =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
+    | { type: 'image_with_labels', url: string, labels: { id: string; xPercent: number; yPercent: number; text: string }[] }
     | { type: 'animation', urls: string[] };
 
 interface NavigationTarget {

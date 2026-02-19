@@ -12,7 +12,7 @@ import {
 } from '../services/nasaService';
 
 interface SolarActivityDashboardProps {
-  setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
+  setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   onViewCMEInVisualization: (cmeId: string) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
@@ -1309,6 +1309,49 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       ? sdoHmiB4096
       : sdoHmiBc4096;
 
+  const openSunspotCloseupInViewer = useCallback(async () => {
+    if (!selectedSunspotCloseupUrl || !selectedSunspotPreview || !selectedSunspotRegion) return;
+
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const loaded = await new Promise<boolean>((resolve) => {
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = selectedSunspotCloseupUrl;
+      });
+
+      if (!loaded) {
+        setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      const cropSize = 900;
+      canvas.width = cropSize;
+      canvas.height = cropSize;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
+        return;
+      }
+
+      const sourceW = img.naturalWidth || HMI_IMAGE_SIZE;
+      const sourceH = img.naturalHeight || HMI_IMAGE_SIZE;
+      const centerX = (selectedSunspotPreview.xPercent / 100) * sourceW;
+      const centerY = (selectedSunspotPreview.yPercent / 100) * sourceH;
+      const size = Math.min(sourceW, sourceH) * 0.24;
+      const half = size / 2;
+      const sx = Math.max(0, Math.min(sourceW - size, centerX - half));
+      const sy = Math.max(0, Math.min(sourceH - size, centerY - half));
+
+      ctx.drawImage(img, sx, sy, size, size, 0, 0, cropSize, cropSize);
+      setViewerMedia({ url: canvas.toDataURL('image/jpeg', 0.95), type: 'image' });
+    } catch {
+      setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
+    }
+  }, [selectedSunspotCloseupUrl, selectedSunspotPreview, selectedSunspotRegion, setViewerMedia]);
+
   useEffect(() => {
     if (!sunspotOverviewImage.url || sunspotOverviewImage.url === '/placeholder.png' || sunspotOverviewImage.url === '/error.png') {
       setOverviewGeometry(null);
@@ -1723,7 +1766,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <div
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
-                    onClick={() => sunspotOverviewImage4k.url !== '/placeholder.png' && sunspotOverviewImage4k.url !== '/error.png' && setViewerMedia({ url: sunspotOverviewImage4k.url, type: 'image' })}
+                    onClick={() => {
+                      if (sunspotOverviewImage4k.url === '/placeholder.png' || sunspotOverviewImage4k.url === '/error.png') return;
+                      setViewerMedia({
+                        url: sunspotOverviewImage4k.url,
+                        type: 'image_with_labels',
+                        labels: plottedSunspots.map((region) => ({
+                          id: region.region,
+                          xPercent: region.xPercent,
+                          yPercent: region.yPercent,
+                          text: `AR ${region.region}`,
+                        })),
+                      });
+                    }}
                   >
                     <img
                       src={sunspotOverviewImage.url}
@@ -1780,7 +1835,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                       <div
                         className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full max-w-[320px] lg:max-w-none mx-auto overflow-hidden mb-3 cursor-zoom-in"
-                        onClick={() => selectedSunspotCloseupUrl && setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' })}
+                        onClick={openSunspotCloseupInViewer}
                         onTouchStart={(event) => {
                           touchStartXRef.current = event.touches[0]?.clientX ?? null;
                         }}
