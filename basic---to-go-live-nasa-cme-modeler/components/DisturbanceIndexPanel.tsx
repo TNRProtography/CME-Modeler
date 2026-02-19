@@ -25,10 +25,13 @@ interface Hp30Row {
 }
 
 interface DisturbanceIndexPanelProps {
-  hp30Data: Array<{ x?: number; y?: number }>;
+  hp30Data: Array<{ x?: number; y?: number; timestamp?: number; hemisphericPower?: number }>;
 }
 
-const KYOTO_DST_URL = 'https://services.swpc.noaa.gov/json/geospace/geospace_dst_1_hour.json';
+const DST_FEED_CANDIDATES = [
+  'https://services.swpc.noaa.gov/json/kyoto_dst_1_hour.json',
+  'https://services.swpc.noaa.gov/json/geospace/geospace_dst_1_hour.json',
+];
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const RANGE_OPTIONS = [
@@ -85,6 +88,17 @@ const TimeRangeButtons: React.FC<{ selected: number; onSelect: (value: number) =
   </div>
 );
 
+const parseDstPayload = (raw: any): DstRow[] =>
+  (Array.isArray(raw) ? raw : [])
+    .map((item: any) => {
+      const timestamp = typeof item?.time_tag === 'string' ? item.time_tag : null;
+      const dst = Number(item?.dst);
+      if (!timestamp || !Number.isFinite(dst)) return null;
+      return { timestamp, dst };
+    })
+    .filter((item: DstRow | null): item is DstRow => item !== null)
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
 const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data }) => {
   const [activeView, setActiveView] = useState<DisturbanceView>('dst');
   const [dstRows, setDstRows] = useState<DstRow[]>([]);
@@ -98,24 +112,35 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
     setDstError(null);
 
     try {
-      const response = await fetch(`${KYOTO_DST_URL}?_=${Date.now()}`);
-      if (!response.ok) {
-        throw new Error(`Dst feed returned ${response.status}`);
-      }
+      const attempts = await Promise.allSettled(
+        DST_FEED_CANDIDATES.map((url) => fetch(`${url}?_=${Date.now()}`).then(async (response) => {
+          if (!response.ok) throw new Error(`${url} -> ${response.status}`);
+          return parseDstPayload(await response.json());
+        }))
+      );
 
-      const dstData = await response.json();
-      const normalizedDst = (Array.isArray(dstData) ? dstData : [])
-        .map((item: any) => {
-          const timestamp = typeof item?.time_tag === 'string' ? item.time_tag : null;
-          const dst = Number(item?.dst);
-          if (!timestamp || !Number.isFinite(dst)) return null;
-          return { timestamp, dst };
-        })
-        .filter((item: DstRow | null): item is DstRow => item !== null)
-        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-        .slice(-240);
+      const successful = attempts
+        .filter((attempt): attempt is PromiseFulfilledResult<DstRow[]> => attempt.status === 'fulfilled')
+        .map((attempt) => attempt.value)
+        .filter((rows) => rows.length > 0)
+        .sort((a, b) => b.length - a.length);
 
-      setDstRows(normalizedDst);
+      const selected = successful[0] ?? [];
+      if (!selected.length) throw new Error('No rows from any Dst feed');
+
+      setDstRows((previous) => {
+        const merged = [...previous, ...selected];
+        const byTime = new Map<number, DstRow>();
+        for (const row of merged) {
+          const t = new Date(row.timestamp).getTime();
+          if (!Number.isFinite(t)) continue;
+          byTime.set(t, row);
+        }
+        return [...byTime.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map((entry) => entry[1])
+          .slice(-336);
+      });
     } catch {
       setDstError('Unable to load live Kyoto Dst feed right now.');
     } finally {
@@ -132,8 +157,8 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
   const sanitizedHp30 = useMemo<Hp30Row[]>(() => {
     return hp30Data
       .map((row) => {
-        const x = typeof row?.x === 'number' ? row.x : Number.NaN;
-        const y = typeof row?.y === 'number' ? row.y : Number.NaN;
+        const x = typeof row?.x === 'number' ? row.x : typeof row?.timestamp === 'number' ? row.timestamp : Number.NaN;
+        const y = typeof row?.y === 'number' ? row.y : typeof row?.hemisphericPower === 'number' ? row.hemisphericPower : Number.NaN;
         if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
         return { x, y };
       })
@@ -147,7 +172,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
     if (!Number.isFinite(latestTs)) return dstRows;
     const cutoff = latestTs - dstRange;
     const rows = dstRows.filter((row) => new Date(row.timestamp).getTime() >= cutoff);
-    return rows.length ? rows : dstRows.slice(-Math.min(24, dstRows.length));
+    return rows.length ? rows : dstRows;
   }, [dstRows, dstRange]);
 
   const filteredHp30Rows = useMemo(() => {
@@ -155,7 +180,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
     const latestTs = sanitizedHp30[sanitizedHp30.length - 1].x;
     const cutoff = latestTs - hp30Range;
     const rows = sanitizedHp30.filter((row) => row.x >= cutoff);
-    return rows.length ? rows : sanitizedHp30.slice(-Math.min(24, sanitizedHp30.length));
+    return rows.length ? rows : sanitizedHp30;
   }, [sanitizedHp30, hp30Range]);
 
   const latestDst = filteredDstRows.length ? filteredDstRows[filteredDstRows.length - 1] : null;
