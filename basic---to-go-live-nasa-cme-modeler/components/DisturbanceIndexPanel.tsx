@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import GuideIcon from './icons/GuideIcon';
 
 type DisturbanceView = 'historic' | 'kyoto';
@@ -29,56 +29,62 @@ const HISTORIC_STORMS: HistoricStorm[] = [
 ];
 
 const KYOTO_DST_URL = 'https://services.swpc.noaa.gov/json/geospace/geospace_dst_1_hour.json';
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
+
+const getDstBadgeClass = (dst: number) => {
+  if (dst <= -100) return 'bg-red-700 text-white';
+  if (dst <= -50) return 'bg-amber-700 text-white';
+  if (dst <= -30) return 'bg-yellow-700 text-white';
+  return 'bg-emerald-700 text-white';
+};
 
 const DisturbanceIndexPanel: React.FC = () => {
-  const [activeView, setActiveView] = useState<DisturbanceView>('historic');
+  const [activeView, setActiveView] = useState<DisturbanceView>('kyoto');
   const [kyotoRows, setKyotoRows] = useState<KyotoDstRow[]>([]);
   const [isLoadingKyoto, setIsLoadingKyoto] = useState(false);
   const [kyotoError, setKyotoError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activeView !== 'kyoto') return;
-    let isMounted = true;
-
-    const fetchKyotoDst = async () => {
-      setIsLoadingKyoto(true);
-      setKyotoError(null);
-      try {
-        const response = await fetch(`${KYOTO_DST_URL}?_=${Date.now()}`);
-        if (!response.ok) {
-          throw new Error(`Kyoto Dst feed returned ${response.status}`);
-        }
-        const data = await response.json();
-        const normalized = (Array.isArray(data) ? data : [])
-          .map((item: any) => {
-            const timestamp = typeof item?.time_tag === 'string' ? item.time_tag : null;
-            const dst = Number(item?.dst);
-            if (!timestamp || !Number.isFinite(dst)) return null;
-            return { timestamp, dst };
-          })
-          .filter((item: KyotoDstRow | null): item is KyotoDstRow => item !== null)
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-          .slice(0, 48);
-
-        if (isMounted) setKyotoRows(normalized);
-      } catch {
-        if (isMounted) setKyotoError('Unable to load Kyoto Dst feed right now.');
-      } finally {
-        if (isMounted) setIsLoadingKyoto(false);
+  const fetchKyotoDst = useCallback(async () => {
+    setIsLoadingKyoto(true);
+    setKyotoError(null);
+    try {
+      const response = await fetch(`${KYOTO_DST_URL}?_=${Date.now()}`);
+      if (!response.ok) {
+        throw new Error(`Kyoto Dst feed returned ${response.status}`);
       }
-    };
+      const data = await response.json();
+      const normalized = (Array.isArray(data) ? data : [])
+        .map((item: any) => {
+          const timestamp = typeof item?.time_tag === 'string' ? item.time_tag : null;
+          const dst = Number(item?.dst);
+          if (!timestamp || !Number.isFinite(dst)) return null;
+          return { timestamp, dst };
+        })
+        .filter((item: KyotoDstRow | null): item is KyotoDstRow => item !== null)
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 72);
 
+      setKyotoRows(normalized);
+    } catch {
+      setKyotoError('Unable to load Kyoto Dst feed right now.');
+    } finally {
+      setIsLoadingKyoto(false);
+    }
+  }, []);
+
+  useEffect(() => {
     fetchKyotoDst();
-    return () => {
-      isMounted = false;
-    };
-  }, [activeView]);
+    const refreshInterval = setInterval(fetchKyotoDst, AUTO_REFRESH_MS);
+    return () => clearInterval(refreshInterval);
+  }, [fetchKyotoDst]);
+
+  const latestReading = kyotoRows[0] ?? null;
 
   const kyotoUpdatedLabel = useMemo(() => {
-    if (!kyotoRows.length) return '—';
-    const latest = new Date(kyotoRows[0].timestamp);
+    if (!latestReading) return '—';
+    const latest = new Date(latestReading.timestamp);
     return Number.isFinite(latest.getTime()) ? latest.toLocaleString('en-NZ') : '—';
-  }, [kyotoRows]);
+  }, [latestReading]);
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-4">
@@ -87,20 +93,12 @@ const DisturbanceIndexPanel: React.FC = () => {
           <h3 className="text-xl font-semibold text-white">Geomagnetic Disturbance Index</h3>
           <button
             className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
-            title="Dst estimates ring current strength. Lower (more negative) values indicate stronger geomagnetic storms."
+            title="Live Kyoto Dst tracks storm-time ring current strength. Lower (more negative) values indicate stronger geomagnetic storms."
           >
             <GuideIcon className="w-5 h-5" />
           </button>
         </div>
         <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 p-1">
-          <button
-            onClick={() => setActiveView('historic')}
-            className={`px-3 py-1 text-xs rounded-full transition-colors ${
-              activeView === 'historic' ? 'bg-sky-600 text-white' : 'text-neutral-300 hover:bg-white/10'
-            }`}
-          >
-            Top Dst Storms
-          </button>
           <button
             onClick={() => setActiveView('kyoto')}
             className={`px-3 py-1 text-xs rounded-full transition-colors ${
@@ -109,7 +107,36 @@ const DisturbanceIndexPanel: React.FC = () => {
           >
             Kyoto Dst
           </button>
+          <button
+            onClick={() => setActiveView('historic')}
+            className={`px-3 py-1 text-xs rounded-full transition-colors ${
+              activeView === 'historic' ? 'bg-sky-600 text-white' : 'text-neutral-300 hover:bg-white/10'
+            }`}
+          >
+            Top Dst Storms
+          </button>
         </div>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-white/10 bg-black/30 p-3">
+        <div className="text-xs uppercase tracking-wide text-neutral-400 mb-1">Live Dst reading (Kyoto)</div>
+        {isLoadingKyoto && !latestReading ? (
+          <div className="text-sm text-neutral-300">Loading latest Dst…</div>
+        ) : kyotoError && !latestReading ? (
+          <div className="text-sm text-amber-300">{kyotoError}</div>
+        ) : latestReading ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className={`rounded-md px-3 py-1 text-lg font-semibold ${getDstBadgeClass(latestReading.dst)}`}>
+                {latestReading.dst}nT
+              </span>
+              <span className="text-sm text-neutral-300">{latestReading.dst <= -100 ? 'Intense storm' : latestReading.dst <= -50 ? 'Active storm' : 'Quiet to unsettled'}</span>
+            </div>
+            <div className="text-xs text-neutral-400">Updated: {kyotoUpdatedLabel}</div>
+          </div>
+        ) : (
+          <div className="text-sm text-neutral-300">No Dst data available.</div>
+        )}
       </div>
 
       {activeView === 'historic' ? (
@@ -139,10 +166,10 @@ const DisturbanceIndexPanel: React.FC = () => {
         </div>
       ) : (
         <div>
-          <div className="text-xs text-neutral-400 mb-3">Latest from Kyoto Dst feed · Updated: {kyotoUpdatedLabel}</div>
-          {isLoadingKyoto ? (
+          <div className="text-xs text-neutral-400 mb-3">Hourly Kyoto Dst feed · Updated: {kyotoUpdatedLabel}</div>
+          {isLoadingKyoto && !kyotoRows.length ? (
             <div className="text-sm text-neutral-300">Loading Kyoto Dst…</div>
-          ) : kyotoError ? (
+          ) : kyotoError && !kyotoRows.length ? (
             <div className="text-sm text-amber-300">{kyotoError}</div>
           ) : (
             <div className="overflow-x-auto max-h-72 overflow-y-auto styled-scrollbar">
@@ -158,7 +185,7 @@ const DisturbanceIndexPanel: React.FC = () => {
                     <tr key={row.timestamp} className="border-b border-neutral-800/70">
                       <td className="py-2 pr-2 text-neutral-100">{new Date(row.timestamp).toLocaleString('en-NZ')}</td>
                       <td className="py-2">
-                        <span className={`rounded-md px-2 py-0.5 font-semibold ${row.dst <= -100 ? 'bg-red-700 text-white' : row.dst <= -50 ? 'bg-amber-700 text-white' : 'bg-neutral-700 text-neutral-100'}`}>
+                        <span className={`rounded-md px-2 py-0.5 font-semibold ${getDstBadgeClass(row.dst)}`}>
                           {row.dst}nT
                         </span>
                       </td>
