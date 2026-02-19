@@ -19,12 +19,27 @@ interface DstRow {
   dst: number;
 }
 
+interface Hp30Row {
+  x: number;
+  y: number;
+}
+
 interface DisturbanceIndexPanelProps {
-  hp30Data: Array<{ x: number; y: number }>;
+  hp30Data: Array<{ x?: number; y?: number }>;
 }
 
 const KYOTO_DST_URL = 'https://services.swpc.noaa.gov/json/geospace/geospace_dst_1_hour.json';
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
+
+const RANGE_OPTIONS = [
+  { label: '1 Hr', ms: 1 * 3600000 },
+  { label: '2 Hr', ms: 2 * 3600000 },
+  { label: '3 Hr', ms: 3 * 3600000 },
+  { label: '6 Hr', ms: 6 * 3600000 },
+  { label: '12 Hr', ms: 12 * 3600000 },
+  { label: '24 Hr', ms: 24 * 3600000 },
+  { label: '7 Day', ms: 168 * 3600000 },
+];
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
 
@@ -54,11 +69,29 @@ const formatNzLabel = (timestamp: string | number) => {
   });
 };
 
+const TimeRangeButtons: React.FC<{ selected: number; onSelect: (value: number) => void }> = ({ selected, onSelect }) => (
+  <div className="flex flex-wrap gap-2 mb-3">
+    {RANGE_OPTIONS.map((option) => (
+      <button
+        key={option.label}
+        onClick={() => onSelect(option.ms)}
+        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+          selected === option.ms ? 'bg-sky-600 text-white' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+        }`}
+      >
+        {option.label}
+      </button>
+    ))}
+  </div>
+);
+
 const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data }) => {
   const [activeView, setActiveView] = useState<DisturbanceView>('dst');
   const [dstRows, setDstRows] = useState<DstRow[]>([]);
   const [isLoadingDst, setIsLoadingDst] = useState(false);
   const [dstError, setDstError] = useState<string | null>(null);
+  const [dstRange, setDstRange] = useState(6 * 3600000);
+  const [hp30Range, setHp30Range] = useState(168 * 3600000);
 
   const fetchDst = useCallback(async () => {
     setIsLoadingDst(true);
@@ -80,7 +113,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
         })
         .filter((item: DstRow | null): item is DstRow => item !== null)
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-        .slice(-72);
+        .slice(-240);
 
       setDstRows(normalizedDst);
     } catch {
@@ -96,8 +129,37 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
     return () => clearInterval(refreshInterval);
   }, [fetchDst]);
 
-  const latestDst = dstRows.length ? dstRows[dstRows.length - 1] : null;
-  const latestHp30 = hp30Data.length ? hp30Data[hp30Data.length - 1] : null;
+  const sanitizedHp30 = useMemo<Hp30Row[]>(() => {
+    return hp30Data
+      .map((row) => {
+        const x = typeof row?.x === 'number' ? row.x : Number.NaN;
+        const y = typeof row?.y === 'number' ? row.y : Number.NaN;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return { x, y };
+      })
+      .filter((row: Hp30Row | null): row is Hp30Row => row !== null)
+      .sort((a, b) => a.x - b.x);
+  }, [hp30Data]);
+
+  const filteredDstRows = useMemo(() => {
+    if (!dstRows.length) return [];
+    const latestTs = new Date(dstRows[dstRows.length - 1].timestamp).getTime();
+    if (!Number.isFinite(latestTs)) return dstRows;
+    const cutoff = latestTs - dstRange;
+    const rows = dstRows.filter((row) => new Date(row.timestamp).getTime() >= cutoff);
+    return rows.length ? rows : dstRows.slice(-Math.min(24, dstRows.length));
+  }, [dstRows, dstRange]);
+
+  const filteredHp30Rows = useMemo(() => {
+    if (!sanitizedHp30.length) return [];
+    const latestTs = sanitizedHp30[sanitizedHp30.length - 1].x;
+    const cutoff = latestTs - hp30Range;
+    const rows = sanitizedHp30.filter((row) => row.x >= cutoff);
+    return rows.length ? rows : sanitizedHp30.slice(-Math.min(24, sanitizedHp30.length));
+  }, [sanitizedHp30, hp30Range]);
+
+  const latestDst = filteredDstRows.length ? filteredDstRows[filteredDstRows.length - 1] : null;
+  const latestHp30 = filteredHp30Rows.length ? filteredHp30Rows[filteredHp30Rows.length - 1] : null;
 
   const latestUpdatedLabel = useMemo(() => {
     const latestTs = activeView === 'dst' ? latestDst?.timestamp : latestHp30?.x;
@@ -107,11 +169,11 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
 
   const dstChartData = useMemo(
     () => ({
-      labels: dstRows.map((row) => formatNzLabel(row.timestamp)),
+      labels: filteredDstRows.map((row) => formatNzLabel(row.timestamp)),
       datasets: [
         {
           label: 'Kyoto Dst (nT)',
-          data: dstRows.map((row) => row.dst),
+          data: filteredDstRows.map((row) => row.dst),
           borderColor: '#f43f5e',
           backgroundColor: 'rgba(244, 63, 94, 0.2)',
           borderWidth: 2,
@@ -121,16 +183,16 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
         },
       ],
     }),
-    [dstRows]
+    [filteredDstRows]
   );
 
   const hp30ChartData = useMemo(
     () => ({
-      labels: hp30Data.map((row) => formatNzLabel(row.x)),
+      labels: filteredHp30Rows.map((row) => formatNzLabel(row.x)),
       datasets: [
         {
           label: 'HP30 (GW)',
-          data: hp30Data.map((row) => row.y),
+          data: filteredHp30Rows.map((row) => row.y),
           borderColor: '#22d3ee',
           backgroundColor: 'rgba(34, 211, 238, 0.2)',
           borderWidth: 2,
@@ -140,7 +202,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
         },
       ],
     }),
-    [hp30Data]
+    [filteredHp30Rows]
   );
 
   const chartOptions = useMemo(
@@ -152,7 +214,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
       },
       scales: {
         x: {
-          ticks: { color: '#71717a', maxTicksLimit: 7 },
+          ticks: { color: '#71717a', maxTicksLimit: 8 },
           grid: { color: '#27272a' },
         },
         y: {
@@ -164,7 +226,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
     []
   );
 
-  const isEmpty = activeView === 'dst' ? !dstRows.length : !hp30Data.length;
+  const isEmpty = activeView === 'dst' ? !filteredDstRows.length : !filteredHp30Rows.length;
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-4">
@@ -198,6 +260,12 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
         </div>
       </div>
 
+      {activeView === 'dst' ? (
+        <TimeRangeButtons selected={dstRange} onSelect={setDstRange} />
+      ) : (
+        <TimeRangeButtons selected={hp30Range} onSelect={setHp30Range} />
+      )}
+
       <div className="mb-4 rounded-lg border border-white/10 bg-black/30 p-3">
         {activeView === 'dst' ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -217,7 +285,7 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="text-xs uppercase tracking-wide text-neutral-400">Live HP30</span>
-              {latestHp30 ? (
+              {latestHp30 && Number.isFinite(latestHp30.y) ? (
                 <span className={`rounded-md px-3 py-1 text-lg font-semibold ${getHp30BadgeClass(latestHp30.y)}`}>
                   {latestHp30.y.toFixed(1)} GW
                 </span>
@@ -230,9 +298,9 @@ const DisturbanceIndexPanel: React.FC<DisturbanceIndexPanelProps> = ({ hp30Data 
         )}
       </div>
 
-      {activeView === 'dst' && isLoadingDst && !dstRows.length ? (
+      {activeView === 'dst' && isLoadingDst && !filteredDstRows.length ? (
         <div className="text-sm text-neutral-300">Loading live Kyoto Dst feed…</div>
-      ) : activeView === 'dst' && dstError && !dstRows.length ? (
+      ) : activeView === 'dst' && dstError && !filteredDstRows.length ? (
         <div className="text-sm text-amber-300">{dstError}</div>
       ) : isEmpty ? (
         <div className="text-sm text-neutral-300">Live data unavailable.</div>
