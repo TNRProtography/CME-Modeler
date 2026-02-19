@@ -1293,7 +1293,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeSunspotRegions]);
 
   const selectedSunspotPreview = useMemo(() => {
-    if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
+    if (!selectedSunspotRegion) return null;
+
+    const plotted = plottedSunspots.find((region) => region.region === selectedSunspotRegion.region);
+    if (plotted && Number.isFinite(plotted.xPercent) && Number.isFinite(plotted.yPercent)) {
+      const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
+      return {
+        xPercent: plotted.xPercent,
+        yPercent: plotted.yPercent,
+        xPx: (plotted.xPercent / 100) * geometry.width,
+        yPx: (plotted.yPercent / 100) * geometry.height,
+      };
+    }
+
+    if (selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
       return null;
     }
 
@@ -1313,7 +1326,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       xPx: constrained.x,
       yPx: constrained.y,
     };
-  }, [selectedSunspotRegion, overviewGeometry]);
+  }, [selectedSunspotRegion, plottedSunspots, overviewGeometry]);
 
   useEffect(() => {
     if (!selectedSunspotRegion) {
@@ -1662,14 +1675,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3">
                         {selectedSunspotCloseupUrl && selectedSunspotPreview ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
-                            <div
-                              aria-label={`AR ${selectedSunspotRegion.region} closeup`}
-                              className="absolute inset-0"
+                            <img
+                              src={selectedSunspotCloseupUrl}
+                              alt={`AR ${selectedSunspotRegion.region} closeup`}
+                              className="absolute"
                               style={{
-                                backgroundImage: `url(${selectedSunspotCloseupUrl})`,
-                                backgroundRepeat: 'no-repeat',
-                                backgroundSize: '420% 420%',
-                                backgroundPosition: `${selectedSunspotPreview.xPercent}% ${selectedSunspotPreview.yPercent}%`,
+                                width: '420%',
+                                height: '420%',
+                                left: `${50 - selectedSunspotPreview.xPercent * 4.2}%`,
+                                top: `${50 - selectedSunspotPreview.yPercent * 4.2}%`,
+                                objectFit: 'contain',
+                                maxWidth: 'none',
                               }}
                             />
                           </div>
