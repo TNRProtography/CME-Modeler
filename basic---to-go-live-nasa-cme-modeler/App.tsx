@@ -133,6 +133,7 @@ const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.4';
+const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
 const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = lazy(() => import('./components/ImpactGraphModal'));
@@ -149,6 +150,8 @@ const App: React.FC = () => {
     return stored === 'advanced' ? 'advanced' : 'simple';
   };
 
+  const getStoredDashboardMode = () => localStorage.getItem(DASHBOARD_MODE_KEY) === 'true';
+
   const [defaultMainPage, setDefaultMainPage] = useState<'forecast' | 'modeler' | 'solar-activity'>(() =>
     getStoredMainPage()
   );
@@ -156,6 +159,8 @@ const App: React.FC = () => {
   const [defaultForecastView, setDefaultForecastView] = useState<'simple' | 'advanced'>(() =>
     getStoredForecastView()
   );
+
+  const [isDashboardMode, setIsDashboardMode] = useState<boolean>(() => getStoredDashboardMode());
 
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
@@ -565,6 +570,11 @@ const App: React.FC = () => {
     localStorage.setItem(DEFAULT_FORECAST_VIEW_KEY, view);
   }, []);
 
+  const handleDashboardModeChange = useCallback((enabled: boolean) => {
+    setIsDashboardMode(enabled);
+    localStorage.setItem(DASHBOARD_MODE_KEY, String(enabled));
+  }, []);
+
   const handleOpenSettings = useCallback(() => {
     navigateToPath(SETTINGS_PATH);
   }, [navigateToPath]);
@@ -644,6 +654,21 @@ const App: React.FC = () => {
     ]);
     setIsRefreshing(false);
   }, [activeTimeRange, loadCMEData]);
+
+
+  useEffect(() => {
+    if (!isDashboardMode) return;
+
+    const runCycle = () => {
+      loadCMEData(activeTimeRange, { silent: true });
+      window.setTimeout(() => {
+        setManualRefreshKey((v) => v + 1);
+      }, 20000);
+    };
+
+    const interval = window.setInterval(runCycle, 60000);
+    return () => window.clearInterval(interval);
+  }, [isDashboardMode, activeTimeRange, loadCMEData]);
 
   const handleShowTutorial = useCallback(() => {
     setIsFirstVisitTutorialOpen(true);
@@ -998,7 +1023,7 @@ const App: React.FC = () => {
           />
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
-              <div className="flex-1 min-w-0">
+              <div className={`flex-1 min-w-0 ${isDashboardMode ? 'hidden' : ''}`}>
                   <div className="flex flex-nowrap items-stretch justify-start gap-1 sm:gap-2 max-w-full overflow-hidden">
                       <button
                         id="nav-forecast"
@@ -1065,7 +1090,7 @@ const App: React.FC = () => {
           </header>
 
           <div className="flex flex-grow min-h-0">
-              <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
+              <div className={`w-full h-full flex-grow min-h-0 ${isDashboardMode ? 'flex xl:w-1/3 border-r border-white/10' : activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
@@ -1171,8 +1196,8 @@ const App: React.FC = () => {
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
-              {visitedPages.forecast && (
-                <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
+              {(isDashboardMode || visitedPages.forecast) && (
+                <div className={`w-full h-full ${isDashboardMode ? 'block xl:w-1/3 overflow-y-auto border-r border-white/10' : activePage === 'forecast' ? 'block' : 'hidden'}`}>
                     <ForecastDashboard
                         setViewerMedia={setViewerMedia}
                         setCurrentAuroraScore={setCurrentAuroraScore}
@@ -1187,8 +1212,8 @@ const App: React.FC = () => {
                     />
                 </div>
               )}
-              {visitedPages['solar-activity'] && (
-                <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
+              {(isDashboardMode || visitedPages['solar-activity']) && (
+                <div className={`w-full h-full ${isDashboardMode ? 'block xl:w-1/3 overflow-y-auto' : activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
                     <SolarActivityDashboard
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
@@ -1214,6 +1239,8 @@ const App: React.FC = () => {
             onDefaultForecastViewChange={handleDefaultForecastViewChange}
             pageViewStats={pageViewStats}
             pageViewStorageMode={pageViewStorageMode}
+            dashboardModeEnabled={isDashboardMode}
+            onDashboardModeChange={handleDashboardModeChange}
           />
           
           <FirstVisitTutorial

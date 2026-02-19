@@ -24,6 +24,8 @@ interface SettingsModalProps {
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
   pageViewStats: PageViewStats;
   pageViewStorageMode: 'server' | 'local';
+  dashboardModeEnabled: boolean;
+  onDashboardModeChange: (enabled: boolean) => void;
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -78,6 +80,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onDefaultForecastViewChange,
   pageViewStats,
   pageViewStorageMode,
+  dashboardModeEnabled,
+  onDashboardModeChange,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -328,6 +332,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   The selected layout is saved locally and applied whenever you load the forecast page without a shared link.
                 </p>
               </div>
+            </div>
+          </section>
+
+
+
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Dashboard Mode</h3>
+            <p className="text-sm text-neutral-400 mb-3">
+              Best for wide-screen tablets and PCs. When enabled, Forecast, Solar Activity, and CME Modeler stay visible together in one split view.
+            </p>
+            <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <ToggleSwitch label="Enable Dashboard Mode" checked={dashboardModeEnabled} onChange={onDashboardModeChange} />
+                <button
+                  type="button"
+                  className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
+                  title="Dashboard Mode: single wide-screen layout with all 3 sections visible and staggered auto-refresh every minute. Off: normal navigation pages, same behavior as today."
+                >
+                  <GuideIcon className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500">
+                ON: one big 3-column dashboard with staggered live updates every minute. OFF: regular page-by-page navigation (current default behavior).
+              </p>
             </div>
           </section>
 
