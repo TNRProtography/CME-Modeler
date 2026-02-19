@@ -10,6 +10,7 @@ import {
   fetchFlareData, 
   SolarFlare
 } from '../services/nasaService';
+import { buildSunspotDashboardData } from '../services/sunspotAnalysis';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | null) => void;
@@ -41,6 +42,7 @@ interface ActiveSunspotRegion {
   mFlareProbability: number | null;
   xFlareProbability: number | null;
 }
+
 
 const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
   return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
@@ -284,6 +286,7 @@ const getSunspotLabelStyle = (region: ActiveSunspotRegion): { background: string
   return { background: magneticTone, text: magneticTone === '#22c55e' ? '#052e16' : '#111827' };
 };
 
+
 // Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
 const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
   // @ts-ignore - we compute hasCME when processing flares
@@ -430,6 +433,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [loadingSunspotRegions, setLoadingSunspotRegions] = useState<string | null>('Loading active sunspot regions...');
   const [lastSunspotRegionsUpdate, setLastSunspotRegionsUpdate] = useState<string | null>(null);
   const [sunspotImageryMode, setSunspotImageryMode] = useState<SunspotImageryMode>('intensity');
+  const [sunspotOverlayUrls, setSunspotOverlayUrls] = useState<{ intensity: string | null; magnetogram: string | null }>({ intensity: null, magnetogram: null });
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
   const [loadingSunspotCloseup, setLoadingSunspotCloseup] = useState(false);
@@ -854,6 +858,38 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
 
     try {
+      const data = await buildSunspotDashboardData();
+      const regions = data.regions
+        .map((region) => ({
+          region: String(region.region_number),
+          location: String(region.location?.lat_cmd || 'N/A').toUpperCase(),
+          area: Number.isFinite(Number(region.area_msh)) ? Number(region.area_msh) : null,
+          spotCount: Number.isFinite(Number(region.spot_count)) ? Number(region.spot_count) : null,
+          magneticClass: region.magnetic_class ? String(region.magnetic_class).toUpperCase() : null,
+          latitude: Number.isFinite(Number(region.location?.lat_deg)) ? Number(region.location?.lat_deg) : null,
+          longitude: Number.isFinite(Number(region.location?.cmd_deg)) ? normalizeSolarLongitude(Number(region.location?.cmd_deg)) : null,
+          observedTime: parseNoaaUtcTimestamp(data.issued_utc),
+          trend: 'Stable' as ActiveSunspotRegion['trend'],
+          cFlareProbability: Number.isFinite(Number(region.flare_probability?.c_percent)) ? Number(region.flare_probability?.c_percent) : null,
+          mFlareProbability: Number.isFinite(Number(region.flare_probability?.m_percent)) ? Number(region.flare_probability?.m_percent) : null,
+          xFlareProbability: Number.isFinite(Number(region.flare_probability?.x_percent)) ? Number(region.flare_probability?.x_percent) : null,
+        }))
+        .filter((region) => isEarthVisibleCoordinate(region.latitude, region.longitude))
+        .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
+
+      setSunspotOverlayUrls({
+        intensity: data.imagery.png_intensity_fast,
+        magnetogram: data.imagery.png_magnetogram_fast,
+      });
+      setActiveSunspotRegions(regions);
+      setLoadingSunspotRegions(null);
+      setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
+      return;
+    } catch (workerlessError) {
+      console.warn('Local sunspot processing failed, falling back to NOAA raw feeds.', workerlessError);
+    }
+
+    try {
       const raw = await fetchFirstAvailableJson(NOAA_ACTIVE_REGIONS_URLS);
       const regionArray = Array.isArray(raw)
         ? raw
@@ -970,6 +1006,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         .filter((region) => isEarthVisibleCoordinate(region.latitude, region.longitude))
         .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
 
+      setSunspotOverlayUrls({ intensity: null, magnetogram: null });
       setActiveSunspotRegions(dedupedLatest);
       setLoadingSunspotRegions(null);
       setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
@@ -1028,7 +1065,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     sdoHmiIf1024,
   ]);
 
-  const sunspotOverviewImage = sunspotImageryMode === 'intensity' ? sdoHmiIf1024 : sdoHmiBc1024;
+  const sunspotOverviewImage = sunspotImageryMode === 'intensity'
+    ? { url: sunspotOverlayUrls.intensity || sdoHmiIf1024.url, loading: sdoHmiIf1024.loading }
+    : { url: sunspotOverlayUrls.magnetogram || sdoHmiBc1024.url, loading: sdoHmiBc1024.loading };
 
   useEffect(() => {
     if (!sunspotOverviewImage.url || sunspotOverviewImage.url === '/placeholder.png' || sunspotOverviewImage.url === '/error.png') {
@@ -1428,6 +1467,77 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             </div>
 
             <SolarActivitySummaryDisplay summary={activitySummary} />
+
+            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col gap-4">
+              <div className="flex justify-center items-center gap-2">
+                <h2 className="text-xl font-semibold text-white">Active Sunspot Regions</h2>
+                <button onClick={() => openModal('active-sunspots')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about active sunspot overlays.">?</button>
+              </div>
+
+              <div className="flex justify-center gap-2 my-1 flex-wrap">
+                <button onClick={() => setSunspotImageryMode('intensity')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'intensity' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>Intensity Overlay</button>
+                <button onClick={() => setSunspotImageryMode('magnetogram')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'magnetogram' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>Magnetogram Overlay</button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 bg-black/40 border border-neutral-800 rounded-lg p-3 min-h-[420px]">
+                  <div className="relative w-full max-w-[650px] mx-auto aspect-square overflow-hidden rounded-lg bg-black/40">
+                    <img
+                      src={sunspotOverviewImage.url}
+                      alt={`SDO ${sunspotImageryMode} sunspot overlay`}
+                      className="w-full h-full object-contain"
+                      crossOrigin="anonymous"
+                    />
+                    {sunspotOverviewImage.loading && <LoadingSpinner message={sunspotOverviewImage.loading} />}
+
+                    {!sunspotOverviewImage.loading && plottedSunspots.map((region) => (
+                      <button
+                        key={`${region.region}-${region.location}`}
+                        onClick={() => setSelectedSunspotRegion(region)}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/70 px-2 py-0.5 text-[10px] font-semibold shadow"
+                        style={{ left: `${region.xPercent}%`, top: `${region.yPercent}%`, background: region.labelStyle.background, color: region.labelStyle.text }}
+                        title={`AR ${region.region} (${region.location})`}
+                      >
+                        AR {region.region}
+                      </button>
+                    ))}
+
+                    {selectedSunspotPreview && (
+                      <div
+                        className="absolute -translate-x-1/2 -translate-y-1/2 h-6 w-6 rounded-full border-2 border-cyan-300 pointer-events-none"
+                        style={{ left: `${selectedSunspotPreview.xPercent}%`, top: `${selectedSunspotPreview.yPercent}%` }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-neutral-900/60 border border-neutral-800 rounded-lg p-3 flex flex-col gap-3">
+                  <h3 className="text-sm font-semibold text-neutral-200">Detected/Reported Regions ({displayedSunspotRegions.length})</h3>
+                  <div className="max-h-56 overflow-y-auto styled-scrollbar pr-1 space-y-2">
+                    {loadingSunspotRegions ? (
+                      <LoadingSpinner message={loadingSunspotRegions} />
+                    ) : displayedSunspotRegions.length ? displayedSunspotRegions.map((region) => (
+                      <button
+                        key={`${region.region}-${region.location}`}
+                        onClick={() => setSelectedSunspotRegion(region)}
+                        className={`w-full text-left rounded-md border px-3 py-2 transition-colors ${selectedSunspotRegion?.region === region.region ? 'border-sky-500 bg-sky-900/30' : 'border-neutral-700 hover:border-neutral-500'}`}
+                      >
+                        <p className="text-sm font-semibold text-white">AR {region.region} <span className="text-xs text-neutral-400">{region.location}</span></p>
+                        <p className="text-xs text-neutral-400">Area: {region.area ?? 'N/A'} msh · Spots: {region.spotCount ?? 'N/A'} · Mag: {region.magneticClass || 'N/A'}</p>
+                      </button>
+                    )) : <p className="text-sm text-neutral-400 italic">No active regions available.</p>}
+                  </div>
+
+                  <div className="bg-black/30 rounded-md border border-neutral-800 p-2 min-h-[140px] flex items-center justify-center">
+                    {loadingSunspotCloseup ? <LoadingSpinner message="Building close-up..." /> : selectedSunspotCloseupUrl ? (
+                      <img src={selectedSunspotCloseupUrl} alt="Selected active region close-up" className="w-36 h-36 object-cover rounded" />
+                    ) : <p className="text-xs text-neutral-500 text-center">Select a region to preview a cropped close-up.</p>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right text-xs text-neutral-500">Last updated: {lastSunspotRegionsUpdate || 'N/A'}</div>
+            </div>
 
             {/* --- SOLAR IMAGERY (Full Width) --- */}
             <div className="col-span-12 card bg-neutral-950/80 p-4 h-[700px] flex flex-col">
