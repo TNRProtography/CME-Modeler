@@ -102,6 +102,32 @@ type InitialLoadTaskKey =
 type ForecastLoadPoint = 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi';
 type SolarLoadPoint = 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions';
 
+const FORECAST_INITIAL_TASKS: InitialLoadTaskKey[] = [
+  'forecastData',
+  'forecastApi',
+  'solarWindApi',
+  'goes18Api',
+  'goes19Api',
+  'ipsApi',
+  'nzMagApi',
+];
+
+const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
+  'solarData',
+  'solarXray',
+  'solarProton',
+  'solarFlares',
+  'solarRegions',
+];
+
+const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
+
+const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
+  if (page === 'forecast') return new Set([...FORECAST_INITIAL_TASKS]);
+  if (page === 'solar-activity') return new Set([...SOLAR_INITIAL_TASKS]);
+  return new Set([...MODELER_INITIAL_TASKS]);
+};
+
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
@@ -191,21 +217,25 @@ const App: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const initialPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
-  const [initialLoadTasks, setInitialLoadTasks] = useState<Record<InitialLoadTaskKey, boolean>>(() => ({
-    forecastData: false,
-    forecastApi: false,
-    solarWindApi: false,
-    goes18Api: false,
-    goes19Api: false,
-    ipsApi: false,
-    nzMagApi: false,
-    solarData: false,
-    solarXray: false,
-    solarProton: false,
-    solarFlares: false,
-    solarRegions: false,
-    modelerCmeData: initialPageRef.current !== 'modeler',
-  }));
+  const initialRequiredTasks = useRef<Set<InitialLoadTaskKey>>(getInitialRequiredTasks(initialPageRef.current));
+  const [initialLoadTasks, setInitialLoadTasks] = useState<Record<InitialLoadTaskKey, boolean>>(() => {
+    const required = getInitialRequiredTasks(initialPageRef.current);
+    return {
+      forecastData: !required.has('forecastData'),
+      forecastApi: !required.has('forecastApi'),
+      solarWindApi: !required.has('solarWindApi'),
+      goes18Api: !required.has('goes18Api'),
+      goes19Api: !required.has('goes19Api'),
+      ipsApi: !required.has('ipsApi'),
+      nzMagApi: !required.has('nzMagApi'),
+      solarData: !required.has('solarData'),
+      solarXray: !required.has('solarXray'),
+      solarProton: !required.has('solarProton'),
+      solarFlares: !required.has('solarFlares'),
+      solarRegions: !required.has('solarRegions'),
+      modelerCmeData: !required.has('modelerCmeData'),
+    };
+  });
   const [reloadNotice, setReloadNotice] = useState<string | null>(null);
   const [reloadCountdown, setReloadCountdown] = useState<number | null>(null);
   const reloadScheduledRef = useRef(false);
@@ -231,9 +261,9 @@ const App: React.FC = () => {
   }, []);
 
   const initialLoadProgress = useMemo(() => {
-    const values = Object.values(initialLoadTasks);
-    const completed = values.filter(Boolean).length;
-    const total = values.length;
+    const required = Array.from(initialRequiredTasks.current);
+    const completed = required.filter((task) => initialLoadTasks[task]).length;
+    const total = required.length;
     if (total === 0) return 100;
     return Math.round((completed / total) * 100);
   }, [initialLoadTasks]);
@@ -333,6 +363,16 @@ const App: React.FC = () => {
     lastMainPageRef.current = activePage;
   }, [activePage]);
 
+  const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity', boolean>>(() => ({
+    forecast: initialPageRef.current === 'forecast',
+    modeler: initialPageRef.current === 'modeler',
+    'solar-activity': initialPageRef.current === 'solar-activity',
+  }));
+
+  useEffect(() => {
+    setVisitedPages((prev) => (prev[activePage] ? prev : { ...prev, [activePage]: true }));
+  }, [activePage]);
+
   useEffect(() => {
     let isCancelled = false;
     loadPageViewStats().then(stats => {
@@ -417,7 +457,7 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-    const allReady = Object.values(initialLoadTasks).every(Boolean);
+    const allReady = Array.from(initialRequiredTasks.current).every((task) => initialLoadTasks[task]);
     if (allReady && !isDashboardReady) {
       setIsDashboardReady(true);
     }
@@ -1130,31 +1170,35 @@ const App: React.FC = () => {
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
-              <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
-                  <ForecastDashboard
-                      setViewerMedia={setViewerMedia}
-                      setCurrentAuroraScore={setCurrentAuroraScore}
-                      setSubstormActivityStatus={setSubstormActivityStatus}
-                      setIpsAlertData={setIpsAlertData}
-                      navigationTarget={navigationTarget}
-                      onInitialLoad={handleInitialLoad}
-                      onInitialLoadProgress={handleForecastLoadPoint}
-                      viewMode={forecastViewMode}
-                      onViewModeChange={handleForecastViewChange}
-                      refreshSignal={manualRefreshKey}
-                  />
-              </div>
-              <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
-                  <SolarActivityDashboard
-                      setViewerMedia={setViewerMedia}
-                      setLatestXrayFlux={setLatestXrayFlux}
-                      onViewCMEInVisualization={handleViewCMEInVisualization}
-                      navigationTarget={navigationTarget}
-                      refreshSignal={manualRefreshKey}
-                      onInitialLoad={handleSolarInitialLoad}
-                      onInitialLoadProgress={handleSolarLoadPoint}
-                  />
-              </div>
+              {visitedPages.forecast && (
+                <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
+                    <ForecastDashboard
+                        setViewerMedia={setViewerMedia}
+                        setCurrentAuroraScore={setCurrentAuroraScore}
+                        setSubstormActivityStatus={setSubstormActivityStatus}
+                        setIpsAlertData={setIpsAlertData}
+                        navigationTarget={navigationTarget}
+                        onInitialLoad={handleInitialLoad}
+                        onInitialLoadProgress={handleForecastLoadPoint}
+                        viewMode={forecastViewMode}
+                        onViewModeChange={handleForecastViewChange}
+                        refreshSignal={manualRefreshKey}
+                    />
+                </div>
+              )}
+              {visitedPages['solar-activity'] && (
+                <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
+                    <SolarActivityDashboard
+                        setViewerMedia={setViewerMedia}
+                        setLatestXrayFlux={setLatestXrayFlux}
+                        onViewCMEInVisualization={handleViewCMEInVisualization}
+                        navigationTarget={navigationTarget}
+                        refreshSignal={manualRefreshKey}
+                        onInitialLoad={handleSolarInitialLoad}
+                        onInitialLoadProgress={handleSolarLoadPoint}
+                    />
+                </div>
+              )}
           </div>
           
           <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
