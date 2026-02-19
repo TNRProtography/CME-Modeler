@@ -135,6 +135,8 @@ const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
 const SDO_HMI_NATIVE_CY = 2048;
 const SDO_HMI_NATIVE_RADIUS = 1980;
+const DISK_LABEL_OFFSET_X_PX = 200;
+const DISK_LABEL_OFFSET_Y_PX = -200;
 const CLOSEUP_OFFSET_X_PX = 200;
 const CLOSEUP_OFFSET_Y_PX = -200;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -1276,7 +1278,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       .filter((region) => region.latitude !== null && region.longitude !== null)
       .map((region) => {
         const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, geometry.cx, geometry.cy, geometry.radius);
-        const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
+        const scaleX = geometry.width / HMI_IMAGE_SIZE;
+        const scaleY = geometry.height / HMI_IMAGE_SIZE;
+        const shifted = {
+          x: pos.x + DISK_LABEL_OFFSET_X_PX * scaleX,
+          y: pos.y + DISK_LABEL_OFFSET_Y_PX * scaleY,
+        };
+        const constrained = constrainToSolarDiskBounds(shifted.x, shifted.y, geometry);
         return {
           ...region,
           xPercent: (constrained.x / geometry.width) * 100,
@@ -1295,20 +1303,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeSunspotRegions]);
 
   const selectedSunspotPreview = useMemo(() => {
-    if (!selectedSunspotRegion) return null;
-
-    const plotted = plottedSunspots.find((region) => region.region === selectedSunspotRegion.region);
-    if (plotted && Number.isFinite(plotted.xPercent) && Number.isFinite(plotted.yPercent)) {
-      const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
-      return {
-        xPercent: plotted.xPercent,
-        yPercent: plotted.yPercent,
-        xPx: (plotted.xPercent / 100) * geometry.width,
-        yPx: (plotted.yPercent / 100) * geometry.height,
-      };
-    }
-
-    if (selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
+    if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
       return null;
     }
 
@@ -1328,7 +1323,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       xPx: constrained.x,
       yPx: constrained.y,
     };
-  }, [selectedSunspotRegion, plottedSunspots, overviewGeometry]);
+  }, [selectedSunspotRegion, overviewGeometry]);
 
   useEffect(() => {
     if (!selectedSunspotRegion) {
