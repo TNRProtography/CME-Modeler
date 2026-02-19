@@ -871,13 +871,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     // Preload immediately so switching modes is instant once loaded.
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     img.onload = () => {
       setState({ url: fetchUrl, loading: null });
       setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
     };
     img.onerror = () => {
-      setState({ url: '/error.png', loading: 'Image unavailable' });
+      // Keep direct URL as fallback even if preload handshake fails (some hosts block probe requests).
+      setState({ url: fetchUrl, loading: null });
       setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
     };
     img.src = fetchUrl;
@@ -1228,7 +1228,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     let cancelled = false;
     const source = new Image();
-    source.crossOrigin = 'anonymous';
 
     source.onload = () => {
       if (cancelled) return;
