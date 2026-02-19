@@ -1310,7 +1310,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       : sdoHmiBc4096;
 
   const openSunspotCloseupInViewer = useCallback(async () => {
-    if (!selectedSunspotCloseupUrl || !selectedSunspotPreview || !selectedSunspotRegion) return;
+    if (!selectedSunspotCloseupUrl || !selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) return;
+
+    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
+    const pos = solarCoordsToPixel(
+      selectedSunspotRegion.latitude,
+      selectedSunspotRegion.longitude,
+      geometry.cx,
+      geometry.cy,
+      geometry.radius
+    );
+    const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
+    const preview = {
+      xPercent: (constrained.x / geometry.width) * 100,
+      yPercent: (constrained.y / geometry.height) * 100,
+    };
 
     try {
       const img = new Image();
@@ -1338,8 +1352,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
       const sourceW = img.naturalWidth || HMI_IMAGE_SIZE;
       const sourceH = img.naturalHeight || HMI_IMAGE_SIZE;
-      const centerX = (selectedSunspotPreview.xPercent / 100) * sourceW;
-      const centerY = (selectedSunspotPreview.yPercent / 100) * sourceH;
+      const centerX = (preview.xPercent / 100) * sourceW;
+      const centerY = (preview.yPercent / 100) * sourceH;
       const size = Math.min(sourceW, sourceH) * 0.24;
       const half = size / 2;
       const sx = Math.max(0, Math.min(sourceW - size, centerX - half));
@@ -1350,7 +1364,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     } catch {
       setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
     }
-  }, [selectedSunspotCloseupUrl, selectedSunspotPreview, selectedSunspotRegion, setViewerMedia]);
+  }, [overviewGeometry, selectedSunspotCloseupUrl, selectedSunspotRegion, setViewerMedia]);
 
   useEffect(() => {
     if (!sunspotOverviewImage.url || sunspotOverviewImage.url === '/placeholder.png' || sunspotOverviewImage.url === '/error.png') {
