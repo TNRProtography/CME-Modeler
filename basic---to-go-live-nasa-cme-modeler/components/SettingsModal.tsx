@@ -340,7 +340,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Dashboard Mode</h3>
             <p className="text-sm text-neutral-400 mb-3">
-              Best for wide-screen tablets and PCs. When enabled, Forecast, Solar Activity, and CME Modeler stay visible together in one split view.
+              Best for wide-screen tablets and PCs. When enabled, the app becomes one integrated live dashboard (Forecast + Solar Activity) on a single page.
             </p>
             <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -348,13 +348,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
-                  title="Dashboard Mode: single wide-screen layout with all 3 sections visible and staggered auto-refresh every minute. Off: normal navigation pages, same behavior as today."
+                  title="Dashboard Mode: one integrated wide-screen dashboard with Forecast + Solar Activity together and staggered auto-refresh every minute. Off: normal navigation pages, same behavior as today."
                 >
                   <GuideIcon className="w-4 h-4" />
                 </button>
               </div>
               <p className="text-xs text-neutral-500">
-                ON: one big 3-column dashboard with staggered live updates every minute. OFF: regular page-by-page navigation (current default behavior).
+                ON: one integrated dashboard view with staggered live updates every minute. OFF: regular page-by-page navigation (current default behavior).
               </p>
             </div>
           </section>

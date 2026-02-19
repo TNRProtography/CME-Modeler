@@ -1089,8 +1089,8 @@ const App: React.FC = () => {
               </div>
           </header>
 
-          <div className="flex flex-grow min-h-0">
-              <div className={`w-full h-full flex-grow min-h-0 ${isDashboardMode ? 'flex xl:w-1/3 border-r border-white/10' : activePage === 'modeler' ? 'flex' : 'hidden'}`}>
+          <div className={`flex-grow min-h-0 ${isDashboardMode ? 'block overflow-y-auto px-3 pb-3' : 'flex'}`}>
+              <div className={`w-full h-full flex-grow min-h-0 ${isDashboardMode ? 'hidden' : activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
@@ -1197,7 +1197,7 @@ const App: React.FC = () => {
                   <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
               {(isDashboardMode || visitedPages.forecast) && (
-                <div className={`w-full h-full ${isDashboardMode ? 'block xl:w-1/3 overflow-y-auto border-r border-white/10' : activePage === 'forecast' ? 'block' : 'hidden'}`}>
+                <div className={`w-full ${isDashboardMode ? 'block mb-4' : activePage === 'forecast' ? 'h-full block' : 'hidden'}`}>
                     <ForecastDashboard
                         setViewerMedia={setViewerMedia}
                         setCurrentAuroraScore={setCurrentAuroraScore}
@@ -1213,7 +1213,7 @@ const App: React.FC = () => {
                 </div>
               )}
               {(isDashboardMode || visitedPages['solar-activity']) && (
-                <div className={`w-full h-full ${isDashboardMode ? 'block xl:w-1/3 overflow-y-auto' : activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
+                <div className={`w-full ${isDashboardMode ? 'block' : activePage === 'solar-activity' ? 'h-full block' : 'hidden'}`}>
                     <SolarActivityDashboard
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
