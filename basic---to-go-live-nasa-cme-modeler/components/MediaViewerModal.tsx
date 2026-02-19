@@ -14,6 +14,7 @@ const DownloadIcon: React.FC<{className?: string}> = ({ className }) => (
 type MediaObject =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
+    | { type: 'image_with_labels', url: string, labels: { id: string; xPercent: number; yPercent: number; text: string }[] }
     | { type: 'animation', urls: string[] };
 
 interface MediaViewerModalProps {
@@ -191,6 +192,31 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
             onMouseDown={handleMouseDown}
             onClick={(e) => e.stopPropagation()}
           />
+        )}
+
+        {media.type === 'image_with_labels' && (
+          <div
+            className="relative max-w-[95vw] max-h-[78vh] cursor-grab active:cursor-grabbing"
+            style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}
+            onMouseDown={handleMouseDown}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              ref={contentRef as React.RefObject<HTMLImageElement>}
+              src={media.url}
+              alt="Full disk with labels"
+              className="max-w-[95vw] max-h-[78vh]"
+            />
+            <div className="absolute inset-0 pointer-events-none">
+              {media.labels.map((label) => (
+                <div key={label.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${label.xPercent}%`, top: `${label.yPercent}%` }}>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-black/75 text-sky-200 border border-sky-500/40">
+                    {label.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {media.type === 'video' && (

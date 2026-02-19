@@ -272,7 +272,8 @@ const getVisibilityBlurb = (score: number | null): string => {
 
 export const useForecastData = (
   setCurrentAuroraScore: (score: number | null) => void,
-  setSubstormActivityStatus: (status: SubstormActivity | null) => void
+  setSubstormActivityStatus: (status: SubstormActivity | null) => void,
+  onInitialLoadProgress?: (task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => void
 ) => {
   const [isLoading, setIsLoading] = useState(true);
   const [auroraScore, setAuroraScore] = useState<number | null>(null);
@@ -315,6 +316,10 @@ export const useForecastData = (
     p60: 0,
   });
   const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]); // NEW
+
+  const reportInitialProgress = useCallback((task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => {
+    onInitialLoadProgress?.(task);
+  }, [onInitialLoadProgress]);
 
   const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
     const moonIllumination = Math.max(0, (illumination ?? 0));
@@ -498,13 +503,21 @@ export const useForecastData = (
     if (isInitialLoad) setIsLoading(true);
     const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
     
+    const withInitialProgress = async <T,>(promise: Promise<T>, task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => {
+      try {
+        return await promise;
+      } finally {
+        if (isInitialLoad) reportInitialProgress(task);
+      }
+    };
+
     const results = await Promise.allSettled([
-      fetchJsonWithRecovery(`${FORECAST_API_URL}?_=${Date.now()}`),
-      fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`),
-      fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`),
-      fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`),
-      fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`),
-      fetchJsonWithRecovery(nzMagUrl)
+      withInitialProgress(fetchJsonWithRecovery(`${FORECAST_API_URL}?_=${Date.now()}`), 'forecastApi'),
+      withInitialProgress(fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`), 'solarWindApi'),
+      withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`), 'goes18Api'),
+      withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`), 'goes19Api'),
+      withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`), 'ipsApi'),
+      withInitialProgress(fetchJsonWithRecovery(nzMagUrl), 'nzMagApi')
     ]);
     const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 
@@ -665,7 +678,7 @@ export const useForecastData = (
     if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
 
     if (isInitialLoad) setIsLoading(false);
-  }, [locationAdjustment, getMoonData, setCurrentAuroraScore, setSubstormActivityStatus]);
+  }, [locationAdjustment, getMoonData, reportInitialProgress, setCurrentAuroraScore, setSubstormActivityStatus]);
 
   const activitySummary: ActivitySummary | null = useMemo(() => {
     const now = Date.now();

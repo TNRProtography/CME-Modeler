@@ -74,6 +74,7 @@ interface ForecastDashboardProps {
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
   onInitialLoad?: () => void;
+  onInitialLoadProgress?: (task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => void;
   viewMode: 'simple' | 'advanced';
   onViewModeChange: (mode: 'simple' | 'advanced') => void;
   refreshSignal: number;
@@ -239,13 +240,13 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summar
     );
 };
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, viewMode, onViewModeChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, activitySummary, interplanetaryShockData
-    } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus);
+    } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -265,7 +266,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
-      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 60 * 1000);
+      const interval = setInterval(() => fetchAllData(false, getGaugeStyle), 30 * 1000);
       return () => clearInterval(interval);
     }, []);
 
