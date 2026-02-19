@@ -84,7 +84,23 @@ interface ImpactDataPoint {
     density: number;
 }
 
-type InitialLoadTaskKey = 'forecastData' | 'solarData' | 'modelerCmeData';
+type InitialLoadTaskKey =
+  | 'forecastData'
+  | 'forecastApi'
+  | 'solarWindApi'
+  | 'goes18Api'
+  | 'goes19Api'
+  | 'ipsApi'
+  | 'nzMagApi'
+  | 'solarData'
+  | 'solarXray'
+  | 'solarProton'
+  | 'solarFlares'
+  | 'solarRegions'
+  | 'modelerCmeData';
+
+type ForecastLoadPoint = 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi';
+type SolarLoadPoint = 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions';
 
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
@@ -177,7 +193,17 @@ const App: React.FC = () => {
   const initialPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
   const [initialLoadTasks, setInitialLoadTasks] = useState<Record<InitialLoadTaskKey, boolean>>(() => ({
     forecastData: false,
+    forecastApi: false,
+    solarWindApi: false,
+    goes18Api: false,
+    goes19Api: false,
+    ipsApi: false,
+    nzMagApi: false,
     solarData: false,
+    solarXray: false,
+    solarProton: false,
+    solarFlares: false,
+    solarRegions: false,
     modelerCmeData: initialPageRef.current !== 'modeler',
   }));
   const [reloadNotice, setReloadNotice] = useState<string | null>(null);
@@ -213,8 +239,11 @@ const App: React.FC = () => {
   }, [initialLoadTasks]);
 
   const initialLoadStatus = useMemo(() => {
-    if (!initialLoadTasks.forecastData) return 'Loading forecast data…';
-    if (!initialLoadTasks.solarData) return 'Loading solar activity data…';
+    if (!initialLoadTasks.forecastApi) return 'Loading forecast core feed…';
+    if (!initialLoadTasks.solarWindApi) return 'Loading solar wind feed…';
+    if (!initialLoadTasks.goes18Api || !initialLoadTasks.goes19Api) return 'Loading GOES magnetometer feeds…';
+    if (!initialLoadTasks.solarXray || !initialLoadTasks.solarProton) return 'Loading solar flux feeds…';
+    if (!initialLoadTasks.solarFlares || !initialLoadTasks.solarRegions) return 'Loading active region and flare feeds…';
     if (!initialLoadTasks.modelerCmeData) return 'Loading CME model data…';
     return 'Finalizing dashboard…';
   }, [initialLoadTasks]);
@@ -888,8 +917,16 @@ const App: React.FC = () => {
       markInitialTaskDone('forecastData');
   }, [markInitialTaskDone]);
 
+  const handleForecastLoadPoint = useCallback((task: ForecastLoadPoint) => {
+    markInitialTaskDone(task);
+  }, [markInitialTaskDone]);
+
   const handleSolarInitialLoad = useCallback(() => {
       markInitialTaskDone('solarData');
+  }, [markInitialTaskDone]);
+
+  const handleSolarLoadPoint = useCallback((task: SolarLoadPoint) => {
+    markInitialTaskDone(task);
   }, [markInitialTaskDone]);
   
   return (
@@ -1101,6 +1138,7 @@ const App: React.FC = () => {
                       setIpsAlertData={setIpsAlertData}
                       navigationTarget={navigationTarget}
                       onInitialLoad={handleInitialLoad}
+                      onInitialLoadProgress={handleForecastLoadPoint}
                       viewMode={forecastViewMode}
                       onViewModeChange={handleForecastViewChange}
                       refreshSignal={manualRefreshKey}
@@ -1114,6 +1152,7 @@ const App: React.FC = () => {
                       navigationTarget={navigationTarget}
                       refreshSignal={manualRefreshKey}
                       onInitialLoad={handleSolarInitialLoad}
+                      onInitialLoadProgress={handleSolarLoadPoint}
                   />
               </div>
           </div>
