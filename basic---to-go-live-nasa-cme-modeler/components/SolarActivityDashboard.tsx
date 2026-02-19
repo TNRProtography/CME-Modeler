@@ -998,6 +998,24 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, []);
 
 
+  const prefetchSolarImage = useCallback((url: string) => {
+    const cacheKey = `${url}::image`;
+    const now = Date.now();
+    const cached = solarImageCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < SOLAR_IMAGE_CACHE_TTL_MS) return;
+
+    const fetchUrl = `${url}?_=${now}`;
+    const img = new Image();
+    img.onload = () => {
+      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
+    };
+    img.onerror = () => {
+      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
+    };
+    img.src = fetchUrl;
+  }, []);
+
+
   const fetchFirstAvailableJson = useCallback(async (urls: string[]) => {
     let lastError: Error | null = null;
     for (const url of urls) {
@@ -1251,6 +1269,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [runAllUpdates]);
+
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      prefetchSolarImage(SDO_HMI_BC_4096_URL);
+      prefetchSolarImage(SDO_HMI_B_4096_URL);
+      prefetchSolarImage(SDO_HMI_IF_4096_URL);
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [prefetchSolarImage]);
 
   useEffect(() => {
     runAllUpdates();
@@ -1904,7 +1933,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">24h flare events</span><span className="text-neutral-100 font-semibold">C {selectedSunspotRegion.cFlareEvents24h ?? '—'} · M {selectedSunspotRegion.mFlareEvents24h ?? '—'} · X {selectedSunspotRegion.xFlareEvents24h ?? '—'}</span></div>
                         <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Source</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.source || 'NOAA'}</span></div>
                       </div>
                     </>
                   ) : (
