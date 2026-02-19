@@ -1651,7 +1651,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastImagesUpdate || 'N/A'}</div>
             </div>
 
-            <div id="active-sunspots-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[680px]">
+            <div id="active-sunspots-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-0 lg:min-h-[680px]">
               <div className="flex justify-between items-center gap-2 mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold text-white">Active Sunspot Tracker</h2>
@@ -1668,9 +1668,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow">
-                <div className="lg:col-span-8 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-[480px]">
+                <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-0 flex items-center justify-center">
                   <div
-                    className="relative aspect-square w-full max-h-[680px] mx-auto cursor-zoom-in"
+                    className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
                     onClick={() => sunspotOverviewImage4k.url !== '/placeholder.png' && sunspotOverviewImage4k.url !== '/error.png' && setViewerMedia({ url: sunspotOverviewImage4k.url, type: 'image' })}
                   >
@@ -1711,7 +1711,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   </div>
                 </div>
 
-                <div className="lg:col-span-4 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-[480px]">
+                <div className="lg:col-span-5 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-0 lg:min-h-[480px]">
                   {selectedSunspotRegion ? (
                     <>
                       <div className="flex items-start justify-between mb-3 gap-2">
@@ -1728,7 +1728,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       </div>
 
                       <div
-                        className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full overflow-hidden mb-3 cursor-zoom-in"
+                        className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full max-w-[320px] lg:max-w-none mx-auto overflow-hidden mb-3 cursor-zoom-in"
                         onClick={() => selectedSunspotCloseupUrl && setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' })}
                         onTouchStart={(event) => {
                           touchStartXRef.current = event.touches[0]?.clientX ?? null;
