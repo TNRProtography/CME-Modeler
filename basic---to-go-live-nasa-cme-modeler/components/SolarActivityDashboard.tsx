@@ -149,6 +149,8 @@ const CLOSEUP_OFFSET_X_PX = 200;
 const CLOSEUP_OFFSET_Y_PX = -200;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
+const SOLAR_IMAGE_CACHE_TTL_MS = 60 * 60 * 1000;
+const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
 
 
 // --- HELPERS ---
@@ -960,10 +962,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
     }
 
+    const cacheKey = `${url}::${isVideo ? 'video' : 'image'}`;
+    const cached = solarImageCache.get(cacheKey);
+    const now = Date.now();
 
-    const fetchUrl = addCacheBuster ? `${url}?_=${new Date().getTime()}` : url;
+    if (cached && now - cached.fetchedAt < SOLAR_IMAGE_CACHE_TTL_MS) {
+      setState({ url: cached.url, loading: null });
+      setLastImagesUpdate(new Date(cached.fetchedAt).toLocaleTimeString('en-NZ'));
+      return;
+    }
+
+    const fetchUrl = addCacheBuster ? `${url}?_=${now}` : url;
 
     if (isVideo) {
+      solarImageCache.set(cacheKey, { url, fetchedAt: now });
       setState({ url, loading: null });
       setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
       return;
@@ -972,11 +984,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     // Preload immediately so switching modes is instant once loaded.
     const img = new Image();
     img.onload = () => {
+      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
       setState({ url: fetchUrl, loading: null });
       setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
     };
     img.onerror = () => {
       // Keep direct URL as fallback even if preload handshake fails (some hosts block probe requests).
+      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
       setState({ url: fetchUrl, loading: null });
       setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
     };
