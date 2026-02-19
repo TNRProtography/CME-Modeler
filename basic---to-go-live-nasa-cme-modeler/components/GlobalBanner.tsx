@@ -262,11 +262,11 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   return (
     <div
-      className={`text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
+      className={`text-xs sm:text-sm font-semibold leading-tight p-3 text-center relative z-50 flex items-center justify-center ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
       style={activeSlide.style}
     >
-      <div className="container mx-auto flex items-center justify-center gap-3 relative">
-        <div className="flex-1 flex items-center justify-center sm:justify-center text-center sm:text-center">
+      <div className="container mx-auto flex flex-wrap items-center justify-center gap-3 relative">
+        <div className="flex-1 flex flex-wrap items-center justify-center sm:justify-center text-center sm:text-center gap-y-1">
           {activeSlide.content}
         </div>
         {hasMultiple && (
