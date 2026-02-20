@@ -1092,6 +1092,15 @@ const App: React.FC = () => {
                   </div>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2">
+                  {isDashboardMode && (
+                    <button
+                      onClick={() => handleDashboardModeChange(false)}
+                      className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs sm:text-sm text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-rose-500/70 to-orange-500/70 border border-white/20 hover:-translate-y-0.5 modern-cta"
+                      title="Exit Dashboard Mode"
+                    >
+                      Exit Dashboard
+                    </button>
+                  )}
                   <button
                     onClick={handleRefreshAppData}
                     className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${isRefreshing ? 'opacity-80' : ''}`}

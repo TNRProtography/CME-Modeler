@@ -23,7 +23,8 @@ interface SightingItem {
   status: string;
 }
 
-const XRAY_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
+const XRAY_URL_3D = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-3-day.json';
+const XRAY_URL_1D = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIBC.jpg';
 const AURORA_SIGHTINGS_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
@@ -49,10 +50,14 @@ const getEmojiForStatus = (status: string) => {
   return '❓';
 };
 
+const fmt = (t: number) => new Date(t).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+const fmtDay = (t: number) => new Date(t).toLocaleString('en-NZ', { day: '2-digit', month: 'short', hour: '2-digit' });
+
 const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSignal }) => {
   const [, setScoreMirror] = useState<number | null>(null);
   const [, setSubstormMirror] = useState<any>(null);
   const [xrayFlux, setXrayFlux] = useState<number | null>(null);
+  const [xraySeries, setXraySeries] = useState<Array<{ t: number; v: number }>>([]);
   const [sightings, setSightings] = useState<SightingItem[]>([]);
 
   const {
@@ -62,7 +67,9 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
     lastUpdated,
     fetchAllData,
     auroraScoreHistory,
-    hemisphericPowerHistory,
+    allSpeedData,
+    allDensityData,
+    allMagneticData,
   } = useForecastData(setScoreMirror, setSubstormMirror);
 
   useEffect(() => {
@@ -73,14 +80,27 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
     let mounted = true;
     const pullXray = async () => {
       try {
-        const response = await fetch(`${XRAY_URL}?_=${Date.now()}`);
-        if (!response.ok) return;
-        const payload = await response.json();
-        const records = Array.isArray(payload) ? payload : [];
-        const valid = records
-          .map((r: any) => Number(r?.flux))
-          .filter((v: number) => Number.isFinite(v));
-        if (mounted && valid.length) setXrayFlux(valid[valid.length - 1]);
+        const endpoints = [XRAY_URL_3D, XRAY_URL_1D];
+        let records: any[] = [];
+        for (const url of endpoints) {
+          const response = await fetch(`${url}?_=${Date.now()}`);
+          if (!response.ok) continue;
+          const payload = await response.json();
+          if (Array.isArray(payload) && payload.length) {
+            records = payload;
+            break;
+          }
+        }
+        const points = records
+          .map((r: any) => ({ t: new Date(r?.time_tag).getTime(), v: Number(r?.flux) }))
+          .filter((p: any) => Number.isFinite(p.t) && Number.isFinite(p.v))
+          .sort((a: any, b: any) => a.t - b.t)
+          .slice(-720);
+
+        if (mounted) {
+          setXraySeries(points);
+          if (points.length) setXrayFlux(points[points.length - 1].v);
+        }
       } catch {
         // ignore
       }
@@ -134,45 +154,52 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
 
   const score = auroraScore ?? 0;
 
-  const compactChartOptions = useMemo(
+  const now = Date.now();
+  const aurora6h = auroraScoreHistory.filter((p: any) => p.timestamp >= now - 6 * 3600000).slice(-180);
+  const wind6h = allSpeedData.filter((p: any) => p.x >= now - 6 * 3600000).slice(-180);
+  const density6h = allDensityData.filter((p: any) => p.x >= now - 6 * 3600000).slice(-180);
+  const imf6h = allMagneticData.filter((p: any) => p.time >= now - 6 * 3600000).slice(-180);
+  const xray3d = xraySeries.filter((p: any) => p.t >= now - 72 * 3600000);
+
+  const chartOptions = useMemo(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { labels: { color: '#d4d4d8', boxWidth: 10, font: { size: 10 } } } },
       scales: {
-        x: { display: false },
-        y: { display: false },
+        x: { ticks: { color: '#71717a', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#27272a' } },
+        y: { ticks: { color: '#71717a', font: { size: 10 } }, grid: { color: '#27272a' } },
       },
-      elements: { line: { tension: 0.25, borderWidth: 1.7 }, point: { radius: 0 } },
+      elements: { point: { radius: 0 }, line: { tension: 0.25, borderWidth: 1.5 } },
     }),
     []
   );
 
-  const auroraTrendData = useMemo(
-    () => ({
-      labels: auroraScoreHistory.slice(-120).map((d) => d.timestamp),
-      datasets: [{
-        data: auroraScoreHistory.slice(-120).map((d) => d.finalScore),
-        borderColor: '#38bdf8',
-        backgroundColor: 'rgba(56,189,248,0.2)',
-        fill: true,
-      }],
-    }),
-    [auroraScoreHistory]
-  );
+  const auroraChart = {
+    labels: aurora6h.map((p: any) => fmt(p.timestamp)),
+    datasets: [{ label: 'Aurora % (6h)', data: aurora6h.map((p: any) => p.finalScore), borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.2)', fill: true }],
+  };
 
-  const hpTrendData = useMemo(
-    () => ({
-      labels: hemisphericPowerHistory.slice(-120).map((d) => d.timestamp),
-      datasets: [{
-        data: hemisphericPowerHistory.slice(-120).map((d: any) => d.hemisphericPower),
-        borderColor: '#22d3ee',
-        backgroundColor: 'rgba(34,211,238,0.2)',
-        fill: true,
-      }],
-    }),
-    [hemisphericPowerHistory]
-  );
+  const windDensityChart = {
+    labels: wind6h.map((p: any) => fmt(p.x)),
+    datasets: [
+      { label: 'Speed', data: wind6h.map((p: any) => p.y), borderColor: '#22d3ee', backgroundColor: 'transparent', fill: false },
+      { label: 'Density', data: density6h.map((p: any) => p.y), borderColor: '#f59e0b', backgroundColor: 'transparent', fill: false },
+    ],
+  };
+
+  const imfChart = {
+    labels: imf6h.map((p: any) => fmt(p.time)),
+    datasets: [
+      { label: 'Bt', data: imf6h.map((p: any) => p.bt), borderColor: '#a78bfa', backgroundColor: 'transparent', fill: false },
+      { label: 'Bz', data: imf6h.map((p: any) => p.bz), borderColor: '#f43f5e', backgroundColor: 'transparent', fill: false },
+    ],
+  };
+
+  const xrayChart = {
+    labels: xray3d.map((p: any) => fmtDay(p.t)),
+    datasets: [{ label: 'X-ray flux (3d)', data: xray3d.map((p: any) => p.v), borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.2)', fill: true }],
+  };
 
   return (
     <div className="w-full h-full p-2 md:p-3 overflow-hidden">
@@ -188,7 +215,7 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
         <div className="col-span-12 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
           <div className="text-[11px] uppercase tracking-wide text-neutral-400">Aurora Score</div>
           <div className="text-3xl font-bold text-sky-300 mt-1">{score.toFixed(1)}%</div>
-          <div className="h-10 mt-2"><Line data={auroraTrendData} options={compactChartOptions} /></div>
+          <div className="text-xs text-neutral-300 mt-1">Substorm: {substormForecast?.status ?? 'QUIET'} · {Math.round(substormForecast?.likelihood ?? 0)}%</div>
         </div>
 
         <div className="col-span-6 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
@@ -196,12 +223,11 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
           <div className="text-xs mt-2 space-y-1 text-neutral-200">
             <div className="flex justify-between"><span>Speed</span><strong>{gaugeData.speed?.value ?? '—'}</strong></div>
             <div className="flex justify-between"><span>Density</span><strong>{gaugeData.density?.value ?? '—'}</strong></div>
-            <div className="flex justify-between"><span>Temp</span><strong>{gaugeData.temp?.value ?? '—'}</strong></div>
           </div>
         </div>
 
         <div className="col-span-6 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
-          <div className="text-[11px] uppercase tracking-wide text-neutral-400">IMF / HP</div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-400">IMF + HP</div>
           <div className="text-xs mt-2 space-y-1 text-neutral-200">
             <div className="flex justify-between"><span>Bt</span><strong>{gaugeData.bt?.value ?? '—'}</strong></div>
             <div className="flex justify-between"><span>Bz</span><strong>{gaugeData.bz?.value ?? '—'}</strong></div>
@@ -210,14 +236,30 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
         </div>
 
         <div className="col-span-12 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
-          <div className="text-[11px] uppercase tracking-wide text-neutral-400">Substorm / X-ray</div>
-          <div className="text-sm text-fuchsia-300 font-semibold mt-1">{substormForecast?.status ?? 'QUIET'}</div>
-          <div className="text-xs text-neutral-300">Chance: {Math.round(substormForecast?.likelihood ?? 0)}%</div>
-          <div className="text-xs text-amber-300 mt-2">X-ray: {xrayClass} ({xrayFlux != null ? xrayFlux.toExponential(1) : 'N/A'})</div>
-          <div className="h-8 mt-1"><Line data={hpTrendData} options={compactChartOptions} /></div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-400">GOES X-ray</div>
+          <div className="text-xl text-amber-300 font-semibold mt-1">Class {xrayClass}</div>
+          <div className="text-xs text-neutral-300">{xrayFlux != null ? xrayFlux.toExponential(2) : 'N/A'} W/m²</div>
         </div>
 
-        <div className="col-span-12 md:col-span-6 row-span-4 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 grid grid-cols-2 gap-2">
+        <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
+          <div className="text-[11px] text-neutral-300 px-1">Aurora Trend (6h)</div>
+          <div className="h-[calc(100%-18px)]"><Line data={auroraChart} options={chartOptions} /></div>
+        </div>
+        <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
+          <div className="text-[11px] text-neutral-300 px-1">Wind + Density (6h)</div>
+          <div className="h-[calc(100%-18px)]"><Line data={windDensityChart} options={chartOptions} /></div>
+        </div>
+        <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
+          <div className="text-[11px] text-neutral-300 px-1">IMF Bt / Bz (6h)</div>
+          <div className="h-[calc(100%-18px)]"><Line data={imfChart} options={chartOptions} /></div>
+        </div>
+
+        <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
+          <div className="text-[11px] text-neutral-300 px-1">GOES X-ray (3 days)</div>
+          <div className="h-[calc(100%-18px)]"><Line data={xrayChart} options={chartOptions} /></div>
+        </div>
+
+        <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-black/50 border border-white/10 overflow-hidden">
             <div className="text-[11px] text-neutral-300 px-2 py-1 border-b border-white/10">SUVI 131</div>
             <img src={`${SUVI_131_URL}?_=${refreshSignal}`} alt="SUVI 131" className="w-full h-[calc(100%-24px)] object-contain" />
@@ -228,7 +270,7 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
           </div>
         </div>
 
-        <div className="col-span-12 md:col-span-6 row-span-4 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 grid grid-cols-2 gap-2">
+        <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-black/50 border border-white/10 overflow-hidden">
             <div className="text-[11px] text-neutral-300 px-2 py-1 border-b border-white/10">Windy Clouds</div>
             <iframe title="Windy Clouds" src={WINDY_URL} className="w-full h-[calc(100%-24px)]" />
@@ -239,7 +281,7 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
           </div>
         </div>
 
-        <div className="col-span-12 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 overflow-hidden">
+        <div className="col-span-12 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 overflow-hidden">
           <div className="text-[11px] uppercase tracking-wide text-neutral-400 px-1 mb-1">Latest Aurora Sightings</div>
           <div className="h-[calc(100%-20px)] overflow-y-auto styled-scrollbar space-y-1 pr-1">
             {sightings.length ? sightings.map((s, idx) => (
