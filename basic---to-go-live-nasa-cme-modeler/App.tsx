@@ -25,6 +25,7 @@ import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
 import SolarActivityDashboard from './components/SolarActivityDashboard';
+import UnifiedDashboardMode from './components/UnifiedDashboardMode';
 import GlobalBanner from './components/GlobalBanner';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
@@ -132,7 +133,8 @@ const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'V1.4';
+const APP_VERSION = 'V1.5';
+const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
 const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = lazy(() => import('./components/ImpactGraphModal'));
@@ -149,6 +151,8 @@ const App: React.FC = () => {
     return stored === 'advanced' ? 'advanced' : 'simple';
   };
 
+  const getStoredDashboardMode = () => localStorage.getItem(DASHBOARD_MODE_KEY) === 'true';
+
   const [defaultMainPage, setDefaultMainPage] = useState<'forecast' | 'modeler' | 'solar-activity'>(() =>
     getStoredMainPage()
   );
@@ -156,6 +160,8 @@ const App: React.FC = () => {
   const [defaultForecastView, setDefaultForecastView] = useState<'simple' | 'advanced'>(() =>
     getStoredForecastView()
   );
+
+  const [isDashboardMode, setIsDashboardMode] = useState<boolean>(() => getStoredDashboardMode());
 
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
@@ -268,6 +274,27 @@ const App: React.FC = () => {
     if (total === 0) return 100;
     return Math.round((completed / total) * 100);
   }, [initialLoadTasks]);
+
+
+  useEffect(() => {
+    if (!isDashboardMode) return;
+    setInitialLoadTasks((prev) => ({
+      ...prev,
+      forecastData: true,
+      forecastApi: true,
+      solarWindApi: true,
+      goes18Api: true,
+      goes19Api: true,
+      ipsApi: true,
+      nzMagApi: true,
+      solarData: true,
+      solarXray: true,
+      solarProton: true,
+      solarFlares: true,
+      solarRegions: true,
+      modelerCmeData: true,
+    }));
+  }, [isDashboardMode]);
 
   const initialLoadStatus = useMemo(() => {
     if (!initialLoadTasks.forecastApi) return 'Loading forecast core feed…';
@@ -565,6 +592,11 @@ const App: React.FC = () => {
     localStorage.setItem(DEFAULT_FORECAST_VIEW_KEY, view);
   }, []);
 
+  const handleDashboardModeChange = useCallback((enabled: boolean) => {
+    setIsDashboardMode(enabled);
+    localStorage.setItem(DASHBOARD_MODE_KEY, String(enabled));
+  }, []);
+
   const handleOpenSettings = useCallback(() => {
     navigateToPath(SETTINGS_PATH);
   }, [navigateToPath]);
@@ -644,6 +676,21 @@ const App: React.FC = () => {
     ]);
     setIsRefreshing(false);
   }, [activeTimeRange, loadCMEData]);
+
+
+  useEffect(() => {
+    if (!isDashboardMode) return;
+
+    const runCycle = () => {
+      loadCMEData(activeTimeRange, { silent: true });
+      window.setTimeout(() => {
+        setManualRefreshKey((v) => v + 1);
+      }, 20000);
+    };
+
+    const interval = window.setInterval(runCycle, 60000);
+    return () => window.clearInterval(interval);
+  }, [isDashboardMode, activeTimeRange, loadCMEData]);
 
   const handleShowTutorial = useCallback(() => {
     setIsFirstVisitTutorialOpen(true);
@@ -998,7 +1045,7 @@ const App: React.FC = () => {
           />
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
-              <div className="flex-1 min-w-0">
+              <div className={`flex-1 min-w-0 ${isDashboardMode ? 'hidden' : ''}`}>
                   <div className="flex flex-nowrap items-stretch justify-start gap-1 sm:gap-2 max-w-full overflow-hidden">
                       <button
                         id="nav-forecast"
@@ -1045,6 +1092,15 @@ const App: React.FC = () => {
                   </div>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2">
+                  {isDashboardMode && (
+                    <button
+                      onClick={() => handleDashboardModeChange(false)}
+                      className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs sm:text-sm text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-rose-500/70 to-orange-500/70 border border-white/20 hover:-translate-y-0.5 modern-cta"
+                      title="Exit Dashboard Mode"
+                    >
+                      Exit Dashboard
+                    </button>
+                  )}
                   <button
                     onClick={handleRefreshAppData}
                     className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${isRefreshing ? 'opacity-80' : ''}`}
@@ -1065,6 +1121,10 @@ const App: React.FC = () => {
           </header>
 
           <div className="flex flex-grow min-h-0">
+              {isDashboardMode ? (
+                <UnifiedDashboardMode refreshSignal={manualRefreshKey} />
+              ) : (
+              <>
               <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
@@ -1199,6 +1259,8 @@ const App: React.FC = () => {
                         onInitialLoadProgress={handleSolarLoadPoint}
                     />
                 </div>
+              )}
+              </>
               )}
           </div>
           

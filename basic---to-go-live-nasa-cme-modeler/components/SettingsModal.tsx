@@ -245,7 +245,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
                 <p>
-                    This application is a passion project, built and maintained by one person with over <strong>450 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                    This application is a passion project, built and maintained by one person with over <strong>500+ hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
                 </p>
                 <p>
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
@@ -303,11 +303,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={e => onDefaultMainPageChange(e.target.value as 'forecast' | 'solar-activity' | 'modeler')}
                 >
                   <option value="forecast">Spot the Aurora Forecast</option>
-                  <option value="solar-activity">Solar Activity Dashboard</option>
+                  <option value="solar-activity">Solar Activity</option>
                   <option value="modeler">CME Visualization</option>
                 </select>
                 <p className="text-xs text-neutral-500">
-                  Your default landing page is stored on this device so it opens straight to your preferred dashboard.
+                  Your default landing page is stored on this device so it opens straight to your preferred view.
                 </p>
               </div>
 
@@ -330,6 +330,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           </section>
+
 
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Your page views</h3>
@@ -437,7 +438,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
         
         <div className="flex justify-between items-center p-4 border-t border-neutral-700/80 text-xs text-neutral-500">
-          <span>Version: v1.3</span>
+          <span>Version: {appVersion}</span>
           <a 
             href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" 
             target="_blank" 
