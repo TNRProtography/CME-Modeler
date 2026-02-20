@@ -7,6 +7,13 @@ interface UnifiedDashboardModeProps {
 
 const XRAY_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 
+
+const localGaugeStyle = (value: number | null) => {
+  if (value === null || !Number.isFinite(value)) return { color: '#808080', emoji: '❓', percentage: 0 };
+  const magnitude = Math.min(100, Math.max(0, Math.abs(value)));
+  return { color: '#38bdf8', emoji: value < 0 ? '🧲' : '⚡', percentage: magnitude };
+};
+
 const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSignal }) => {
   const [, setScoreMirror] = useState<number | null>(null);
   const [, setSubstormMirror] = useState<any>(null);
@@ -20,7 +27,7 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
   } = useForecastData(setScoreMirror, setSubstormMirror);
 
   useEffect(() => {
-    fetchAllData(false, () => ({ color: '#808080', emoji: '❓', percentage: 0 }));
+    fetchAllData(false, localGaugeStyle);
   }, [fetchAllData, refreshSignal]);
 
   useEffect(() => {

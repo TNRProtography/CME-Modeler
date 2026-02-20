@@ -275,6 +275,27 @@ const App: React.FC = () => {
     return Math.round((completed / total) * 100);
   }, [initialLoadTasks]);
 
+
+  useEffect(() => {
+    if (!isDashboardMode) return;
+    setInitialLoadTasks((prev) => ({
+      ...prev,
+      forecastData: true,
+      forecastApi: true,
+      solarWindApi: true,
+      goes18Api: true,
+      goes19Api: true,
+      ipsApi: true,
+      nzMagApi: true,
+      solarData: true,
+      solarXray: true,
+      solarProton: true,
+      solarFlares: true,
+      solarRegions: true,
+      modelerCmeData: true,
+    }));
+  }, [isDashboardMode]);
+
   const initialLoadStatus = useMemo(() => {
     if (!initialLoadTasks.forecastApi) return 'Loading forecast core feed…';
     if (!initialLoadTasks.solarWindApi) return 'Loading solar wind feed…';
