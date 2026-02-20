@@ -4,13 +4,16 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
+  TimeScale,
   PointElement,
   LineElement,
   Tooltip,
   Legend,
   Filler,
+  type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { enNZ } from 'date-fns/locale';
 
 interface UnifiedDashboardModeProps {
   refreshSignal: number;
@@ -31,7 +34,7 @@ const AURORA_SIGHTINGS_URL = 'https://aurora-sightings.thenamesrock.workers.dev/
 const WINDY_URL = 'https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054';
 const QUEENSTOWN_CAM_URL = 'https://queenstown.roundshot.com/#/';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
+ChartJS.register(CategoryScale, LinearScale, TimeScale, PointElement, LineElement, Tooltip, Legend, Filler);
 
 const localGaugeStyle = (value: number | null) => {
   if (value === null || !Number.isFinite(value)) return { color: '#808080', emoji: '❓', percentage: 0 };
@@ -50,8 +53,6 @@ const getEmojiForStatus = (status: string) => {
   return '❓';
 };
 
-const fmt = (t: number) => new Date(t).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
-const fmtDay = (t: number) => new Date(t).toLocaleString('en-NZ', { day: '2-digit', month: 'short', hour: '2-digit' });
 
 const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSignal }) => {
   const [, setScoreMirror] = useState<number | null>(null);
@@ -70,6 +71,7 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
     allSpeedData,
     allDensityData,
     allMagneticData,
+    hemisphericPowerHistory,
   } = useForecastData(setScoreMirror, setSubstormMirror);
 
   useEffect(() => {
@@ -159,46 +161,128 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
   const wind6h = allSpeedData.filter((p: any) => p.x >= now - 6 * 3600000).slice(-180);
   const density6h = allDensityData.filter((p: any) => p.x >= now - 6 * 3600000).slice(-180);
   const imf6h = allMagneticData.filter((p: any) => p.time >= now - 6 * 3600000).slice(-180);
+  const hp6h = hemisphericPowerHistory.filter((p: any) => p.timestamp >= now - 6 * 3600000).slice(-180);
   const xray3d = xraySeries.filter((p: any) => p.t >= now - 72 * 3600000);
 
-  const chartOptions = useMemo(
+  const chartOptionsBase = useMemo<ChartOptions<'line'>>(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#d4d4d8', boxWidth: 10, font: { size: 10 } } } },
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      plugins: {
+        legend: { labels: { color: '#a1a1aa', boxWidth: 10, font: { size: 10 } } },
+        tooltip: { mode: 'index', intersect: false },
+      },
       scales: {
-        x: { ticks: { color: '#71717a', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#27272a' } },
-        y: { ticks: { color: '#71717a', font: { size: 10 } }, grid: { color: '#27272a' } },
+        x: {
+          type: 'time',
+          adapters: { date: { locale: enNZ } },
+          time: { unit: 'hour', tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } },
+          ticks: { color: '#71717a', maxTicksLimit: 6, font: { size: 10 } },
+          grid: { color: '#3f3f46' },
+        },
+        y: {
+          ticks: { color: '#a3a3a3', font: { size: 10 } },
+          grid: { color: '#3f3f46' },
+          title: { display: true, color: '#a3a3a3', font: { size: 10 } },
+        },
       },
       elements: { point: { radius: 0 }, line: { tension: 0.25, borderWidth: 1.5 } },
     }),
     []
   );
 
+  const auroraChartOptions = useMemo<ChartOptions<'line'>>(
+    () => ({
+      ...chartOptionsBase,
+      plugins: { ...chartOptionsBase.plugins, legend: { display: false } },
+      scales: {
+        ...chartOptionsBase.scales,
+        y: { ...(chartOptionsBase.scales?.y as any), title: { display: true, text: 'Aurora %', color: '#a3a3a3' }, min: 0, max: 100 },
+      },
+    }),
+    [chartOptionsBase]
+  );
+
+  const windDensityChartOptions = useMemo<ChartOptions<'line'>>(
+    () => ({
+      ...chartOptionsBase,
+      scales: {
+        ...chartOptionsBase.scales,
+        y: { ...(chartOptionsBase.scales?.y as any), type: 'linear', position: 'left', title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' } },
+        y1: {
+          type: 'linear',
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#a3a3a3', font: { size: 10 } },
+          title: { display: true, text: 'Density (/cc)', color: '#a3a3a3', font: { size: 10 } },
+        },
+      },
+    }),
+    [chartOptionsBase]
+  );
+
+  const imfHpChartOptions = useMemo<ChartOptions<'line'>>(
+    () => ({
+      ...chartOptionsBase,
+      scales: {
+        ...chartOptionsBase.scales,
+        y: { ...(chartOptionsBase.scales?.y as any), type: 'linear', position: 'left', title: { display: true, text: 'IMF (nT)', color: '#a3a3a3' } },
+        y1: {
+          type: 'linear',
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#a3a3a3', font: { size: 10 } },
+          title: { display: true, text: 'HP (GW)', color: '#a3a3a3', font: { size: 10 } },
+        },
+      },
+    }),
+    [chartOptionsBase]
+  );
+
+  const xrayChartOptions = useMemo<ChartOptions<'line'>>(
+    () => ({
+      ...chartOptionsBase,
+      plugins: { ...chartOptionsBase.plugins, legend: { display: false } },
+      scales: {
+        ...chartOptionsBase.scales,
+        x: {
+          ...(chartOptionsBase.scales?.x as any),
+          time: { unit: 'day', tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } },
+        },
+        y: {
+          ...(chartOptionsBase.scales?.y as any),
+          type: 'logarithmic',
+          min: 1e-8,
+          max: 1e-3,
+          title: { display: true, text: 'X-ray Flux (W/m²)', color: '#a3a3a3' },
+        },
+      },
+    }),
+    [chartOptionsBase]
+  );
+
   const auroraChart = {
-    labels: aurora6h.map((p: any) => fmt(p.timestamp)),
-    datasets: [{ label: 'Aurora % (6h)', data: aurora6h.map((p: any) => p.finalScore), borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.2)', fill: true }],
+    datasets: [{ label: 'Aurora % (6h)', data: aurora6h.map((p: any) => ({ x: p.timestamp, y: p.finalScore })), borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.2)', fill: true }],
   };
 
   const windDensityChart = {
-    labels: wind6h.map((p: any) => fmt(p.x)),
     datasets: [
-      { label: 'Speed', data: wind6h.map((p: any) => p.y), borderColor: '#22d3ee', backgroundColor: 'transparent', fill: false },
-      { label: 'Density', data: density6h.map((p: any) => p.y), borderColor: '#f59e0b', backgroundColor: 'transparent', fill: false },
+      { label: 'Speed', data: wind6h.map((p: any) => ({ x: p.x, y: p.y })), yAxisID: 'y', borderColor: '#22d3ee', backgroundColor: 'transparent', fill: false },
+      { label: 'Density', data: density6h.map((p: any) => ({ x: p.x, y: p.y })), yAxisID: 'y1', borderColor: '#f59e0b', backgroundColor: 'transparent', fill: false },
     ],
   };
 
   const imfChart = {
-    labels: imf6h.map((p: any) => fmt(p.time)),
     datasets: [
-      { label: 'Bt', data: imf6h.map((p: any) => p.bt), borderColor: '#a78bfa', backgroundColor: 'transparent', fill: false },
-      { label: 'Bz', data: imf6h.map((p: any) => p.bz), borderColor: '#f43f5e', backgroundColor: 'transparent', fill: false },
+      { label: 'Bt', data: imf6h.map((p: any) => ({ x: p.time, y: p.bt })), yAxisID: 'y', borderColor: '#a78bfa', backgroundColor: 'transparent', fill: false },
+      { label: 'Bz', data: imf6h.map((p: any) => ({ x: p.time, y: p.bz })), yAxisID: 'y', borderColor: '#f43f5e', backgroundColor: 'transparent', fill: false },
+      { label: 'HP', data: hp6h.map((p: any) => ({ x: p.timestamp, y: p.hemisphericPower })), yAxisID: 'y1', borderColor: '#34d399', backgroundColor: 'transparent', fill: false },
     ],
   };
 
   const xrayChart = {
-    labels: xray3d.map((p: any) => fmtDay(p.t)),
-    datasets: [{ label: 'X-ray flux (3d)', data: xray3d.map((p: any) => p.v), borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.2)', fill: true }],
+    datasets: [{ label: 'X-ray flux (3d)', data: xray3d.map((p: any) => ({ x: p.t, y: p.v })), borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.2)', fill: true }],
   };
 
   return (
@@ -243,20 +327,20 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
 
         <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
           <div className="text-[11px] text-neutral-300 px-1">Aurora Trend (6h)</div>
-          <div className="h-[calc(100%-18px)]"><Line data={auroraChart} options={chartOptions} /></div>
+          <div className="h-[calc(100%-18px)]"><Line data={auroraChart} options={auroraChartOptions} /></div>
         </div>
         <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
           <div className="text-[11px] text-neutral-300 px-1">Wind + Density (6h)</div>
-          <div className="h-[calc(100%-18px)]"><Line data={windDensityChart} options={chartOptions} /></div>
+          <div className="h-[calc(100%-18px)]"><Line data={windDensityChart} options={windDensityChartOptions} /></div>
         </div>
         <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
-          <div className="text-[11px] text-neutral-300 px-1">IMF Bt / Bz (6h)</div>
-          <div className="h-[calc(100%-18px)]"><Line data={imfChart} options={chartOptions} /></div>
+          <div className="text-[11px] text-neutral-300 px-1">IMF Bt / Bz + HP (6h)</div>
+          <div className="h-[calc(100%-18px)]"><Line data={imfChart} options={imfHpChartOptions} /></div>
         </div>
 
         <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2">
           <div className="text-[11px] text-neutral-300 px-1">GOES X-ray (3 days)</div>
-          <div className="h-[calc(100%-18px)]"><Line data={xrayChart} options={chartOptions} /></div>
+          <div className="h-[calc(100%-18px)]"><Line data={xrayChart} options={xrayChartOptions} /></div>
         </div>
 
         <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 grid grid-cols-2 gap-2">
