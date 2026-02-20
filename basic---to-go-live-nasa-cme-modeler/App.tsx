@@ -1276,8 +1276,6 @@ const App: React.FC = () => {
             onDefaultForecastViewChange={handleDefaultForecastViewChange}
             pageViewStats={pageViewStats}
             pageViewStorageMode={pageViewStorageMode}
-            dashboardModeEnabled={isDashboardMode}
-            onDashboardModeChange={handleDashboardModeChange}
           />
           
           <FirstVisitTutorial

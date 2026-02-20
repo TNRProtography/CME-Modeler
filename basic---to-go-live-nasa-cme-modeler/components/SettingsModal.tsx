@@ -24,8 +24,6 @@ interface SettingsModalProps {
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
   pageViewStats: PageViewStats;
   pageViewStorageMode: 'server' | 'local';
-  dashboardModeEnabled: boolean;
-  onDashboardModeChange: (enabled: boolean) => void;
 }
 
 const NOTIFICATION_CATEGORIES = [
@@ -80,8 +78,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onDefaultForecastViewChange,
   pageViewStats,
   pageViewStorageMode,
-  dashboardModeEnabled,
-  onDashboardModeChange,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -307,11 +303,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={e => onDefaultMainPageChange(e.target.value as 'forecast' | 'solar-activity' | 'modeler')}
                 >
                   <option value="forecast">Spot the Aurora Forecast</option>
-                  <option value="solar-activity">Solar Activity Dashboard</option>
+                  <option value="solar-activity">Solar Activity</option>
                   <option value="modeler">CME Visualization</option>
                 </select>
                 <p className="text-xs text-neutral-500">
-                  Your default landing page is stored on this device so it opens straight to your preferred dashboard.
+                  Your default landing page is stored on this device so it opens straight to your preferred view.
                 </p>
               </div>
 
@@ -335,22 +331,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </section>
 
-
-
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Dashboard Mode</h3>
-            <p className="text-sm text-neutral-400 mb-3">
-              Best for wide-screen tablets and PCs. Dashboard mode remains available for supported users as one integrated live dashboard (Forecast + Solar Activity) on a single page.
-            </p>
-            <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4 space-y-3">
-              <p className="text-sm text-neutral-300">
-                Dashboard Mode toggle is temporarily hidden while we finalize improvements.
-              </p>
-              <p className="text-xs text-neutral-500">
-                Dashboard Mode: one integrated wide-screen dashboard with Forecast + Solar Activity together and staggered auto-refresh every minute. Standard mode: regular page-by-page navigation (current default behavior).
-              </p>
-            </div>
-          </section>
 
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Your page views</h3>
