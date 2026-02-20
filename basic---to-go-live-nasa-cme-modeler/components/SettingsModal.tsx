@@ -249,7 +249,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
                 <p>
-                    This application is a passion project, built and maintained by one person with over <strong>450 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                    This application is a passion project, built and maintained by one person with over <strong>500+ hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
                 </p>
                 <p>
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
@@ -340,21 +340,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Dashboard Mode</h3>
             <p className="text-sm text-neutral-400 mb-3">
-              Best for wide-screen tablets and PCs. When enabled, the app becomes one integrated live dashboard (Forecast + Solar Activity) on a single page.
+              Best for wide-screen tablets and PCs. Dashboard mode remains available for supported users as one integrated live dashboard (Forecast + Solar Activity) on a single page.
             </p>
             <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <ToggleSwitch label="Enable Dashboard Mode" checked={dashboardModeEnabled} onChange={onDashboardModeChange} />
-                <button
-                  type="button"
-                  className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
-                  title="Dashboard Mode: one integrated wide-screen dashboard with Forecast + Solar Activity together and staggered auto-refresh every minute. Off: normal navigation pages, same behavior as today."
-                >
-                  <GuideIcon className="w-4 h-4" />
-                </button>
-              </div>
+              <p className="text-sm text-neutral-300">
+                Dashboard Mode toggle is temporarily hidden while we finalize improvements.
+              </p>
               <p className="text-xs text-neutral-500">
-                ON: one integrated dashboard view with staggered live updates every minute. OFF: regular page-by-page navigation (current default behavior).
+                Dashboard Mode: one integrated wide-screen dashboard with Forecast + Solar Activity together and staggered auto-refresh every minute. Standard mode: regular page-by-page navigation (current default behavior).
               </p>
             </div>
           </section>
@@ -465,7 +458,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
         
         <div className="flex justify-between items-center p-4 border-t border-neutral-700/80 text-xs text-neutral-500">
-          <span>Version: v1.3</span>
+          <span>Version: {appVersion}</span>
           <a 
             href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" 
             target="_blank" 
