@@ -123,6 +123,124 @@ const getCmeCoreColor = (speed: number): any => {
 
 const clamp = (v:number, a:number, b:number) => Math.max(a, Math.min(b, v));
 
+const AMBIENT_SOLAR_WIND_KMS = 390;
+const HSS_SOLAR_WIND_KMS = 620;
+const HSS_ENTRY_AU = 0.45;
+const HSS_CENTER_LONGITUDE_DEG = -25;
+const HSS_HALF_WIDTH_DEG = 42;
+const HSS_LAT_LIMIT_DEG = 38;
+const DBM_DT_SECONDS = 600;
+const MIN_CME_SPEED_KMS = 250;
+
+interface CmeDynamicState {
+  distanceScene: number;
+  speedKms: number;
+  compression: number;
+  inHss: boolean;
+}
+
+const normalizeDegrees = (deg: number): number => {
+  let value = deg;
+  while (value > 180) value -= 360;
+  while (value < -180) value += 360;
+  return value;
+};
+
+const angularSeparationDeg = (a: ProcessedCME, b: ProcessedCME): number => {
+  const lon = normalizeDegrees(a.longitude - b.longitude);
+  const lat = a.latitude - b.latitude;
+  return Math.sqrt((lon * lon) + (lat * lat));
+};
+
+const estimateDragGammaKmInv = (speedKms: number): number => {
+  const normalized = clamp((speedKms - 350) / 2000, 0, 1);
+  return (0.08 + normalized * 0.14) * 1e-7;
+};
+
+const isInsideHssSector = (cme: ProcessedCME, distanceAu: number): boolean => {
+  if (distanceAu < HSS_ENTRY_AU) return false;
+  const lonOffset = Math.abs(normalizeDegrees(cme.longitude - HSS_CENTER_LONGITUDE_DEG));
+  return lonOffset <= HSS_HALF_WIDTH_DEG && Math.abs(cme.latitude) <= HSS_LAT_LIMIT_DEG;
+};
+
+const propagateDbmWithSolarWind = (cme: ProcessedCME, elapsedSeconds: number): CmeDynamicState => {
+  if (elapsedSeconds <= 0) {
+    return { distanceScene: -1, speedKms: cme.speed, compression: 0, inHss: false };
+  }
+
+  let distanceKm = 0;
+  let speedKms = Math.max(MIN_CME_SPEED_KMS, cme.speed);
+  const gammaKmInv = estimateDragGammaKmInv(cme.speed);
+  let inHss = false;
+  let secondsRemaining = elapsedSeconds;
+
+  while (secondsRemaining > 0) {
+    const dt = Math.min(DBM_DT_SECONDS, secondsRemaining);
+    const distanceAu = distanceKm / AU_IN_KM;
+    inHss = isInsideHssSector(cme, distanceAu);
+    const windKms = inHss ? HSS_SOLAR_WIND_KMS : AMBIENT_SOLAR_WIND_KMS;
+
+    const dv = speedKms - windKms;
+    const acceleration = -gammaKmInv * dv * Math.abs(dv);
+    speedKms = Math.max(MIN_CME_SPEED_KMS, speedKms + acceleration * dt);
+    distanceKm += speedKms * dt;
+    secondsRemaining -= dt;
+  }
+
+  return {
+    distanceScene: (distanceKm / AU_IN_KM) * SCENE_SCALE,
+    speedKms,
+    compression: 0,
+    inHss,
+  };
+};
+
+const applyCmeInteractions = (cmes: ProcessedCME[], states: Record<string, CmeDynamicState>) => {
+  for (let i = 0; i < cmes.length; i++) {
+    const a = cmes[i];
+    const stateA = states[a.id];
+    if (!stateA || stateA.distanceScene <= 0) continue;
+
+    for (let j = i + 1; j < cmes.length; j++) {
+      const b = cmes[j];
+      const stateB = states[b.id];
+      if (!stateB || stateB.distanceScene <= 0) continue;
+
+      const overlapThreshold = Math.max(18, 0.7 * (a.halfAngle + b.halfAngle));
+      const angSep = angularSeparationDeg(a, b);
+      if (angSep > overlapThreshold) continue;
+
+      const lead = stateA.distanceScene >= stateB.distanceScene ? { cme: a, state: stateA } : { cme: b, state: stateB };
+      const trail = lead.cme.id === a.id ? { cme: b, state: stateB } : { cme: a, state: stateA };
+
+      const radialGapAu = Math.abs(lead.state.distanceScene - trail.state.distanceScene) / SCENE_SCALE;
+      const speedDelta = trail.state.speedKms - lead.state.speedKms;
+
+      // CME-CME compression / overtaking enhancement
+      if (speedDelta > 80 && radialGapAu < 0.25) {
+        const strength = clamp((0.25 - radialGapAu) / 0.25, 0, 1) * clamp(speedDelta / 900, 0, 1);
+        const compression = 0.25 * strength;
+        lead.state.compression = Math.max(lead.state.compression, compression);
+        lead.state.speedKms *= 1 + 0.12 * strength;
+        lead.state.distanceScene += 0.07 * strength * SCENE_SCALE;
+        trail.state.speedKms *= 1 - 0.04 * strength;
+      }
+
+      // Inelastic merge behavior when fronts become nearly co-spatial
+      if (radialGapAu < 0.04) {
+        const massLead = Math.max(1, lead.cme.halfAngle * lead.cme.speed);
+        const massTrail = Math.max(1, trail.cme.halfAngle * trail.cme.speed);
+        const mergedSpeed = ((massLead * lead.state.speedKms) + (massTrail * trail.state.speedKms)) / (massLead + massTrail);
+        lead.state.speedKms = mergedSpeed;
+        trail.state.speedKms = mergedSpeed;
+        const midpoint = 0.5 * (lead.state.distanceScene + trail.state.distanceScene);
+        lead.state.distanceScene = midpoint + 0.005 * SCENE_SCALE;
+        trail.state.distanceScene = midpoint - 0.005 * SCENE_SCALE;
+      }
+    }
+  }
+};
+
 /** =========================================================
  *  COMPONENT
  *  ========================================================= */
@@ -228,53 +346,23 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineValueRef.current = timelineValue;
   }, [timelineValue]);
 
-  const MIN_CME_SPEED_KMS = 300;
+  const calculateCmeStatesAtTime = useCallback((currentTimeMs: number): Record<string, CmeDynamicState> => {
+    const states: Record<string, CmeDynamicState> = {};
+    cmeData.forEach((cme) => {
+      const elapsedSeconds = (currentTimeMs - cme.startTime.getTime()) / 1000;
+      states[cme.id] = propagateDbmWithSolarWind(cme, elapsedSeconds);
+      if (states[cme.id].inHss) {
+        states[cme.id].compression = Math.max(states[cme.id].compression, 0.08);
+      }
+    });
+    applyCmeInteractions(cmeData, states);
+    return states;
+  }, [cmeData]);
 
-  const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    const u_kms = cme.speed;
-    const t_s = Math.max(0, timeSinceEventSeconds);
-
-    if (u_kms <= MIN_CME_SPEED_KMS) {
-        const distance_km = u_kms * t_s;
-        return (distance_km / AU_IN_KM) * SCENE_SCALE;
-    }
-
-    const a_ms2 = 1.41 - 0.0035 * u_kms;
-    const a_kms2 = a_ms2 / 1000.0;
-
-    if (a_kms2 >= 0) {
-        const distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
-        return (distance_km / AU_IN_KM) * SCENE_SCALE;
-    }
-    
-    const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
-
-    let distance_km;
-    if (t_s < time_to_floor_s) {
-        distance_km = (u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s);
-    } else {
-        const distance_during_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
-        const time_coasting = t_s - time_to_floor_s;
-        const distance_during_coast = MIN_CME_SPEED_KMS * time_coasting;
-        distance_km = distance_during_decel + distance_during_coast;
-    }
-
-    return (distance_km / AU_IN_KM) * SCENE_SCALE;
-  }, []);
-
-  const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    if (!cme.predictedArrivalTime) return 0;
-    const earthOrbitRadiusActualAU = PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE;
-    const totalTravelTimeSeconds = (cme.predictedArrivalTime.getTime() - cme.startTime.getTime()) / 1000;
-    if (totalTravelTimeSeconds <= 0) return 0;
-    const proportionOfTravel = Math.min(1.0, timeSinceEventSeconds / totalTravelTimeSeconds);
-    const distanceActualAU = proportionOfTravel * earthOrbitRadiusActualAU;
-    return distanceActualAU * SCENE_SCALE;
-  }, []);
-
-  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
+  const updateCMEShape = useCallback((cmeObject: any, state: CmeDynamicState) => {
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
+    const distTraveledInSceneUnits = state.distanceScene;
     if (distTraveledInSceneUnits < 0) {
       cmeObject.visible = false;
       return;
@@ -284,7 +372,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const tipPosition = direction.clone().multiplyScalar(sunRadius);
     cmeObject.position.copy(tipPosition);
-    cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
+    const compressionScale = 1 - clamp(state.compression, 0, 0.35);
+    cmeObject.scale.set(cmeLength * compressionScale, cmeLength, cmeLength * compressionScale);
+    if (cmeObject.material) {
+      cmeObject.material.opacity = clamp(getCmeOpacity(cmeObject.userData.speed) + (state.compression * 0.3), 0.05, 0.9);
+    }
   }, [THREE]);
 
   useEffect(() => {
@@ -546,8 +638,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => c.material.opacity = getCmeOpacity(c.userData.speed));
-
       if (timelineActive) {
         if (timelinePlaying) {
           const r = timelineMaxDate - timelineMinDate;
@@ -559,29 +649,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
+        const timelineStates = calculateCmeStatesAtTime(t);
         cmeGroupRef.current.children.forEach((c: any) => {
-          const s = (t - c.userData.startTime.getTime()) / 1000;
-          updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s));
+          const state = timelineStates[c.userData.id] ?? { distanceScene: -1, speedKms: c.userData.speed, compression: 0, inHss: false };
+          updateCMEShape(c, state);
         });
       } else {
+        const nowStates = calculateCmeStatesAtTime(Date.now());
         cmeGroupRef.current.children.forEach((c: any) => {
-          let d = 0;
-          if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
-            const cme = c.userData;
-            const t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
-            if (cme.isEarthDirected && cme.predictedArrivalTime) {
-                d = calculateDistanceByInterpolation(cme, t < 0 ? 0 : t); 
-            } else {
-                d = calculateDistanceWithDeceleration(cme, t < 0 ? 0 : t);
-            }
-          } else if (!currentlyModeledCMEId) {
-            const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
-            d = calculateDistanceWithDeceleration(c.userData, t < 0 ? 0 : t);
-          } else {
-            updateCMEShape(c, -1);
+          if (currentlyModeledCMEId && c.userData.id !== currentlyModeledCMEId) {
+            updateCMEShape(c, { distanceScene: -1, speedKms: c.userData.speed, compression: 0, inHss: false });
             return;
           }
-          updateCMEShape(c, d);
+          const state = nowStates[c.userData.id] ?? { distanceScene: -1, speedKms: c.userData.speed, compression: 0, inHss: false };
+          updateCMEShape(c, state);
         });
       }
 
@@ -786,45 +867,42 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             let totalSpeed = ambientSpeed;
             let totalDensity = ambientDensity;
 
-            cmeGroupRef.current.children.forEach((cmeObject: any) => {
-                const cme = cmeObject.userData as ProcessedCME;
-                const timeSinceCmeStart = (currentTime - cme.startTime.getTime()) / 1000;
-                
-                if (timeSinceCmeStart > 0) {
-                    const cmeDist = calculateDistanceWithDeceleration(cme, timeSinceCmeStart);
-                    
-                    const cmeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-                    const angleToEarth = cmeDir.angleTo(earthPos.clone().normalize());
+            const states = calculateCmeStatesAtTime(currentTime);
+            cmeData.forEach((cme) => {
+                const state = states[cme.id];
+                if (!state || state.distanceScene <= 0) return;
 
-                    if (angleToEarth < THREE.MathUtils.degToRad(cme.halfAngle)) {
-                        const distToEarth = earthPos.length();
-                        const cmeThickness = SCENE_SCALE * 0.3; // Visual thickness of the CME
-                        const cmeFront = cmeDist;
-                        const cmeBack = cmeDist - cmeThickness;
+                const cmeDir = new THREE.Vector3().setFromSphericalCoords(
+                  1,
+                  THREE.MathUtils.degToRad(90 - cme.latitude),
+                  THREE.MathUtils.degToRad(cme.longitude)
+                );
+                const angleToEarth = cmeDir.angleTo(earthPos.clone().normalize());
 
-                        if (distToEarth < cmeFront && distToEarth > cmeBack) {
-                            const u_kms = cme.speed;
-                            const a_ms2 = 1.41 - 0.0035 * u_kms;
-                            const a_kms2 = a_ms2 / 1000.0;
-                            const currentSpeed = Math.max(MIN_CME_SPEED_KMS, u_kms + a_kms2 * timeSinceCmeStart);
-                            
-                            const penetration_distance = cmeFront - distToEarth;
-                            const coreThickness = cmeThickness * 0.25;
-                            let intensity = 0;
+                if (angleToEarth < THREE.MathUtils.degToRad(cme.halfAngle)) {
+                    const distToEarth = earthPos.length();
+                    const cmeThickness = SCENE_SCALE * (0.26 + state.compression * 0.2);
+                    const cmeFront = state.distanceScene;
+                    const cmeBack = cmeFront - cmeThickness;
 
-                            if (penetration_distance <= coreThickness) {
-                                intensity = 1.0;
-                            } else {
-                                const wake_progress = (penetration_distance - coreThickness) / (cmeThickness - coreThickness);
-                                intensity = 0.5 * (1 + Math.cos(wake_progress * Math.PI));
-                            }
-                            
-                            const speedContribution = (currentSpeed - ambientSpeed) * intensity;
-                            const densityContribution = (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ambientDensity) * intensity;
-                            
-                            totalSpeed = Math.max(totalSpeed, ambientSpeed + speedContribution);
-                            totalDensity += densityContribution;
+                    if (distToEarth < cmeFront && distToEarth > cmeBack) {
+                        const penetrationDistance = cmeFront - distToEarth;
+                        const coreThickness = cmeThickness * 0.25;
+                        let intensity = 0;
+
+                        if (penetrationDistance <= coreThickness) {
+                            intensity = 1.0;
+                        } else {
+                            const wakeProgress = (penetrationDistance - coreThickness) / (cmeThickness - coreThickness);
+                            intensity = 0.5 * (1 + Math.cos(wakeProgress * Math.PI));
                         }
+
+                        const speedContribution = (state.speedKms - ambientSpeed) * intensity;
+                        const baseDensity = THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50);
+                        const densityContribution = (baseDensity * (1 + state.compression) - ambientDensity) * intensity;
+
+                        totalSpeed = Math.max(totalSpeed, ambientSpeed + speedContribution);
+                        totalDensity += densityContribution;
                     }
                 }
             });
@@ -832,7 +910,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
         return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
+  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateCmeStatesAtTime, cmeData]);
 
   useEffect(() => {
     if (controlsRef.current && rendererRef.current?.domElement) {
