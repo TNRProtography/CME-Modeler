@@ -1,16 +1,11 @@
 // --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
-import SimulationCanvas from './components/SimulationCanvas';
-import ControlsPanel from './components/ControlsPanel';
-import CMEListPanel from './components/CMEListPanel';
-import TimelineControls from './components/TimelineControls';
+import type { SimulationCanvasHandle } from './types';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
 import LoadingOverlay from './components/LoadingOverlay';
-import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
 
 // Icon Imports
@@ -24,16 +19,10 @@ import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/
 
 // Dashboard and Banner Imports
 import ForecastDashboard from './components/ForecastDashboard';
-import SolarActivityDashboard from './components/SolarActivityDashboard';
-import UnifiedDashboardMode from './components/UnifiedDashboardMode';
 import GlobalBanner from './components/GlobalBanner';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal';
-import FirstVisitTutorial from './components/FirstVisitTutorial';
-import CmeModellerTutorial from './components/CmeModellerTutorial';
-import ForecastModelsModal from './components/ForecastModelsModal';
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
@@ -138,6 +127,18 @@ const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
 const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = lazy(() => import('./components/ImpactGraphModal'));
+const SimulationCanvas = lazy(() => import('./components/SimulationCanvas'));
+const ControlsPanel = lazy(() => import('./components/ControlsPanel'));
+const CMEListPanel = lazy(() => import('./components/CMEListPanel'));
+const TimelineControls = lazy(() => import('./components/TimelineControls'));
+const TutorialModal = lazy(() => import('./components/TutorialModal'));
+const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
+const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDashboard'));
+const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
+const SettingsModal = lazy(() => import('./components/SettingsModal'));
+const FirstVisitTutorial = lazy(() => import('./components/FirstVisitTutorial'));
+const CmeModellerTutorial = lazy(() => import('./components/CmeModellerTutorial'));
+const ForecastModelsModal = lazy(() => import('./components/ForecastModelsModal'));
 
 
 const App: React.FC = () => {
@@ -1120,6 +1121,7 @@ const App: React.FC = () => {
               </div>
           </header>
 
+          <Suspense fallback={null}>
           <div className="flex flex-grow min-h-0">
               {isDashboardMode ? (
                 <UnifiedDashboardMode refreshSignal={manualRefreshKey} />
@@ -1295,6 +1297,7 @@ const App: React.FC = () => {
               onClose={() => setIsForecastModelsModalOpen(false)}
               setViewerMedia={setViewerMedia}
           />
+          </Suspense>
 
           <Suspense fallback={null}>
             {/* --- NEW: Render the ImpactGraphModal --- */}
