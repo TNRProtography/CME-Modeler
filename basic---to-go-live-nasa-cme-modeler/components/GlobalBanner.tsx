@@ -89,7 +89,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   const shouldFetchRemoteBanner = useMemo(() => {
     const host = window.location.hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
+    return host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
   }, []);
 
   useEffect(() => {

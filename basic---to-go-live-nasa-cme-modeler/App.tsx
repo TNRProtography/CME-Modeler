@@ -215,7 +215,6 @@ const App: React.FC = () => {
   const [showIabBanner, setShowIabBanner] = useState(false);
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
-  const deferredInstallPromptRef = useRef<any>(null);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
 
   const [isDashboardReady, setIsDashboardReady] = useState(false);
@@ -430,14 +429,9 @@ const App: React.FC = () => {
       setIsAndroidIab(isAndroid);
     }
 
-    const onBip = (e: any) => {
-      if (inIAB) {
-        e.preventDefault();
-        return;
-      }
-      e.preventDefault();
-      deferredInstallPromptRef.current = e;
-      (window as any).spotTheAuroraCanInstall = true;
+    const onBip = () => {
+      // Do not intercept install prompt unless we provide explicit install UI.
+      // Let the browser handle native install prompt lifecycle to avoid warnings.
     };
 
     window.addEventListener('beforeinstallprompt', onBip);

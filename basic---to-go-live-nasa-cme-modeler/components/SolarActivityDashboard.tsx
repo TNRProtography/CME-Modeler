@@ -201,6 +201,26 @@ const enqueueImageLoad = (task: () => void) => {
   queuedImageLoads.push(task);
 };
 
+
+const extractTargetUrlFromProxy = (url: string): string | null => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const encoded = parsed.searchParams.get('url');
+    return encoded ? decodeURIComponent(encoded) : null;
+  } catch {
+    return null;
+  }
+};
+
+const isLikelySameOriginOrProxy = (url: string): boolean => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin || parsed.pathname.startsWith('/api/proxy/');
+  } catch {
+    return false;
+  }
+};
+
 const releaseImageLoadSlot = () => {
   inFlightImageLoads = Math.max(0, inFlightImageLoads - 1);
   const next = queuedImageLoads.shift();
@@ -1052,10 +1072,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     enqueueImageLoad(() => {
       const loadAttempt = async (attempt: number) => {
         try {
-          const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
-          const objectUrl = URL.createObjectURL(blob);
-          solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
-          setState({ url: objectUrl, loading: null });
+          if (isLikelySameOriginOrProxy(fetchUrl)) {
+            const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
+            const objectUrl = URL.createObjectURL(blob);
+            solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
+            setState({ url: objectUrl, loading: null });
+          } else {
+            // Cross-origin feeds (e.g. NOAA SUVI) can render directly in <img> without CORS-fetch restrictions.
+            solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
+            setState({ url: fetchUrl, loading: null });
+          }
           stampIfChanged('solar-image-'+url, { url: fetchUrl }, setLastImagesUpdate);
           if (import.meta.env.DEV) console.info('[solar-preload] image loaded', url);
           releaseImageLoadSlot();
@@ -1065,13 +1091,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             window.setTimeout(() => { void loadAttempt(attempt + 1); }, 350 * (attempt + 1));
             return;
           }
+          const proxyTarget = extractTargetUrlFromProxy(fetchUrl);
+          if (proxyTarget) {
+            solarImageCache.set(cacheKey, { url: proxyTarget, fetchedAt: Date.now() });
+            setState({ url: proxyTarget, loading: null });
+            releaseImageLoadSlot();
+            return;
+          }
           setState({ url: '/error.png', loading: 'Tap image to retry' });
           releaseImageLoadSlot();
         }
       };
       void loadAttempt(0);
     });
-  }, []);
+  }, [stampIfChanged]);
 
 
   const prefetchSolarImage = useCallback((url: string) => {
