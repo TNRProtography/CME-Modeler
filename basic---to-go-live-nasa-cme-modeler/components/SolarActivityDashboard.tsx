@@ -138,7 +138,7 @@ const SDO_HMI_IF_1024_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const SDO_HMI_BC_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIBC.jpg';
 const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const SDO_HMI_IF_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMII.jpg';
-const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
+const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
 const SDO_HMI_NATIVE_CY = 2048;
@@ -151,6 +151,56 @@ const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
 const SOLAR_IMAGE_CACHE_TTL_MS = 60 * 60 * 1000;
 const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
+
+const FETCH_TIMEOUT_MS = 12000;
+const MAX_FETCH_RETRIES = 2;
+const IMAGE_CONCURRENCY_LIMIT = 4;
+let inFlightImageLoads = 0;
+const queuedImageLoads: Array<() => void> = [];
+
+const devLog = (...args: unknown[]) => {
+  if (!import.meta.env.DEV) return;
+  console.info('[solar-preload]', ...args);
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' = 'json') => {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal, cache: 'default' });
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      return parseAs === 'json' ? await response.json() : await response.text();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+  throw lastError ?? new Error(`Failed to fetch ${url}`);
+};
+
+const enqueueImageLoad = (task: () => void) => {
+  if (inFlightImageLoads < IMAGE_CONCURRENCY_LIMIT) {
+    inFlightImageLoads++;
+    task();
+    return;
+  }
+  queuedImageLoads.push(task);
+};
+
+const releaseImageLoadSlot = () => {
+  inFlightImageLoads = Math.max(0, inFlightImageLoads - 1);
+  const next = queuedImageLoads.shift();
+  if (next) {
+    inFlightImageLoads++;
+    next();
+  }
+};
 
 
 // --- HELPERS ---
@@ -981,20 +1031,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return;
     }
 
-    // Preload immediately so switching modes is instant once loaded.
-    const img = new Image();
-    img.onload = () => {
-      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
-      setState({ url: fetchUrl, loading: null });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
-    };
-    img.onerror = () => {
-      // Keep direct URL as fallback even if preload handshake fails (some hosts block probe requests).
-      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
-      setState({ url: fetchUrl, loading: null });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
-    };
-    img.src = fetchUrl;
+    enqueueImageLoad(() => {
+      const loadAttempt = (attempt: number) => {
+        const img = new Image();
+        img.onload = () => {
+          solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
+          setState({ url: fetchUrl, loading: null });
+          setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+          if (import.meta.env.DEV) console.info('[solar-preload] image loaded', url);
+          releaseImageLoadSlot();
+        };
+        img.onerror = () => {
+          if (attempt < MAX_FETCH_RETRIES) {
+            setState({ url: '/placeholder.png', loading: 'Retrying image…' });
+            window.setTimeout(() => loadAttempt(attempt + 1), 350 * (attempt + 1));
+            return;
+          }
+          setState({ url: '/error.png', loading: 'Tap image to retry' });
+          releaseImageLoadSlot();
+        };
+        img.src = fetchUrl;
+      };
+      loadAttempt(0);
+    });
   }, []);
 
 
@@ -1020,9 +1079,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     let lastError: Error | null = null;
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}?_=${Date.now()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-        return await res.json();
+        return await fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'json');
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown fetch error');
       }
@@ -1034,9 +1091,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     let lastError: Error | null = null;
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}?_=${Date.now()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-        return await res.text();
+        return await fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'text') as string;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown fetch error');
       }
@@ -1810,6 +1865,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
                     onClick={() => {
+                      if (sunspotOverviewImage.url === '/error.png') {
+                        fetchImage(
+                          sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL,
+                          sunspotImageryMode === 'intensity' ? setSdoHmiIf1024 : sunspotImageryMode === 'magnetogram' ? setSdoHmiB1024 : setSdoHmiBc1024,
+                          false,
+                          false,
+                        );
+                        return;
+                      }
                       if (sunspotOverviewImage4k.url === '/placeholder.png' || sunspotOverviewImage4k.url === '/error.png') return;
                       setViewerMedia({
                         url: sunspotOverviewImage4k.url,
@@ -1829,6 +1893,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       className="w-full h-full object-contain rounded-lg"
                     />
                     {loadingSunspotRegions && <LoadingSpinner message={loadingSunspotRegions} />}
+                    {sunspotOverviewImage.url === '/error.png' && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Tap to retry imagery load</div>
+                    )}
 
                     {plottedSunspots.map((region) => {
                       const isSelected = selectedSunspotRegion?.region === region.region;

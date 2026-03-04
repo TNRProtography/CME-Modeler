@@ -139,7 +139,7 @@ interface SimulationCanvasProps {
   timelineMinDate: number;
   timelineMaxDate: number;
   setPlanetMeshesForLabels: (labels: PlanetLabelInfo[]) => void;
-  setRendererDomElement: (element: HTMLCanvasElement) => void;
+  setRendererDomElement: (element: HTMLCanvasElement | null) => void;
   onCameraReady: (camera: any) => void;
   getClockElapsedTime: () => number;
   resetClock: () => void;
@@ -631,9 +631,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
       });
       rendererRef.current = null;
+      setRendererDomElement(null);
+      onCameraReady(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [THREE, dataVersion]);
+  }, [THREE]);
 
   // Build CME particle systems
   useEffect(() => {
