@@ -751,6 +751,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [sunspotImageryMode, setSunspotImageryMode] = useState<SunspotImageryMode>('colorized');
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
+  const [isCloseupImageLoading, setIsCloseupImageLoading] = useState(false);
   const [overviewGeometry, setOverviewGeometry] = useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
   const touchStartXRef = useRef<number | null>(null);
 
@@ -1642,6 +1643,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     setSelectedSunspotCloseupUrl(sunspotOverviewImage4k.url);
   }, [selectedSunspotRegion, sunspotOverviewImage4k.url]);
 
+
+  useEffect(() => {
+    if (selectedSunspotCloseupUrl) {
+      setIsCloseupImageLoading(true);
+      return;
+    }
+    setIsCloseupImageLoading(false);
+  }, [selectedSunspotCloseupUrl]);
+
   // Chart options/data
   const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
     const now = Date.now();
@@ -2029,6 +2039,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                   src={selectedSunspotCloseupUrl}
                                   alt={`AR ${selectedSunspotRegion.region} closeup`}
                                   className="absolute"
+                                  onLoad={() => setIsCloseupImageLoading(false)}
+                                  onError={() => setIsCloseupImageLoading(false)}
                                   style={{
                                     width: '420%',
                                     height: '420%',
@@ -2040,6 +2052,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                 />
                               );
                             })()}
+                            {isCloseupImageLoading && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+                                <LoadingSpinner message="Loading close-up image..." />
+                              </div>
+                            )}
+                          </div>
+                        ) : sunspotOverviewImage4k.loading || sunspotOverviewImage4k.url === '/placeholder.png' ? (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <LoadingSpinner message="Loading close-up image..." />
                           </div>
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">Close-up unavailable</div>
