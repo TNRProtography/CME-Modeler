@@ -34,6 +34,8 @@ import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
+import { registerDatasetTicker } from './utils/pollingScheduler';
+import { startAppPreload } from './utils/appPreloader';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
   DEFAULT_MAIN_PAGE_KEY,
@@ -471,6 +473,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 1200);
     logDev('initial preload start');
+    startAppPreload();
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
@@ -482,15 +485,6 @@ const App: React.FC = () => {
     return () => clearTimeout(minTimer);
   }, []);
 
-  useEffect(() => {
-    if (initialLoadTasks.modelerCmeData) return;
-    loadCMEData(activeTimeRange, { silent: true })
-      .finally(() => {
-        markInitialTaskDone('modelerCmeData');
-        logDev('modeler preload complete');
-      });
-  }, [activeTimeRange, initialLoadTasks.modelerCmeData, loadCMEData, markInitialTaskDone]);
-  
   useEffect(() => {
     const allReady = Array.from(initialRequiredTasks.current).every((task) => initialLoadTasks[task]);
     if (allReady && !isDashboardReady) {
@@ -676,6 +670,16 @@ const App: React.FC = () => {
     }
   }, [resetClock, apiKey, markInitialTaskDone]);
 
+
+  useEffect(() => {
+    if (initialLoadTasks.modelerCmeData) return;
+    loadCMEData(activeTimeRange, { silent: true })
+      .finally(() => {
+        markInitialTaskDone('modelerCmeData');
+        logDev('modeler preload complete');
+      });
+  }, [activeTimeRange, initialLoadTasks.modelerCmeData, loadCMEData, markInitialTaskDone]);
+
   const handleRefreshAppData = useCallback(async () => {
     setIsRefreshing(true);
     setManualRefreshKey((v) => v + 1);
@@ -716,13 +720,12 @@ const App: React.FC = () => {
     };
 
     ensureInitialLoad();
-    const interval = setInterval(() => {
-      if (cmePageLoadedOnce.current) {
-        loadCMEData(activeTimeRange, { silent: true });
-      }
-    }, 60 * 60 * 1000);
 
-    return () => clearInterval(interval);
+    return registerDatasetTicker('modeler-cme-data', async () => {
+      if (cmePageLoadedOnce.current) {
+        await loadCMEData(activeTimeRange, { silent: true });
+      }
+    }, 60_000);
   }, [activePage, activeTimeRange, loadCMEData]);
 
   const handleTimeRangeChange = (range: TimeRange) => {

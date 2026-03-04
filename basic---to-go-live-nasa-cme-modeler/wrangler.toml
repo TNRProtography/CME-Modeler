@@ -1,0 +1,10 @@
+name = "spot-the-aurora-image-proxy"
+main = "worker/index.ts"
+compatibility_date = "2026-03-04"
+
+[observability]
+enabled = true
+
+[[routes]]
+pattern = "spottheaurora.co.nz/api/proxy/*"
+zone_name = "spottheaurora.co.nz"

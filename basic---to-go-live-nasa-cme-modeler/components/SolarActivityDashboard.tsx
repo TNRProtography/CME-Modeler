@@ -10,6 +10,8 @@ import {
   fetchFlareData, 
   SolarFlare
 } from '../services/nasaService';
+import { stableHash } from '../utils/dataFreshness';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
@@ -138,6 +140,10 @@ const SDO_HMI_IF_1024_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const SDO_HMI_BC_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIBC.jpg';
 const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const SDO_HMI_IF_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMII.jpg';
+
+const IMAGE_PROXY_BASE = '/api/proxy';
+const toProxyImageUrl = (rawUrl: string, ttlSeconds = 60) => `${IMAGE_PROXY_BASE}/image?url=${encodeURIComponent(rawUrl)}&ttl=${ttlSeconds}`;
+const toProxyMetaUrl = (rawUrl: string) => `${IMAGE_PROXY_BASE}/meta?url=${encodeURIComponent(rawUrl)}`;
 const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
@@ -165,7 +171,7 @@ const devLog = (...args: unknown[]) => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' = 'json') => {
+const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 'blob' = 'json') => {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
     const controller = new AbortController();
@@ -173,7 +179,9 @@ const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' = 
     try {
       const response = await fetch(url, { signal: controller.signal, cache: 'default' });
       if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-      return parseAs === 'json' ? await response.json() : await response.text();
+      if (parseAs === 'json') return await response.json();
+      if (parseAs === 'blob') return await response.blob();
+      return await response.text();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Unknown fetch error');
       if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
@@ -737,6 +745,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
   const initialLoadNotifiedRef = useRef(false);
+  const lastHashRef = useRef<Record<string, string>>({});
+
+  const stampIfChanged = useCallback((key: string, payload: unknown, setter: (value: string) => void) => {
+    const hash = stableHash(payload);
+    if (lastHashRef.current[key] === hash) return false;
+    lastHashRef.current[key] = hash;
+    setter(new Date().toLocaleTimeString('en-NZ'));
+    if (import.meta.env.DEV) console.info('[data-change]', key, 'changed');
+    return true;
+  }, []);
 
   const buildSixHourAnimationUrls = useCallback((baseUrl: string, stepMinutes: number = 10) => {
     const now = Date.now();
@@ -1027,32 +1045,31 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (isVideo) {
       solarImageCache.set(cacheKey, { url, fetchedAt: now });
       setState({ url, loading: null });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-image-'+url, { url: fetchUrl }, setLastImagesUpdate);
       return;
     }
 
     enqueueImageLoad(() => {
-      const loadAttempt = (attempt: number) => {
-        const img = new Image();
-        img.onload = () => {
-          solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
-          setState({ url: fetchUrl, loading: null });
-          setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+      const loadAttempt = async (attempt: number) => {
+        try {
+          const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
+          const objectUrl = URL.createObjectURL(blob);
+          solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
+          setState({ url: objectUrl, loading: null });
+          stampIfChanged('solar-image-'+url, { url: fetchUrl }, setLastImagesUpdate);
           if (import.meta.env.DEV) console.info('[solar-preload] image loaded', url);
           releaseImageLoadSlot();
-        };
-        img.onerror = () => {
+        } catch {
           if (attempt < MAX_FETCH_RETRIES) {
             setState({ url: '/placeholder.png', loading: 'Retrying image…' });
-            window.setTimeout(() => loadAttempt(attempt + 1), 350 * (attempt + 1));
+            window.setTimeout(() => { void loadAttempt(attempt + 1); }, 350 * (attempt + 1));
             return;
           }
           setState({ url: '/error.png', loading: 'Tap image to retry' });
           releaseImageLoadSlot();
-        };
-        img.src = fetchUrl;
+        }
       };
-      loadAttempt(0);
+      void loadAttempt(0);
     });
   }, []);
 
@@ -1119,7 +1136,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           setAllXrayData([]);
           setLatestXrayFlux(null);
           setCurrentXraySummary({ flux: null, class: 'N/A' });
-          setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+          stampIfChanged('solar-xray', processedData, setLastXrayUpdate);
           return;
         }
         setAllXrayData(processedData);
@@ -1127,17 +1144,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const latestFluxValue = processedData[processedData.length - 1].short;
         setLatestXrayFlux(latestFluxValue);
         setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) });
-        setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+        stampIfChanged('solar-xray', processedData, setLastXrayUpdate);
     } catch (e: any) {
       console.error('Error fetching X-ray flux:', e);
       setLoadingXray(`Error: ${e?.message || 'Unknown error'}`);
       setLatestXrayFlux(null);
       setCurrentXraySummary({ flux: null, class: 'N/A' });
-      setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+      // keep previous last-changed timestamp on failed fetch
     } finally {
       reportInitialTask('solarXray');
     }
-  }, [fetchFirstAvailableJson, reportInitialTask, setLatestXrayFlux]);
+  }, [fetchFirstAvailableJson, reportInitialTask, setLatestXrayFlux, stampIfChanged]);
 
   const fetchProtonFlux = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -1153,23 +1170,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           setLoadingProton('No valid >=10 MeV proton data.');
           setAllProtonData([]);
           setCurrentProtonSummary({ flux: null, class: 'N/A' });
-          setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+          stampIfChanged('solar-proton', processedData, setLastProtonUpdate);
           return;
         }
         setAllProtonData(processedData);
         setLoadingProton(null);
         const latestFluxValue = processedData[processedData.length - 1].flux;
         setCurrentProtonSummary({ flux: latestFluxValue, class: getProtonClass(latestFluxValue) });
-        setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+        stampIfChanged('solar-proton', processedData, setLastProtonUpdate);
     } catch (e: any) {
       console.error('Error fetching proton flux:', e);
       setLoadingProton(`Error: ${e?.message || 'Unknown error'}`);
       setCurrentProtonSummary({ flux: null, class: 'N/A' });
-      setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+      // keep previous last-changed timestamp on failed fetch
     } finally {
       reportInitialTask('solarProton');
     }
-  }, [fetchFirstAvailableJson, reportInitialTask]);
+  }, [fetchFirstAvailableJson, reportInitialTask, stampIfChanged]);
 
   const fetchFlares = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -1180,7 +1197,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (!data || data.length === 0) {
         setSolarFlares([]);
         setLoadingFlares(null);
-        setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+        stampIfChanged('solar-flares', [], setLastFlaresUpdate);
         return;
       }
       const processedData = data.map((flare: SolarFlare) => ({
@@ -1190,17 +1207,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       })) as (SolarFlare & { hasCME: boolean })[];
       setSolarFlares(processedData);
       setLoadingFlares(null);
-      setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
       const firstStrong = processedData.find(f => f.classType?.startsWith('M') || f.classType?.startsWith('X'));
       if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatNZTimestamp(firstStrong.peakTime)}`);
     } catch (error) {
       console.error('Error fetching flares:', error);
       setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
     } finally {
       reportInitialTask('solarFlares');
     }
-  }, [reportInitialTask]);
+  }, [reportInitialTask, stampIfChanged]);
 
   const fetchSunspotRegions = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -1294,43 +1311,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
       setActiveSunspotRegions(dedupedLatest);
       setLoadingSunspotRegions(null);
-      setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-regions', dedupedLatest, setLastSunspotRegionsUpdate);
     } catch (error) {
       console.error('Error fetching active sunspot regions:', error);
       setActiveSunspotRegions([]);
       setLoadingSunspotRegions(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
     } finally {
       reportInitialTask('solarRegions');
     }
-  }, [fetchFirstAvailableJson, fetchFirstAvailableText, reportInitialTask]);
+  }, [fetchFirstAvailableJson, fetchFirstAvailableText, reportInitialTask, stampIfChanged]);
 
   const runAllUpdates = useCallback(() => {
+    void fetchWithTimeoutAndRetry(toProxyMetaUrl(SDO_HMI_BC_1024_URL), 'json').then((meta: any) => {
+      const version = meta?.etag || meta?.lastModified || 'unknown';
+      stampIfChanged('solar-images-meta', version, setLastImagesUpdate);
+    }).catch(() => {});
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
-    fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024, false, false);
-    fetchImage(SDO_HMI_B_1024_URL, setSdoHmiB1024, false, false);
-    fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024, false, false);
+    fetchImage(toProxyImageUrl(SDO_HMI_BC_1024_URL), setSdoHmiBc1024, false, false);
+    fetchImage(toProxyImageUrl(SDO_HMI_B_1024_URL), setSdoHmiB1024, false, false);
+    fetchImage(toProxyImageUrl(SDO_HMI_IF_1024_URL), setSdoHmiIf1024, false, false);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
     fetchProtonFlux();
     fetchFlares();
     fetchSunspotRegions();
-  }, [fetchFlares, fetchImage, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux]);
+  }, [fetchFlares, fetchImage, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
 
   useEffect(() => {
     runAllUpdates();
-    const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return registerDatasetTicker('solar-activity-data', () => runAllUpdates(), REFRESH_INTERVAL_MS);
   }, [runAllUpdates]);
 
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      prefetchSolarImage(SDO_HMI_BC_4096_URL);
-      prefetchSolarImage(SDO_HMI_B_4096_URL);
-      prefetchSolarImage(SDO_HMI_IF_4096_URL);
+      prefetchSolarImage(toProxyImageUrl(SDO_HMI_BC_4096_URL));
+      prefetchSolarImage(toProxyImageUrl(SDO_HMI_B_4096_URL));
+      prefetchSolarImage(toProxyImageUrl(SDO_HMI_IF_4096_URL));
     }, 1800);
 
     return () => window.clearTimeout(timer);
@@ -1349,9 +1368,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!selectedSunspotRegion) return;
-    fetchImage(SDO_HMI_BC_4096_URL, setSdoHmiBc4096, false, false);
-    fetchImage(SDO_HMI_B_4096_URL, setSdoHmiB4096, false, false);
-    fetchImage(SDO_HMI_IF_4096_URL, setSdoHmiIf4096, false, false);
+    fetchImage(toProxyImageUrl(SDO_HMI_BC_4096_URL), setSdoHmiBc4096, false, false);
+    fetchImage(toProxyImageUrl(SDO_HMI_B_4096_URL), setSdoHmiB4096, false, false);
+    fetchImage(toProxyImageUrl(SDO_HMI_IF_4096_URL), setSdoHmiIf4096, false, false);
   }, [fetchImage, selectedSunspotRegion]);
 
   useEffect(() => {
@@ -1867,7 +1886,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     onClick={() => {
                       if (sunspotOverviewImage.url === '/error.png') {
                         fetchImage(
-                          sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL,
+                          toProxyImageUrl(sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL),
                           sunspotImageryMode === 'intensity' ? setSdoHmiIf1024 : sunspotImageryMode === 'magnetogram' ? setSdoHmiB1024 : setSdoHmiBc1024,
                           false,
                           false,

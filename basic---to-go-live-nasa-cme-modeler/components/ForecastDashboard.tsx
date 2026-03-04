@@ -8,6 +8,7 @@ import { useForecastData } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 import {
     TipsSection,
@@ -260,13 +261,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
-      const interval = setInterval(() => {
-        if (import.meta.env.DEV) console.info('[polling] forecast tick');
-        if (import.meta.env.DEV) console.info('[polling] forecast manual refresh');
-      fetchAllData(false, getGaugeStyle);
-      }, 60 * 1000);
-      return () => clearInterval(interval);
-    }, []);
+      return registerDatasetTicker('forecast-core-data', () => fetchAllData(false, getGaugeStyle), 60_000);
+    }, [fetchAllData]);
 
     useEffect(() => {
       if (import.meta.env.DEV) console.info('[polling] forecast manual refresh');
