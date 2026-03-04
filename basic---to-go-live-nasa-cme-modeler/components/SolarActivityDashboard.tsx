@@ -144,6 +144,7 @@ const SDO_HMI_IF_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const IMAGE_PROXY_BASE = '/api/proxy';
 const toProxyImageUrl = (rawUrl: string, ttlSeconds = 60) => `${IMAGE_PROXY_BASE}/image?url=${encodeURIComponent(rawUrl)}&ttl=${ttlSeconds}`;
 const toProxyMetaUrl = (rawUrl: string) => `${IMAGE_PROXY_BASE}/meta?url=${encodeURIComponent(rawUrl)}`;
+const resolveSdoImageUrl = (rawUrl: string, forceDirect: boolean) => forceDirect ? rawUrl : toProxyImageUrl(rawUrl);
 const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
@@ -765,6 +766,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
   const initialLoadNotifiedRef = useRef(false);
+  const forceDirectSdoRef = useRef(false);
   const lastHashRef = useRef<Record<string, string>>({});
 
   const stampIfChanged = useCallback((key: string, payload: unknown, setter: (value: string) => void) => {
@@ -1074,6 +1076,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         try {
           if (isLikelySameOriginOrProxy(fetchUrl)) {
             const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
+            if (!blob.type.startsWith('image/')) {
+              throw new Error(`Expected image blob but got ${blob.type || 'unknown'}`);
+            }
             const objectUrl = URL.createObjectURL(blob);
             solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
             setState({ url: objectUrl, loading: null });
@@ -1093,6 +1098,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           }
           const proxyTarget = extractTargetUrlFromProxy(fetchUrl);
           if (proxyTarget) {
+            forceDirectSdoRef.current = true;
             solarImageCache.set(cacheKey, { url: proxyTarget, fetchedAt: Date.now() });
             setState({ url: proxyTarget, loading: null });
             releaseImageLoadSlot();
@@ -1104,7 +1110,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       };
       void loadAttempt(0);
     });
-  }, [stampIfChanged]);
+  }, [stampIfChanged, forceDirectSdoRef]);
 
 
   const prefetchSolarImage = useCallback((url: string) => {
@@ -1361,9 +1367,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }).catch(() => {});
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
-    fetchImage(toProxyImageUrl(SDO_HMI_BC_1024_URL), setSdoHmiBc1024, false, false);
-    fetchImage(toProxyImageUrl(SDO_HMI_B_1024_URL), setSdoHmiB1024, false, false);
-    fetchImage(toProxyImageUrl(SDO_HMI_IF_1024_URL), setSdoHmiIf1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_1024_URL, forceDirectSdoRef.current), setSdoHmiBc1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
@@ -1380,9 +1386,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      prefetchSolarImage(toProxyImageUrl(SDO_HMI_BC_4096_URL));
-      prefetchSolarImage(toProxyImageUrl(SDO_HMI_B_4096_URL));
-      prefetchSolarImage(toProxyImageUrl(SDO_HMI_IF_4096_URL));
+      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current));
+      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current));
+      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current));
     }, 1800);
 
     return () => window.clearTimeout(timer);
@@ -1401,9 +1407,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!selectedSunspotRegion) return;
-    fetchImage(toProxyImageUrl(SDO_HMI_BC_4096_URL), setSdoHmiBc4096, false, false);
-    fetchImage(toProxyImageUrl(SDO_HMI_B_4096_URL), setSdoHmiB4096, false, false);
-    fetchImage(toProxyImageUrl(SDO_HMI_IF_4096_URL), setSdoHmiIf4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current), setSdoHmiBc4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current), setSdoHmiB4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current), setSdoHmiIf4096, false, false);
   }, [fetchImage, selectedSunspotRegion]);
 
   useEffect(() => {
@@ -1919,7 +1925,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     onClick={() => {
                       if (sunspotOverviewImage.url === '/error.png') {
                         fetchImage(
-                          toProxyImageUrl(sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL),
+                          resolveSdoImageUrl(sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL, forceDirectSdoRef.current),
                           sunspotImageryMode === 'intensity' ? setSdoHmiIf1024 : sunspotImageryMode === 'magnetogram' ? setSdoHmiB1024 : setSdoHmiBc1024,
                           false,
                           false,
