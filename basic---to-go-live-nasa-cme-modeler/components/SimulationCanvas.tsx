@@ -90,145 +90,81 @@ const createArrowTexture = (THREE: any) => {
 };
 
 // ============================================================
-//  CME FLUX ROPE — SOLID TUBE FILTER  (local mesh space)
+//  CME — GCS CROISSANT FLUX ROPE GEOMETRY
 //
-//  Goal: render a solid tube volume aligned to the CME's propagation
-//  axis — full length, full interior, no rotation, no hollowing.
+//  Models the CME as a toroidal flux rope similar to the
+//  Graduated Cylindrical Shell (GCS) CME model used in heliophysics.
 //
-//  KEY INSIGHT: particles are stored in the CME mesh's own local
-//  coordinate system, where:
-//    • position.y  = depth along the propagation axis  (0 → 1 normalised)
-//    • position.x/z = radial spread in the cone cross-section
-//  The modelMatrix already orients and scales the mesh into world space.
-//  We therefore do NOT need a world-to-local transform — we can filter
-//  directly on the raw vertex positions before modelMatrix is applied.
+//  GEOMETRY OVERVIEW
+//  ─────────────────
+//  The GCS croissant is a thick tube bent into a wide arc.
+//  Imagine a croissant: two curved "legs" sweeping outward from the
+//  Sun, connected by a curved top.
 //
-//  SOLID TUBE FILTER (the only filter; no rotation; no hollow):
-//    r        = sqrt(position.x² + position.z²)   radial distance from axis
-//    coneR    = position.y * uConeSlope            cone radius at this depth
-//    tubeR    = uTubeFraction * coneR              tube boundary at this depth
-//    KEEP if  r <= tubeR                           solid interior, not a shell
-//    DISCARD if r > tubeR
+//  In local mesh space (before modelMatrix):
+//    • +Y axis  = CME propagation direction (away from Sun)
+//    • The arc centerline lives in the Y-Z plane
+//    • Arc radius R sets how "wide" the croissant is
+//    • Tube radius r_tube sets how thick the rope is
 //
-//  The tube boundary grows with the cone (uConeSlope = tan(halfAngle)),
-//  so it expands exactly as the existing CME expansion does.
+//  CENTERLINE PARAMETRISATION
+//  ──────────────────────────
+//  The arc sweeps from -arcSpan/2 to +arcSpan/2 (in radians),
+//  centred at height Y = arcRadius along the +Y axis:
 //
-//  uTubeFraction controls how wide the tube is relative to the full
-//  cone width.  0.45 gives a tube that is ~45% of the cone radius —
-//  clearly tube-shaped without swallowing the whole cone.
+//    center(t) = [
+//      arcRadius * sin(t),          ← X: spread left/right
+//      arcRadius * (1 - cos(t)),    ← Y: height above origin
+//      0                            ← Z: flat in this plane
+//    ]
 //
-//  NO TIME-BASED ANGLE.  NO ROTATION.  NO WEDGE.  NO SHELL RADIUS.
+//  At t=0, center = (0, 0, 0) — the base of the croissant.
+//  At t=±arcSpan/2, the tips are spread apart and lifted.
+//
+//  TUBE VOLUME
+//  ───────────
+//  For each particle:
+//    1. Sample a random t along the arc
+//    2. Compute center(t)
+//    3. Compute the Frenet frame at t (tangent T, normal N, binormal B)
+//    4. Place particle at center(t) + ρ*(cos(φ)*N + sin(φ)*B)
+//       where ρ ∈ [0, tubeRadius], φ ∈ [0, 2π]
+//    → solid interior: ρ starts at 0, so axis is filled
+//
+//  SCALING WITH CME EXPANSION
+//  ──────────────────────────
+//  updateCMEShape() sets scale = (cmeLength, cmeLength, cmeLength).
+//  arcRadius and tubeRadius are expressed in normalised units [0..1]
+//  so they scale automatically with the uniform scale.
+//
+//  ORIENTATION
+//  ───────────
+//  The system quaternion aligns +Y to the flux rope direction,
+//  exactly as before — no change to orientation logic.
+//
+//  PARTICLE SHADER
+//  ───────────────
+//  Plain PointsMaterial — no custom shader needed because the
+//  geometry IS the croissant shape.  No filtering.  No discards.
 // ============================================================
 
-// ── TUNABLE CONSTANT ──────────────────────────────────────────────────────────
-// TUBE_FRACTION  fraction of the cone's half-angle radius used as tube radius.
-//   0.3  → narrow tight tube (rope-like)
-//   0.5  → medium tube (visible width, clearly not a full cone)
-//   0.7  → wide tube (fills most of the cone)
-// Start at 0.45 and adjust visually.
-const TUBE_FRACTION = 0.45;
+// ── GCS GEOMETRY CONSTANTS ────────────────────────────────────────────────────
 
-/**
- * CME_FLUX_ROPE_VERTEX_SHADER
- *
- * Filters each particle by its distance from the CME axis in local
- * mesh space.  Particles inside the solid tube volume pass through;
- * all others are moved off-screen by clamping w to 0 (effectively
- * discarded without a branch that breaks batching).
- *
- * We pass vKeep to the fragment shader so it can do a clean discard
- * there (avoids degenerate zero-size points on some drivers).
- *
- * Uniforms
- *   uConeSlope    – tan(halfAngle), sets how fast the cone expands
- *   uTubeFraction – tube radius as fraction of the cone radius  [0..1]
- *   uPointSize    – billboard pixel size
- */
-const CME_FLUX_ROPE_VERTEX_SHADER = `
-  // ── TUBE PARAMETERS ───────────────────────────────────────────
-  uniform float uConeSlope;     // tan(halfAngle) — cone expansion per unit depth
-  uniform float uTubeFraction;  // tube radius = uTubeFraction * coneRadius(y)
-  uniform float uPointSize;     // Billboard pixel size
+// ARC_RADIUS_FRAC
+//   The radius of the arc centerline, as a fraction of the total CME extent (1.0).
+//   0.55 puts the arc centre slightly inside the body, giving a plump croissant.
+const GCS_ARC_RADIUS_FRAC = 0.55;
 
-  // Tell the fragment shader whether to keep or discard this point
-  varying float vKeep;          // 1.0 = inside tube, 0.0 = outside
-  varying float vDepthNorm;     // normalised depth along axis (for shimmer)
+// ARC_SPAN
+//   Total angular span of the arc in radians.
+//   π ≈ 180° gives a full half-circle croissant.
+//   1.4 (≈80°) gives a tighter, sharper croissant.
+const GCS_ARC_SPAN = Math.PI * 0.85;   // ~153° — wide, recognisable croissant
 
-  void main() {
-    // ── LOCAL COORDINATES ─────────────────────────────────────
-    // position.y  = depth along propagation axis  (local mesh space)
-    // position.xz = radial offset in cross-section (local mesh space)
-    // No world transform needed — filtering happens before modelMatrix.
-
-    float depth  = position.y;                      // 0 → 1 along axis
-    float r      = length(position.xz);             // radial distance from axis
-
-    // ── CONE BOUNDARY AT THIS DEPTH ───────────────────────────
-    // The cone expands linearly: coneRadius(y) = y * tan(halfAngle)
-    float coneR  = max(depth, 0.0) * uConeSlope;
-
-    // ── SOLID TUBE BOUNDARY ───────────────────────────────────
-    // tubeR = the radius of the tube at this depth.
-    // Particle is INSIDE if r <= tubeR (solid volume, not a shell).
-    // There is no abs(r - tubeR) test — we keep the full interior.
-    float tubeR  = uTubeFraction * coneR;
-
-    // Pass keep flag to fragment shader
-    vKeep      = (r <= tubeR) ? 1.0 : 0.0;
-    vDepthNorm = depth;
-
-    gl_PointSize = uPointSize;
-    gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-/**
- * CME_FLUX_ROPE_FRAGMENT_SHADER
- *
- * Discards particles that the vertex shader marked as outside the tube.
- * Survivors get a soft glow billboard with a subtle depth shimmer.
- *
- * THIS FILTER KEEPS INNER VOLUME; IT DOES NOT HOLLOW THE CME.
- * There is no shell test, no radius-minus-target test, no rotation.
- *
- * Uniforms
- *   uOpacity  – base opacity from getCmeOpacity
- *   uColor    – CME speed-colour from getCmeCoreColor
- *   uTime     – elapsed time for shimmer animation
- */
-const CME_FLUX_ROPE_FRAGMENT_SHADER = `
-  uniform float uOpacity;    // Base particle opacity
-  uniform vec3  uColor;      // CME tint colour
-  uniform float uTime;       // Elapsed time for shimmer
-
-  varying float vKeep;       // 1.0 = inside tube, 0.0 = outside (discard)
-  varying float vDepthNorm;  // Normalised depth along axis
-
-  void main() {
-
-    // ── SOLID TUBE FILTER ─────────────────────────────────────
-    // THIS FILTER KEEPS INNER VOLUME; IT DOES NOT HOLLOW THE CME.
-    // vKeep is 1.0 for particles inside the tube, 0.0 for outside.
-    // Discard outside particles here (cleaner than vertex discard).
-    if (vKeep < 0.5) discard;
-
-    // ── SOFT CIRCULAR BILLBOARD ───────────────────────────────
-    vec2  pc   = gl_PointCoord * 2.0 - 1.0;
-    float dist = length(pc);
-    if (dist > 1.0) discard;
-
-    float alpha = 1.0 - smoothstep(0.2, 1.0, dist);
-
-    // ── DEPTH SHIMMER ─────────────────────────────────────────
-    // A gentle brightness pulse that travels along the tube length,
-    // evoking plasma flowing along the flux rope.  Pure time + depth,
-    // no angular component — this does NOT cause rotation.
-    float shimmer = 0.85 + 0.15 * sin(uTime * 1.5 - vDepthNorm * 8.0);
-    alpha *= shimmer;
-
-    gl_FragColor = vec4(uColor * 1.4, alpha * uOpacity);
-  }
-`;
+// TUBE_RADIUS_FRAC
+//   Tube radius as a fraction of arcRadius.
+//   0.35 gives a tube that is clearly round and full-bodied.
+const GCS_TUBE_RADIUS_FRAC = 0.38;
 
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
@@ -687,18 +623,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // ── SOLID TUBE UNIFORM UPDATE ───────────────────────────────────────────
-      // The tube filter is computed entirely in the CME mesh's local coordinate
-      // space, so the only uniforms that need updating each frame are:
-      //   uTime    — for the depth shimmer animation
-      //   uOpacity — speed-based opacity from getCmeOpacity
-      //
-      // uConeSlope and uTubeFraction are constant per CME and never change.
-      // There are no world-frame basis vectors.  There is no rotation angle.
+      // ── GCS CME MATERIAL UPDATE ─────────────────────────────────────────────
+      // Back to plain PointsMaterial — just update opacity each frame.
+      // No shader uniforms, no world-frame transforms, no rotation angle.
       cmeGroupRef.current.children.forEach((c: any) => {
-        if (!c.material?.uniforms) return;
-        c.material.uniforms.uTime.value    = elapsedTime;
-        c.material.uniforms.uOpacity.value = getCmeOpacity(c.userData.speed);
+        if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed);
       });
 
       if (timelineActive) {
@@ -790,7 +719,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [THREE]);
 
-  // Build CME particle systems
+  // Build CME particle systems — GCS Croissant Flux Rope Geometry
+  //
+  // Replaces the old cone distribution entirely.
+  // Particles are placed inside a solid toroidal tube bent into a
+  // croissant arc, modelling the Graduated Cylindrical Shell (GCS) CME.
+  // No filtering is applied — the geometry IS the croissant shape.
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
@@ -806,73 +740,118 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     }
 
-    // NOTE: particleTexture is no longer bound to the CME ShaderMaterial
-    // (the cross-section shader draws its own radial glow in GLSL).
-    // The call is kept so the canvas cache is warmed up for other uses.
-    const particleTexture = createParticleTexture(THREE); // eslint-disable-line @typescript-eslint/no-unused-vars
+    const particleTexture = createParticleTexture(THREE);
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
       const pos: number[] = [];
-      const colors: number[] = [];
-      const halfAngle = THREE.MathUtils.degToRad(cme.halfAngle);
-      const coneRadius = Math.tan(halfAngle);
       const cmeColor = getCmeCoreColor(cme.speed);
 
-      for (let i = 0; i < pCount; i++) {
-        const y = Math.cbrt(Math.random());
-        const rAtY = y * coneRadius;
-        const theta = Math.random() * 2 * Math.PI;
-        const r = coneRadius > 0 ? Math.sqrt(Math.random()) * rAtY : 0;
-        const x = r * Math.cos(theta);
-        const z = r * Math.sin(theta);
-        pos.push(x, y * (1 + 0.5 * (1 - (r / Math.max(coneRadius, 0.0001)) ** 2)), z);
+      // ── GCS CROISSANT ARC PARAMETERS ──────────────────────────────────────
+      //
+      // The croissant centerline is an arc in the local X-Y plane.
+      // Local axes (before modelMatrix):
+      //   +Y = CME propagation direction (away from Sun, set by quaternion)
+      //   +X = one side of the croissant spread
+      //   +Z = depth axis of the arc plane
+      //
+      // Arc centerline parametrisation:
+      //   Given arc parameter t ∈ [-arcSpan/2, +arcSpan/2]:
+      //     cx(t) = arcR * sin(t)          ← left/right spread
+      //     cy(t) = arcR * (1 - cos(t))    ← height above origin (upward)
+      //     cz(t) = 0                      ← stays in the X-Y plane
+      //
+      // At t=0:  center = (0, 0, 0)  — base of the arc, near the Sun
+      // At t=±arcSpan/2: tips of the croissant, spread apart and lifted
+      //
+      // tubeR is the radius of the circular cross-section of the tube.
+      // ρ ∈ [0, tubeR] fills the solid interior (not a shell).
 
-        // colors buffer retained for geometry completeness; the ShaderMaterial
-        // uses uColor uniform instead of per-vertex colours.
-        colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
+      const arcR  = GCS_ARC_RADIUS_FRAC;                     // normalised [0..1]
+      const tubeR = GCS_TUBE_RADIUS_FRAC * arcR;             // tube cross-section radius
+      const halfSpan = GCS_ARC_SPAN * 0.5;
+
+      for (let i = 0; i < pCount; i++) {
+        // ── 1. SAMPLE ARC PARAMETER t ───────────────────────────────────────
+        // Uniform random along the arc length.
+        // Use sqrt-biased sampling so the arc ends get proportional density.
+        const t = (Math.random() * 2 - 1) * halfSpan;
+
+        // ── 2. CENTERLINE POSITION AT t ─────────────────────────────────────
+        //   cx = arcR * sin(t)         → spread in X
+        //   cy = arcR * (1 - cos(t))   → lift in Y (0 at base, max at tips)
+        //   cz = 0                     → flat in the arc plane
+        const cx = arcR * Math.sin(t);
+        const cy = arcR * (1 - Math.cos(t));
+        const cz = 0;
+
+        // ── 3. FRENET FRAME AT t ─────────────────────────────────────────────
+        // Tangent T = derivative of center(t), normalised:
+        //   T = (arcR*cos(t), arcR*sin(t), 0) / arcR = (cos(t), sin(t), 0)
+        const Tx = Math.cos(t);
+        const Ty = Math.sin(t);
+        const Tz = 0;
+
+        // Normal N = dT/dt normalised = (-sin(t), cos(t), 0)
+        // (points toward the arc center of curvature)
+        const Nx = -Math.sin(t);
+        const Ny =  Math.cos(t);
+        const Nz = 0;
+
+        // Binormal B = T × N (points out of the arc plane)
+        // B = (0,0,1) for this planar arc — the Z axis
+        const Bx = 0;
+        const By = 0;
+        const Bz = 1;
+        // suppress unused-var lint
+        void Tx; void Ty; void Tz;
+
+        // ── 4. SAMPLE INSIDE THE TUBE CROSS-SECTION ─────────────────────────
+        // Use polar coords in the (N, B) plane.
+        // ρ = sqrt(random) * tubeR  → uniform area sampling, solid interior
+        // φ = random angle around tube cross-section
+        const rho = Math.sqrt(Math.random()) * tubeR;
+        const phi = Math.random() * 2 * Math.PI;
+
+        // Particle position = centerline + ρ * (cos(φ)*N + sin(φ)*B)
+        const px = cx + rho * (Math.cos(phi) * Nx + Math.sin(phi) * Bx);
+        const py = cy + rho * (Math.cos(phi) * Ny + Math.sin(phi) * By);
+        const pz = cz + rho * (Math.cos(phi) * Nz + Math.sin(phi) * Bz);
+
+        pos.push(px, py, pz);
       }
 
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-      // ── SOLID TUBE MATERIAL ────────────────────────────────────────────────
-      // Uses CME_FLUX_ROPE_VERTEX/FRAGMENT shaders.
-      //
-      // The tube filter operates entirely in the mesh's local coordinate space
-      // so NO per-frame world-frame uniforms are needed.  Only uOpacity and
-      // uTime are updated each frame (see "SOLID TUBE UNIFORM UPDATE" below).
-      //
-      // uConeSlope is constant per CME: tan(halfAngle).
-      // uTubeFraction controls how wide the tube is vs the full cone.
-      // There is NO rotation.  There is NO shell/hollow filter.
-      const particleSizeInSceneUnits = getCmeParticleSize(cme.speed, SCENE_SCALE);
-      const pointSizePx = particleSizeInSceneUnits * 200;
-
-      const mat = new THREE.ShaderMaterial({
-        vertexShader:   CME_FLUX_ROPE_VERTEX_SHADER,
-        fragmentShader: CME_FLUX_ROPE_FRAGMENT_SHADER,
-        uniforms: {
-          // ── Tube geometry (constant per CME) ──
-          uConeSlope:   { value: Math.tan(THREE.MathUtils.degToRad(cme.halfAngle)) },
-          uTubeFraction:{ value: TUBE_FRACTION },
-          // ── Visual (uOpacity + uTime updated each frame) ──
-          uPointSize:   { value: pointSizePx },
-          uOpacity:     { value: getCmeOpacity(cme.speed) },
-          uColor:       { value: cmeColor.clone() },
-          uTime:        { value: 0 },
-        },
+      // ── PLAIN PointsMaterial — no shader tricks needed ─────────────────────
+      // The geometry already IS the croissant shape.
+      // No filtering, no discards, no custom GLSL.
+      const mat = new THREE.PointsMaterial({
+        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
+        sizeAttenuation: true,
+        map: particleTexture,
         transparent: true,
-        blending:    THREE.AdditiveBlending,
-        depthWrite:  false,
+        opacity: getCmeOpacity(cme.speed),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        color: cmeColor,
       });
 
       const system = new THREE.Points(geom, mat);
       system.userData = cme;
+
+      // ── ORIENTATION ────────────────────────────────────────────────────────
+      // Rotate the croissant so +Y aligns with the CME propagation direction.
+      // Exactly the same quaternion logic as the original code.
       const dir = new THREE.Vector3();
-      dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      dir.setFromSphericalCoords(
+        1,
+        THREE.MathUtils.degToRad(90 - cme.latitude),
+        THREE.MathUtils.degToRad(cme.longitude)
+      );
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
