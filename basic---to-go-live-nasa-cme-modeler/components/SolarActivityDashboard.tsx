@@ -10,6 +10,8 @@ import {
   fetchFlareData, 
   SolarFlare
 } from '../services/nasaService';
+import { stableHash } from '../utils/dataFreshness';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
@@ -138,7 +140,12 @@ const SDO_HMI_IF_1024_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const SDO_HMI_BC_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIBC.jpg';
 const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const SDO_HMI_IF_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMII.jpg';
-const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh every 30 seconds
+
+const IMAGE_PROXY_BASE = '/api/proxy';
+const toProxyImageUrl = (rawUrl: string, ttlSeconds = 60) => `${IMAGE_PROXY_BASE}/image?url=${encodeURIComponent(rawUrl)}&ttl=${ttlSeconds}`;
+const toProxyMetaUrl = (rawUrl: string) => `${IMAGE_PROXY_BASE}/meta?url=${encodeURIComponent(rawUrl)}`;
+const resolveSdoImageUrl = (rawUrl: string, forceDirect: boolean) => forceDirect ? rawUrl : toProxyImageUrl(rawUrl);
+const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
 const SDO_HMI_NATIVE_CY = 2048;
@@ -151,6 +158,78 @@ const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
 const SOLAR_IMAGE_CACHE_TTL_MS = 60 * 60 * 1000;
 const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
+
+const FETCH_TIMEOUT_MS = 12000;
+const MAX_FETCH_RETRIES = 2;
+const IMAGE_CONCURRENCY_LIMIT = 4;
+let inFlightImageLoads = 0;
+const queuedImageLoads: Array<() => void> = [];
+
+const devLog = (...args: unknown[]) => {
+  if (!import.meta.env.DEV) return;
+  console.info('[solar-preload]', ...args);
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 'blob' = 'json') => {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal, cache: 'default' });
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      if (parseAs === 'json') return await response.json();
+      if (parseAs === 'blob') return await response.blob();
+      return await response.text();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+  throw lastError ?? new Error(`Failed to fetch ${url}`);
+};
+
+const enqueueImageLoad = (task: () => void) => {
+  if (inFlightImageLoads < IMAGE_CONCURRENCY_LIMIT) {
+    inFlightImageLoads++;
+    task();
+    return;
+  }
+  queuedImageLoads.push(task);
+};
+
+
+const extractTargetUrlFromProxy = (url: string): string | null => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const encoded = parsed.searchParams.get('url');
+    return encoded ? decodeURIComponent(encoded) : null;
+  } catch {
+    return null;
+  }
+};
+
+const isLikelySameOriginOrProxy = (url: string): boolean => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin || parsed.pathname.startsWith('/api/proxy/');
+  } catch {
+    return false;
+  }
+};
+
+const releaseImageLoadSlot = () => {
+  inFlightImageLoads = Math.max(0, inFlightImageLoads - 1);
+  const next = queuedImageLoads.shift();
+  if (next) {
+    inFlightImageLoads++;
+    next();
+  }
+};
 
 
 // --- HELPERS ---
@@ -397,8 +476,66 @@ const normalizeMagneticClass = (value?: string | null): string | null => {
 };
 
 const toNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/%/g, '').replace(/,/g, '');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+};
+
+const getNumberFromAliases = (item: Record<string, unknown>, aliases: string[]): number | null => {
+  const keysByNormalized = new Map<string, string>();
+  Object.keys(item).forEach((key) => keysByNormalized.set(key.toLowerCase().replace(/[^a-z0-9]/g, ''), key));
+
+  for (const alias of aliases) {
+    const directValue = item[alias];
+    const directParsed = toNumberOrNull(directValue);
+    if (directParsed !== null) return directParsed;
+
+    const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matchedKey = keysByNormalized.get(normalizedAlias);
+    if (matchedKey) {
+      const parsed = toNumberOrNull(item[matchedKey]);
+      if (parsed !== null) return parsed;
+    }
+  }
+
+  return null;
+};
+
+const deriveProbabilityFromMagneticClass = (
+  magneticClass: string | null,
+  flareType: 'c' | 'm' | 'x',
+): number | null => {
+  if (!magneticClass) return null;
+  const normalized = magneticClass.toUpperCase().replace(/[^A-Z]/g, '');
+  const hasDelta = normalized.includes('DELTA') || normalized.endsWith('D');
+  const hasGamma = normalized.includes('GAMMA') || normalized.includes('G');
+  const hasBeta = normalized.includes('BETA') || normalized.includes('B');
+
+  if (flareType === 'x') {
+    if (hasDelta && hasGamma) return 15;
+    if (hasDelta) return 8;
+    if (hasGamma) return 4;
+    return hasBeta ? 1 : 0;
+  }
+
+  if (flareType === 'm') {
+    if (hasDelta && hasGamma) return 55;
+    if (hasDelta) return 35;
+    if (hasGamma) return 18;
+    return hasBeta ? 8 : 3;
+  }
+
+  if (hasDelta && hasGamma) return 85;
+  if (hasDelta) return 70;
+  if (hasGamma) return 55;
+  return hasBeta ? 35 : 15;
 };
 
 const extractRegionFromAny = (item: any): string => {
@@ -427,20 +564,34 @@ const extractActiveRegionEntries = (raw: any, source: string) => {
       const lon = normalizeSolarLongitude(toNumberOrNull(item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic));
       const observedTime = parseNoaaUtcTimestamp(item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date);
 
+      const magneticClass = normalizeMagneticClass(item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification);
+
+      const cFlareProbability = getNumberFromAliases(item, [
+        'c_flare_probability', 'cFlareProbability', 'cflare_probability', 'flare_probability_c', 'prob_c', 'c_prob', 'cclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'c');
+
+      const mFlareProbability = getNumberFromAliases(item, [
+        'm_flare_probability', 'mFlareProbability', 'mflare_probability', 'flare_probability_m', 'prob_m', 'm_prob', 'mclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'm');
+
+      const xFlareProbability = getNumberFromAliases(item, [
+        'x_flare_probability', 'xFlareProbability', 'xflare_probability', 'flare_probability_x', 'prob_x', 'x_prob', 'xclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'x');
+
       return {
         region,
         location: location || 'N/A',
         area: toNumberOrNull(item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths),
         spotCount: toNumberOrNull(item?.spot_count ?? item?.spotCount ?? item?.number_spots),
-        magneticClass: normalizeMagneticClass(item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification),
+        magneticClass,
         classification: (item?.classification ?? item?.region_classification ?? item?.zurich_classification ?? '').toString().trim() || null,
         latitude: coords.latitude ?? lat,
         longitude: normalizeSolarLongitude(coords.longitude ?? lon),
         observedTime,
-        cFlareProbability: toNumberOrNull(item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c),
-        mFlareProbability: toNumberOrNull(item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m),
-        xFlareProbability: toNumberOrNull(item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x),
-        protonProbability: toNumberOrNull(item?.proton_probability ?? item?.protonProbability ?? item?.s1_probability ?? item?.sep_probability),
+        cFlareProbability,
+        mFlareProbability,
+        xFlareProbability,
+        protonProbability: getNumberFromAliases(item, ['proton_probability', 'protonProbability', 's1_probability', 'sep_probability', 'prob_s1', 's1_prob']),
         cFlareEvents24h: toNumberOrNull(item?.c_flare_events_24h ?? item?.c_flare_events ?? item?.cflare_events_24h ?? item?.c_events_24h ?? item?.c_event_count),
         mFlareEvents24h: toNumberOrNull(item?.m_flare_events_24h ?? item?.m_flare_events ?? item?.mflare_events_24h ?? item?.m_events_24h ?? item?.m_event_count),
         xFlareEvents24h: toNumberOrNull(item?.x_flare_events_24h ?? item?.x_flare_events ?? item?.xflare_events_24h ?? item?.x_events_24h ?? item?.x_event_count),
@@ -672,6 +823,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [sunspotImageryMode, setSunspotImageryMode] = useState<SunspotImageryMode>('colorized');
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
+  const [isCloseupImageLoading, setIsCloseupImageLoading] = useState(false);
   const [overviewGeometry, setOverviewGeometry] = useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
   const touchStartXRef = useRef<number | null>(null);
 
@@ -680,13 +832,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [currentXraySummary, setCurrentXraySummary] = useState<{ flux: number | null, class: string | null }>({ flux: null, class: null });
   const [currentProtonSummary, setCurrentProtonSummary] = useState<{ flux: number | null, class: string | null }>({ flux: null, class: null });
   const [latestRelevantEvent, setLatestRelevantEvent] = useState<string | null>(null);
-  const [overallActivityStatus, setOverallActivityStatus] = useState<'Quiet' | 'Moderate' | 'High' | 'Very High' | 'N/A'>('N/A');
   const [lastXrayUpdate, setLastXrayUpdate] = useState<string | null>(null);
   const [lastProtonUpdate, setLastProtonUpdate] = useState<string | null>(null);
   const [lastFlaresUpdate, setLastFlaresUpdate] = useState<string | null>(null);
   const [lastImagesUpdate, setLastImagesUpdate] = useState<string | null>(null);
   const [activitySummary, setActivitySummary] = useState<SolarActivitySummary | null>(null);
   const initialLoadNotifiedRef = useRef(false);
+  const forceDirectSdoRef = useRef(false);
+  const lastHashRef = useRef<Record<string, string>>({});
+
+  const stampIfChanged = useCallback((key: string, payload: unknown, setter: (value: string) => void) => {
+    const hash = stableHash(payload);
+    if (lastHashRef.current[key] === hash) return false;
+    lastHashRef.current[key] = hash;
+    setter(new Date().toLocaleTimeString('en-NZ'));
+    if (import.meta.env.DEV) console.info('[data-change]', key, 'changed');
+    return true;
+  }, []);
 
   const buildSixHourAnimationUrls = useCallback((baseUrl: string, stepMinutes: number = 10) => {
     const now = Date.now();
@@ -977,25 +1139,50 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (isVideo) {
       solarImageCache.set(cacheKey, { url, fetchedAt: now });
       setState({ url, loading: null });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-image-'+url, { url: fetchUrl }, setLastImagesUpdate);
       return;
     }
 
-    // Preload immediately so switching modes is instant once loaded.
-    const img = new Image();
-    img.onload = () => {
-      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
-      setState({ url: fetchUrl, loading: null });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
-    };
-    img.onerror = () => {
-      // Keep direct URL as fallback even if preload handshake fails (some hosts block probe requests).
-      solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
-      setState({ url: fetchUrl, loading: null });
-      setLastImagesUpdate(new Date().toLocaleTimeString('en-NZ'));
-    };
-    img.src = fetchUrl;
-  }, []);
+    enqueueImageLoad(() => {
+      const loadAttempt = async (attempt: number) => {
+        try {
+          if (isLikelySameOriginOrProxy(fetchUrl)) {
+            const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
+            if (!blob.type.startsWith('image/')) {
+              throw new Error(`Expected image blob but got ${blob.type || 'unknown'}`);
+            }
+            const objectUrl = URL.createObjectURL(blob);
+            solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
+            setState({ url: objectUrl, loading: null });
+          } else {
+            // Cross-origin feeds (e.g. NOAA SUVI) can render directly in <img> without CORS-fetch restrictions.
+            solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
+            setState({ url: fetchUrl, loading: null });
+          }
+          stampIfChanged('solar-image-'+url, { url: fetchUrl }, setLastImagesUpdate);
+          if (import.meta.env.DEV) console.info('[solar-preload] image loaded', url);
+          releaseImageLoadSlot();
+        } catch {
+          if (attempt < MAX_FETCH_RETRIES) {
+            setState({ url: '/placeholder.png', loading: 'Retrying image…' });
+            window.setTimeout(() => { void loadAttempt(attempt + 1); }, 350 * (attempt + 1));
+            return;
+          }
+          const proxyTarget = extractTargetUrlFromProxy(fetchUrl);
+          if (proxyTarget) {
+            forceDirectSdoRef.current = true;
+            solarImageCache.set(cacheKey, { url: proxyTarget, fetchedAt: Date.now() });
+            setState({ url: proxyTarget, loading: null });
+            releaseImageLoadSlot();
+            return;
+          }
+          setState({ url: '/error.png', loading: 'Tap image to retry' });
+          releaseImageLoadSlot();
+        }
+      };
+      void loadAttempt(0);
+    });
+  }, [stampIfChanged, forceDirectSdoRef]);
 
 
   const prefetchSolarImage = useCallback((url: string) => {
@@ -1020,9 +1207,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     let lastError: Error | null = null;
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}?_=${Date.now()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-        return await res.json();
+        return await fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'json');
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown fetch error');
       }
@@ -1034,9 +1219,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     let lastError: Error | null = null;
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}?_=${Date.now()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-        return await res.text();
+        return await fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'text') as string;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown fetch error');
       }
@@ -1064,7 +1247,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           setAllXrayData([]);
           setLatestXrayFlux(null);
           setCurrentXraySummary({ flux: null, class: 'N/A' });
-          setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+          stampIfChanged('solar-xray', processedData, setLastXrayUpdate);
           return;
         }
         setAllXrayData(processedData);
@@ -1072,17 +1255,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const latestFluxValue = processedData[processedData.length - 1].short;
         setLatestXrayFlux(latestFluxValue);
         setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) });
-        setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+        stampIfChanged('solar-xray', processedData, setLastXrayUpdate);
     } catch (e: any) {
       console.error('Error fetching X-ray flux:', e);
       setLoadingXray(`Error: ${e?.message || 'Unknown error'}`);
       setLatestXrayFlux(null);
       setCurrentXraySummary({ flux: null, class: 'N/A' });
-      setLastXrayUpdate(new Date().toLocaleTimeString('en-NZ'));
+      // keep previous last-changed timestamp on failed fetch
     } finally {
       reportInitialTask('solarXray');
     }
-  }, [fetchFirstAvailableJson, reportInitialTask, setLatestXrayFlux]);
+  }, [fetchFirstAvailableJson, reportInitialTask, setLatestXrayFlux, stampIfChanged]);
 
   const fetchProtonFlux = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -1098,23 +1281,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           setLoadingProton('No valid >=10 MeV proton data.');
           setAllProtonData([]);
           setCurrentProtonSummary({ flux: null, class: 'N/A' });
-          setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+          stampIfChanged('solar-proton', processedData, setLastProtonUpdate);
           return;
         }
         setAllProtonData(processedData);
         setLoadingProton(null);
         const latestFluxValue = processedData[processedData.length - 1].flux;
         setCurrentProtonSummary({ flux: latestFluxValue, class: getProtonClass(latestFluxValue) });
-        setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+        stampIfChanged('solar-proton', processedData, setLastProtonUpdate);
     } catch (e: any) {
       console.error('Error fetching proton flux:', e);
       setLoadingProton(`Error: ${e?.message || 'Unknown error'}`);
       setCurrentProtonSummary({ flux: null, class: 'N/A' });
-      setLastProtonUpdate(new Date().toLocaleTimeString('en-NZ'));
+      // keep previous last-changed timestamp on failed fetch
     } finally {
       reportInitialTask('solarProton');
     }
-  }, [fetchFirstAvailableJson, reportInitialTask]);
+  }, [fetchFirstAvailableJson, reportInitialTask, stampIfChanged]);
 
   const fetchFlares = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -1125,7 +1308,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (!data || data.length === 0) {
         setSolarFlares([]);
         setLoadingFlares(null);
-        setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+        stampIfChanged('solar-flares', [], setLastFlaresUpdate);
         return;
       }
       const processedData = data.map((flare: SolarFlare) => ({
@@ -1135,17 +1318,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       })) as (SolarFlare & { hasCME: boolean })[];
       setSolarFlares(processedData);
       setLoadingFlares(null);
-      setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
       const firstStrong = processedData.find(f => f.classType?.startsWith('M') || f.classType?.startsWith('X'));
       if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatNZTimestamp(firstStrong.peakTime)}`);
     } catch (error) {
       console.error('Error fetching flares:', error);
       setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setLastFlaresUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
     } finally {
       reportInitialTask('solarFlares');
     }
-  }, [reportInitialTask]);
+  }, [reportInitialTask, stampIfChanged]);
 
   const fetchSunspotRegions = useCallback(async () => {
     if (isInitialLoad.current) {
@@ -1239,43 +1422,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
       setActiveSunspotRegions(dedupedLatest);
       setLoadingSunspotRegions(null);
-      setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
+      stampIfChanged('solar-regions', dedupedLatest, setLastSunspotRegionsUpdate);
     } catch (error) {
       console.error('Error fetching active sunspot regions:', error);
       setActiveSunspotRegions([]);
       setLoadingSunspotRegions(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setLastSunspotRegionsUpdate(new Date().toLocaleTimeString('en-NZ'));
     } finally {
       reportInitialTask('solarRegions');
     }
-  }, [fetchFirstAvailableJson, fetchFirstAvailableText, reportInitialTask]);
+  }, [fetchFirstAvailableJson, fetchFirstAvailableText, reportInitialTask, stampIfChanged]);
 
   const runAllUpdates = useCallback(() => {
+    void fetchWithTimeoutAndRetry(toProxyMetaUrl(SDO_HMI_BC_1024_URL), 'json').then((meta: any) => {
+      const version = meta?.etag || meta?.lastModified || 'unknown';
+      stampIfChanged('solar-images-meta', version, setLastImagesUpdate);
+    }).catch(() => {});
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
-    fetchImage(SDO_HMI_BC_1024_URL, setSdoHmiBc1024, false, false);
-    fetchImage(SDO_HMI_B_1024_URL, setSdoHmiB1024, false, false);
-    fetchImage(SDO_HMI_IF_1024_URL, setSdoHmiIf1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_1024_URL, forceDirectSdoRef.current), setSdoHmiBc1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
     fetchProtonFlux();
     fetchFlares();
     fetchSunspotRegions();
-  }, [fetchFlares, fetchImage, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux]);
+  }, [fetchFlares, fetchImage, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
 
   useEffect(() => {
     runAllUpdates();
-    const interval = setInterval(runAllUpdates, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return registerDatasetTicker('solar-activity-data', () => runAllUpdates(), REFRESH_INTERVAL_MS);
   }, [runAllUpdates]);
 
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      prefetchSolarImage(SDO_HMI_BC_4096_URL);
-      prefetchSolarImage(SDO_HMI_B_4096_URL);
-      prefetchSolarImage(SDO_HMI_IF_4096_URL);
+      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current));
+      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current));
+      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current));
     }, 1800);
 
     return () => window.clearTimeout(timer);
@@ -1294,9 +1479,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!selectedSunspotRegion) return;
-    fetchImage(SDO_HMI_BC_4096_URL, setSdoHmiBc4096, false, false);
-    fetchImage(SDO_HMI_B_4096_URL, setSdoHmiB4096, false, false);
-    fetchImage(SDO_HMI_IF_4096_URL, setSdoHmiIf4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current), setSdoHmiBc4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current), setSdoHmiB4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current), setSdoHmiIf4096, false, false);
   }, [fetchImage, selectedSunspotRegion]);
 
   useEffect(() => {
@@ -1529,6 +1714,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     setSelectedSunspotCloseupUrl(sunspotOverviewImage4k.url);
   }, [selectedSunspotRegion, sunspotOverviewImage4k.url]);
 
+
+  useEffect(() => {
+    if (selectedSunspotCloseupUrl) {
+      setIsCloseupImageLoading(true);
+      return;
+    }
+    setIsCloseupImageLoading(false);
+  }, [selectedSunspotCloseupUrl]);
+
   // Chart options/data
   const xrayChartOptions = useMemo((): ChartOptions<'line'> => {
     const now = Date.now();
@@ -1675,6 +1869,36 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     });
   }, [allXrayData, allProtonData, solarFlares]);
 
+
+
+  const solarStatus = useMemo(() => {
+    const xrayFlux = currentXraySummary.flux ?? 0;
+    const xrayScore = xrayFlux >= 1e-4 ? 4 : xrayFlux >= 1e-5 ? 3 : xrayFlux >= 1e-6 ? 2 : xrayFlux >= 1e-7 ? 1 : 0;
+
+    const maxFlareProbability = displayedSunspotRegions.reduce((max, region) => {
+      const localMax = Math.max(region.cFlareProbability ?? 0, region.mFlareProbability ?? 0, region.xFlareProbability ?? 0);
+      return Math.max(max, localMax);
+    }, 0);
+    const flareScore = maxFlareProbability >= 70 ? 4 : maxFlareProbability >= 45 ? 3 : maxFlareProbability >= 25 ? 2 : maxFlareProbability >= 10 ? 1 : 0;
+
+    const sunspotCount = displayedSunspotRegions.length;
+    const sunspotScore = sunspotCount >= 10 ? 4 : sunspotCount >= 7 ? 3 : sunspotCount >= 4 ? 2 : sunspotCount >= 1 ? 1 : 0;
+
+    const combined = xrayScore * 0.45 + flareScore * 0.35 + sunspotScore * 0.2;
+
+    let label: 'Quiet' | 'Moderate' | 'High' | 'Very High' = 'Quiet';
+    if (combined >= 3.2) label = 'Very High';
+    else if (combined >= 2.3) label = 'High';
+    else if (combined >= 1.3) label = 'Moderate';
+
+    return {
+      label,
+      maxFlareProbability,
+      sunspotCount,
+      explanation: `Based on X-ray class ${currentXraySummary.class || 'N/A'}, max flare probability ${maxFlareProbability.toFixed(0)}%, and ${sunspotCount} Earth-facing sunspot regions.`,
+    };
+  }, [currentXraySummary.class, currentXraySummary.flux, displayedSunspotRegions]);
+
   // --- RENDER ---
   return (
     <div
@@ -1697,13 +1921,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="flex-1 text-center sm:text-left mb-2 sm:mb-0">
                 <h3 className="text-neutral-200 font-semibold mb-1">
                   Current Status: <span className={`font-bold ${
-                    overallActivityStatus === 'Quiet' ? 'text-green-400' :
-                    overallActivityStatus === 'Moderate' ? 'text-yellow-400' :
-                    overallActivityStatus === 'High' ? 'text-orange-400' : 'text-red-500'
-                  }`}>{overallActivityStatus}</span>
+                    solarStatus.label === 'Quiet' ? 'text-green-400' :
+                    solarStatus.label === 'Moderate' ? 'text-yellow-400' :
+                    solarStatus.label === 'High' ? 'text-orange-400' : 'text-red-500'
+                  }`}>{solarStatus.label}</span>
                 </h3>
                 <p>X-ray Flux: <span className="font-mono text-cyan-300">{currentXraySummary.flux !== null ? currentXraySummary.flux.toExponential(2) : 'N/A'}</span> ({currentXraySummary.class || 'N/A'})</p>
-                <p>Proton Flux: <span className="font-mono text-yellow-400">{currentProtonSummary.flux !== null ? currentProtonSummary.flux.toFixed(2) : 'N/A'}</span> pfu ({currentProtonSummary.class || 'N/A'})</p>
+                <p>Max flare probability: <span className="font-mono text-amber-300">{solarStatus.maxFlareProbability.toFixed(0)}%</span> · Sunspots: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
+                <p className="text-[11px] text-neutral-400 mt-1">{solarStatus.explanation}</p>
               </div>
               <div className="flex-1 text-center sm:text-right">
                 <h3 className="text-neutral-200 font-semibold mb-1">Latest Event:</h3>
@@ -1810,6 +2035,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
                     onClick={() => {
+                      if (sunspotOverviewImage.url === '/error.png') {
+                        fetchImage(
+                          resolveSdoImageUrl(sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL, forceDirectSdoRef.current),
+                          sunspotImageryMode === 'intensity' ? setSdoHmiIf1024 : sunspotImageryMode === 'magnetogram' ? setSdoHmiB1024 : setSdoHmiBc1024,
+                          false,
+                          false,
+                        );
+                        return;
+                      }
                       if (sunspotOverviewImage4k.url === '/placeholder.png' || sunspotOverviewImage4k.url === '/error.png') return;
                       setViewerMedia({
                         url: sunspotOverviewImage4k.url,
@@ -1829,6 +2063,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       className="w-full h-full object-contain rounded-lg"
                     />
                     {loadingSunspotRegions && <LoadingSpinner message={loadingSunspotRegions} />}
+                    {sunspotOverviewImage.url === '/error.png' && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Tap to retry imagery load</div>
+                    )}
 
                     {plottedSunspots.map((region) => {
                       const isSelected = selectedSunspotRegion?.region === region.region;
@@ -1904,6 +2141,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                   src={selectedSunspotCloseupUrl}
                                   alt={`AR ${selectedSunspotRegion.region} closeup`}
                                   className="absolute"
+                                  onLoad={() => setIsCloseupImageLoading(false)}
+                                  onError={() => setIsCloseupImageLoading(false)}
                                   style={{
                                     width: '420%',
                                     height: '420%',
@@ -1915,6 +2154,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                 />
                               );
                             })()}
+                            {isCloseupImageLoading && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+                                <LoadingSpinner message="Loading close-up image..." />
+                              </div>
+                            )}
+                          </div>
+                        ) : sunspotOverviewImage4k.loading || sunspotOverviewImage4k.url === '/placeholder.png' ? (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <LoadingSpinner message="Loading close-up image..." />
                           </div>
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">Close-up unavailable</div>

@@ -11,7 +11,6 @@ import LoadingOverlay from './components/LoadingOverlay';
 import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
-import { SCENE_SCALE } from './constants'; // Import SCENE_SCALE for occlusion check
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -35,6 +34,8 @@ import FirstVisitTutorial from './components/FirstVisitTutorial';
 import CmeModellerTutorial from './components/CmeModellerTutorial';
 import ForecastModelsModal from './components/ForecastModelsModal';
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
+import { registerDatasetTicker } from './utils/pollingScheduler';
+import { startAppPreload } from './utils/appPreloader';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
   DEFAULT_MAIN_PAGE_KEY,
@@ -44,12 +45,6 @@ import {
   SETTINGS_PATH,
   TUTORIAL_PATH,
 } from './utils/navigation';
-
-const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-    </svg>
-);
 
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -125,9 +120,13 @@ const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
 const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
 
 const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
-  if (page === 'forecast') return new Set([...FORECAST_INITIAL_TASKS]);
-  if (page === 'solar-activity') return new Set([...SOLAR_INITIAL_TASKS]);
-  return new Set([...MODELER_INITIAL_TASKS]);
+  void page;
+  return new Set([...FORECAST_INITIAL_TASKS, ...SOLAR_INITIAL_TASKS, ...MODELER_INITIAL_TASKS]);
+};
+
+const logDev = (...args: unknown[]) => {
+  if (!import.meta.env.DEV) return;
+  console.info('[preload]', ...args);
 };
 
 
@@ -216,7 +215,6 @@ const App: React.FC = () => {
   const [showIabBanner, setShowIabBanner] = useState(false);
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
-  const deferredInstallPromptRef = useRef<any>(null);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
 
   const [isDashboardReady, setIsDashboardReady] = useState(false);
@@ -392,9 +390,9 @@ const App: React.FC = () => {
   }, [activePage]);
 
   const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity', boolean>>(() => ({
-    forecast: initialPageRef.current === 'forecast',
+    forecast: true,
     modeler: initialPageRef.current === 'modeler',
-    'solar-activity': initialPageRef.current === 'solar-activity',
+    'solar-activity': true,
   }));
 
   useEffect(() => {
@@ -431,14 +429,9 @@ const App: React.FC = () => {
       setIsAndroidIab(isAndroid);
     }
 
-    const onBip = (e: any) => {
-      if (inIAB) {
-        e.preventDefault();
-        return;
-      }
-      e.preventDefault();
-      deferredInstallPromptRef.current = e;
-      (window as any).spotTheAuroraCanInstall = true;
+    const onBip = () => {
+      // Do not intercept install prompt unless we provide explicit install UI.
+      // Let the browser handle native install prompt lifecycle to avoid warnings.
     };
 
     window.addEventListener('beforeinstallprompt', onBip);
@@ -473,6 +466,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 1200);
+    logDev('initial preload start');
+    startAppPreload();
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
@@ -483,7 +478,7 @@ const App: React.FC = () => {
     }
     return () => clearTimeout(minTimer);
   }, []);
-  
+
   useEffect(() => {
     const allReady = Array.from(initialRequiredTasks.current).every((task) => initialLoadTasks[task]);
     if (allReady && !isDashboardReady) {
@@ -494,6 +489,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
+      logDev('initial preload complete');
       setTimeout(() => setShowInitialLoader(false), 500);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
@@ -668,6 +664,16 @@ const App: React.FC = () => {
     }
   }, [resetClock, apiKey, markInitialTaskDone]);
 
+
+  useEffect(() => {
+    if (initialLoadTasks.modelerCmeData) return;
+    loadCMEData(activeTimeRange, { silent: true })
+      .finally(() => {
+        markInitialTaskDone('modelerCmeData');
+        logDev('modeler preload complete');
+      });
+  }, [activeTimeRange, initialLoadTasks.modelerCmeData, loadCMEData, markInitialTaskDone]);
+
   const handleRefreshAppData = useCallback(async () => {
     setIsRefreshing(true);
     setManualRefreshKey((v) => v + 1);
@@ -708,13 +714,12 @@ const App: React.FC = () => {
     };
 
     ensureInitialLoad();
-    const interval = setInterval(() => {
-      if (cmePageLoadedOnce.current) {
-        loadCMEData(activeTimeRange, { silent: true });
-      }
-    }, 60 * 60 * 1000);
 
-    return () => clearInterval(interval);
+    return registerDatasetTicker('modeler-cme-data', async () => {
+      if (cmePageLoadedOnce.current) {
+        await loadCMEData(activeTimeRange, { silent: true });
+      }
+    }, 60_000);
   }, [activePage, activeTimeRange, loadCMEData]);
 
   const handleTimeRangeChange = (range: TimeRange) => {
@@ -859,116 +864,6 @@ const App: React.FC = () => {
       }
     }
   }, []);
-
-  const handleDownloadImage = useCallback(() => {
-    const dataUrl = canvasRef.current?.captureCanvasAsDataURL();
-    if (!dataUrl || !rendererDomElement || !threeCamera) {
-      console.error("Could not capture canvas image: canvas, renderer, or camera is not ready.");
-      return;
-    }
-
-    const mainImage = new Image();
-    mainImage.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = mainImage.width;
-      canvas.height = mainImage.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.drawImage(mainImage, 0, 0);
-
-      if (showLabels && (window as any).THREE) {
-        const THREE = (window as any).THREE;
-        const cameraPosition = new THREE.Vector3();
-        threeCamera.getWorldPosition(cameraPosition);
-
-        planetLabelInfos.forEach(info => {
-          if (info.name === 'Moon' || info.name === 'L1' || !info.mesh.visible) {
-            return;
-          }
-
-          const planetWorldPos = new THREE.Vector3();
-          info.mesh.getWorldPosition(planetWorldPos);
-
-          const projectionVector = planetWorldPos.clone().project(threeCamera);
-          if (projectionVector.z > 1) return;
-
-          const dist = planetWorldPos.distanceTo(cameraPosition);
-          const minVisibleDist = SCENE_SCALE * 0.2;
-          const maxVisibleDist = SCENE_SCALE * 15;
-          if (dist < minVisibleDist || dist > maxVisibleDist) return;
-
-          if (sunInfo && info.name !== 'Sun') {
-            const sunWorldPos = new THREE.Vector3();
-            sunInfo.mesh.getWorldPosition(sunWorldPos);
-            const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
-            const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
-            if (distToPlanetSq > distToSunSq) {
-              const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
-              const vecToSun = sunWorldPos.clone().sub(cameraPosition);
-              const angle = vecToPlanet.angleTo(vecToSun);
-              const sunRadius = (sunInfo.mesh.geometry.parameters?.radius) || (0.1 * SCENE_SCALE);
-              const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
-              if (angle < sunAngularRadius) return;
-            }
-          }
-
-          const x = (projectionVector.x * 0.5 + 0.5) * canvas.width;
-          const y = (-projectionVector.y * 0.5 + 0.5) * canvas.height;
-          const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
-
-          ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-          ctx.shadowBlur = 6;
-          
-          ctx.fillText(info.name, x + 15, y - 10);
-        });
-      }
-
-      const padding = 25;
-      const fontSize = Math.max(24, mainImage.width / 65);
-      const textGap = 10;
-      ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-      ctx.shadowBlur = 7;
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-
-      const totalDuration = timelineMaxDate - timelineMinDate;
-      const currentTimeOffset = totalDuration * (timelineScrubberValue / 1000);
-      const simulationDate = new Date(timelineMinDate + currentTimeOffset);
-      const dateString = `Simulated Time: ${simulationDate.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'long' })}`;
-      
-      const watermarkText = "SpotTheAurora.co.nz";
-      
-      const icon = new Image();
-      icon.onload = () => {
-        const iconSize = (fontSize * 2) + textGap;
-        const iconPadding = 15;
-        
-        const iconX = canvas.width - padding - iconSize;
-        const iconY = canvas.height - padding - iconSize;
-        
-        const textX = iconX - iconPadding;
-        
-        ctx.fillText(dateString, textX, canvas.height - padding - fontSize - textGap);
-        ctx.fillText(watermarkText, textX, canvas.height - padding);
-        
-        ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
-
-        const link = document.createElement('a');
-        link.download = `spottheaurora-cme-${simulationDate.toISOString().replace(/:/g, '-')}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-      };
-      icon.src = '/icons/android-chrome-192x192.png';
-    };
-    mainImage.src = dataUrl;
-  }, [timelineMinDate, timelineMaxDate, timelineScrubberValue, showLabels, rendererDomElement, threeCamera, planetLabelInfos, sunInfo]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     navigateToPage('modeler');
@@ -1125,7 +1020,8 @@ const App: React.FC = () => {
                 <UnifiedDashboardMode refreshSignal={manualRefreshKey} />
               ) : (
               <>
-              <div className={`w-full h-full flex-grow min-h-0 ${activePage === 'modeler' ? 'flex' : 'hidden'}`}>
+              {visitedPages.modeler && activePage === 'modeler' && (
+              <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
                 </div>
@@ -1194,17 +1090,6 @@ const App: React.FC = () => {
                                 </button>
                                 <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Forecast Models</span>
                             </div>
-                            <div className="flex flex-col items-center w-16">
-                                <button
-                                  id="download-image-button"
-                                  onClick={handleDownloadImage}
-                                  className="p-3 rounded-2xl bg-white/10 border border-white/20 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
-                                  title="Download Screenshot"
-                                >
-                                    <DownloadIcon className="w-6 h-6" />
-                                </button>
-                                <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Download Image</span>
-                            </div>
                         </div>
                         <div className="flex items-start text-center space-x-3 pointer-events-auto">
                             <div className="flex flex-col items-center w-16 lg:hidden">
@@ -1231,6 +1116,7 @@ const App: React.FC = () => {
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
+              )}
               {visitedPages.forecast && (
                 <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
                     <ForecastDashboard
