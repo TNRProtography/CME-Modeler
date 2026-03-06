@@ -760,7 +760,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [currentXraySummary, setCurrentXraySummary] = useState<{ flux: number | null, class: string | null }>({ flux: null, class: null });
   const [currentProtonSummary, setCurrentProtonSummary] = useState<{ flux: number | null, class: string | null }>({ flux: null, class: null });
   const [latestRelevantEvent, setLatestRelevantEvent] = useState<string | null>(null);
-  const [overallActivityStatus, setOverallActivityStatus] = useState<'Quiet' | 'Moderate' | 'High' | 'Very High' | 'N/A'>('N/A');
   const [lastXrayUpdate, setLastXrayUpdate] = useState<string | null>(null);
   const [lastProtonUpdate, setLastProtonUpdate] = useState<string | null>(null);
   const [lastFlaresUpdate, setLastFlaresUpdate] = useState<string | null>(null);
@@ -1798,6 +1797,36 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     });
   }, [allXrayData, allProtonData, solarFlares]);
 
+
+
+  const solarStatus = useMemo(() => {
+    const xrayFlux = currentXraySummary.flux ?? 0;
+    const xrayScore = xrayFlux >= 1e-4 ? 4 : xrayFlux >= 1e-5 ? 3 : xrayFlux >= 1e-6 ? 2 : xrayFlux >= 1e-7 ? 1 : 0;
+
+    const maxFlareProbability = displayedSunspotRegions.reduce((max, region) => {
+      const localMax = Math.max(region.cFlareProbability ?? 0, region.mFlareProbability ?? 0, region.xFlareProbability ?? 0);
+      return Math.max(max, localMax);
+    }, 0);
+    const flareScore = maxFlareProbability >= 70 ? 4 : maxFlareProbability >= 45 ? 3 : maxFlareProbability >= 25 ? 2 : maxFlareProbability >= 10 ? 1 : 0;
+
+    const sunspotCount = displayedSunspotRegions.length;
+    const sunspotScore = sunspotCount >= 10 ? 4 : sunspotCount >= 7 ? 3 : sunspotCount >= 4 ? 2 : sunspotCount >= 1 ? 1 : 0;
+
+    const combined = xrayScore * 0.45 + flareScore * 0.35 + sunspotScore * 0.2;
+
+    let label: 'Quiet' | 'Moderate' | 'High' | 'Very High' = 'Quiet';
+    if (combined >= 3.2) label = 'Very High';
+    else if (combined >= 2.3) label = 'High';
+    else if (combined >= 1.3) label = 'Moderate';
+
+    return {
+      label,
+      maxFlareProbability,
+      sunspotCount,
+      explanation: `Based on X-ray class ${currentXraySummary.class || 'N/A'}, max flare probability ${maxFlareProbability.toFixed(0)}%, and ${sunspotCount} Earth-facing sunspot regions.`,
+    };
+  }, [currentXraySummary.class, currentXraySummary.flux, displayedSunspotRegions]);
+
   // --- RENDER ---
   return (
     <div
@@ -1820,13 +1849,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="flex-1 text-center sm:text-left mb-2 sm:mb-0">
                 <h3 className="text-neutral-200 font-semibold mb-1">
                   Current Status: <span className={`font-bold ${
-                    overallActivityStatus === 'Quiet' ? 'text-green-400' :
-                    overallActivityStatus === 'Moderate' ? 'text-yellow-400' :
-                    overallActivityStatus === 'High' ? 'text-orange-400' : 'text-red-500'
-                  }`}>{overallActivityStatus}</span>
+                    solarStatus.label === 'Quiet' ? 'text-green-400' :
+                    solarStatus.label === 'Moderate' ? 'text-yellow-400' :
+                    solarStatus.label === 'High' ? 'text-orange-400' : 'text-red-500'
+                  }`}>{solarStatus.label}</span>
                 </h3>
                 <p>X-ray Flux: <span className="font-mono text-cyan-300">{currentXraySummary.flux !== null ? currentXraySummary.flux.toExponential(2) : 'N/A'}</span> ({currentXraySummary.class || 'N/A'})</p>
-                <p>Proton Flux: <span className="font-mono text-yellow-400">{currentProtonSummary.flux !== null ? currentProtonSummary.flux.toFixed(2) : 'N/A'}</span> pfu ({currentProtonSummary.class || 'N/A'})</p>
+                <p>Max flare probability: <span className="font-mono text-amber-300">{solarStatus.maxFlareProbability.toFixed(0)}%</span> · Sunspots: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
+                <p className="text-[11px] text-neutral-400 mt-1">{solarStatus.explanation}</p>
               </div>
               <div className="flex-1 text-center sm:text-right">
                 <h3 className="text-neutral-200 font-semibold mb-1">Latest Event:</h3>
