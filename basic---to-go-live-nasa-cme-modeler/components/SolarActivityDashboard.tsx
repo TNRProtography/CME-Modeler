@@ -476,8 +476,66 @@ const normalizeMagneticClass = (value?: string | null): string | null => {
 };
 
 const toNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/%/g, '').replace(/,/g, '');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+};
+
+const getNumberFromAliases = (item: Record<string, unknown>, aliases: string[]): number | null => {
+  const keysByNormalized = new Map<string, string>();
+  Object.keys(item).forEach((key) => keysByNormalized.set(key.toLowerCase().replace(/[^a-z0-9]/g, ''), key));
+
+  for (const alias of aliases) {
+    const directValue = item[alias];
+    const directParsed = toNumberOrNull(directValue);
+    if (directParsed !== null) return directParsed;
+
+    const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matchedKey = keysByNormalized.get(normalizedAlias);
+    if (matchedKey) {
+      const parsed = toNumberOrNull(item[matchedKey]);
+      if (parsed !== null) return parsed;
+    }
+  }
+
+  return null;
+};
+
+const deriveProbabilityFromMagneticClass = (
+  magneticClass: string | null,
+  flareType: 'c' | 'm' | 'x',
+): number | null => {
+  if (!magneticClass) return null;
+  const normalized = magneticClass.toUpperCase().replace(/[^A-Z]/g, '');
+  const hasDelta = normalized.includes('DELTA') || normalized.endsWith('D');
+  const hasGamma = normalized.includes('GAMMA') || normalized.includes('G');
+  const hasBeta = normalized.includes('BETA') || normalized.includes('B');
+
+  if (flareType === 'x') {
+    if (hasDelta && hasGamma) return 15;
+    if (hasDelta) return 8;
+    if (hasGamma) return 4;
+    return hasBeta ? 1 : 0;
+  }
+
+  if (flareType === 'm') {
+    if (hasDelta && hasGamma) return 55;
+    if (hasDelta) return 35;
+    if (hasGamma) return 18;
+    return hasBeta ? 8 : 3;
+  }
+
+  if (hasDelta && hasGamma) return 85;
+  if (hasDelta) return 70;
+  if (hasGamma) return 55;
+  return hasBeta ? 35 : 15;
 };
 
 const extractRegionFromAny = (item: any): string => {
@@ -506,20 +564,34 @@ const extractActiveRegionEntries = (raw: any, source: string) => {
       const lon = normalizeSolarLongitude(toNumberOrNull(item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic));
       const observedTime = parseNoaaUtcTimestamp(item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date);
 
+      const magneticClass = normalizeMagneticClass(item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification);
+
+      const cFlareProbability = getNumberFromAliases(item, [
+        'c_flare_probability', 'cFlareProbability', 'cflare_probability', 'flare_probability_c', 'prob_c', 'c_prob', 'cclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'c');
+
+      const mFlareProbability = getNumberFromAliases(item, [
+        'm_flare_probability', 'mFlareProbability', 'mflare_probability', 'flare_probability_m', 'prob_m', 'm_prob', 'mclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'm');
+
+      const xFlareProbability = getNumberFromAliases(item, [
+        'x_flare_probability', 'xFlareProbability', 'xflare_probability', 'flare_probability_x', 'prob_x', 'x_prob', 'xclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'x');
+
       return {
         region,
         location: location || 'N/A',
         area: toNumberOrNull(item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths),
         spotCount: toNumberOrNull(item?.spot_count ?? item?.spotCount ?? item?.number_spots),
-        magneticClass: normalizeMagneticClass(item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification),
+        magneticClass,
         classification: (item?.classification ?? item?.region_classification ?? item?.zurich_classification ?? '').toString().trim() || null,
         latitude: coords.latitude ?? lat,
         longitude: normalizeSolarLongitude(coords.longitude ?? lon),
         observedTime,
-        cFlareProbability: toNumberOrNull(item?.c_flare_probability ?? item?.cFlareProbability ?? item?.cflare_probability ?? item?.flare_probability_c),
-        mFlareProbability: toNumberOrNull(item?.m_flare_probability ?? item?.mFlareProbability ?? item?.mflare_probability ?? item?.flare_probability_m),
-        xFlareProbability: toNumberOrNull(item?.x_flare_probability ?? item?.xFlareProbability ?? item?.xflare_probability ?? item?.flare_probability_x),
-        protonProbability: toNumberOrNull(item?.proton_probability ?? item?.protonProbability ?? item?.s1_probability ?? item?.sep_probability),
+        cFlareProbability,
+        mFlareProbability,
+        xFlareProbability,
+        protonProbability: getNumberFromAliases(item, ['proton_probability', 'protonProbability', 's1_probability', 'sep_probability', 'prob_s1', 's1_prob']),
         cFlareEvents24h: toNumberOrNull(item?.c_flare_events_24h ?? item?.c_flare_events ?? item?.cflare_events_24h ?? item?.c_events_24h ?? item?.c_event_count),
         mFlareEvents24h: toNumberOrNull(item?.m_flare_events_24h ?? item?.m_flare_events ?? item?.mflare_events_24h ?? item?.m_events_24h ?? item?.m_event_count),
         xFlareEvents24h: toNumberOrNull(item?.x_flare_events_24h ?? item?.x_flare_events ?? item?.xflare_events_24h ?? item?.x_events_24h ?? item?.x_event_count),

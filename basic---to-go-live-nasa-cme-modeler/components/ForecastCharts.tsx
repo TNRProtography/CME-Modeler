@@ -519,9 +519,10 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                 <div className={`text-sm font-semibold ${status.color}`}>{status.title}</div>
                 <p className="text-xs text-neutral-300 mt-1 leading-relaxed">{status.summary}</p>
 
-                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-[11px]">
                     <div className="rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-2 py-1.5"><span className="text-cyan-200">Clock</span><div className="text-white font-semibold">{latestClock != null ? `${latestClock.toFixed(0)}°` : '—'}</div></div>
                     <div className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2 py-1.5"><span className="text-indigo-200">Band</span><div className="text-white font-semibold">{clockBandLabel}</div></div>
+                    <div className="rounded-lg border border-fuchsia-400/25 bg-fuchsia-500/10 px-2 py-1.5"><span className="text-fuchsia-200">By</span><div className="text-white font-semibold">{by != null ? `${by.toFixed(1)} nT` : '—'}</div></div>
                     <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2 py-1.5"><span className="text-emerald-200">Bz</span><div className="text-white font-semibold">{bz != null ? `${bz.toFixed(1)} nT` : '—'}</div></div>
                     <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2 py-1.5"><span className="text-amber-200">Bt</span><div className="text-white font-semibold">{bt != null ? `${bt.toFixed(1)} nT` : '—'}</div></div>
                 </div>
@@ -552,7 +553,7 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                     </div>
 
                     <div className="text-xs text-neutral-200 space-y-1.5 w-full max-w-xs">
-                                                <div>By: <strong>{by != null ? `${by.toFixed(1)} nT` : '—'}</strong></div>
+                        <div className="text-fuchsia-200">By now appears in the quick-read row because negative By can reinforce auroral coupling when Bz is southward.</div>
                         <div className="text-neutral-400">Core view: Earth in center, Sun on left, magnetotail extends right.</div>
                         <p className="text-neutral-400 pt-2">
                             Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
