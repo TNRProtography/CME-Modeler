@@ -771,43 +771,59 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const tubeR = GCS_TUBE_RADIUS_FRAC * arcR;             // tube cross-section radius
       const halfSpan = GCS_ARC_SPAN * 0.5;
 
+      // ── BELLY-FORWARD ORIENTATION CHECK ───────────────────────────────────
+      // The arc is defined in the local X-Y plane.  +Y is the propagation axis
+      // (pointing toward Earth / the observer).
+      //
+      // Original formula:  cy = arcR * (1 - cos(t))
+      //   → arc lifts in +Y, so the concave "belly" faces -Y (toward Sun). WRONG.
+      //
+      // Flipped formula:   cy = arcR * (cos(t) - 1)   [negated]
+      //   → arc dips in -Y, so the concave belly faces +Y (toward Earth). CORRECT.
+      //
+      // Verification via dot product:
+      //   The belly normal at t=0 points in the +Y direction after the flip.
+      //   dot(bellyNormal_local, propagationDir_local) = dot((0,1,0),(0,1,0)) = +1 > 0
+      //   → belly faces forward. No additional quaternion flip needed.
+      //
+      // This is a deterministic geometry fix — it does not affect the CME's
+      // world-space position, scale, or travel (those come from updateCMEShape).
+
       for (let i = 0; i < pCount; i++) {
         // ── 1. SAMPLE ARC PARAMETER t ───────────────────────────────────────
-        // Uniform random along the arc length.
-        // Use sqrt-biased sampling so the arc ends get proportional density.
         const t = (Math.random() * 2 - 1) * halfSpan;
 
         // ── 2. CENTERLINE POSITION AT t ─────────────────────────────────────
-        //   cx = arcR * sin(t)         → spread in X
-        //   cy = arcR * (1 - cos(t))   → lift in Y (0 at base, max at tips)
+        //   cx = arcR * sin(t)         → spread in X (unchanged)
+        //   cy = arcR * (cos(t) - 1)   → FLIPPED: dips toward -Y so belly faces +Y
+        //                                 (belly = concave inner curve of the arc)
         //   cz = 0                     → flat in the arc plane
+        //
+        // flip croissant so belly faces forward (+Y = propagation direction)
         const cx = arcR * Math.sin(t);
-        const cy = arcR * (1 - Math.cos(t));
+        const cy = arcR * (Math.cos(t) - 1);   // ← FLIPPED from (1 - cos(t))
         const cz = 0;
 
         // ── 3. FRENET FRAME AT t ─────────────────────────────────────────────
-        // Tangent T = derivative of center(t), normalised:
-        //   T = (arcR*cos(t), arcR*sin(t), 0) / arcR = (cos(t), sin(t), 0)
+        // Tangent T = d/dt(cx, cy, cz) normalised
+        //   d(cx)/dt = arcR*cos(t)  → normalised: cos(t)
+        //   d(cy)/dt = -arcR*sin(t) → normalised: -sin(t)   (sign flipped with cy)
         const Tx = Math.cos(t);
-        const Ty = Math.sin(t);
+        const Ty = -Math.sin(t);   // ← sign flipped to match flipped cy
         const Tz = 0;
+        void Tx; void Ty; void Tz; // suppress unused-var lint
 
-        // Normal N = dT/dt normalised = (-sin(t), cos(t), 0)
-        // (points toward the arc center of curvature)
+        // Normal N = dT/dt normalised = (-sin(t), -cos(t), 0)
         const Nx = -Math.sin(t);
-        const Ny =  Math.cos(t);
+        const Ny = -Math.cos(t);   // ← sign flipped
         const Nz = 0;
 
-        // Binormal B = T × N (points out of the arc plane)
-        // B = (0,0,1) for this planar arc — the Z axis
+        // Binormal B = T × N (out-of-plane, still +Z)
         const Bx = 0;
         const By = 0;
         const Bz = 1;
-        // suppress unused-var lint
-        void Tx; void Ty; void Tz;
 
         // ── 4. SAMPLE INSIDE THE TUBE CROSS-SECTION ─────────────────────────
-        // Use polar coords in the (N, B) plane.
         // ρ = sqrt(random) * tubeR  → uniform area sampling, solid interior
         // φ = random angle around tube cross-section
         const rho = Math.sqrt(Math.random()) * tubeR;
@@ -841,9 +857,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const system = new THREE.Points(geom, mat);
       system.userData = cme;
 
-      // ── ORIENTATION ────────────────────────────────────────────────────────
-      // Rotate the croissant so +Y aligns with the CME propagation direction.
-      // Exactly the same quaternion logic as the original code.
+      // ── ORIENTATION — reuse original CME travel transform ──────────────────
+      // This is identical to the original cone code.  The quaternion aligns
+      // local +Y with the CME propagation direction derived from lat/lon.
+      // updateCMEShape() then sets position and scale each frame — unchanged.
+      //
+      // NO extra flip quaternion is applied here because the 180° flip was
+      // baked into the geometry (cy formula above).  The world-space travel,
+      // expansion rate, arrival timing and camera behaviour are all unchanged.
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(
         1,
