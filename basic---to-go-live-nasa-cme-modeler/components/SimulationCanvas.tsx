@@ -357,11 +357,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       return;
     }
     cmeObject.visible = true;
-    const cmeLength = Math.max(0, distTraveledInSceneUnits - sunRadius);
+
+    // The propagation direction in world space (local +Y rotated by quaternion).
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-    const tipPosition = direction.clone().multiplyScalar(sunRadius);
-    cmeObject.position.copy(tipPosition);
-    cmeObject.scale.set(cmeLength, cmeLength, cmeLength);
+
+    // ── POSITION: move the croissant outward along the propagation axis ──────
+    // Place the origin of the croissant at (distTraveled) from the Sun centre.
+    // This is the actual translation — the CME moves away from the Sun.
+    // We subtract sunRadius so it starts at the Sun's surface, not its centre.
+    const distFromSunSurface = Math.max(0, distTraveledInSceneUnits - sunRadius);
+    cmeObject.position.copy(direction.clone().multiplyScalar(sunRadius + distFromSunSurface));
+
+    // ── SCALE: grow the croissant tube as the CME expands ────────────────────
+    // The GCS geometry is built in normalised units (arcRadius ≈ 0.55, etc.).
+    // We scale by distFromSunSurface so the tube size grows with distance,
+    // matching the original CME expansion rate.
+    // A small minimum scale prevents the croissant collapsing to nothing at t=0.
+    const s = Math.max(distFromSunSurface, sunRadius * 0.5);
+    cmeObject.scale.set(s, s, s);
   }, [THREE]);
 
   useEffect(() => {
@@ -673,13 +686,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
+            // The croissant world position IS the CME's current location.
+            // Place the torus indicator at that position (no scale.y offset needed).
             fluxRopeRef.current.position.copy(cmeObject.position);
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
-            const coneRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
-            fluxRopeRef.current.scale.set(coneRadius, coneRadius, coneRadius);
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-            fluxRopeRef.current.position.add(dir.clone().multiplyScalar(cmeObject.scale.y));
+            // Scale the torus to match the current tube size (scale.y = distFromSunSurface).
+            const torusRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+            fluxRopeRef.current.scale.set(torusRadius, torusRadius, torusRadius);
             fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
         }
