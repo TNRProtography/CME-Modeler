@@ -90,132 +90,108 @@ const createArrowTexture = (THREE: any) => {
 };
 
 // ============================================================
-//  CME FLUX ROPE — CROISSANT SHELL SHADERS
+//  CME FLUX ROPE — ANGULAR WEDGE FILTER (VOLUME-PRESERVING)
 //
-//  Replaces the flat-plane cross-section with a full-length
-//  "croissant" flux rope shell. The CME spans its entire length
-//  as before; we just reveal only the particles that lie on the
-//  curved tube surface, giving the appearance of a magnetic flux
-//  rope shell travelling through space.
+//  Goal: show the CME's FULL volume (inner + outer, full length,
+//  full width) but only within an angular wedge that is locked to
+//  the flux rope orientation and rotates with the indicator ring.
 //
-//  Key concepts
+//  THIS FILTER KEEPS THE INNER VOLUME — IT DOES NOT HOLLOW THE CME.
+//
+//  How it works
 //  ────────────────────────────────────────────────────────────
-//  LOCAL FRAME  (built each frame from the CME quaternion)
-//    axis     = local +Y rotated to world  → propagation direction
-//    normal   = local +Z rotated to world  → one radial direction
-//    binormal = axis × normal              → other radial direction
-//    origin   = CME world-space origin
+//  1. LOCAL FRAME  (built each frame from the CME quaternion)
+//       axis     = local +Y rotated to world  → propagation direction
+//       normal   = stable-up × axis           → first perpendicular direction
+//       binormal = axis × normal              → second perpendicular direction
+//       origin   = CME world-space position
 //
-//  WORLD → LOCAL TRANSFORM
-//    The vertex shader receives a 3×3 rotation matrix
-//    (uBasis = [normal | binormal | axis] as columns) and the
-//    world-space CME origin (uOrigin).  For each particle:
-//      pLocal = transpose(uBasis) * (pWorld - uOrigin)
-//    Because uBasis is orthonormal, transpose == inverse.
-//    After this transform:
-//      pLocal.x  ≈ distance along radial-1 (normal)
-//      pLocal.y  ≈ distance along radial-2 (binormal)
-//      pLocal.z  ≈ distance along axis  →  full CME length lives here
+//  2. WORLD → LOCAL TRANSFORM  (vertex shader)
+//       rel    = pWorld - uOrigin
+//       lx     = dot(rel, uNormalW)    ← radial component 1
+//       ly     = dot(rel, uBinormW)    ← radial component 2
+//       lz     = dot(rel, uAxisW)      ← along propagation axis
+//     Because the basis is orthonormal, transpose == inverse.
+//     lz is NEVER filtered — the full CME length is always visible.
 //
-//  CYLINDRICAL COORDINATES AROUND THE AXIS (pLocal.z axis)
-//    r     = length(pLocal.xy)          radial distance from axis
-//    theta = atan(pLocal.y, pLocal.x)   angle around axis
+//  3. CYLINDRICAL ANGLE AROUND THE AXIS
+//       theta = atan2(ly, lx)          ← angle around the flux rope axis
 //
-//  CROISSANT-SHELL FILTER  (two independent tests both must pass)
-//    1. Shell test  – keep particles near the target shell radius:
-//         abs(r - uShellRadius) < uShellThickness
-//       uShellRadius grows with pLocal.z (coneRadius at that depth)
-//       so the shell flares outward with the expanding CME cone.
+//  4. ANGULAR WEDGE TEST  (the ONLY visibility filter)
+//       angleDelta = wrapAngle(theta - uBandCenterAngle)
+//       KEEP particle if abs(angleDelta) <= uBandHalfWidth
+//       DISCARD otherwise
 //
-//    2. Angular-band test – keep only a wedge/ribbon of the shell:
-//         abs(wrapAngle(theta - uBandCenter)) < uBandHalfWidth
-//       uBandCenter rotates with elapsedTime * BAND_ROTATE_SPEED,
-//       matching the existing flux-rope torus indicator rotation.
+//     There is NO radius / shell test — all radii from 0 to the cone
+//     edge are kept.  This produces a solid wedge cross-section of the
+//     full CME volume, not a hollow shell.
 //
-//  FULL-LENGTH VISIBILITY
-//    There is NO filter on pLocal.z, so particles are visible all
-//    along the CME body.  Only r and theta are gated.
+//  5. BAND ROTATION
+//       uBandCenterAngle advances at BAND_ROTATE_SPEED rad/s,
+//       matching the existing torus indicator (speed=0.5 rev/s → π rad/s).
 // ============================================================
 
 // ── TUNABLE CONSTANTS ─────────────────────────────────────────────────────────
-// SHELL_FRAC      fraction of the cone radius that defines the shell surface.
-//                 0.75 puts the shell at 75 % of the cone edge — adjust to taste.
-const SHELL_FRAC       = 0.75;
-// SHELL_THICKNESS fraction of the cone radius used as the shell half-thickness.
-//                 0.22 keeps a visible ribbon without going too thin.
-const SHELL_THICKNESS  = 0.22;
-// BAND_HALF_WIDTH half-angle of the visible wedge around the shell (radians).
-//                 π gives a full 360° view (whole shell); 0.9 gives ~103° ribbon.
-const BAND_HALF_WIDTH  = Math.PI * 0.9;   // near-full shell; reduce for narrower ribbon
-// BAND_ROTATE_SPEED rad/s — must match FLUX_ROPE_FRAGMENT_SHADER "speed" (0.5 rev/s → π rad/s)
-const BAND_ROTATE_SPEED = Math.PI;
+// BAND_HALF_WIDTH  half-angle of the visible wedge (radians).
+//   π/2  ≈ 90°  → a quarter-pie slice each side  (narrow, distinct wedge)
+//   π    ≈ 180° → half the CME at once (wide ribbon)
+//   Tune this to taste; π*0.55 (~99°) gives a clear croissant wedge.
+const BAND_HALF_WIDTH   = Math.PI * 0.55;
+// BAND_ROTATE_SPEED  rad/s — mirrors FLUX_ROPE_FRAGMENT_SHADER speed=0.5 rev/s
+const BAND_ROTATE_SPEED = Math.PI;   // 0.5 rev/s × 2π = π rad/s
 
 /**
  * CME_FLUX_ROPE_VERTEX_SHADER
  *
- * Builds the local flux-rope frame in world space using the three
- * basis vectors passed as uniforms, transforms each particle into
- * that frame, then computes cylindrical (r, theta) coordinates for
- * the fragment shader to apply the croissant-shell filter.
+ * Transforms each particle into the flux-rope local frame and
+ * computes its angle (theta) around the propagation axis.
+ * Passes theta and axis-depth to the fragment shader for the
+ * angular wedge test.
  *
- * No particles are discarded here — we pass varying values and let
- * the fragment shader discard, which avoids branching in the VS.
+ * THIS SHADER DOES NOT FILTER BY RADIUS — all radii are kept.
  *
  * Uniforms
- *   uOrigin    – CME world-space origin (cone root near the Sun)
- *   uAxisW     – world-space propagation axis  (local +Y in world)
- *   uNormalW   – world-space radial-1 basis    (local +Z in world)
- *   uBinormW   – world-space radial-2 basis    (axis × normal)
- *   uConeSlope – tan(halfAngle), constant per CME
- *   uPointSize – billboard pixel size
+ *   uOrigin    – CME world-space cone root (near the Sun)
+ *   uAxisW     – world-space propagation axis  (CME local +Y → world)
+ *   uNormalW   – world-space radial basis-1    (stable-up × axis)
+ *   uBinormW   – world-space radial basis-2    (axis × normal)
+ *   uPointSize – billboard size in pixels
  */
 const CME_FLUX_ROPE_VERTEX_SHADER = `
-  // ── LOCAL FRAME BASIS (world space, orthonormal) ──────────────
-  uniform vec3  uOrigin;     // CME cone root in world space
-  uniform vec3  uAxisW;      // propagation axis  (+Y local → world)
-  uniform vec3  uNormalW;    // radial basis 1    (+Z local → world)
-  uniform vec3  uBinormW;    // radial basis 2    (axis × normal)
+  // ── FLUX ROPE LOCAL FRAME (world-space, orthonormal) ──────────
+  uniform vec3  uOrigin;    // CME cone root in world space
+  uniform vec3  uAxisW;     // Propagation axis  (+Y local → world)
+  uniform vec3  uNormalW;   // Radial basis-1    (stable-up × axis)
+  uniform vec3  uBinormW;   // Radial basis-2    (axis × normal)
+  uniform float uPointSize; // Billboard pixel size
 
-  // ── SHELL PARAMETERS ──────────────────────────────────────────
-  uniform float uConeSlope;  // tan(halfAngle) — cone expansion rate
-  uniform float uShellFrac;  // fraction of cone radius for shell surface
-  uniform float uPointSize;  // billboard size in pixels
-
-  // ── PASS-THROUGHS TO FRAGMENT ──────────────────────────────────
-  varying float vR;          // radial distance from axis (local frame)
-  varying float vTheta;      // angle around axis (local frame, radians)
-  varying float vShellR;     // target shell radius at this particle's depth
-  varying float vAxisDepth;  // signed distance along axis (0=origin … cmeLength)
+  // Passed to fragment shader for the angular wedge test
+  varying float vTheta;      // Angle of this particle around the flux rope axis
+  varying float vAxisDepth;  // Distance along propagation axis (for shimmer only)
 
   void main() {
     // ── 1. WORLD POSITION ─────────────────────────────────────
-    vec4  worldPos = modelMatrix * vec4(position, 1.0);
-    vec3  pw       = worldPos.xyz;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
 
     // ── 2. WORLD → LOCAL FRAME ────────────────────────────────
-    // Subtract CME origin, then project onto each basis vector.
-    // Because the basis is orthonormal, this is the inverse transform.
-    //   pLocal.x = dot(pw - uOrigin, uNormalW)   ← radial-1
-    //   pLocal.y = dot(pw - uOrigin, uBinormW)   ← radial-2
-    //   pLocal.z = dot(pw - uOrigin, uAxisW)     ← along axis
-    vec3  rel    = pw - uOrigin;
-    float lx     = dot(rel, uNormalW);    // local radial-1
-    float ly     = dot(rel, uBinormW);    // local radial-2
-    float lz     = dot(rel, uAxisW);      // local axis depth
+    // Project (pWorld - origin) onto each orthonormal basis vector.
+    // This is equivalent to: pLocal = transpose(basisMatrix) * rel
+    // where basisMatrix columns are [uNormalW, uBinormW, uAxisW].
+    //
+    //   lx = radial component along uNormalW
+    //   ly = radial component along uBinormW
+    //   lz = depth along propagation axis  (NOT filtered — full length stays)
+    vec3  rel = worldPos.xyz - uOrigin;
+    float lx  = dot(rel, uNormalW);
+    float ly  = dot(rel, uBinormW);
+    float lz  = dot(rel, uAxisW);
 
-    // ── 3. CYLINDRICAL COORDS AROUND THE AXIS ─────────────────
-    // r     = distance from the axis in the radial plane
-    // theta = angle around the axis (used for the band filter)
-    vR          = length(vec2(lx, ly));
-    vTheta      = atan(ly, lx);
-    vAxisDepth  = lz;
-
-    // ── 4. TARGET SHELL RADIUS AT THIS DEPTH ──────────────────
-    // The cone expands linearly: coneRadius(z) = z * coneSlope.
-    // The shell surface sits at shellFrac * coneRadius.
-    // We clamp lz to ≥ 0 so particles behind the origin are handled.
-    float coneR = max(lz, 0.0) * uConeSlope;
-    vShellR     = uShellFrac * coneR;
+    // ── 3. ANGLE AROUND THE FLUX ROPE AXIS ────────────────────
+    // atan2(ly, lx) gives the azimuthal angle in the radial plane.
+    // This is the ONLY coordinate used for filtering.
+    // Radius is intentionally ignored — we keep ALL radii.
+    vTheta     = atan(ly, lx);
+    vAxisDepth = lz;
 
     gl_PointSize = uPointSize;
     gl_Position  = projectionMatrix * viewMatrix * worldPos;
@@ -225,36 +201,34 @@ const CME_FLUX_ROPE_VERTEX_SHADER = `
 /**
  * CME_FLUX_ROPE_FRAGMENT_SHADER
  *
- * Applies the two-part croissant-shell filter:
- *   1. Shell test   – discard if radial distance r is too far from the
- *                     target shell surface (uShellFrac * coneRadius(depth))
- *   2. Angular band – discard if the particle's theta is outside the
- *                     rotating band window [uBandCenter ± uBandHalfWidth]
+ * Applies the angular wedge test and discards particles outside it.
  *
- * Survivors receive a smooth glow billboard with depth-based fade.
+ * THIS FILTER KEEPS INNER VOLUME; IT DOES NOT HOLLOW THE CME.
+ *
+ * The only discard criterion is:
+ *   abs(wrapAngle(vTheta - uBandCenterAngle)) > uBandHalfWidth
+ *
+ * No radius filter. No shell. The full interior of the CME cone
+ * is preserved within the wedge.
  *
  * Uniforms
- *   uShellThick  – half-thickness of the visible shell band
- *   uBandCenter  – current rotation angle of the visible wedge (radians)
- *   uBandHalf    – half-width of the visible angular wedge (radians)
- *   uOpacity     – base opacity from getCmeOpacity
- *   uColor       – CME speed-colour from getCmeCoreColor
- *   uTime        – elapsed time for shimmer animation
+ *   uBandCenterAngle – current wedge centre (radians, updated per frame)
+ *   uBandHalfWidth   – half-angle of visible wedge  (radians, constant)
+ *   uOpacity         – base opacity from getCmeOpacity
+ *   uColor           – CME speed-colour from getCmeCoreColor
+ *   uTime            – elapsed time for shimmer
  */
 const CME_FLUX_ROPE_FRAGMENT_SHADER = `
-  uniform float uShellThick;   // Half-thickness of shell band
-  uniform float uBandCenter;   // Rotating band centre angle (radians)
-  uniform float uBandHalf;     // Half-width of visible angular wedge
-  uniform float uOpacity;      // Base opacity
-  uniform vec3  uColor;        // CME tint colour
-  uniform float uTime;         // Elapsed time
+  uniform float uBandCenterAngle; // Rotating wedge centre (radians)
+  uniform float uBandHalfWidth;   // Half-width of visible angular wedge
+  uniform float uOpacity;         // Base particle opacity
+  uniform vec3  uColor;           // CME tint colour
+  uniform float uTime;            // Elapsed time for shimmer animation
 
-  varying float vR;            // Radial distance from axis
-  varying float vTheta;        // Angle around axis
-  varying float vShellR;       // Target shell radius at this depth
-  varying float vAxisDepth;    // Distance along propagation axis
+  varying float vTheta;           // Particle angle around flux rope axis
+  varying float vAxisDepth;       // Depth along axis (for shimmer only)
 
-  // Wrap an angle into [-π, π]
+  // Wrap angle into [-PI, PI]
   float wrapAngle(float a) {
     const float TWO_PI = 6.28318530718;
     a = mod(a + 3.14159265359, TWO_PI);
@@ -264,44 +238,35 @@ const CME_FLUX_ROPE_FRAGMENT_SHADER = `
 
   void main() {
 
-    // ── SHELL TEST ────────────────────────────────────────────
-    // Keep only particles within uShellThick of the target surface.
-    // uShellThick is expressed as a fraction of the cone radius,
-    // scaled by vShellR so it stays proportional as the CME expands.
-    float shellThickScaled = uShellThick * max(vShellR, 0.05);
-    float shellDist        = abs(vR - vShellR);
-    if (shellDist > shellThickScaled) discard;
-
-    // ── ANGULAR BAND TEST ─────────────────────────────────────
-    // wrapAngle gives a value in [-π, π].
-    // We keep the particle only if it falls in the rotating wedge.
-    float angleDelta = wrapAngle(vTheta - uBandCenter);
-    if (abs(angleDelta) > uBandHalf) discard;
+    // ── ANGULAR WEDGE FILTER ──────────────────────────────────
+    // THIS IS THE ONLY VISIBILITY FILTER.
+    // No radius test. No shell. Keeps full CME interior within the wedge.
+    //
+    // angleDelta: how far this particle's angle is from the wedge centre.
+    // Discard if outside the half-width of the rotating wedge.
+    float angleDelta = wrapAngle(vTheta - uBandCenterAngle);
+    if (abs(angleDelta) > uBandHalfWidth) discard;
 
     // ── SOFT CIRCULAR BILLBOARD ───────────────────────────────
     vec2  pc   = gl_PointCoord * 2.0 - 1.0;
     float dist = length(pc);
     if (dist > 1.0) discard;
 
-    // Radial glow falloff
-    float alpha = 1.0 - smoothstep(0.25, 1.0, dist);
+    float alpha = 1.0 - smoothstep(0.2, 1.0, dist);
 
-    // ── SHELL EDGE FADE ───────────────────────────────────────
-    // Particles near the inner/outer shell edges fade out smoothly.
-    float shellFade = 1.0 - smoothstep(0.0, 1.0, shellDist / max(shellThickScaled, 0.0001));
-    alpha *= shellFade;
-
-    // ── ANGULAR BAND EDGE FADE ────────────────────────────────
-    // Fade toward the band edges for a soft ribbon boundary.
-    float bandFade = 1.0 - smoothstep(0.6, 1.0, abs(angleDelta) / max(uBandHalf, 0.0001));
-    alpha *= bandFade;
+    // ── SOFT WEDGE EDGE FADE ──────────────────────────────────
+    // Particles near the wedge boundary fade out smoothly
+    // so the cut edge looks soft rather than harsh.
+    float edgeFade = 1.0 - smoothstep(0.7, 1.0,
+                          abs(angleDelta) / max(uBandHalfWidth, 0.001));
+    alpha *= edgeFade;
 
     // ── ANIMATED SHIMMER ──────────────────────────────────────
-    // Gentle pulse along the flux rope, evoking helical field lines.
-    float shimmer = 0.8 + 0.2 * sin(uTime * 2.0 + vTheta * 3.0 + vAxisDepth * 4.0);
+    // Subtle pulse along the flux rope depth, evoking field lines.
+    float shimmer = 0.85 + 0.15 * sin(uTime * 1.5 + vAxisDepth * 5.0);
     alpha *= shimmer;
 
-    gl_FragColor = vec4(uColor * 1.5, alpha * uOpacity);
+    gl_FragColor = vec4(uColor * 1.4, alpha * uOpacity);
   }
 `;
 
@@ -762,66 +727,59 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // ── CROISSANT SHELL UNIFORM UPDATE ─────────────────────────────────────
-      // Every frame we rebuild the flux-rope local frame from the CME's current
-      // world quaternion and push it to the GPU as three orthonormal basis
-      // vectors.  The fragment shader uses these to transform each particle
-      // into local cylindrical coordinates and apply the shell + band filter.
+      // ── ANGULAR WEDGE UNIFORM UPDATE ───────────────────────────────────────
+      // Each frame we push the current flux-rope local frame into the GPU so
+      // the shader can transform particles into local cylindrical coordinates
+      // and apply the angular wedge filter.
+      //
+      // THIS FILTER KEEPS INNER VOLUME — IT DOES NOT HOLLOW THE CME.
+      // No radius/shell uniform is set here — only theta (angle) is tested.
       //
       // LOCAL FRAME CONSTRUCTION
-      //   axis     = world-space propagation direction  (local +Y rotated)
-      //   worldUp  = (0,0,1) unless axis is nearly parallel, then (0,1,0)
-      //   normal   = normalize(worldUp × axis)          ← perpendicular radial-1
-      //   binormal = axis × normal                      ← perpendicular radial-2
+      //   axis     = CME local +Y rotated to world space (propagation direction)
+      //   worldUp  = (0,0,1)  — or  (0,1,0) if axis is nearly parallel to it
+      //   normal   = normalize(worldUp × axis)   ← first radial direction
+      //   binormal = axis × normal               ← second radial direction
       //
-      // WORLD → LOCAL TRANSFORM (in the vertex shader)
-      //   rel    = pWorld - uOrigin
-      //   lx     = dot(rel, uNormalW)    radial-1
-      //   ly     = dot(rel, uBinormW)    radial-2
-      //   lz     = dot(rel, uAxisW)      along axis (full CME length here)
+      // WORLD → LOCAL (in vertex shader)
+      //   lx = dot(pWorld - uOrigin, uNormalW)
+      //   ly = dot(pWorld - uOrigin, uBinormW)
+      //   lz = dot(pWorld - uOrigin, uAxisW)     ← full axis, NEVER filtered
+      //   theta = atan2(ly, lx)                  ← the only filtered quantity
       //
       // BAND ROTATION
-      //   uBandCenter advances at BAND_ROTATE_SPEED rad/s, identical to the
-      //   speed=0.5 wavePos used by the existing fluxRopeRef torus shader
-      //   (both complete one revolution every 2π / BAND_ROTATE_SPEED seconds).
+      //   uBandCenterAngle advances at BAND_ROTATE_SPEED rad/s.
+      //   BAND_ROTATE_SPEED = π rad/s = 0.5 rev/s, matching the torus shader.
       cmeGroupRef.current.children.forEach((c: any) => {
         if (!c.material?.uniforms) return;
-
         const uni = c.material.uniforms;
 
-        // ── Time / opacity ────────────────────────────────────────────────
+        // Time and opacity
         uni.uTime.value    = elapsedTime;
         uni.uOpacity.value = getCmeOpacity(c.userData.speed);
 
-        // ── Flux rope axis (world space) ──────────────────────────────────
-        // CME local +Y is the propagation axis.  Rotating by the CME's
-        // world quaternion gives us the axis in world space.
+        // ── Flux rope axis in world space ─────────────────────────────────
         const axis = new THREE.Vector3(0, 1, 0)
           .applyQuaternion(c.quaternion)
           .normalize();
         uni.uAxisW.value.copy(axis);
 
-        // ── Stable up reference — avoid degeneracy when axis ≈ worldUp ───
+        // ── Stable perpendicular reference — avoid degeneracy ─────────────
         const worldUp = (Math.abs(axis.dot(new THREE.Vector3(0, 0, 1))) < 0.99)
           ? new THREE.Vector3(0, 0, 1)
           : new THREE.Vector3(0, 1, 0);
 
-        // ── Radial basis vectors (normal + binormal) ──────────────────────
-        // normal   = normalize(worldUp × axis)  — first perpendicular direction
-        // binormal = axis × normal              — second perpendicular direction
+        // ── Radial basis vectors ──────────────────────────────────────────
         const normal   = new THREE.Vector3().crossVectors(worldUp, axis).normalize();
         const binormal = new THREE.Vector3().crossVectors(axis, normal).normalize();
         uni.uNormalW.value.copy(normal);
         uni.uBinormW.value.copy(binormal);
 
-        // ── CME world-space origin ────────────────────────────────────────
-        // c.position is the cone root (tip near the Sun, set by updateCMEShape).
+        // ── CME origin (cone root near the Sun) ──────────────────────────
         uni.uOrigin.value.copy(c.position);
 
-        // ── Rotating angular band ─────────────────────────────────────────
-        // Advances at BAND_ROTATE_SPEED rad/s so the visible ribbon sweeps
-        // around the flux rope in sync with the torus indicator.
-        uni.uBandCenter.value = (elapsedTime * BAND_ROTATE_SPEED) % (2 * Math.PI);
+        // ── Rotating wedge centre — in sync with torus indicator ─────────
+        uni.uBandCenterAngle.value = (elapsedTime * BAND_ROTATE_SPEED) % (2 * Math.PI);
       });
 
       if (timelineActive) {
@@ -960,43 +918,40 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-      // ── CROISSANT SHELL MATERIAL ───────────────────────────────────────────
-      // Uses the new CME_FLUX_ROPE_VERTEX/FRAGMENT shaders.
+      // ── ANGULAR WEDGE MATERIAL ─────────────────────────────────────────────
+      // Uses CME_FLUX_ROPE_VERTEX/FRAGMENT shaders.
+      // THIS MATERIAL KEEPS INNER VOLUME — IT DOES NOT HOLLOW THE CME.
       //
-      // The local frame (uAxisW, uNormalW, uBinormW) and shell parameters are
-      // updated every frame in the animation loop — search for
-      // "CROISSANT SHELL UNIFORM UPDATE" below.
+      // The local frame uniforms (uOrigin, uAxisW, uNormalW, uBinormW) and
+      // uBandCenterAngle are updated every frame — search for
+      // "ANGULAR WEDGE UNIFORM UPDATE" in the animation loop below.
       //
-      // uConeSlope is constant per CME (tan of halfAngle).  All other shape
-      // uniforms are frame-updated.  Colour/opacity follow existing helpers.
+      // uConeSlope is removed — no radius filter is applied.
+      // The only filter is the angular wedge around the flux rope axis.
       const particleSizeInSceneUnits = getCmeParticleSize(cme.speed, SCENE_SCALE);
-      const pointSizePx = particleSizeInSceneUnits * 200; // scene units → approx pixels
+      const pointSizePx = particleSizeInSceneUnits * 200;
 
       const mat = new THREE.ShaderMaterial({
         vertexShader:   CME_FLUX_ROPE_VERTEX_SHADER,
         fragmentShader: CME_FLUX_ROPE_FRAGMENT_SHADER,
         uniforms: {
-          // ── Local frame (updated each frame) ──
-          uOrigin:     { value: new THREE.Vector3(0, 0, 0) },
-          uAxisW:      { value: new THREE.Vector3(0, 1, 0) },
-          uNormalW:    { value: new THREE.Vector3(0, 0, 1) },
-          uBinormW:    { value: new THREE.Vector3(1, 0, 0) },
-          // ── Shell geometry ──
-          uConeSlope:  { value: Math.tan(THREE.MathUtils.degToRad(cme.halfAngle)) },
-          uShellFrac:  { value: SHELL_FRAC },
-          uShellThick: { value: SHELL_THICKNESS },
-          // ── Rotating angular band (updated each frame) ──
-          uBandCenter: { value: 0 },
-          uBandHalf:   { value: BAND_HALF_WIDTH },
+          // ── Flux rope local frame (updated every frame) ──
+          uOrigin:          { value: new THREE.Vector3(0, 0, 0) },
+          uAxisW:           { value: new THREE.Vector3(0, 1, 0) },
+          uNormalW:         { value: new THREE.Vector3(0, 0, 1) },
+          uBinormW:         { value: new THREE.Vector3(1, 0, 0) },
+          // ── Angular wedge (uBandCenterAngle updated every frame) ──
+          uBandCenterAngle: { value: 0 },
+          uBandHalfWidth:   { value: BAND_HALF_WIDTH },
           // ── Visual ──
-          uPointSize:  { value: pointSizePx },
-          uOpacity:    { value: getCmeOpacity(cme.speed) },
-          uColor:      { value: cmeColor.clone() },
-          uTime:       { value: 0 },
+          uPointSize:       { value: pointSizePx },
+          uOpacity:         { value: getCmeOpacity(cme.speed) },
+          uColor:           { value: cmeColor.clone() },
+          uTime:            { value: 0 },
         },
-        transparent:  true,
-        blending:     THREE.AdditiveBlending,
-        depthWrite:   false,
+        transparent: true,
+        blending:    THREE.AdditiveBlending,
+        depthWrite:  false,
       });
 
       const system = new THREE.Points(geom, mat);
