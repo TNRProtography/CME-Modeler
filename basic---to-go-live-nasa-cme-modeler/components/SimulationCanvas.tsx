@@ -89,6 +89,114 @@ const createArrowTexture = (THREE: any) => {
   return arrowTextureCache;
 };
 
+// ============================================================
+//  CME FLUX ROPE CROSS-SECTION SHADERS
+//
+//  These replace the standard PointsMaterial so we can do
+//  per-particle plane-distance filtering entirely on the GPU.
+//
+//  Concept:
+//   - The CME propagates along its local +Y axis (the "flux rope axis").
+//   - We define a cross-section plane perpendicular to that axis.
+//   - Only particles within SLICE_THICKNESS of the plane are shown.
+//   - The plane slides outward with the CME tip, so the visible slice
+//     always sits at the leading edge of the structure.
+// ============================================================
+
+/**
+ * CME_FLUX_CROSS_VERTEX_SHADER
+ *
+ * Passes each particle's world-space position to the fragment shader
+ * so we can measure its perpendicular distance to the cross-section plane.
+ *
+ * Uniforms:
+ *   uPlaneOrigin  – a point on the cross-section plane (CME tip, world space)
+ *   uPlaneNormal  – unit normal of the plane  (= flux rope axis, world space)
+ *   uPointSize    – billboard size in scene units
+ */
+const CME_FLUX_CROSS_VERTEX_SHADER = `
+  uniform vec3  uPlaneOrigin;   // Cross-section plane origin (CME tip)
+  uniform vec3  uPlaneNormal;   // Flux rope axis (plane normal)
+  uniform float uPointSize;     // Particle billboard size
+
+  // Distance from this vertex to the slice plane, passed to fragment stage
+  varying float vDistToPlane;
+
+  void main() {
+    // Transform particle to world space so we can measure plane distance
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+
+    // Signed distance: dot(P - origin, normal)
+    // +ve = ahead of plane, -ve = behind plane
+    vDistToPlane = dot(worldPos.xyz - uPlaneOrigin, uPlaneNormal);
+
+    gl_PointSize = uPointSize;
+    gl_Position  = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+/**
+ * CME_FLUX_CROSS_FRAGMENT_SHADER
+ *
+ * Discards particles that fall outside the cross-section slice.
+ * Survivors get a soft radial-gradient billboard with an animated
+ * edge pulse so the ring looks magnetically alive.
+ *
+ * Uniforms:
+ *   uSliceThickness – half-width of the visible slice (scene units)
+ *   uOpacity        – base opacity (mirrors getCmeOpacity result)
+ *   uColor          – CME colour tint (from getCmeCoreColor)
+ *   uTime           – elapsed seconds for animation
+ */
+const CME_FLUX_CROSS_FRAGMENT_SHADER = `
+  uniform float uSliceThickness; // Half-width of visible cross-section slice
+  uniform float uOpacity;        // Base particle opacity
+  uniform vec3  uColor;          // CME speed-based colour
+  uniform float uTime;           // Elapsed time for shimmer animation
+
+  varying float vDistToPlane;    // Received from vertex shader
+
+  void main() {
+    // ── GPU PARTICLE FILTERING ──────────────────────────────
+    // Discard any particle whose signed distance to the plane
+    // exceeds the slice half-thickness. This is the core of the
+    // flux rope cross-section filter.
+    if (abs(vDistToPlane) > uSliceThickness) discard;
+
+    // ── SOFT CIRCULAR BILLBOARD ─────────────────────────────
+    // gl_PointCoord is [0,1] over the billboard quad.
+    // Convert to [-1,1] and use radial distance for a smooth glow.
+    vec2  pc   = gl_PointCoord * 2.0 - 1.0;
+    float dist = length(pc);
+    if (dist > 1.0) discard; // clip to circle
+
+    // Soft radial falloff
+    float alpha = 1.0 - smoothstep(0.3, 1.0, dist);
+
+    // ── DEPTH-FADE WITHIN SLICE ──────────────────────────────
+    // Particles near the centre of the slice glow brightest.
+    // Particles near the edges fade out — gives the cross-section
+    // a smooth boundary rather than a sharp cut.
+    float sliceFade = 1.0 - smoothstep(0.0, 1.0, abs(vDistToPlane) / uSliceThickness);
+    alpha *= sliceFade;
+
+    // ── ANIMATED RING SHIMMER ────────────────────────────────
+    // A subtle brightness pulse sweeps around the ring over time,
+    // evoking the rotating magnetic field of a flux rope.
+    float shimmer = 0.8 + 0.2 * sin(uTime * 2.0 + dist * 6.0);
+    alpha *= shimmer;
+
+    gl_FragColor = vec4(uColor * 1.4, alpha * uOpacity);
+  }
+`;
+
+// ── SLICE THICKNESS ──────────────────────────────────────────────────────────
+// Controls how thin the cross-section plane appears.
+// Expressed in normalised CME-local units (the mesh is scaled to cmeLength).
+// A value of 0.15 gives a visible ring ~15% of the CME radius deep.
+// Increase toward 0.3 for a thicker band; decrease toward 0.06 for razor-thin.
+const FLUX_SLICE_THICKNESS = 0.15;
+
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
   if (!THREE) return 0.22;
@@ -546,7 +654,51 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => c.material.opacity = getCmeOpacity(c.userData.speed));
+      // ── FLUX ROPE CROSS-SECTION UNIFORM UPDATE ─────────────────────────────
+      // Every frame we push updated values into each CME's ShaderMaterial so
+      // the GPU can re-evaluate particle visibility against the cross-section
+      // plane without touching any CPU-side position data.
+      //
+      // The cross-section plane is defined by:
+      //   • uPlaneNormal  = flux rope axis = the direction the CME is travelling
+      //                     (local +Y rotated by the CME's world quaternion)
+      //   • uPlaneOrigin  = the tip of the CME cone in world space
+      //                     (CME position + axis * cmeLength)
+      //   • uSliceThickness = constant slice half-width (FLUX_SLICE_THICKNESS)
+      //
+      // Only particles whose signed distance to this plane is smaller than
+      // uSliceThickness will survive the discard test in the fragment shader.
+      cmeGroupRef.current.children.forEach((c: any) => {
+        if (!c.material?.uniforms) return; // guard for non-shader materials
+
+        const uni = c.material.uniforms;
+
+        // Update time for animated shimmer
+        uni.uTime.value = elapsedTime;
+
+        // Sync opacity with existing speed-based helper
+        uni.uOpacity.value = getCmeOpacity(c.userData.speed);
+
+        // ── Derive the flux rope axis (plane normal) ──────────────────────
+        // The CME mesh is oriented so local +Y = propagation direction.
+        // Applying the world quaternion rotates that into world space.
+        const fluxRopeAxis = new THREE.Vector3(0, 1, 0)
+          .applyQuaternion(c.quaternion)
+          .normalize();
+        uni.uPlaneNormal.value.copy(fluxRopeAxis);
+
+        // ── Derive the plane origin (CME leading edge / tip) ─────────────
+        // c.position is the cone's starting point (near the Sun).
+        // c.scale.y is cmeLength (set by updateCMEShape).
+        // The tip sits at: position + axis * cmeLength
+        const planeTip = c.position.clone()
+          .addScaledVector(fluxRopeAxis, c.scale.y);
+        uni.uPlaneOrigin.value.copy(planeTip);
+
+        // ── Update slice thickness ────────────────────────────────────────
+        // Keep in sync in case FLUX_SLICE_THICKNESS is made dynamic later.
+        uni.uSliceThickness.value = FLUX_SLICE_THICKNESS * c.scale.y;
+      });
 
       if (timelineActive) {
         if (timelinePlaying) {
@@ -653,7 +805,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     }
 
-    const particleTexture = createParticleTexture(THREE);
+    // NOTE: particleTexture is no longer bound to the CME ShaderMaterial
+    // (the cross-section shader draws its own radial glow in GLSL).
+    // The call is kept so the canvas cache is warmed up for other uses.
+    const particleTexture = createParticleTexture(THREE); // eslint-disable-line @typescript-eslint/no-unused-vars
 
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed);
@@ -672,6 +827,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const z = r * Math.sin(theta);
         pos.push(x, y * (1 + 0.5 * (1 - (r / Math.max(coneRadius, 0.0001)) ** 2)), z);
 
+        // colors buffer retained for geometry completeness; the ShaderMaterial
+        // uses uColor uniform instead of per-vertex colours.
         colors.push(cmeColor.r, cmeColor.g, cmeColor.b);
       }
 
@@ -679,15 +836,43 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-      const mat = new THREE.PointsMaterial({
-        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
-        sizeAttenuation: true,
-        map: particleTexture,
-        transparent: true,
-        opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        vertexColors: true
+      // ── FLUX ROPE CROSS-SECTION MATERIAL ──────────────────────────────────
+      // We use a ShaderMaterial instead of PointsMaterial so the GPU can
+      // discard particles that fall outside the cross-section slice plane.
+      //
+      // uPlaneOrigin and uPlaneNormal are updated every frame in the animation
+      // loop (see the "flux rope cross-section uniform update" block below).
+      //
+      // uPointSize must be supplied in *pixel* units — we approximate from
+      // SCENE_SCALE and the renderer's pixel ratio, then let the vertex shader
+      // use gl_PointSize directly (requires `gl_Points` rendering).
+      //
+      // NOTE: vertexColors are NOT used in this shader path; colour comes from
+      // the uColor uniform (getCmeCoreColor), matching the existing tint logic.
+      const particleSizeInSceneUnits = getCmeParticleSize(cme.speed, SCENE_SCALE);
+      // Convert scene-unit size to a rough pixel size for gl_PointSize.
+      // 200 is a tuned constant; adjust up/down if particles look too large/small.
+      const pointSizePx = particleSizeInSceneUnits * 200;
+
+      const mat = new THREE.ShaderMaterial({
+        vertexShader:   CME_FLUX_CROSS_VERTEX_SHADER,
+        fragmentShader: CME_FLUX_CROSS_FRAGMENT_SHADER,
+        uniforms: {
+          // Cross-section plane — updated each frame in the animation loop
+          uPlaneOrigin:    { value: new THREE.Vector3(0, 0, 0) },
+          uPlaneNormal:    { value: new THREE.Vector3(0, 1, 0) },
+          // Slice half-thickness in local CME units (normalised to cmeLength)
+          uSliceThickness: { value: FLUX_SLICE_THICKNESS },
+          // Visual properties
+          uPointSize:      { value: pointSizePx },
+          uOpacity:        { value: getCmeOpacity(cme.speed) },
+          uColor:          { value: cmeColor.clone() },
+          uTime:           { value: 0 },
+        },
+        transparent:  true,
+        blending:     THREE.AdditiveBlending,
+        depthWrite:   false,
+        // ShaderMaterial needs explicit point rendering
       });
 
       const system = new THREE.Points(geom, mat);
