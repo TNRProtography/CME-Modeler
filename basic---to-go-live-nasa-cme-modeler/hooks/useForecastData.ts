@@ -712,23 +712,36 @@ export const useForecastData = (
   }, [auroraScoreHistory, nzMagSubstormEvents]); // --- MODIFICATION: Added nzMagSubstormEvents dependency ---
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const adjustment = calculateLocationAdjustment(position.coords.latitude);
-          setLocationAdjustment(adjustment);
-          const direction = adjustment >= 0 ? 'south' : 'north';
-          const distance = Math.abs(adjustment / 3 * 150);
-          setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
-        },
-        () => {
-          setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
-        },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
-      );
-    } else {
-      setLocationBlurb('Geolocation is not supported. Showing default forecast for Greymouth.');
-    }
+    // Defer geolocation until after first user interaction — avoids the browser
+    // permission prompt firing on page load (bad UX, often auto-blocked).
+    const requestLocation = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const adjustment = calculateLocationAdjustment(position.coords.latitude);
+            setLocationAdjustment(adjustment);
+            const direction = adjustment >= 0 ? 'south' : 'north';
+            const distance = Math.abs(adjustment / 3 * 150);
+            setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
+          },
+          () => {
+            setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
+        );
+      } else {
+        setLocationBlurb('Geolocation is not supported. Showing default forecast for Greymouth.');
+      }
+    };
+
+    // Fire on first of: click, scroll, or keydown — whichever comes first.
+    const once = { once: true, passive: true } as const;
+    const events = ['click', 'scroll', 'keydown', 'touchstart'] as const;
+    events.forEach(e => window.addEventListener(e, requestLocation, once));
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, requestLocation));
+    };
   }, []);
 
   useEffect(() => {

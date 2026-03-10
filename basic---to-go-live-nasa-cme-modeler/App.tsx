@@ -120,8 +120,9 @@ const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
 const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
 
 const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
-  void page;
-  return new Set([...FORECAST_INITIAL_TASKS, ...SOLAR_INITIAL_TASKS, ...MODELER_INITIAL_TASKS]);
+  if (page === 'modeler') return new Set(MODELER_INITIAL_TASKS);
+  if (page === 'solar-activity') return new Set(SOLAR_INITIAL_TASKS);
+  return new Set(FORECAST_INITIAL_TASKS); // default: forecast
 };
 
 const logDev = (...args: unknown[]) => {
@@ -390,9 +391,9 @@ const App: React.FC = () => {
   }, [activePage]);
 
   const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity', boolean>>(() => ({
-    forecast: true,
+    forecast: initialPageRef.current === 'forecast',
     modeler: initialPageRef.current === 'modeler',
-    'solar-activity': true,
+    'solar-activity': initialPageRef.current === 'solar-activity',
   }));
 
   useEffect(() => {
@@ -467,7 +468,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 1200);
     logDev('initial preload start');
-    startAppPreload();
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
@@ -490,7 +490,12 @@ const App: React.FC = () => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
       logDev('initial preload complete');
-      setTimeout(() => setShowInitialLoader(false), 500);
+      setTimeout(() => {
+        setShowInitialLoader(false);
+        // Defer non-critical preloads until after the app is visible
+        startAppPreload();
+        logDev('deferred app preload start');
+      }, 500);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
 
@@ -1054,7 +1059,7 @@ const App: React.FC = () => {
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
                     />
-                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS', 'JUPITER', 'SATURN', 'URANUS', 'NEPTUNE'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
                         <div className="flex items-start text-center space-x-3 pointer-events-auto">
                             <div className="flex flex-col items-center w-16 lg:hidden">
