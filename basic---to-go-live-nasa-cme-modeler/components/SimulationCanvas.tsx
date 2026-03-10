@@ -478,7 +478,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const cme: any = cmeObject.userData;
     const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
-    cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+
+    // ── DYNAMIC TAIL SCALE ───────────────────────────────────────────────────
+    // The tail tip in local space is at Y = -tailY_local.
+    // Its world-space position along the propagation axis =
+    //   (sunRadius + dist) - tailY_local * scaleY
+    // We clamp scaleY so the tail tip never goes closer to origin than sunRadius:
+    //   scaleY <= dist / tailY_local
+    // Also apply a minimum so the tail always has some visible length.
+    const tailY_local = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * GCS_AXIAL_DEPTH_FRAC * 5.6);
+    const maxTailScaleY = dist > 0.0001 ? dist / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
+    const scaleY = Math.min(sXZ * GCS_AXIAL_DEPTH_FRAC, maxTailScaleY);
+
+    cmeObject.scale.set(sXZ, scaleY, sXZ);
 
     // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
@@ -820,9 +832,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const bStart       = 0.68;
       const legTipY      = arcR * (Math.cos(hs) - 1);
       const noseY        = 0.0;
-      // DOUBLED tail length
       const tailExtend   = 5.6;
-      const tailY        = legTipY * tailExtend;
+      const tailY        = legTipY * tailExtend;  // local-space tail tip Y (negative)
       const yRange       = noseY - tailY;
 
       const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR * 0.5;
@@ -884,7 +895,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         depthWrite: false,
         color: getCmeCoreColor(cme.speed),
       });
-      const system = new THREE.Points(geom, mat); system.userData = cme;
+      const system = new THREE.Points(geom, mat);
+      system.userData = { ...cme, tailY_local: Math.abs(tailY) }; // store tail depth for dynamic scaling
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
