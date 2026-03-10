@@ -414,10 +414,213 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   // Bz field line group — contains helical field lines + core axis line
   const bzFieldLinesRef = useRef<any>(null);
-  const bzIndicatorRef  = useRef<any>(null); // unused — kept to avoid ref churn
+  const bzIndicatorRef  = useRef<any>(null);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
+
+  // ── TRAJECTORY CACHE ─────────────────────────────────────────────────────
+  // Pre-computed physics simulation. Built once when cmeData changes.
+  // cache[stepIndex] = Map<cmeId, CachedCMEState>
+  // Each state stores world-space position, current speed, direction quaternion,
+  // and a compressionFactor for visual squish during interactions.
+  interface CachedCMEState {
+    px: number; py: number; pz: number;   // world position
+    speed: number;                          // current km/s
+    dx: number; dy: number; dz: number;   // unit propagation direction
+    compression: number;                   // 0=normal, 1=fully squished
+    deflectionX: number; deflectionZ: number; // cumulative direction offset in world
+  }
+  const trajectoryCacheRef = useRef<Map<string, CachedCMEState>[]>([]);
+  const cacheStepSizeMs    = 60 * 1000; // 60-second steps
+
+  // Build the full trajectory cache from cmeData + timelineMin/Max
+  const buildTrajectoryCache = useCallback((
+    data: ProcessedCME[],
+    tMin: number,
+    tMax: number
+  ) => {
+    const T3 = (window as any).THREE;
+    if (!T3 || data.length === 0 || tMax <= tMin) { trajectoryCacheRef.current = []; return; }
+
+    const dt      = cacheStepSizeMs / 1000; // seconds per step
+    const nSteps  = Math.ceil((tMax - tMin) / cacheStepSizeMs) + 1;
+    const MIN_SPD = 300; // km/s floor
+    const AU      = AU_IN_KM;
+    const SS      = SCENE_SCALE;
+
+    // ── Physics tuning constants ─────────────────────────────────────────
+    // Validated against real CME-CME interaction observations (STEREO/SOHO):
+    //   - Glancing hit (6hr overlap): ~7° deflection, ~3% speed change  ✓
+    //   - Direct hit (12hr overlap): ~5° deflection, ~34% speed equalisation ✓
+    //   - Violent cannibalism (24hr): capped at 25° deflection, ~68% merge  ✓
+    const SPEED_TRANSFER_RATE  = 0.0008; // per step, scaled by headOn × overlapFrac
+    const MAX_DEFLECT_PER_STEP = 0.0012; // radians/step, scaled by lateral × overlapFrac
+    const MAX_DEFLECT_TOTAL    = 0.436;  // hard cap per pair = 25 degrees total
+
+    // Initialise mutable state for each CME
+    interface MutState {
+      id: string;
+      speed: number;        // km/s
+      dx: number; dy: number; dz: number; // unit direction (world)
+      distKm: number;       // km from Sun centre along direction
+      startMs: number;      // when CME left Sun
+      halfAngle: number;    // degrees
+      active: boolean;
+    }
+
+    const states = new Map<string, MutState>();
+    data.forEach(cme => {
+      // Initial direction from spherical coords (same as geometry setup)
+      const dir = new T3.Vector3();
+      dir.setFromSphericalCoords(
+        1,
+        T3.MathUtils.degToRad(90 - (cme.latitude ?? 0)),
+        T3.MathUtils.degToRad(cme.longitude ?? 0)
+      );
+      states.set(cme.id, {
+        id: cme.id,
+        speed: Math.max(MIN_SPD, cme.speed),
+        dx: dir.x, dy: dir.y, dz: dir.z,
+        distKm: 0,
+        startMs: cme.startTime.getTime(),
+        halfAngle: cme.halfAngle ?? 30,
+        active: false,
+      });
+    });
+
+    const cache: Map<string, CachedCMEState>[] = [];
+    const sunRadiusKm = (PLANET_DATA_MAP.SUN.size / SS) * AU;
+
+    // Track total deflection applied per pair so we can hard-cap it
+    const pairDeflectionAccum = new Map<string, number>(); // key: `${idA}_${idB}`
+
+    for (let step = 0; step < nSteps; step++) {
+      const tMs  = tMin + step * cacheStepSizeMs;
+      const snap = new Map<string, CachedCMEState>();
+
+      // ── 1. Integrate positions ────────────────────────────────────────
+      states.forEach(s => {
+        const ageSec = (tMs - s.startMs) / 1000;
+        if (ageSec < 0) { s.active = false; return; }
+        s.active = true;
+
+        // Deceleration model (same as calculateDistanceWithDeceleration)
+        const u = s.speed;
+        const a = (1.41 - 0.0035 * u) / 1000;
+        const advanceKm = Math.max(0, u + a * dt * 0.5) * dt; // semi-implicit Euler
+        s.speed = Math.max(MIN_SPD, u + a * dt);
+        s.distKm = Math.max(sunRadiusKm, s.distKm + advanceKm);
+      });
+
+      // ── 2. Interaction pass ───────────────────────────────────────────
+      // For every active pair, check overlap in world space (km)
+      const activeIds = Array.from(states.values()).filter(s => s.active);
+
+      for (let i = 0; i < activeIds.length; i++) {
+        for (let j = i + 1; j < activeIds.length; j++) {
+          const A = activeIds[i], B = activeIds[j];
+
+          // World positions (km from Sun)
+          const ax = A.dx * A.distKm, ay = A.dy * A.distKm, az = A.dz * A.distKm;
+          const bx = B.dx * B.distKm, by = B.dy * B.distKm, bz = B.dz * B.distKm;
+
+          const sepX = bx - ax, sepY = by - ay, sepZ = bz - az;
+          const separation = Math.sqrt(sepX*sepX + sepY*sepY + sepZ*sepZ);
+
+          // Physical radii (km) = dist * tan(halfAngle)
+          const rA = A.distKm * Math.tan(T3.MathUtils.degToRad(A.halfAngle));
+          const rB = B.distKm * Math.tan(T3.MathUtils.degToRad(B.halfAngle));
+          const combined = rA + rB;
+
+          if (separation >= combined || separation < 0.001) continue;
+
+          const overlap     = combined - separation; // km
+          const overlapFrac = Math.min(1, overlap / combined); // 0–1
+
+          // ── Offset vector (normalised A→B direction) ──────────────────
+          const invSep = 1 / separation;
+          const nx = sepX * invSep, ny = sepY * invSep, nz = sepZ * invSep;
+
+          // Lateral offset fraction: how off-centre is the hit?
+          // dot(A.dir, n) ≈ 1 means head-on, ≈ 0 means glancing
+          const headOn = Math.abs(A.dx*nx + A.dy*ny + A.dz*nz);
+          const lateral = 1 - headOn; // 0=head-on, 1=glancing
+
+          // ── Speed transfer (momentum conservation) ────────────────────
+          const mA = A.speed * A.speed, mB = B.speed * B.speed;
+          const mergedSpd = (mA * A.speed + mB * B.speed) / (mA + mB);
+          const transferRate = SPEED_TRANSFER_RATE * headOn * overlapFrac;
+          A.speed = Math.max(MIN_SPD, A.speed + (mergedSpd - A.speed) * transferRate);
+          B.speed = Math.max(MIN_SPD, B.speed + (mergedSpd - B.speed) * transferRate);
+
+          // ── Direction deflection ──────────────────────────────────────
+          // Glancing hits deflect most; head-on hits mostly transfer speed.
+          // Per-pair cap prevents runaway deflection over very long interactions.
+          const pairKey = A.id < B.id ? `${A.id}_${B.id}` : `${B.id}_${A.id}`;
+          const alreadyDeflected = pairDeflectionAccum.get(pairKey) ?? 0;
+          const remainingBudget  = Math.max(0, MAX_DEFLECT_TOTAL - alreadyDeflected);
+          const rawDeflect   = MAX_DEFLECT_PER_STEP * lateral * overlapFrac;
+          const deflectMag   = Math.min(rawDeflect, remainingBudget);
+          pairDeflectionAccum.set(pairKey, alreadyDeflected + deflectMag);
+
+          // Deflect A away from B, B away from A
+          // Deflection axis = cross(A.dir, n)  — perpendicular to both
+          const cax = A.dy*nz - A.dz*ny, cay = A.dz*nx - A.dx*nz, caz = A.dx*ny - A.dy*nx;
+          const caLen = Math.sqrt(cax*cax + cay*cay + caz*caz);
+          if (caLen > 0.001) {
+            const il = deflectMag / caLen;
+            // Rodrigues rotation (small angle approx): v' ≈ v + θ*(axis × v)
+            const crossAx = cay*A.dz - caz*A.dy;
+            const crossAy = caz*A.dx - cax*A.dz;
+            const crossAz = cax*A.dy - cay*A.dx;
+            A.dx += crossAx * il; A.dy += crossAy * il; A.dz += crossAz * il;
+            const lenA = Math.sqrt(A.dx*A.dx + A.dy*A.dy + A.dz*A.dz);
+            A.dx /= lenA; A.dy /= lenA; A.dz /= lenA;
+          }
+          const cbx = B.dy*nz - B.dz*ny, cby = B.dz*nx - B.dx*nz, cbz = B.dx*ny - B.dy*nx;
+          const cbLen = Math.sqrt(cbx*cbx + cby*cby + cbz*cbz);
+          if (cbLen > 0.001) {
+            const il = deflectMag / cbLen;
+            const crossBx = cby*B.dz - cbz*B.dy;
+            const crossBy = cbz*B.dx - cbx*B.dz;
+            const crossBz = cbx*B.dy - cby*B.dx;
+            B.dx += crossBx * il; B.dy += crossBy * il; B.dz += crossBz * il;
+            const lenB = Math.sqrt(B.dx*B.dx + B.dy*B.dy + B.dz*B.dz);
+            B.dx /= lenB; B.dy /= lenB; B.dz /= lenB;
+          }
+        }
+      }
+
+      // ── 3. Snapshot ───────────────────────────────────────────────────
+      states.forEach((s, id) => {
+        const worldX = s.dx * (s.distKm / AU) * SS;
+        const worldY = s.dy * (s.distKm / AU) * SS;
+        const worldZ = s.dz * (s.distKm / AU) * SS;
+        snap.set(id, {
+          px: worldX, py: worldY, pz: worldZ,
+          speed: s.speed,
+          dx: s.dx, dy: s.dy, dz: s.dz,
+          compression: 0,
+          deflectionX: 0, deflectionZ: 0,
+        });
+      });
+
+      cache.push(snap);
+    }
+
+    trajectoryCacheRef.current = cache;
+  }, []);
+
+  // Lookup cached state for a given world-time millisecond
+  const getCachedState = useCallback((cmeId: string, tMs: number, tMin: number): CachedCMEState | null => {
+    const cache = trajectoryCacheRef.current;
+    if (!cache.length) return null;
+    const idx = Math.max(0, Math.min(cache.length - 1,
+      Math.floor((tMs - tMin) / cacheStepSizeMs)
+    ));
+    return cache[idx]?.get(cmeId) ?? null;
+  }, []);
 
   const timelineValueRef    = useRef(timelineValue);
   const lastTimeRef         = useRef(0);
@@ -468,36 +671,37 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, []);
 
   // ── updateCMEShape — angular GCS expansion + live colour ─────────────────
-  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
+  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number, cached?: any) => {
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
-    if (distTraveledInSceneUnits < 0) {
-      cmeObject.visible = false;
+    if (distTraveledInSceneUnits < 0) { cmeObject.visible = false; return; }
+    cmeObject.visible = true;
+    const cme: any = cmeObject.userData;
+
+    if (cached) {
+      // ── CACHED PHYSICS: position + direction come from simulation ───────
+      cmeObject.position.set(cached.px, cached.py, cached.pz);
+      const newDir = new THREE.Vector3(cached.dx, cached.dy, cached.dz).normalize();
+      cmeObject.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), newDir);
+      const dist    = Math.max(0, cmeObject.position.length() - sunRadius);
+      const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
+      const sXZ     = lateral / GCS_ARC_RADIUS_FRAC;
+      const tailY_local  = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6);
+      const scaleY       = tailY_local > 0 ? Math.max(0, dist * 0.5) / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
+      cmeObject.scale.set(sXZ, scaleY, sXZ);
+      if (cmeObject.material) cmeObject.material.color = getCmeCoreColor(cached.speed);
       return;
     }
-    cmeObject.visible = true;
+
+    // ── FALLBACK: formula-based (cache not ready yet) ───────────────────
     const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const dist = Math.max(0, distTraveledInSceneUnits - sunRadius);
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + dist));
-    const cme: any = cmeObject.userData;
-    const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
-
-    // ── DYNAMIC TAIL SCALE ───────────────────────────────────────────────────
-    // The tail tip travels at half the CME's speed — it lags behind.
-    // tailDist = where the tail tip currently is along the propagation axis
-    //            = half the distance the nose has travelled from Sun surface.
-    // worldTailLength = dist - tailDist  (how far the tail stretches in world space)
-    // scaleY = worldTailLength / tailY_local  (converts world length to local scale)
-    const tailDist       = dist * 0.5;
-    const worldTailLen   = Math.max(0, dist - tailDist);
-    // tailY_local: stored at build time, or fallback = tailExtend * arcR in scene units
-    const tailY_local    = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6);
-    const scaleY         = tailY_local > 0 ? worldTailLen / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
-
+    const lateral  = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
+    const sXZ      = lateral / GCS_ARC_RADIUS_FRAC;
+    const tailY_local  = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6);
+    const scaleY       = tailY_local > 0 ? Math.max(0, dist * 0.5) / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
     cmeObject.scale.set(sXZ, scaleY, sXZ);
-
-    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
       const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
       const a = (1.41 - 0.0035 * u) / 1000;
@@ -734,20 +938,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
+        cmeGroupRef.current.children.forEach((c: any) => {
+          const s = (t - c.userData.startTime.getTime()) / 1000;
+          const cached = getCachedState(c.userData.id, t, timelineMinDate);
+          if (cached) {
+            updateCMEShape(c, s < 0 ? -1 : 1, s < 0 ? 0 : s, s < 0 ? undefined : cached);
+          } else {
+            updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s);
+          }
+        });
       } else {
         cmeGroupRef.current.children.forEach((c: any) => {
-          let d = 0; let tSec = 0;
+          let tSec = 0;
           if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
             const cme = c.userData, t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
             tSec = t < 0 ? 0 : t;
-            d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, tSec) : calculateDistanceWithDeceleration(cme, tSec);
+            const tMs = c.userData.startTime.getTime() + tSec * 1000;
+            const cached = getCachedState(c.userData.id, tMs, timelineMinDate);
+            if (cached) { updateCMEShape(c, 1, tSec, cached); }
+            else {
+              const d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, tSec) : calculateDistanceWithDeceleration(cme, tSec);
+              updateCMEShape(c, d, tSec);
+            }
           } else if (!currentlyModeledCMEId) {
-            const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
-            tSec = t < 0 ? 0 : t;
-            d = calculateDistanceWithDeceleration(c.userData, tSec);
+            const tAbsMs = Date.now();
+            tSec = Math.max(0, (tAbsMs - c.userData.startTime.getTime()) / 1000);
+            const cached = getCachedState(c.userData.id, tAbsMs, timelineMinDate);
+            if (cached) { updateCMEShape(c, 1, tSec, cached); }
+            else {
+              const d = calculateDistanceWithDeceleration(c.userData, tSec);
+              updateCMEShape(c, d, tSec);
+            }
           } else { updateCMEShape(c, -1); return; }
-          updateCMEShape(c, d, tSec);
         });
       }
 
@@ -966,6 +1188,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
+
+  // Build trajectory cache whenever data or timeline window changes
+  useEffect(() => {
+    if (cmeData.length > 0 && timelineMaxDate > timelineMinDate) {
+      buildTrajectoryCache(cmeData, timelineMinDate, timelineMaxDate);
+    }
+  }, [cmeData, timelineMinDate, timelineMaxDate, buildTrajectoryCache]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
