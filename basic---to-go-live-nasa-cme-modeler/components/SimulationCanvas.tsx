@@ -735,97 +735,64 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
       const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
 
-      // ── CME SHAPE: ENVELOPE-CONSTRAINED RAINDROP ─────────────────────────
+      // ── CME SHAPE: ANALYTIC RAINDROP ─────────────────────────────────────
       //
-      // The CME silhouette from the side is a raindrop:
-      //   • Rounded bulging front (nose at +Y)
-      //   • Two sides that follow the arc
-      //   • Legs converge to a single point at the tail (-Y)
+      // We define the shape analytically rather than via a sampled envelope.
       //
-      // KEY RULE: no particle may sit outside the arc envelope.
-      // We define the envelope as a function: maxX(y) — the maximum |X|
-      // allowed at a given Y depth. All particles are placed using
-      // (randomY → look up maxX(y) → random XZ within that radius).
+      // The CME has:
+      //   • A nose at Y=0 (leading edge, widest point at the arc belly)
+      //   • A tail point at Y = legTipY (two legs converge here)
       //
-      // The envelope is built by sampling the arc + tube at many t values
-      // and recording the outermost X reach at each Y slice.
+      // Cross-section width at depth fraction f ∈ [0,1]  (0=nose, 1=tail):
+      //   halfWidth(f) = maxHalfWidth * sin(f * π)^sharpness
+      //
+      //   sin(f*π) peaks at f=0.5 (middle of body) and goes to 0 at both ends.
+      //   This gives a natural raindrop — narrow at nose, widest in the middle,
+      //   narrowing again to a point at the tail.
+      //
+      // Surface particles trace the converging arc (the "skin").
+      // Interior fill particles are placed analytically inside the raindrop.
 
-      // --- Build the envelope lookup (sampled at N_ENV steps) --------------
-      const N_ENV = 512;
-      // legTipY: the Y where the two legs converge to a point
-      const legTipY   = arcR * (Math.cos(hs) - 1); // e.g. ~ -0.38 in normalised units
-      const noseY     = 0.0;                         // nose sits at Y=0 in local space
-      // The envelope array maps yFrac [0..1] → maxX
-      // yFrac=0 → noseY, yFrac=1 → legTipY
-      const envMaxX   = new Float32Array(N_ENV + 1).fill(0);
+      const bStart  = 0.68;
+      const legTipY = arcR * (Math.cos(hs) - 1); // natural Y of leg tips (negative)
+      const noseY   = 0.0;
+      const yRange  = noseY - legTipY; // total depth of CME (positive)
 
-      for (let si = 0; si <= N_ENV; si++) {
-        const t  = (si / N_ENV) * 2 * hs - hs; // t in [-hs, +hs]
-        const tN = Math.abs(t) / hs;
+      // Maximum half-width: the outermost X the arc reaches
+      const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR;
 
-        // Converged arc centreline (legs sweep to point at legTipY on Y axis)
-        const cx0    = arcR * Math.sin(t);
-        const cy0    = arcR * (Math.cos(t) - 1);
-        const bStart = 0.68;
-        const bT     = Math.max(0, (tN - bStart) / (1.0 - bStart));
-        const w      = bT * bT;
-        const cx     = cx0 * (1 - w);          // X lerps to 0 at tip
-        const cy     = cy0 + (legTipY - cy0) * w; // Y lerps to legTipY
+      // Sharpness: higher = more pointed at nose and tail, lower = fatter oval
+      // 0.5 gives a very round teardrop, 0.35 gives a fatter body, 0.65 sharper
+      const dropSharpness = 0.45;
 
-        // Tube radius tapers to 0 at tip
-        const taper  = Math.pow(Math.max(0, 1.0 - tN), 1.6);
-        const tubeR  = baseTubeR * taper;
-
-        // Outermost X reach at this point = |cx| + tubeR
-        const outerX = Math.abs(cx) + tubeR;
-
-        // Map this arc point's Y to an envelope bucket
-        // cy ranges from noseY (0) down to legTipY (negative)
-        const yRange = noseY - legTipY; // positive
-        const yFrac  = Math.max(0, Math.min(1, (noseY - cy) / yRange));
-        const bucket = Math.round(yFrac * N_ENV);
-        if (outerX > envMaxX[bucket]) envMaxX[bucket] = outerX;
-      }
-      // Smooth the envelope: each bucket takes max of neighbours to avoid gaps
-      for (let b = 1; b < N_ENV; b++) {
-        if (envMaxX[b] < envMaxX[b - 1] * 0.5) envMaxX[b] = envMaxX[b - 1] * 0.85;
-      }
-      for (let b = N_ENV - 2; b >= 0; b--) {
-        if (envMaxX[b] < envMaxX[b + 1] * 0.5) envMaxX[b] = envMaxX[b + 1] * 0.85;
-      }
-
-      // Helper: get maxX at a given Y
-      const getEnvMaxX = (y: number): number => {
-        const yRange = noseY - legTipY;
-        const yFrac  = Math.max(0, Math.min(1, (noseY - y) / yRange));
-        const bucket = Math.min(N_ENV, Math.floor(yFrac * N_ENV));
-        return envMaxX[bucket];
+      // Returns the allowed half-width at a given Y (negative = toward tail)
+      const getDropWidth = (y: number): number => {
+        const f = Math.max(0, Math.min(1, (noseY - y) / yRange));
+        return maxHalfWidth * Math.pow(Math.sin(f * Math.PI), dropSharpness);
       };
 
-      // --- Place all particles inside the envelope -------------------------
-      // Surface particles (arc skin) — sampled on the arc centreline
-      const surfaceCount = Math.floor(pCount * 0.45);
+      // Converged arc centreline for surface particles
+      const getArcCentre = (t: number) => {
+        const cx0 = arcR * Math.sin(t);
+        const cy0 = arcR * (Math.cos(t) - 1);
+        const tN  = Math.abs(t) / hs;
+        const bT  = Math.max(0, (tN - bStart) / (1.0 - bStart));
+        const w   = bT * bT;
+        return { cx: cx0 * (1 - w), cy: cy0 + (legTipY - cy0) * w, tN };
+      };
+
+      const surfaceCount = Math.floor(pCount * 0.40);
       const fillCount    = pCount - surfaceCount;
 
-      // Surface: walk along arc, place particles ON the tube surface
+      // Surface: arc skin particles
       for (let i = 0; i < surfaceCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
-        const tN = Math.abs(t) / hs;
-
-        const cx0    = arcR * Math.sin(t);
-        const cy0    = arcR * (Math.cos(t) - 1);
-        const bStart = 0.68;
-        const bT     = Math.max(0, (tN - bStart) / (1.0 - bStart));
-        const w      = bT * bT;
-        const cx     = cx0 * (1 - w);
-        const cy     = cy0 + (legTipY - cy0) * w;
-        const Nx     = -Math.sin(t), Ny = -Math.cos(t);
-
-        const taper  = Math.pow(Math.max(0, 1.0 - tN), 1.6);
-        const tubeR  = baseTubeR * taper;
-        const rho    = Math.sqrt(Math.random()) * tubeR;
-        const phi    = Math.random() * 2 * Math.PI;
-
+        const { cx, cy, tN } = getArcCentre(t);
+        const Nx = -Math.sin(t), Ny = -Math.cos(t);
+        const taper = Math.pow(Math.max(0, 1.0 - tN), 1.6);
+        const tubeR = baseTubeR * taper;
+        const rho   = Math.sqrt(Math.random()) * tubeR;
+        const phi   = Math.random() * 2 * Math.PI;
         pos.push(
           cx + rho * Math.cos(phi) * Nx,
           cy + rho * Math.cos(phi) * Ny,
@@ -833,22 +800,23 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         );
       }
 
-      // Interior fill: pick Y inside envelope, then XZ within maxX at that Y
+      // Interior fill: analytic raindrop cross-section
       for (let i = 0; i < fillCount; i++) {
-        // Y: bias toward nose (front-heavy density)
-        const yFrac = Math.pow(Math.random(), 1.5); // 0=nose, 1=tail
-        const py    = noseY - yFrac * (noseY - legTipY);
+        // Sample Y linearly (sin(f*π) already gives front-heavy density naturally)
+        const f  = Math.random();
+        const py = noseY - f * yRange;
 
-        const maxX  = getEnvMaxX(py);
-        if (maxX < 0.001) continue;
+        const hw = getDropWidth(py);
+        if (hw < 0.001) continue;
 
-        // Random XZ within a circle of radius maxX, flattened in Z
+        // Random XZ within the teardrop cross-section at this Y
         const angle = Math.random() * Math.PI * 2;
-        const r     = Math.sqrt(Math.random()) * maxX;
-        const px    = r * Math.cos(angle);
-        const pz    = r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC;
-
-        pos.push(px, py, pz);
+        const r     = Math.sqrt(Math.random()) * hw;
+        pos.push(
+          r * Math.cos(angle),
+          py,
+          r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC
+        );
       }
       const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
