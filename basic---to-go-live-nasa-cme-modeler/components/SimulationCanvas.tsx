@@ -258,16 +258,23 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
     const cz = 0;
 
     // Frenet normal and binormal at t
-    // N = (-sin(t), -cos(t), 0),  B = (0, 0, 1)
     const Nx = -Math.sin(t), Ny = -Math.cos(t);
+
+    // Taper tube radius to zero at legs — matching CME particle geometry
+    const tNorm     = Math.abs(t) / halfSpan;
+    const taper     = Math.pow(1.0 - tNorm, 1.4);
+    const tubeFinal = tubeR * taper;
+
+    // Pull leg tips inward toward Sun — same convergence as CME particles
+    const legPullY  = -tNorm * tNorm * 0.55 * arcR;
 
     // Helical angle advances with arc position
     const helixAngle = baseAngle + s * helixTurns * Math.PI * 2;
 
     // Point on tube surface: centreline + tubeR*(cos*N + sin*B)
-    const px = cx + tubeR * (Math.cos(helixAngle) * Nx);
-    const py = cy + tubeR * (Math.cos(helixAngle) * Ny);
-    const pz = cz + tubeR * Math.sin(helixAngle);       // B = +Z
+    const px = cx + tubeFinal * (Math.cos(helixAngle) * Nx);
+    const py = cy + tubeFinal * (Math.cos(helixAngle) * Ny) + legPullY;
+    const pz = cz + tubeFinal * Math.sin(helixAngle);
 
     positions.push(px, py, pz);
     aAlongArr.push(s);
@@ -730,63 +737,66 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
       const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
 
-      // ── TEARDROP SHAPE ────────────────────────────────────────────────────
+      // ── TEARDROP SHAPE WITH CONVERGING LEGS ──────────────────────────────
       // The leading edge (top of arc, t≈0) is fattest.
-      // Tube radius tapers toward the trailing legs (t→±halfSpan).
-      // taper(t) = 1.0 at t=0 (front), falls to ~0.35 at the tips.
+      // Legs taper smoothly to ZERO radius at the tips — they pinch closed.
+      // Additionally the leg tips are pulled inward (-Y, toward Sun) so the
+      // shape converges rather than ending bluntly — like a real CME flux rope.
       //
-      // ── BACK DEPTH (60% extra) ───────────────────────────────────────────
-      // A second pass distributes particles behind the arc centrepoint,
-      // offset along the -Y (toward-Sun) axis.  This gives front-to-back
-      // depth without going all the way back to the Sun.
-      // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
-      // Density falls off toward the tail so it looks like a tear, not a box.
+      // ── BACK DEPTH ───────────────────────────────────────────────────────
+      // A second pass fills behind the arc giving front-to-back depth.
 
-      const backDepthFrac = 3.00; // how far back the tail extends as fraction of arcR
-      // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
+      const backDepthFrac = 3.50; // user-tuned tail length
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
 
-      // Main arc particles — tapered tube
+      // How far the leg tips pull back toward the Sun (in normalised arc units).
+      // 0 = no convergence, 0.5 = tips pull halfway back to Sun.
+      const LEG_CONVERGENCE = 0.55;
+
+      // Main arc particles — fully tapered legs, converging tips
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Taper: cos²(t / halfSpan * π/2) gives 1.0 at t=0, 0.0 at t=±halfSpan
-        // We floor it at 0.35 so the tips still have some body
-        const taper    = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const tubeR    = baseTubeR * taper;
-        const rho      = Math.sqrt(Math.random()) * tubeR;
-        const phi      = Math.random() * 2 * Math.PI;
-        pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
+        // Taper: smoothstep to zero at the tips — no floor, legs pinch closed
+        const tNorm  = Math.abs(t) / hs;                         // 0 at front, 1 at tips
+        const taper  = Math.pow(1.0 - tNorm, 1.4);              // smooth falloff to 0
+        const tubeR  = baseTubeR * taper;
+
+        // Pull tip inward: offset in -Y proportional to how close we are to the tip
+        const legPullY = -tNorm * tNorm * LEG_CONVERGENCE * arcR;
+
+        const rho = Math.sqrt(Math.random()) * tubeR;
+        const phi = Math.random() * 2 * Math.PI;
+        pos.push(
+          cx + rho * Math.cos(phi) * Nx,
+          cy + rho * Math.cos(phi) * Ny + legPullY,
+          rho * Math.sin(phi)
+        );
       }
 
-      // Tail depth particles — fill behind the arc in the -Y direction
-      // (toward Sun in local space, since +Y = propagation direction)
+      // Tail depth particles — same taper + convergence, depth fills the body
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Depth offset: random penetration behind the arc surface in -Y local space
-        // More particles near 0 depth (front), fewer at full backDepth (tail tip)
-        // sqrt distribution biases toward front — gives the "rounded bullet" feel
-        const depthFrac = Math.pow(Math.random(), 1.6); // bias toward front
-        const depthY    = -depthFrac * backDepthFrac * arcR; // negative = toward Sun
+        const tNorm      = Math.abs(t) / hs;
+        const arcTaper   = Math.pow(1.0 - tNorm, 1.4);
+        const legPullY   = -tNorm * tNorm * LEG_CONVERGENCE * arcR;
 
-        // Tube radius at this depth also tapers — narrower deeper in the tail
-        // and narrower toward arc tips (same taper as main arc)
-        const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const depthTaper = 1.0 - depthFrac * 0.65; // narrow toward tail tip
+        const depthFrac  = Math.pow(Math.random(), 1.6);
+        const depthY     = -depthFrac * backDepthFrac * arcR;
+        const depthTaper = 1.0 - depthFrac * 0.65;
         const tubeR      = baseTubeR * arcTaper * depthTaper;
         const rho        = Math.sqrt(Math.random()) * tubeR;
         const phi        = Math.random() * 2 * Math.PI;
 
-        // Offset the particle backward in Y (local propagation axis)
         pos.push(
           cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny + depthY,
+          cy + rho * Math.cos(phi) * Ny + depthY + legPullY,
           rho * Math.sin(phi)
         );
       }
