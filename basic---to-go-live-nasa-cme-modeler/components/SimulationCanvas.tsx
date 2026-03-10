@@ -735,40 +735,46 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
       const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
 
-      // ── CME SHAPE: ANALYTIC RAINDROP ─────────────────────────────────────
+      // ── CME SHAPE: TRUE TEARDROP ──────────────────────────────────────────
       //
-      // We define the shape analytically rather than via a sampled envelope.
+      // Silhouette: bulging rounded front (nose), continuously narrowing body,
+      // converging to a single point at the tail toward the Sun.
       //
-      // The CME has:
-      //   • A nose at Y=0 (leading edge, widest point at the arc belly)
-      //   • A tail point at Y = legTipY (two legs converge here)
+      // Cross-section half-width at depth fraction f ∈ [0,1] (0=nose, 1=tail):
+      //   hw(f) = maxHalfWidth * (1-f)^nosePow * f^tailPow  -- NO, that peaks mid.
       //
-      // Cross-section width at depth fraction f ∈ [0,1]  (0=nose, 1=tail):
-      //   halfWidth(f) = maxHalfWidth * sin(f * π)^sharpness
+      // Correct formula for "fat front, pointed tail":
+      //   hw(f) = maxHalfWidth * sqrt(1 - f) * (1 - f*f*tailSharpness)
       //
-      //   sin(f*π) peaks at f=0.5 (middle of body) and goes to 0 at both ends.
-      //   This gives a natural raindrop — narrow at nose, widest in the middle,
-      //   narrowing again to a point at the tail.
+      // Actually simplest correct approach:
+      //   Think of it as half an ellipse at the nose blending into a cone to tail.
+      //   hw(f) = maxHalfWidth * sqrt(max(0, 1 - f^tailPow))
+      //   tailPow < 1 = very gradual taper (fat cigar)
+      //   tailPow = 1 = linear taper (cone/triangle)
+      //   tailPow > 1 = fast initial taper then slow (teardrop — round front, pinched tail)
       //
-      // Surface particles trace the converging arc (the "skin").
-      // Interior fill particles are placed analytically inside the raindrop.
+      // We want: round at nose (slow start), then taper to point.
+      // Use tailPow = 0.6 — starts wide, tapers continuously to zero.
 
-      const bStart  = 0.68;
-      const legTipY = arcR * (Math.cos(hs) - 1); // natural Y of leg tips (negative)
-      const noseY   = 0.0;
-      const yRange  = noseY - legTipY; // total depth of CME (positive)
+      const bStart       = 0.68;
+      const legTipY      = arcR * (Math.cos(hs) - 1);
+      const noseY        = 0.0;
+      // Extend tail further back toward the Sun
+      const tailExtend   = 2.8; // multiplier — how far past legTipY the tail reaches
+      const tailY        = legTipY * tailExtend; // more negative = further toward Sun
+      const yRange       = noseY - tailY;
 
-      // Maximum half-width: the outermost X the arc reaches
-      const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR;
+      // Max half-width: arc's widest X extent
+      const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR * 0.5;
 
-      // Sharpness: higher = more pointed at nose and tail, lower = fatter oval
-      // 0.5 gives a very round teardrop, 0.35 gives a fatter body, 0.65 sharper
-      const dropSharpness = 0.45;
-
-      // Returns the allowed half-width at a given Y (negative = toward tail)
-      const getDropWidth = (y: number): number => {
-        const f = Math.max(0, Math.min(1, (noseY - y) / yRange));
-        return maxHalfWidth * Math.pow(Math.sin(f * Math.PI), dropSharpness);
+      // Teardrop profile: wide at nose (f=0), narrows to zero at tail (f=1)
+      // sqrt(1-f) gives rounded nose, linear taper; tweak exponent for shape
+      const getDropWidth = (f: number): number => {
+        // (1-f)^0.5 = round nose, slow taper
+        // (1-f)^0.7 = slightly more pointed nose
+        // We use a blend: nose is circular arc, body tapers as power curve
+        const clamped = Math.max(0, Math.min(1, f));
+        return maxHalfWidth * Math.pow(1.0 - clamped, 0.55);
       };
 
       // Converged arc centreline for surface particles
@@ -781,10 +787,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         return { cx: cx0 * (1 - w), cy: cy0 + (legTipY - cy0) * w, tN };
       };
 
-      const surfaceCount = Math.floor(pCount * 0.40);
+      const surfaceCount = Math.floor(pCount * 0.35);
       const fillCount    = pCount - surfaceCount;
 
-      // Surface: arc skin particles
+      // Surface: arc skin particles (the bright outer ring/shell)
       for (let i = 0; i < surfaceCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const { cx, cy, tN } = getArcCentre(t);
@@ -800,16 +806,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         );
       }
 
-      // Interior fill: analytic raindrop cross-section
+      // Interior fill: true teardrop — fat nose, long tapering tail to a point
       for (let i = 0; i < fillCount; i++) {
-        // Sample Y linearly (sin(f*π) already gives front-heavy density naturally)
-        const f  = Math.random();
+        // f=0 → nose (Y=0), f=1 → tail point (Y=tailY)
+        // Bias sampling toward nose so front is denser
+        const f  = Math.pow(Math.random(), 0.7);
         const py = noseY - f * yRange;
 
-        const hw = getDropWidth(py);
-        if (hw < 0.001) continue;
+        const hw = getDropWidth(f);
+        if (hw < 0.0005) continue;
 
-        // Random XZ within the teardrop cross-section at this Y
         const angle = Math.random() * Math.PI * 2;
         const r     = Math.sqrt(Math.random()) * hw;
         pos.push(
