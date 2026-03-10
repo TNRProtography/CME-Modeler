@@ -498,28 +498,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           ? calculateCurrentSpeed(cme, timeSinceEventSeconds)
           : cme.speed;
 
-        // Only show shock for fast CMEs — below threshold it vanishes
-        if (liveSpeed < SHOCK_SPEED_THRESHOLD_KMS) {
+        // Shock fades in above threshold and fades OUT gradually below it.
+        // We never hard-hide — opacity drives visibility.
+        // Full fade window: threshold down to (threshold - FADE_WINDOW) km/s.
+        const FADE_WINDOW = 300; // km/s over which shock fades to zero
+        const fadeFloor   = SHOCK_SPEED_THRESHOLD_KMS - FADE_WINDOW;
+
+        let shockOpacity: number;
+        if (liveSpeed >= SHOCK_SPEED_THRESHOLD_KMS) {
+          // Above threshold: scale 0→0.55 as speed rises from threshold to 3000
+          const t = (liveSpeed - SHOCK_SPEED_THRESHOLD_KMS) / (3000 - SHOCK_SPEED_THRESHOLD_KMS);
+          shockOpacity = THREE.MathUtils.clamp(t * 0.55, 0.04, 0.55);
+        } else if (liveSpeed >= fadeFloor) {
+          // Below threshold but within fade window: smoothly coast to zero
+          const t = (liveSpeed - fadeFloor) / FADE_WINDOW;  // 1→0 as speed drops
+          shockOpacity = t * t * 0.18;  // quadratic ease — lingers briefly then fades
+        } else {
+          shockOpacity = 0;
+        }
+
+        if (shockOpacity <= 0.004) {
           shock.visible = false;
         } else {
           shock.visible = true;
-          // Co-locate with CME — same position, quaternion, and XZ scale
-          // The shock geometry already has the +Y forward offset baked in,
-          // so it sits ahead of the CME leading edge automatically.
           shock.position.copy(cmeObject.position);
           shock.quaternion.copy(cmeObject.quaternion);
-          // XZ scale matches CME lateral scale; Y scale matches axial depth
           shock.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+          shock.material.opacity = shockOpacity;
 
-          // Opacity: fades in above threshold, brightens with speed
-          const speedAboveThreshold = (liveSpeed - SHOCK_SPEED_THRESHOLD_KMS) / (3000 - SHOCK_SPEED_THRESHOLD_KMS);
-          shock.material.opacity = THREE.MathUtils.clamp(speedAboveThreshold * 0.55, 0.05, 0.55);
-
-          // Shock colour is always a pale blue-white (compressed solar wind)
-          // slightly tinted toward the CME's current colour at high speeds
+          // Colour: pale blue-white, tinted toward CME colour at high speed
+          const speedT     = THREE.MathUtils.clamp((liveSpeed - SHOCK_SPEED_THRESHOLD_KMS) / (3000 - SHOCK_SPEED_THRESHOLD_KMS), 0, 1);
           const shockWhite = new THREE.Color(0x99ccff);
-          const cmeCol     = getCmeCoreColor(liveSpeed);
-          shock.material.color = shockWhite.lerp(cmeCol, speedAboveThreshold * 0.3);
+          shock.material.color = shockWhite.lerp(getCmeCoreColor(liveSpeed), speedT * 0.3);
         }
       }
     }
