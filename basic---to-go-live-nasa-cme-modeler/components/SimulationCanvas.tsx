@@ -282,6 +282,69 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   return geom;
 };
 
+// ── CURRENT SPEED CALCULATOR ──────────────────────────────────────────────────
+// Returns the instantaneous CME speed (km/s) at a given elapsed time,
+// accounting for the same deceleration model used for distance.
+// Used each frame to drive the live colour transition.
+const calculateCurrentSpeed = (cme: any, timeSinceEventSeconds: number): number => {
+  const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
+  if (u <= 300) return u;
+  const a = (1.41 - 0.0035 * u) / 1000;
+  if (a >= 0) return u + a * t;
+  const tf = (300 - u) / a;
+  return t < tf ? Math.max(300, u + a * t) : 300;
+};
+
+// ── SHOCK FRONT GEOMETRY BUILDER ──────────────────────────────────────────────
+//
+// The magnetosonic shock front precedes fast CMEs (>~600 km/s) as a thin
+// compressed region of solar wind plasma.
+//
+// SHAPE: a flat forward-facing elliptical disc of sparse particles,
+// slightly convex (domed) toward the propagation direction.
+// In GCS normalised local space, the disc lives in the X-Z plane
+// (perpendicular to +Y propagation axis) with a gentle forward bow.
+//
+// PLACEMENT: offset forward of the CME leading edge.
+// The leading edge of the croissant sits at roughly cy=0 in local space
+// (that's where the arc base is, which maps to the front after scale).
+// We push the shock FURTHER forward in +Y by SHOCK_FORWARD_FRAC.
+//
+// Only rendered when instantaneous speed > SHOCK_SPEED_THRESHOLD_KMS.
+// Opacity scales with speed above that threshold.
+
+const SHOCK_SPEED_THRESHOLD_KMS = 600;
+const SHOCK_FORWARD_FRAC        = 0.22;  // how far ahead of CME front the shock sits
+const SHOCK_PARTICLE_COUNT      = 1800;
+
+const buildShockGeometry = (THREE: any) => {
+  const pos: number[] = [];
+  const arcR = GCS_ARC_RADIUS_FRAC;
+
+  for (let i = 0; i < SHOCK_PARTICLE_COUNT; i++) {
+    // Random point in an ellipse in the X-Z plane
+    // Radius follows the CME's lateral spread — slightly wider than the CME front
+    const angle  = Math.random() * Math.PI * 2;
+    // Non-uniform radial sampling — more particles near the rim (visible edge)
+    const r      = arcR * 1.15 * Math.sqrt(0.15 + 0.85 * Math.random());
+    const px     = r * Math.cos(angle);
+    const pz     = r * Math.sin(angle);
+
+    // Gentle forward bow: particles near the centre bulge forward in +Y
+    // bow = cos²(r / maxR * π/2) — zero at edge, max at centre
+    const bowAmount = 0.08 * arcR * Math.pow(Math.cos((r / (arcR * 1.15)) * (Math.PI / 2)), 2);
+    // The shock is placed at SHOCK_FORWARD_FRAC ahead of the CME front (cy=0).
+    // Additional bow offset in local +Y
+    const py = SHOCK_FORWARD_FRAC + bowAmount;
+
+    pos.push(px, py, pz);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  return geom;
+};
+
 /** =========================================================
  *  COMPONENT
  *  ========================================================= */
@@ -339,6 +402,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const bzFieldLinesRef = useRef<any>(null);
   const bzIndicatorRef  = useRef<any>(null);
 
+  // Shock front — one Points object per CME, stored in a parallel Group
+  // Keyed by CME id via userData, co-managed with cmeGroupRef
+  const shockGroupRef   = useRef<any>(null);
+
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
@@ -390,19 +457,72 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return Math.min(1, timeSinceEventSeconds / total) * (PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE) * SCENE_SCALE;
   }, []);
 
-  // ── updateCMEShape — angular GCS expansion ───────────────────────────────
-  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
+  // ── updateCMEShape — angular GCS expansion + live colour + shock ─────────
+  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
-    if (distTraveledInSceneUnits < 0) { cmeObject.visible = false; return; }
+    if (distTraveledInSceneUnits < 0) {
+      cmeObject.visible = false;
+      // Also hide matching shock
+      if (shockGroupRef.current) {
+        const shock = shockGroupRef.current.children.find((s: any) => s.userData.id === cmeObject.userData.id);
+        if (shock) shock.visible = false;
+      }
+      return;
+    }
     cmeObject.visible = true;
     const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const dist = Math.max(0, distTraveledInSceneUnits - sunRadius);
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + dist));
-    const cme: ProcessedCME = cmeObject.userData;
+    const cme: any = cmeObject.userData;
     const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
     cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+
+    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
+    // Calculate the CME's current speed at this moment in time.
+    // As the CME decelerates, the colour shifts down through the speed key:
+    //   pink/purple (very fast) → orange/red → yellow → grey (slow)
+    // This makes deceleration visually legible.
+    if (timeSinceEventSeconds !== undefined && cmeObject.material) {
+      const liveSpeed = calculateCurrentSpeed(cme, timeSinceEventSeconds);
+      cmeObject.material.color = getCmeCoreColor(liveSpeed);
+    }
+
+    // ── SHOCK FRONT ──────────────────────────────────────────────────────────
+    // Sync the matching shock object's position, scale, and opacity.
+    if (shockGroupRef.current) {
+      const shock = shockGroupRef.current.children.find((s: any) => s.userData.id === cme.id);
+      if (shock) {
+        const liveSpeed = timeSinceEventSeconds !== undefined
+          ? calculateCurrentSpeed(cme, timeSinceEventSeconds)
+          : cme.speed;
+
+        // Only show shock for fast CMEs — below threshold it vanishes
+        if (liveSpeed < SHOCK_SPEED_THRESHOLD_KMS) {
+          shock.visible = false;
+        } else {
+          shock.visible = true;
+          // Co-locate with CME — same position, quaternion, and XZ scale
+          // The shock geometry already has the +Y forward offset baked in,
+          // so it sits ahead of the CME leading edge automatically.
+          shock.position.copy(cmeObject.position);
+          shock.quaternion.copy(cmeObject.quaternion);
+          // XZ scale matches CME lateral scale; Y scale matches axial depth
+          shock.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+
+          // Opacity: fades in above threshold, brightens with speed
+          const speedAboveThreshold = (liveSpeed - SHOCK_SPEED_THRESHOLD_KMS) / (3000 - SHOCK_SPEED_THRESHOLD_KMS);
+          shock.material.opacity = THREE.MathUtils.clamp(speedAboveThreshold * 0.55, 0.05, 0.55);
+
+          // Shock colour is always a pale blue-white (compressed solar wind)
+          // slightly tinted toward the CME's current colour at high speeds
+          const shockWhite = new THREE.Color(0x99ccff);
+          const cmeCol     = getCmeCoreColor(liveSpeed);
+          shock.material.color = shockWhite.lerp(cmeCol, speedAboveThreshold * 0.3);
+        }
+      }
+    }
   }, [THREE]);
 
   useEffect(() => {
@@ -447,6 +567,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     controlsRef.current = controls;
 
     cmeGroupRef.current = new THREE.Group(); scene.add(cmeGroupRef.current);
+
+    // Shock front group — parallel to cmeGroup, one Points child per CME
+    shockGroupRef.current = new THREE.Group(); scene.add(shockGroupRef.current);
 
     // Legacy torus — kept for import compatibility, hidden by default
     const fluxRopeMat = new THREE.ShaderMaterial({
@@ -603,18 +726,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s)); });
+        cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
       } else {
         cmeGroupRef.current.children.forEach((c: any) => {
-          let d = 0;
+          let d = 0; let tSec = 0;
           if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
             const cme = c.userData, t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
-            d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, t < 0 ? 0 : t) : calculateDistanceWithDeceleration(cme, t < 0 ? 0 : t);
+            tSec = t < 0 ? 0 : t;
+            d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, tSec) : calculateDistanceWithDeceleration(cme, tSec);
           } else if (!currentlyModeledCMEId) {
             const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
-            d = calculateDistanceWithDeceleration(c.userData, t < 0 ? 0 : t);
+            tSec = t < 0 ? 0 : t;
+            d = calculateDistanceWithDeceleration(c.userData, tSec);
           } else { updateCMEShape(c, -1); return; }
-          updateCMEShape(c, d);
+          updateCMEShape(c, d, tSec);
         });
       }
 
@@ -695,6 +820,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if ((c as any).geometry) (c as any).geometry.dispose();
       if ((c as any).material) { const m = (c as any).material; if (Array.isArray(m)) m.forEach((x: any) => x.dispose()); else m.dispose(); }
     }
+    // Also clear shocks so they're rebuilt in sync
+    if (shockGroupRef.current) {
+      while (shockGroupRef.current.children.length > 0) {
+        const s = shockGroupRef.current.children[0]; shockGroupRef.current.remove(s);
+        if ((s as any).geometry) (s as any).geometry.dispose();
+        if ((s as any).material) (s as any).material.dispose();
+      }
+    }
     const pt = createParticleTexture(THREE);
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
@@ -712,7 +845,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
       // Density falls off toward the tail so it looks like a tear, not a box.
 
-      const backDepthFrac = 3.50; // how far back the tail extends as fraction of arcR
+      const backDepthFrac = 0.60; // how far back the tail extends as fraction of arcR
       // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
@@ -766,6 +899,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
+
+      // ── SHOCK FRONT PARTICLE SYSTEM ────────────────────────────────────────
+      // One shock object per CME, added to shockGroupRef.
+      // Starts hidden — updateCMEShape() shows/hides it based on live speed.
+      if (shockGroupRef.current) {
+        const shockGeom = buildShockGeometry(THREE);
+        const shockMat  = new THREE.PointsMaterial({
+          size: getCmeParticleSize(cme.speed, SCENE_SCALE) * 0.7,  // slightly smaller than CME particles
+          sizeAttenuation: true,
+          map: pt,
+          transparent: true,
+          opacity: 0,           // starts transparent — updateCMEShape sets it
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          color: new THREE.Color(0x99ccff),  // pale blue shock colour
+        });
+        const shockSystem = new THREE.Points(shockGeom, shockMat);
+        shockSystem.userData = { id: cme.id };  // keyed by CME id for lookup
+        shockSystem.quaternion.copy(system.quaternion);  // same orientation as CME
+        shockSystem.visible = false;
+        shockGroupRef.current.add(shockSystem);
+      }
     });
   }, [cmeData, getClockElapsedTime]);
 
@@ -776,6 +931,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cm.visible = !currentlyModeledCMEId || cm.userData.id === currentlyModeledCMEId;
       if (cm.userData.id === currentlyModeledCMEId) cm.userData.simulationStartTime = getClockElapsedTime();
     });
+    // Sync shock visibility to match CME visibility
+    if (shockGroupRef.current) {
+      shockGroupRef.current.children.forEach((shock: any) => {
+        const visible = !currentlyModeledCMEId || shock.userData.id === currentlyModeledCMEId;
+        if (!visible) shock.visible = false; // updateCMEShape will re-show if speed qualifies
+      });
+    }
     if (!THREE || !sceneRef.current) return;
     if (predictionLineRef.current) { sceneRef.current.remove(predictionLineRef.current); predictionLineRef.current.geometry.dispose(); predictionLineRef.current.material.dispose(); predictionLineRef.current = null; }
     const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
