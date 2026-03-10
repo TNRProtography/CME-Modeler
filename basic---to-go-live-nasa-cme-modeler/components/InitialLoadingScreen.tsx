@@ -211,6 +211,9 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
           alt="TNR Protography Logo"
           className="w-full max-w-xs h-auto mb-8 animate-pulse"
           style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
+          width={560}
+          height={247}
+          fetchPriority="high"
         />
         <p className="text-neutral-200 text-lg font-medium tracking-wide text-center w-80 h-12 transition-opacity duration-300">
           {statusText || SLOGANS[sloganIndex]}
