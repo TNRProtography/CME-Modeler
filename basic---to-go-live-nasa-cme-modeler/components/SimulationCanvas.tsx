@@ -428,8 +428,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     px: number; py: number; pz: number;   // world position
     speed: number;                          // current km/s
     dx: number; dy: number; dz: number;   // unit propagation direction
-    compression: number;                   // 0=normal, 1=fully squished
-    deflectionX: number; deflectionZ: number; // cumulative direction offset in world
+    tailCompression: number;               // 0=normal tail, 1=fully compressed to nose
   }
   const trajectoryCacheRef = useRef<Map<string, CachedCMEState>[]>([]);
   const cacheStepSizeMs    = 60 * 1000; // 60-second steps
@@ -450,23 +449,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const SS      = SCENE_SCALE;
 
     // ── Physics tuning constants ─────────────────────────────────────────
-    // Validated against real CME-CME interaction observations (STEREO/SOHO):
-    //   - Glancing hit (6hr overlap): ~7° deflection, ~3% speed change  ✓
-    //   - Direct hit (12hr overlap): ~5° deflection, ~34% speed equalisation ✓
-    //   - Violent cannibalism (24hr): capped at 25° deflection, ~68% merge  ✓
-    const SPEED_TRANSFER_RATE  = 0.0008; // per step, scaled by headOn × overlapFrac
-    const MAX_DEFLECT_PER_STEP = 0.0012; // radians/step, scaled by lateral × overlapFrac
-    const MAX_DEFLECT_TOTAL    = 0.436;  // hard cap per pair = 25 degrees total
+    const SPEED_TRANSFER_RATE   = 0.0008; // per step, scaled by headOn × overlapFrac
+    const MAX_DEFLECT_PER_STEP  = 0.0012; // radians/step, scaled by lateral × overlapFrac
+    const MAX_DEFLECT_TOTAL     = 0.436;  // hard cap per pair = 25 degrees total
+    // Tail compression: how fast the front CME's tail squashes under rear pressure.
+    // 0.0003/step means a direct sustained hit compresses ~20% over 6 hours.
+    const COMPRESS_RATE         = 0.0003;
+    // Once tail is compressed to this fraction of normal, start pushing front CME forward
+    const COMPRESS_SPEED_THRESHOLD = 0.65; // tail at 65% normal length triggers speed boost
 
     // Initialise mutable state for each CME
     interface MutState {
       id: string;
-      speed: number;        // km/s
-      dx: number; dy: number; dz: number; // unit direction (world)
-      distKm: number;       // km from Sun centre along direction
-      startMs: number;      // when CME left Sun
-      halfAngle: number;    // degrees
+      speed: number;
+      dx: number; dy: number; dz: number;
+      distKm: number;
+      startMs: number;
+      halfAngle: number;
       active: boolean;
+      tailCompression: number; // 0=normal, 1=fully squashed — permanent, never decreases
     }
 
     const states = new Map<string, MutState>();
@@ -486,6 +487,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         startMs: cme.startTime.getTime(),
         halfAngle: cme.halfAngle ?? 30,
         active: false,
+        tailCompression: 0,
       });
     });
 
@@ -547,68 +549,53 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const headOn = Math.abs(A.dx*nx + A.dy*ny + A.dz*nz);
           const lateral = 1 - headOn; // 0=head-on, 1=glancing
 
-          // ── Determine FRONT vs REAR CME ───────────────────────────────
-          // Front = further from Sun (larger distKm). Rear = closer, catching up.
-          // The rear CME is the one that deflects and warps.
-          // The front CME only speeds up (pushed), never deflects — unless the
-          // rear is dramatically faster (>2x), in which case a tiny nudge applies.
+          // ── Determine FRONT vs REAR ───────────────────────────────────
+          // Front = further from Sun. Rear = closer, catching up.
           const front = A.distKm >= B.distKm ? A : B;
           const rear  = A.distKm >= B.distKm ? B : A;
-          const speedRatio = rear.speed / Math.max(1, front.speed);
-
-          // ── Speed transfer ────────────────────────────────────────────
-          // Front CME gets pushed (accelerated toward rear's speed, partially).
-          // Rear CME gets slowed (braked by the wall in front of it).
-          // Rate scales with how head-on the collision is.
-          const transferRate = SPEED_TRANSFER_RATE * headOn * overlapFrac;
-          // How much speed can transfer — proportional to speed differential
           const speedDiff = Math.max(0, rear.speed - front.speed);
-          // Front accelerates a fraction of the differential
-          front.speed = Math.max(MIN_SPD, front.speed + speedDiff * transferRate * 0.6);
-          // Rear brakes by the same energy conservation
-          rear.speed  = Math.max(MIN_SPD, rear.speed  - speedDiff * transferRate * 0.4);
 
-          // ── Direction deflection — REAR ONLY ─────────────────────────
-          // The rear CME deflects around the front one like water around a rock.
-          // The front CME only deflects if the rear is >2x faster (violent hit).
-          const pairKey = front.id < rear.id ? `${front.id}_${rear.id}` : `${rear.id}_${front.id}`;
+          // ── FRONT CME: tail compression + conditional speed boost ─────
+          // Pressure from rear squashes the front CME's tail permanently.
+          // Rate scales with speed differential and overlap depth.
+          const pressureIntensity = overlapFrac * Math.min(1, speedDiff / 500);
+          const compressionDelta  = COMPRESS_RATE * pressureIntensity;
+          front.tailCompression   = Math.min(1, front.tailCompression + compressionDelta);
+
+          // Once tail is compressed past threshold, energy transfers to forward speed
+          const tailLength = 1 - front.tailCompression; // 1=full, 0=fully squashed
+          if (tailLength < COMPRESS_SPEED_THRESHOLD) {
+            // How far past threshold — more compression = more push
+            const excess = (COMPRESS_SPEED_THRESHOLD - tailLength) / COMPRESS_SPEED_THRESHOLD;
+            const speedBoost = speedDiff * SPEED_TRANSFER_RATE * excess * headOn;
+            front.speed = Math.max(front.speed, front.speed + speedBoost);
+            // Rear brakes as it transfers energy
+            rear.speed = Math.max(MIN_SPD, rear.speed - speedBoost * 0.5);
+          }
+
+          // ── REAR CME: deflect sideways around the front ───────────────
+          // Front CME has ZERO lateral movement — it is a wall.
+          // Rear CME steers around it, more so on glancing hits.
+          const pairKey = front.id < rear.id
+            ? `${front.id}_${rear.id}` : `${rear.id}_${front.id}`;
           const alreadyDeflected = pairDeflectionAccum.get(pairKey) ?? 0;
           const remainingBudget  = Math.max(0, MAX_DEFLECT_TOTAL - alreadyDeflected);
           const rawDeflect = MAX_DEFLECT_PER_STEP * lateral * overlapFrac;
           const deflectMag = Math.min(rawDeflect, remainingBudget);
           pairDeflectionAccum.set(pairKey, alreadyDeflected + deflectMag);
 
-          // Deflect REAR CME around the front one
-          // Axis = cross(rear.dir, separationNormal) — steers rear sideways
-          const crx = rear.dy*nz - rear.dz*ny;
-          const cry = rear.dz*nx - rear.dx*nz;
-          const crz = rear.dx*ny - rear.dy*nx;
-          const crLen = Math.sqrt(crx*crx + cry*cry + crz*crz);
-          if (crLen > 0.001 && deflectMag > 0) {
-            const il = deflectMag / crLen;
-            rear.dx += (cry*rear.dz - crz*rear.dy) * il;
-            rear.dy += (crz*rear.dx - crx*rear.dz) * il;
-            rear.dz += (crx*rear.dy - cry*rear.dx) * il;
-            const lenR = Math.sqrt(rear.dx*rear.dx + rear.dy*rear.dy + rear.dz*rear.dz);
-            rear.dx /= lenR; rear.dy /= lenR; rear.dz /= lenR;
-          }
-
-          // Front CME: tiny deflection only if rear is dramatically faster (>2x)
-          // This represents the violent "cannibalism" scenario
-          if (speedRatio > 2.0 && remainingBudget > 0) {
-            const violentFrac = Math.min(1, (speedRatio - 2.0) / 2.0); // 0 at 2x, 1 at 4x
-            const frontDeflect = deflectMag * violentFrac * 0.15; // max 15% of rear deflect
-            const cfx = front.dy*nz - front.dz*ny;
-            const cfy = front.dz*nx - front.dx*nz;
-            const cfz = front.dx*ny - front.dy*nx;
-            const cfLen = Math.sqrt(cfx*cfx + cfy*cfy + cfz*cfz);
-            if (cfLen > 0.001 && frontDeflect > 0) {
-              const il = frontDeflect / cfLen;
-              front.dx += (cfy*front.dz - cfz*front.dy) * il;
-              front.dy += (cfz*front.dx - cfx*front.dz) * il;
-              front.dz += (cfx*front.dy - cfy*front.dx) * il;
-              const lenF = Math.sqrt(front.dx*front.dx + front.dy*front.dy + front.dz*front.dz);
-              front.dx /= lenF; front.dy /= lenF; front.dz /= lenF;
+          if (deflectMag > 0) {
+            const crx = rear.dy*nz - rear.dz*ny;
+            const cry = rear.dz*nx - rear.dx*nz;
+            const crz = rear.dx*ny - rear.dy*nx;
+            const crLen = Math.sqrt(crx*crx + cry*cry + crz*crz);
+            if (crLen > 0.001) {
+              const il = deflectMag / crLen;
+              rear.dx += (cry*rear.dz - crz*rear.dy) * il;
+              rear.dy += (crz*rear.dx - crx*rear.dz) * il;
+              rear.dz += (crx*rear.dy - cry*rear.dx) * il;
+              const lenR = Math.sqrt(rear.dx*rear.dx + rear.dy*rear.dy + rear.dz*rear.dz);
+              rear.dx /= lenR; rear.dy /= lenR; rear.dz /= lenR;
             }
           }
         }
@@ -623,8 +610,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           px: worldX, py: worldY, pz: worldZ,
           speed: s.speed,
           dx: s.dx, dy: s.dy, dz: s.dz,
-          compression: 0,
-          deflectionX: 0, deflectionZ: 0,
+          tailCompression: s.tailCompression,
         });
       });
 
@@ -995,34 +981,62 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // ── CME TAIL WOBBLE ──────────────────────────────────────────────────
-      // Applies a jelly/flag oscillation to tail particles each frame.
-      // Only particles with tailFrac > 0 (rear 60% of body) are affected.
-      // Two overlapping sine waves at different frequencies for organic motion.
-      if (WOBBLE_STRENGTH > 0) {
+      // ── CME TAIL WOBBLE + COMPRESSION ───────────────────────────────────
+      // Wobble: jelly oscillation on rear particles.
+      // Compression: tail particles permanently pushed toward nose when a
+      //              faster rear CME has squashed the front CME's tail.
+      {
         cmeGroupRef.current.children.forEach((c: any) => {
           if (!c.visible) return;
           const ud = c.userData;
           if (!ud.basePositions || !ud.tailFractions) return;
-          const bp  = ud.basePositions  as Float32Array;
-          const tf  = ud.tailFractions  as Float32Array;
-          const wp  = ud.wobblePhases   as Float32Array;
+          const bp     = ud.basePositions as Float32Array;
+          const tf     = ud.tailFractions as Float32Array;
+          const wp     = ud.wobblePhases  as Float32Array;
           const posArr = c.geometry.attributes.position.array as Float32Array;
-          const n   = tf.length;
-          const maxR = (ud.noseTopY ?? GCS_ARC_RADIUS_FRAC) * GCS_ARC_RADIUS_FRAC;
+          const n      = tf.length;
+          const maxR   = (ud.noseTopY ?? GCS_ARC_RADIUS_FRAC) * GCS_ARC_RADIUS_FRAC;
+
+          // Get this CME's current compression from trajectory cache
+          const tMs = animPropsRef.current.timelineActive
+            ? animPropsRef.current.timelineMinDate +
+              (animPropsRef.current.timelineMaxDate - animPropsRef.current.timelineMinDate) *
+              (timelineValueRef.current / 1000)
+            : Date.now();
+          const cached = getCachedState(ud.id, tMs, animPropsRef.current.timelineMinDate);
+          const compression = cached?.tailCompression ?? 0;
+
+          // tailCompression pushes rear particles upward (toward nose) in local Y.
+          // A particle at tailFrac=1 (tip) gets pushed by full compression distance.
+          // A particle at tailFrac=0 (nose) is unaffected.
+          // The push distance in local Y = compression × totalHeight × tailFrac²
+          // (squared so mid-body barely moves, only the actual tail gets squashed)
+          const totalHeight = ud.totalHeight ?? 1;
 
           for (let i = 0; i < n; i++) {
-            const frac = tf[i];
-            if (frac <= 0) continue;
-            const phase = wp[i];
-            // Two-frequency wobble: slow rolling wave + faster flutter
-            // tailFrac^1.5 means tip wobbles much more than mid-body
-            const amp = WOBBLE_STRENGTH * maxR * Math.pow(frac, 1.5);
-            const slow = Math.sin(elapsedTime * 0.8 + phase);
-            const fast = Math.sin(elapsedTime * 2.1 + phase * 1.7) * 0.35;
-            const offset = amp * (slow + fast);
-            posArr[i * 3]     = bp[i * 3]     + offset;           // wobble in X
-            posArr[i * 3 + 2] = bp[i * 3 + 2] + offset * 0.4;    // subtle Z coupling
+            const frac  = tf[i];
+            const baseX = bp[i * 3];
+            const baseY = bp[i * 3 + 1];
+            const baseZ = bp[i * 3 + 2];
+
+            // ── Compression offset (Y only — push tail toward nose) ──────
+            const compressionPush = compression * totalHeight * frac * frac;
+
+            // ── Wobble offset (X and Z only — lateral jelly motion) ──────
+            let wobbleX = 0, wobbleZ = 0;
+            if (WOBBLE_STRENGTH > 0 && frac > 0) {
+              const phase = wp[i];
+              const amp   = WOBBLE_STRENGTH * maxR * Math.pow(frac, 1.5);
+              const slow  = Math.sin(elapsedTime * 0.8 + phase);
+              const fast  = Math.sin(elapsedTime * 2.1 + phase * 1.7) * 0.35;
+              const wOff  = amp * (slow + fast);
+              wobbleX = wOff;
+              wobbleZ = wOff * 0.4;
+            }
+
+            posArr[i * 3]     = baseX + wobbleX;
+            posArr[i * 3 + 1] = baseY + compressionPush; // push tail up toward nose
+            posArr[i * 3 + 2] = baseZ + wobbleZ;
           }
           c.geometry.attributes.position.needsUpdate = true;
         });
