@@ -480,21 +480,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
     cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
 
-    // Set uLaunch the very first time this CME becomes visible (elastic spring start)
-    if (cmeObject.material?.uniforms) {
-      const u = cmeObject.material.uniforms;
-      if (u.uLaunch.value > 1e8) {
-        u.uLaunch.value = u.uTime.value; // latch launch time
-      }
-    }
-
     // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
-    if (timeSinceEventSeconds !== undefined && cmeObject.material?.uniforms) {
+    if (timeSinceEventSeconds !== undefined && cmeObject.material) {
       const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
       const a = (1.41 - 0.0035 * u) / 1000;
       const tf = a < 0 ? (300 - u) / a : Infinity;
       const liveSpeed = u <= 300 ? u : t < tf ? Math.max(300, u + a * t) : 300;
-      cmeObject.material.uniforms.uColor.value = new THREE.Color(getCmeCoreColor(liveSpeed));
+      cmeObject.material.color = getCmeCoreColor(liveSpeed);
     }
   }, [THREE]);
 
@@ -713,7 +705,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => { if (c.material?.uniforms?.uTime) { c.material.uniforms.uTime.value = elapsedTime; c.material.uniforms.uOpacity.value = getCmeOpacity(c.userData.speed); } });
+      cmeGroupRef.current.children.forEach((c: any) => { if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed); });
 
       if (timelineActive) {
         if (timelinePlaying) {
@@ -852,10 +844,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const surfaceCount = Math.floor(pCount * 0.35);
       const fillCount    = pCount - surfaceCount;
 
-      // localY stores tail fraction per particle: 0=nose, 1=tail tip
-      const localYArr:    number[] = [];
-      const randPhaseArr: number[] = [];
-
       // Surface arc skin
       for (let i = 0; i < surfaceCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
@@ -865,13 +853,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const tubeR = baseTubeR * taper;
         const rho   = Math.sqrt(Math.random()) * tubeR;
         const phi   = Math.random() * 2 * Math.PI;
-        const px = cx + rho * Math.cos(phi) * Nx;
-        const py = cy + rho * Math.cos(phi) * Ny;
-        const pz = rho * Math.sin(phi);
-        pos.push(px, py, pz);
-        // tail fraction: arc particles live near nose (cy is slightly negative)
-        localYArr.push(Math.max(0, Math.min(1, (noseY - py) / yRange)));
-        randPhaseArr.push(Math.random() * Math.PI * 2);
+        pos.push(
+          cx + rho * Math.cos(phi) * Nx,
+          cy + rho * Math.cos(phi) * Ny,
+          rho * Math.sin(phi)
+        );
       }
 
       // Interior teardrop fill
@@ -883,30 +869,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const angle = Math.random() * Math.PI * 2;
         const r     = Math.sqrt(Math.random()) * hw;
         pos.push(r * Math.cos(angle), py, r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC);
-        localYArr.push(f);  // f IS the tail fraction for fill particles
-        randPhaseArr.push(Math.random() * Math.PI * 2);
       }
 
       const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position',   new THREE.Float32BufferAttribute(pos, 3));
-      geom.setAttribute('aLocalY',    new THREE.Float32BufferAttribute(localYArr, 1));
-      geom.setAttribute('aRandPhase', new THREE.Float32BufferAttribute(randPhaseArr, 1));
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
 
-      const col = getCmeCoreColor(cme.speed);
-      const mat = new THREE.ShaderMaterial({
-        uniforms: {
-          uTime:    { value: 0 },
-          uLaunch:  { value: 1e9 }, // set when CME becomes visible
-          uSize:    { value: getCmeParticleSize(cme.speed, SCENE_SCALE) * 300 },
-          uColor:   { value: new THREE.Color(col) },
-          uOpacity: { value: getCmeOpacity(cme.speed) },
-          uMap:     { value: pt },
-        },
-        vertexShader:   CME_TAIL_VERTEX_SHADER,
-        fragmentShader: CME_TAIL_FRAGMENT_SHADER,
+      const mat = new THREE.PointsMaterial({
+        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
+        sizeAttenuation: true,
+        map: pt,
         transparent: true,
-        depthWrite:  false,
-        blending:    THREE.AdditiveBlending,
+        opacity: getCmeOpacity(cme.speed),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        color: getCmeCoreColor(cme.speed),
       });
       const system = new THREE.Points(geom, mat); system.userData = cme;
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
