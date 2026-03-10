@@ -393,9 +393,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       .then(() => { threeLoadedRef.current = true; setThreeReady(true); });
   }, []);
 
-  const THREE = (window as any).THREE;
-  const gsap  = (window as any).gsap;
-
   useEffect(() => { timelineValueRef.current = timelineValue; }, [timelineValue]);
 
   const MIN_CME_SPEED_KMS = 300;
@@ -421,6 +418,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   // ── updateCMEShape — angular GCS expansion + live colour ─────────────────
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
+    const THREE = (window as any).THREE;
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
     if (distTraveledInSceneUnits < 0) {
@@ -446,7 +444,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const liveSpeed = u <= 300 ? u : t < tf ? Math.max(300, u + a * t) : 300;
       cmeObject.material.color = getCmeCoreColor(liveSpeed);
     }
-  }, [THREE]);
+  }, []);
 
   useEffect(() => {
     if (!mountRef.current || rendererRef.current) return;
