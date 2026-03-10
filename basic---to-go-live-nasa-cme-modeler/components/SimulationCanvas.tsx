@@ -127,25 +127,26 @@ const BZ_INDICATOR_FRAGMENT_SHADER = `
     vec3 col = mix(northColor, southColor, uBzSouth);
 
     // Arrow shaft (vertical centre strip)
-    float shaft = step(abs(p.x), 0.08) * step(abs(p.y), 0.55);
+    float shaft = step(abs(p.x), 0.10) * step(abs(p.y), 0.58);
 
     // Arrowhead — points UP for north (+Y), DOWN for south (-Y)
-    float arrowDir = uBzSouth > 0.5 ? -1.0 : 1.0;
-    float headY    = arrowDir * 0.55;
-    float headDist = arrowDir * (p.y - headY);
-    float headWidth = 0.28 * headDist;
-    float head = step(0.0, headDist) * step(abs(p.x), headWidth) * step(headDist, 0.35);
+    float arrowDir  = uBzSouth > 0.5 ? -1.0 : 1.0;
+    float headY     = arrowDir * 0.58;
+    float headDist  = arrowDir * (p.y - headY);
+    float headWidth = 0.30 * headDist;
+    float head = step(0.0, headDist) * step(abs(p.x), headWidth) * step(headDist, 0.38);
 
     float arrow = clamp(shaft + head, 0.0, 1.0);
-    float pulse = 0.75 + 0.25 * sin(uTime * 2.5);
+    float pulse = 0.78 + 0.22 * sin(uTime * 2.5);
 
-    // Semi-transparent dark disc background
-    float bgAlpha  = 0.38 * (1.0 - smoothstep(0.78, 0.92, dist));
-    vec3 finalCol  = mix(vec3(0.0), col * pulse, arrow);
-    float finalAlpha = bgAlpha + arrow * 0.82 * pulse;
-    finalAlpha *= 1.0 - smoothstep(0.82, 0.92, dist);
+    // NO dark disc background — arrow only, fully transparent elsewhere
+    // Soft glow halo just behind the arrow so it reads against the CME
+    float glow = smoothstep(0.5, 0.0, dist) * 0.18 * arrow;
 
-    gl_FragColor = vec4(finalCol, finalAlpha);
+    float finalAlpha = (arrow * 0.90 + glow) * pulse;
+    finalAlpha *= 1.0 - smoothstep(0.80, 0.92, dist);
+
+    gl_FragColor = vec4(col * pulse, finalAlpha);
     if (gl_FragColor.a < 0.01) discard;
   }
 `;
@@ -199,7 +200,7 @@ const createArrowTexture = (THREE: any) => {
 const GCS_ARC_RADIUS_FRAC  = 0.55;
 const GCS_ARC_SPAN         = Math.PI * 0.85;
 const GCS_TUBE_RADIUS_FRAC = 0.38;
-const GCS_AXIAL_DEPTH_FRAC = 0.28;
+const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
 
 // Number of helical field lines around the tube, and points per line
 const BZ_FIELD_LINE_COUNT  = 8;
@@ -697,13 +698,67 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const pt = createParticleTexture(THREE);
     cmeData.forEach(cme => {
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
-      const arcR = GCS_ARC_RADIUS_FRAC, tubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
-      for (let i = 0; i < pCount; i++) {
-        const t = (Math.random() * 2 - 1) * hs;
+      const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
+
+      // ── TEARDROP SHAPE ────────────────────────────────────────────────────
+      // The leading edge (top of arc, t≈0) is fattest.
+      // Tube radius tapers toward the trailing legs (t→±halfSpan).
+      // taper(t) = 1.0 at t=0 (front), falls to ~0.35 at the tips.
+      //
+      // ── BACK DEPTH (60% extra) ───────────────────────────────────────────
+      // A second pass distributes particles behind the arc centrepoint,
+      // offset along the -Y (toward-Sun) axis.  This gives front-to-back
+      // depth without going all the way back to the Sun.
+      // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
+      // Density falls off toward the tail so it looks like a tear, not a box.
+
+      const backDepthFrac = 0.60; // how far back the tail extends as fraction of arcR
+      // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
+      const mainCount = Math.floor(pCount * 0.65);
+      const tailCount = pCount - mainCount;
+
+      // Main arc particles — tapered tube
+      for (let i = 0; i < mainCount; i++) {
+        const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
-        const rho = Math.sqrt(Math.random()) * tubeR, phi = Math.random() * 2 * Math.PI;
+
+        // Taper: cos²(t / halfSpan * π/2) gives 1.0 at t=0, 0.0 at t=±halfSpan
+        // We floor it at 0.35 so the tips still have some body
+        const taper    = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
+        const tubeR    = baseTubeR * taper;
+        const rho      = Math.sqrt(Math.random()) * tubeR;
+        const phi      = Math.random() * 2 * Math.PI;
         pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
+      }
+
+      // Tail depth particles — fill behind the arc in the -Y direction
+      // (toward Sun in local space, since +Y = propagation direction)
+      for (let i = 0; i < tailCount; i++) {
+        const t  = (Math.random() * 2 - 1) * hs;
+        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
+        const Nx = -Math.sin(t), Ny = -Math.cos(t);
+
+        // Depth offset: random penetration behind the arc surface in -Y local space
+        // More particles near 0 depth (front), fewer at full backDepth (tail tip)
+        // sqrt distribution biases toward front — gives the "rounded bullet" feel
+        const depthFrac = Math.pow(Math.random(), 1.6); // bias toward front
+        const depthY    = -depthFrac * backDepthFrac * arcR; // negative = toward Sun
+
+        // Tube radius at this depth also tapers — narrower deeper in the tail
+        // and narrower toward arc tips (same taper as main arc)
+        const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
+        const depthTaper = 1.0 - depthFrac * 0.65; // narrow toward tail tip
+        const tubeR      = baseTubeR * arcTaper * depthTaper;
+        const rho        = Math.sqrt(Math.random()) * tubeR;
+        const phi        = Math.random() * 2 * Math.PI;
+
+        // Offset the particle backward in Y (local propagation axis)
+        pos.push(
+          cx + rho * Math.cos(phi) * Nx,
+          cy + rho * Math.cos(phi) * Ny + depthY,
+          rho * Math.sin(phi)
+        );
       }
       const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
