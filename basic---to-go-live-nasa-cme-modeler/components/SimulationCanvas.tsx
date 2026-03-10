@@ -732,7 +732,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
       // Density falls off toward the tail so it looks like a tear, not a box.
 
-      const backDepthFrac = 0.60; // how far back the tail extends as fraction of arcR
+      const backDepthFrac = 3.00; // how far back the tail extends as fraction of arcR
       // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
