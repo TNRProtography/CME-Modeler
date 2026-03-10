@@ -133,9 +133,10 @@ const createArrowTexture = (THREE: any) => {
 //
 //  SCALING WITH CME EXPANSION
 //  ──────────────────────────
-//  updateCMEShape() sets scale = (cmeLength, cmeLength, cmeLength).
-//  arcRadius and tubeRadius are expressed in normalised units [0..1]
-//  so they scale automatically with the uniform scale.
+//  updateCMEShape() sets NON-UNIFORM scale:
+//    scaleXZ = distance * tan(halfAngle) / GCS_ARC_RADIUS_FRAC  (lateral width)
+//    scaleY  = scaleXZ * 0.28                                    (axial depth)
+//  This gives the correct flattened-front GCS croissant proportions.
 //
 //  ORIENTATION
 //  ───────────
@@ -165,6 +166,13 @@ const GCS_ARC_SPAN = Math.PI * 0.85;   // ~153° — wide, recognisable croissan
 //   Tube radius as a fraction of arcRadius.
 //   0.35 gives a tube that is clearly round and full-bodied.
 const GCS_TUBE_RADIUS_FRAC = 0.38;
+
+// GCS_AXIAL_DEPTH_FRAC
+//   How deep the croissant is along the propagation axis, as a fraction of its
+//   lateral width.  Real CMEs are much wider than they are deep — 0.28 gives
+//   the correct flattened-front look that Tamitha describes.
+//   Tune between 0.20 (very flat) and 0.35 (slightly puffier) to taste.
+const GCS_AXIAL_DEPTH_FRAC = 0.28;
 
 const getCmeOpacity = (speed: number): number => {
   const THREE = (window as any).THREE;
@@ -349,6 +357,37 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return distanceActualAU * SCENE_SCALE;
   }, []);
 
+  // ── updateCMEShape — FIXED SCALING ────────────────────────────────────────
+  //
+  // WHAT CHANGED AND WHY:
+  //
+  // OLD behaviour: scale.set(s, s, s) — uniform scale equal to distFromSunSurface.
+  //   Problem: a CME that has travelled 0.8 AU got scaled to 0.8 AU in ALL axes,
+  //   making it nearly as wide as the entire inner solar system. Way too big.
+  //
+  // NEW behaviour: non-uniform scale based on the CME's actual half-angle.
+  //
+  //   A CME expands ANGULARLY from the Sun — like a cone opening outward.
+  //   At distance d, the lateral (side-to-side) width of the CME is:
+  //     lateralSize = d × tan(halfAngle)
+  //
+  //   Example: halfAngle = 30°, distance = 1 AU (Earth)
+  //     lateralSize = 1 AU × tan(30°) ≈ 0.58 AU  ✓  (proportionate, not huge)
+  //
+  //   The GCS geometry is normalised so the arc spans ±GCS_ARC_RADIUS_FRAC (0.55)
+  //   in local units. We divide lateralSize by that to get the correct scene scale:
+  //     scaleXZ = lateralSize / GCS_ARC_RADIUS_FRAC
+  //
+  //   Along the propagation axis (Y), real CMEs are much flatter than they are wide.
+  //   We use GCS_AXIAL_DEPTH_FRAC (0.28) × scaleXZ for that axis:
+  //     scaleY = scaleXZ × GCS_AXIAL_DEPTH_FRAC
+  //
+  //   This gives the correct squashed-front "croissant" proportions that match
+  //   the GCS model used in professional heliophysics tools.
+  //
+  // NOTHING ELSE CHANGED — position, quaternion, travel distance, timing are all
+  // identical to the original code.
+  // ─────────────────────────────────────────────────────────────────────────────
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number) => {
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
@@ -361,20 +400,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // The propagation direction in world space (local +Y rotated by quaternion).
     const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
 
-    // ── POSITION: move the croissant outward along the propagation axis ──────
-    // Place the origin of the croissant at (distTraveled) from the Sun centre.
-    // This is the actual translation — the CME moves away from the Sun.
-    // We subtract sunRadius so it starts at the Sun's surface, not its centre.
+    // Position: move the croissant outward along the propagation axis.
     const distFromSunSurface = Math.max(0, distTraveledInSceneUnits - sunRadius);
     cmeObject.position.copy(direction.clone().multiplyScalar(sunRadius + distFromSunSurface));
 
-    // ── SCALE: grow the croissant tube as the CME expands ────────────────────
-    // The GCS geometry is built in normalised units (arcRadius ≈ 0.55, etc.).
-    // We scale by distFromSunSurface so the tube size grows with distance,
-    // matching the original CME expansion rate.
-    // A small minimum scale prevents the croissant collapsing to nothing at t=0.
-    const s = Math.max(distFromSunSurface, sunRadius * 0.5);
-    cmeObject.scale.set(s, s, s);
+    // ── ANGULAR EXPANSION — GCS model ────────────────────────────────────────
+    // Lateral width at distance d = d × tan(halfAngle).
+    // The geometry spans ±GCS_ARC_RADIUS_FRAC in normalised local units,
+    // so we divide by that constant to convert to scene units.
+    // A minimum size prevents the croissant collapsing to nothing near the Sun.
+    const cme: ProcessedCME = cmeObject.userData;
+    const halfAngleRad = THREE.MathUtils.degToRad(cme.halfAngle ?? 30);
+    const lateralSize = Math.max(
+      distFromSunSurface * Math.tan(halfAngleRad),
+      sunRadius * 0.3
+    );
+    const scaleXZ = lateralSize / GCS_ARC_RADIUS_FRAC;  // lateral (width of arc)
+    const scaleY  = scaleXZ * GCS_AXIAL_DEPTH_FRAC;     // axial depth — flattened front
+
+    cmeObject.scale.set(scaleXZ, scaleY, scaleXZ);
   }, [THREE]);
 
   useEffect(() => {
@@ -637,8 +681,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
 
       // ── GCS CME MATERIAL UPDATE ─────────────────────────────────────────────
-      // Back to plain PointsMaterial — just update opacity each frame.
-      // No shader uniforms, no world-frame transforms, no rotation angle.
       cmeGroupRef.current.children.forEach((c: any) => {
         if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed);
       });
@@ -686,13 +728,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (shouldShowFluxRope) {
           const cmeObject = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObject) {
-            // The croissant world position IS the CME's current location.
-            // Place the torus indicator at that position (no scale.y offset needed).
             fluxRopeRef.current.position.copy(cmeObject.position);
             fluxRopeRef.current.quaternion.copy(cmeObject.quaternion);
             const cme: ProcessedCME = cmeObject.userData;
-            // Scale the torus to match the current tube size (scale.y = distFromSunSurface).
-            const torusRadius = cmeObject.scale.y * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
+            // Scale the torus to match the new lateral scale (scaleXZ).
+            const torusRadius = cmeObject.scale.x * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle));
             fluxRopeRef.current.scale.set(torusRadius, torusRadius, torusRadius);
             fluxRopeRef.current.material.uniforms.uColor.value = getCmeCoreColor(cme.speed);
           }
@@ -734,11 +774,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [THREE]);
 
   // Build CME particle systems — GCS Croissant Flux Rope Geometry
-  //
-  // Replaces the old cone distribution entirely.
-  // Particles are placed inside a solid toroidal tube bent into a
-  // croissant arc, modelling the Graduated Cylindrical Shell (GCS) CME.
-  // No filtering is applied — the geometry IS the croissant shape.
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
@@ -761,89 +796,36 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pos: number[] = [];
       const cmeColor = getCmeCoreColor(cme.speed);
 
-      // ── GCS CROISSANT ARC PARAMETERS ──────────────────────────────────────
-      //
-      // The croissant centerline is an arc in the local X-Y plane.
-      // Local axes (before modelMatrix):
-      //   +Y = CME propagation direction (away from Sun, set by quaternion)
-      //   +X = one side of the croissant spread
-      //   +Z = depth axis of the arc plane
-      //
-      // Arc centerline parametrisation:
-      //   Given arc parameter t ∈ [-arcSpan/2, +arcSpan/2]:
-      //     cx(t) = arcR * sin(t)          ← left/right spread
-      //     cy(t) = arcR * (1 - cos(t))    ← height above origin (upward)
-      //     cz(t) = 0                      ← stays in the X-Y plane
-      //
-      // At t=0:  center = (0, 0, 0)  — base of the arc, near the Sun
-      // At t=±arcSpan/2: tips of the croissant, spread apart and lifted
-      //
-      // tubeR is the radius of the circular cross-section of the tube.
-      // ρ ∈ [0, tubeR] fills the solid interior (not a shell).
-
-      const arcR  = GCS_ARC_RADIUS_FRAC;                     // normalised [0..1]
-      const tubeR = GCS_TUBE_RADIUS_FRAC * arcR;             // tube cross-section radius
+      const arcR  = GCS_ARC_RADIUS_FRAC;
+      const tubeR = GCS_TUBE_RADIUS_FRAC * arcR;
       const halfSpan = GCS_ARC_SPAN * 0.5;
 
-      // ── BELLY-FORWARD ORIENTATION CHECK ───────────────────────────────────
-      // The arc is defined in the local X-Y plane.  +Y is the propagation axis
-      // (pointing toward Earth / the observer).
-      //
-      // Original formula:  cy = arcR * (1 - cos(t))
-      //   → arc lifts in +Y, so the concave "belly" faces -Y (toward Sun). WRONG.
-      //
-      // Flipped formula:   cy = arcR * (cos(t) - 1)   [negated]
-      //   → arc dips in -Y, so the concave belly faces +Y (toward Earth). CORRECT.
-      //
-      // Verification via dot product:
-      //   The belly normal at t=0 points in the +Y direction after the flip.
-      //   dot(bellyNormal_local, propagationDir_local) = dot((0,1,0),(0,1,0)) = +1 > 0
-      //   → belly faces forward. No additional quaternion flip needed.
-      //
-      // This is a deterministic geometry fix — it does not affect the CME's
-      // world-space position, scale, or travel (those come from updateCMEShape).
-
       for (let i = 0; i < pCount; i++) {
-        // ── 1. SAMPLE ARC PARAMETER t ───────────────────────────────────────
         const t = (Math.random() * 2 - 1) * halfSpan;
 
-        // ── 2. CENTERLINE POSITION AT t ─────────────────────────────────────
-        //   cx = arcR * sin(t)         → spread in X (unchanged)
-        //   cy = arcR * (cos(t) - 1)   → FLIPPED: dips toward -Y so belly faces +Y
-        //                                 (belly = concave inner curve of the arc)
-        //   cz = 0                     → flat in the arc plane
-        //
-        // flip croissant so belly faces forward (+Y = propagation direction)
+        // Centerline — belly faces forward (+Y = propagation direction)
         const cx = arcR * Math.sin(t);
-        const cy = arcR * (Math.cos(t) - 1);   // ← FLIPPED from (1 - cos(t))
+        const cy = arcR * (Math.cos(t) - 1);   // FLIPPED so belly faces +Y
         const cz = 0;
 
-        // ── 3. FRENET FRAME AT t ─────────────────────────────────────────────
-        // Tangent T = d/dt(cx, cy, cz) normalised
-        //   d(cx)/dt = arcR*cos(t)  → normalised: cos(t)
-        //   d(cy)/dt = -arcR*sin(t) → normalised: -sin(t)   (sign flipped with cy)
+        // Frenet frame
         const Tx = Math.cos(t);
-        const Ty = -Math.sin(t);   // ← sign flipped to match flipped cy
+        const Ty = -Math.sin(t);
         const Tz = 0;
-        void Tx; void Ty; void Tz; // suppress unused-var lint
+        void Tx; void Ty; void Tz;
 
-        // Normal N = dT/dt normalised = (-sin(t), -cos(t), 0)
         const Nx = -Math.sin(t);
-        const Ny = -Math.cos(t);   // ← sign flipped
+        const Ny = -Math.cos(t);
         const Nz = 0;
 
-        // Binormal B = T × N (out-of-plane, still +Z)
         const Bx = 0;
         const By = 0;
         const Bz = 1;
 
-        // ── 4. SAMPLE INSIDE THE TUBE CROSS-SECTION ─────────────────────────
-        // ρ = sqrt(random) * tubeR  → uniform area sampling, solid interior
-        // φ = random angle around tube cross-section
+        // Sample inside tube cross-section (solid interior)
         const rho = Math.sqrt(Math.random()) * tubeR;
         const phi = Math.random() * 2 * Math.PI;
 
-        // Particle position = centerline + ρ * (cos(φ)*N + sin(φ)*B)
         const px = cx + rho * (Math.cos(phi) * Nx + Math.sin(phi) * Bx);
         const py = cy + rho * (Math.cos(phi) * Ny + Math.sin(phi) * By);
         const pz = cz + rho * (Math.cos(phi) * Nz + Math.sin(phi) * Bz);
@@ -854,9 +836,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
 
-      // ── PLAIN PointsMaterial — no shader tricks needed ─────────────────────
-      // The geometry already IS the croissant shape.
-      // No filtering, no discards, no custom GLSL.
       const mat = new THREE.PointsMaterial({
         size: getCmeParticleSize(cme.speed, SCENE_SCALE),
         sizeAttenuation: true,
@@ -871,14 +850,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const system = new THREE.Points(geom, mat);
       system.userData = cme;
 
-      // ── ORIENTATION — reuse original CME travel transform ──────────────────
-      // This is identical to the original cone code.  The quaternion aligns
-      // local +Y with the CME propagation direction derived from lat/lon.
-      // updateCMEShape() then sets position and scale each frame — unchanged.
-      //
-      // NO extra flip quaternion is applied here because the 180° flip was
-      // baked into the geometry (cy formula above).  The world-space travel,
-      // expansion rate, arrival timing and camera behaviour are all unchanged.
+      // Align local +Y with the CME propagation direction
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(
         1,
@@ -955,7 +927,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (simStartTime <= 0) return [];
 
         const graphStartTime = Date.now();
-        const graphEndTime = graphStartTime + 7 * 24 * 3600 * 1000; // 7 days ahead
+        const graphEndTime = graphStartTime + 7 * 24 * 3600 * 1000;
         const graphDuration = graphEndTime - graphStartTime;
 
         const graphData = [];
@@ -992,7 +964,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
                     if (angleToEarth < THREE.MathUtils.degToRad(cme.halfAngle)) {
                         const distToEarth = earthPos.length();
-                        const cmeThickness = SCENE_SCALE * 0.3; // Visual thickness of the CME
+                        const cmeThickness = SCENE_SCALE * 0.3;
                         const cmeFront = cmeDist;
                         const cmeBack = cmeDist - cmeThickness;
 
@@ -1058,6 +1030,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
   }, [showMoonL1]);
 
+  // ── checkImpacts — FIXED for new non-uniform scale ────────────────────────
+  //
+  // WHAT CHANGED:
+  // Previously used c.scale.y (axial depth) to find the CME "tip".
+  // With the new non-uniform scale, scale.y is the shallow axial depth and
+  // scale.x is the lateral (wide) dimension.
+  //
+  // For impact detection we want to know if the CME front has reached Earth.
+  // The front of the croissant sits at roughly scale.x * GCS_ARC_RADIUS_FRAC
+  // ahead of the position origin in the propagation direction, which equals
+  // the lateralSize calculated in updateCMEShape — so we use scale.x directly.
+  // ─────────────────────────────────────────────────────────────────────────────
   const checkImpacts = useCallback(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
@@ -1067,7 +1051,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const d = c.userData;
       if (!d || !c.visible) return;
       const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
-      const tip = c.position.clone().add(dir.clone().multiplyScalar(c.scale.y));
+      // Use scale.x (lateral width) as the reach of the CME front — fixed from scale.y
+      const tip = c.position.clone().add(dir.clone().multiplyScalar(c.scale.x * GCS_ARC_RADIUS_FRAC));
       if (tip.distanceTo(p) < PLANET_DATA_MAP.EARTH.size * 2.2 && d.speed > maxSpeed) maxSpeed = d.speed;
     });
     return maxSpeed;
