@@ -882,11 +882,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         );
       }
 
-      // Interior teardrop fill — from nose (y=0) back to tail (y=tailY)
+      // Interior teardrop fill — starts at legTipY_shifted (where arc legs end)
+      // and tapers to a point at tailY. This closes the gap between arc and tail.
+      const fillStartY = legTipY_shifted; // top of fill = where arc legs converge
+      const fillRange  = fillStartY - tailY; // always positive
+
       for (let i = 0; i < fillCount; i++) {
-        const f  = Math.pow(Math.random(), 0.7);
-        const py = noseY - f * yRange;
-        const hw = getDropWidth(f);
+        const f  = Math.pow(Math.random(), 0.7); // bias toward top (arc end)
+        const py = fillStartY - f * fillRange;
+
+        // Width at this point: full arc width at f=0, tapers to zero at f=1
+        // At f=0 (top of fill) match the arc's leg width so there's no seam
+        const hw = maxHalfWidth * Math.pow(1.0 - f, 0.55);
         if (hw < 0.0005) continue;
         const angle = Math.random() * Math.PI * 2;
         const r     = Math.sqrt(Math.random()) * hw;
@@ -907,7 +914,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         color: getCmeCoreColor(cme.speed),
       });
       const system = new THREE.Points(geom, mat);
-      system.userData = { ...cme, tailY_local: Math.abs(tailY) };
+      system.userData = { ...cme, tailY_local: fillRange };
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
