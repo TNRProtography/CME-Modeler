@@ -391,9 +391,9 @@ const App: React.FC = () => {
   }, [activePage]);
 
   const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity', boolean>>(() => ({
-    forecast: initialPageRef.current === 'forecast',
+    forecast: true,
     modeler: initialPageRef.current === 'modeler',
-    'solar-activity': initialPageRef.current === 'solar-activity',
+    'solar-activity': true,
   }));
 
   useEffect(() => {
@@ -473,8 +473,16 @@ const App: React.FC = () => {
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
     }
-    if (!clockRef.current && (window as any).THREE) {
-      clockRef.current = new (window as any).THREE.Clock();
+    // Use a plain JS clock — no Three.js dependency needed here.
+    // SimulationCanvas manages its own THREE.Clock internally.
+    if (!clockRef.current) {
+      const startTime = performance.now();
+      let running = true;
+      clockRef.current = {
+        getElapsedTime: () => running ? (performance.now() - startTime) / 1000 : 0,
+        stop:  () => { running = false; },
+        start: () => { running = true;  },
+      };
     }
     return () => clearTimeout(minTimer);
   }, []);
@@ -495,6 +503,15 @@ const App: React.FC = () => {
         // Defer non-critical preloads until after the app is visible
         startAppPreload();
         logDev('deferred app preload start');
+        // Mark any tasks not required for the landing page as done,
+        // so navigating to other tabs doesn't stall on them.
+        // Their components are already mounted (visitedPages=true) and
+        // fetching in the background — we just don't gate the loader on them.
+        setInitialLoadTasks(prev => {
+          const next = { ...prev };
+          (Object.keys(next) as InitialLoadTaskKey[]).forEach(k => { next[k] = true; });
+          return next;
+        });
       }, 500);
     }
   }, [isDashboardReady, isMinTimeElapsed]);

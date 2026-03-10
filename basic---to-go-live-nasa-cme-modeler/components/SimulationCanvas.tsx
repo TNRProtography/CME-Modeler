@@ -10,10 +10,7 @@ import {
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
-  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER,
-  PLANET_VERTEX_SHADER,
-  JUPITER_FRAGMENT_SHADER, SATURN_FRAGMENT_SHADER,
-  URANUS_FRAGMENT_SHADER, NEPTUNE_FRAGMENT_SHADER,
+  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
 
 /** =========================================================
@@ -77,7 +74,7 @@ const BZ_FIELD_LINE_VERTEX_SHADER = `
     vArrow = pow(max(0.0, 1.0 - abs(arrowPos - 0.5) * 8.0), 2.0);
 
     gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = 5.5;  // thicker points = more solid circular rope appearance
+    gl_PointSize = 3.5;
   }
 `;
 
@@ -103,118 +100,54 @@ const BZ_FIELD_LINE_FRAGMENT_SHADER = `
   }
 `;
 
-// ── CORE MAGNETIC AXIS SHADERS ────────────────────────────────────────────────
-// A bold line rendered along the central axis of the CME flux rope.
-// Colour = blue (northward) or red (southward).
-// Animated chevron pulses travel along the axis showing field direction.
+// ── Bz INDICATOR DISC SHADERS ─────────────────────────────────────────────────
+// A camera-facing disc rendered at the front of the CME showing a bold up/down
+// arrow so the Bz direction is immediately legible to the user.
 
-const BZ_AXIS_VERTEX_SHADER = `
-  uniform float uTime;
-  uniform float uBzSouth;
-  attribute float aAlong;   // [0..1] from tail to nose of CME
-  varying float vAlpha;
-  varying float vArrow;
-
+const BZ_INDICATOR_VERTEX_SHADER = `
+  varying vec2 vUv;
   void main() {
-    // Flow direction: northward pulses travel nose→tail (+), south tail→nose (-)
-    float flowDir = uBzSouth > 0.5 ? -1.0 : 1.0;
-    float travel  = mod(aAlong + uTime * 0.22 * flowDir, 1.0);
-
-    // Fade near the ends
-    float fade = smoothstep(0.0, 0.08, aAlong) * smoothstep(1.0, 0.92, aAlong);
-    vAlpha = fade * 0.95;
-
-    // Bright chevron pulse
-    float arrowPos = mod(travel * 5.0, 1.0);
-    vArrow = pow(max(0.0, 1.0 - abs(arrowPos - 0.5) * 9.0), 2.0);
-
-    gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = 7.0;
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-const BZ_AXIS_FRAGMENT_SHADER = `
+const BZ_INDICATOR_FRAGMENT_SHADER = `
   uniform float uBzSouth;
-  varying float vAlpha;
-  varying float vArrow;
+  uniform float uTime;
+  varying vec2 vUv;
 
   void main() {
-    vec3 northColor = vec3(0.27, 0.53, 1.0);   // blue — northward
-    vec3 southColor = vec3(1.0,  0.27, 0.13);   // red  — southward
+    vec2 p = vUv * 2.0 - 1.0;
+    float dist = length(p);
+    if (dist > 0.92) discard;
+
+    vec3 northColor = vec3(0.27, 0.53, 1.0);
+    vec3 southColor = vec3(1.0,  0.27, 0.13);
     vec3 col = mix(northColor, southColor, uBzSouth);
 
-    // Bright white at pulse peak
-    col = mix(col, vec3(1.0), vArrow * 0.75);
+    // Arrow shaft (vertical centre strip)
+    float shaft = step(abs(p.x), 0.10) * step(abs(p.y), 0.58);
 
-    // Soft circular billboard
-    vec2 uv = gl_PointCoord - 0.5;
-    float disc = 1.0 - smoothstep(0.3, 0.5, length(uv));
+    // Arrowhead — points UP for north (+Y), DOWN for south (-Y)
+    float arrowDir  = uBzSouth > 0.5 ? -1.0 : 1.0;
+    float headY     = arrowDir * 0.58;
+    float headDist  = arrowDir * (p.y - headY);
+    float headWidth = 0.30 * headDist;
+    float head = step(0.0, headDist) * step(abs(p.x), headWidth) * step(headDist, 0.38);
 
-    gl_FragColor = vec4(col, vAlpha * disc);
+    float arrow = clamp(shaft + head, 0.0, 1.0);
+    float pulse = 0.78 + 0.22 * sin(uTime * 2.5);
+
+    // NO dark disc background — arrow only, fully transparent elsewhere
+    // Soft glow halo just behind the arrow so it reads against the CME
+    float glow = smoothstep(0.5, 0.0, dist) * 0.18 * arrow;
+
+    float finalAlpha = (arrow * 0.90 + glow) * pulse;
+    finalAlpha *= 1.0 - smoothstep(0.80, 0.92, dist);
+
+    gl_FragColor = vec4(col * pulse, finalAlpha);
     if (gl_FragColor.a < 0.01) discard;
-  }
-`;
-
-/** =========================================================
- *  CME TAIL WOBBLE SHADER
- *
- *  Applied to the CME particle system.
- *  aLocalY  — particle's Y in local CME space at build time [tailY .. 0]
- *             (stored as a normalised tail fraction 0=nose, 1=tail tip)
- *  uTime    — absolute elapsed time
- *  uLaunch  — elapsed time when the CME first became visible (left Sun)
- *             Wobble starts from this moment and damps out over ~30s.
- *  uTailLen — distance from nose to tail tip in local units (for normalisation)
- *  uColor   — CME colour (replaces PointsMaterial color)
- *  uOpacity — CME opacity
- *  uSize    — point size
- *
- *  Wobble: tail-fraction particles get a lateral XZ displacement of:
- *    amplitude = MAX_AMP * tailFrac^2 * exp(-damping * age) * sin(freq*age + phase)
- *  Particles near the nose (tailFrac≈0) are unaffected.
- *  ========================================================= */
-const CME_TAIL_VERTEX_SHADER = `
-  attribute float aLocalY;   // normalised tail depth [0=nose .. 1=tail tip]
-  attribute float aRandPhase;// per-particle random phase offset for natural look
-
-  uniform float uTime;
-  uniform float uLaunch;     // time CME became visible
-  uniform float uSize;
-  uniform float uOpacity;
-
-  varying float vOpacity;
-
-  void main() {
-    float age     = max(0.0, uTime - uLaunch);
-
-    // Elastic spring: damped sine that starts strong, decays over ~25s
-    // tailFrac^2 means only the rear half of the tail wobbles meaningfully
-    float tf      = aLocalY;                          // 0=nose, 1=tail tip
-    float damp    = exp(-age * 0.12);                 // decay rate
-    float freq    = 1.8;                              // oscillations per second
-    float maxAmp  = 0.35;                             // max lateral swing (local units)
-    float wobble  = maxAmp * tf * tf * damp * sin(freq * age + aRandPhase);
-
-    // Apply wobble perpendicular to propagation (+X in local space)
-    vec3 p = position;
-    p.x += wobble;
-
-    vOpacity = uOpacity * (1.0 - tf * 0.4);  // tail fades slightly
-
-    vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
-    gl_PointSize = uSize * (300.0 / -mvPos.z);
-    gl_Position  = projectionMatrix * mvPos;
-  }
-`;
-
-const CME_TAIL_FRAGMENT_SHADER = `
-  uniform vec3    uColor;
-  uniform sampler2D uMap;
-  varying float vOpacity;
-
-  void main() {
-    vec4 tex = texture2D(uMap, gl_PointCoord);
-    gl_FragColor = vec4(uColor, tex.a * vOpacity);
   }
 `;
 
@@ -262,19 +195,16 @@ const createArrowTexture = (THREE: any) => {
 };
 
 // ============================================================
-//  CME TAIL WOBBLE
-//  Adjust WOBBLE_STRENGTH to tune the jelly effect.
-//  0.0 = no wobble, 1.0 = dramatic, 0.18 = subtle/realistic
+//  GCS GEOMETRY CONSTANTS
 // ============================================================
-const WOBBLE_STRENGTH = 0.18;
 const GCS_ARC_RADIUS_FRAC  = 0.55;
-const GCS_ARC_SPAN         = Math.PI * 0.62;  // ~112° half-span — open horseshoe, not closed ring
+const GCS_ARC_SPAN         = Math.PI * 0.85;
 const GCS_TUBE_RADIUS_FRAC = 0.38;
-const GCS_AXIAL_DEPTH_FRAC = 0.38;
+const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
 
 // Number of helical field lines around the tube, and points per line
-const BZ_FIELD_LINE_COUNT  = 16;   // doubled — fills the torus more completely
-const BZ_FIELD_LINE_POINTS = 180;  // more points = smoother helix
+const BZ_FIELD_LINE_COUNT  = 8;
+const BZ_FIELD_LINE_POINTS = 120;
 
 const getCmeOpacity      = (speed: number) => { const T = (window as any).THREE; if (!T) return 0.22; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65); };
 const getCmeParticleCount = (speed: number) => { const T = (window as any).THREE; if (!T) return 4000; return Math.floor(T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000)); };
@@ -310,39 +240,33 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const aPhaseArr: number[] = [];
 
   const arcR     = GCS_ARC_RADIUS_FRAC;
-  const tubeR    = GCS_TUBE_RADIUS_FRAC * arcR * 1.05; // full tube radius — sits ON the surface
+  const tubeR    = GCS_TUBE_RADIUS_FRAC * arcR * 0.92; // sit just inside tube surface
   const halfSpan = GCS_ARC_SPAN * 0.5;
 
   const baseAngle  = (lineIndex / BZ_FIELD_LINE_COUNT) * Math.PI * 2;
   const phase      = lineIndex / BZ_FIELD_LINE_COUNT;
-  const helixTurns = 2.5; // more turns = denser wrapping = circular rope feel
-
-  const arcBellyOffset_fl = arcR;
-  const legTipY_fl     = arcR * (Math.cos(halfSpan) - 1) + arcBellyOffset_fl;
-  const BLEND_START_FL = 0.68;
+  const helixTurns = 1.5; // wraps around the tube 1.5 times along the arc
 
   for (let i = 0; i < BZ_FIELD_LINE_POINTS; i++) {
-    const s  = i / (BZ_FIELD_LINE_POINTS - 1);
-    const t  = (s * 2 - 1) * halfSpan;
-    const tN = Math.abs(t) / halfSpan;
+    const s = i / (BZ_FIELD_LINE_POINTS - 1);           // [0..1] along arc
+    const t = (s * 2 - 1) * halfSpan;                   // arc parameter
 
-    const cx0  = arcR * Math.sin(t);
-    const cy0  = arcR * (Math.cos(t) - 1) + arcBellyOffset_fl; // shifted to match particles
-    const bT   = Math.max(0, (tN - BLEND_START_FL) / (1.0 - BLEND_START_FL));
-    const w    = bT * bT;
-    const cx   = cx0 * (1 - w);
-    const cy   = cy0 + (legTipY_fl - cy0) * w;
+    // Arc centreline (identical formula to particle geometry — belly faces +Y)
+    const cx = arcR * Math.sin(t);
+    const cy = arcR * (Math.cos(t) - 1);
+    const cz = 0;
 
+    // Frenet normal and binormal at t
+    // N = (-sin(t), -cos(t), 0),  B = (0, 0, 1)
     const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-    const taper     = Math.pow(Math.max(0, 1.0 - tN), 1.6);
-    const tubeFinal = tubeR * taper;
-
+    // Helical angle advances with arc position
     const helixAngle = baseAngle + s * helixTurns * Math.PI * 2;
 
-    const px = cx + tubeFinal * (Math.cos(helixAngle) * Nx);
-    const py = cy + tubeFinal * (Math.cos(helixAngle) * Ny);
-    const pz =      tubeFinal * Math.sin(helixAngle);
+    // Point on tube surface: centreline + tubeR*(cos*N + sin*B)
+    const px = cx + tubeR * (Math.cos(helixAngle) * Nx);
+    const py = cy + tubeR * (Math.cos(helixAngle) * Ny);
+    const pz = cz + tubeR * Math.sin(helixAngle);       // B = +Z
 
     positions.push(px, py, pz);
     aAlongArr.push(s);
@@ -410,185 +334,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const cameraRef          = useRef<any>(null);
   const controlsRef        = useRef<any>(null);
   const cmeGroupRef        = useRef<any>(null);
+  const sceneCleanupRef    = useRef<(() => void) | null>(null);
   const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
   const orbitsRef          = useRef<Record<string, any>>({});
   const predictionLineRef  = useRef<any>(null);
   const fluxRopeRef        = useRef<any>(null);
 
-  // Bz field line group — contains helical field lines + core axis line
+  // Bz field line group (Points objects) and front-face indicator disc
   const bzFieldLinesRef = useRef<any>(null);
   const bzIndicatorRef  = useRef<any>(null);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
-
-  // ── TRAJECTORY CACHE ─────────────────────────────────────────────────────
-  // Pre-computed physics simulation. Built once when cmeData changes.
-  // cache[stepIndex] = Map<cmeId, CachedCMEState>
-  // Each state stores world-space position, current speed, direction quaternion,
-  // and a compressionFactor for visual squish during interactions.
-  interface CachedCMEState {
-    px: number; py: number; pz: number;   // world position
-    speed: number;                          // current km/s
-    dx: number; dy: number; dz: number;   // unit propagation direction
-    tailCompression: number;               // 0=normal tail, 1=fully compressed to nose
-  }
-  const trajectoryCacheRef = useRef<Map<string, CachedCMEState>[]>([]);
-  const cacheStepSizeMs    = 60 * 1000; // 60-second steps
-
-  // Build the full trajectory cache from cmeData + timelineMin/Max
-  const buildTrajectoryCache = useCallback((
-    data: ProcessedCME[],
-    tMin: number,
-    tMax: number
-  ) => {
-    const T3 = (window as any).THREE;
-    if (!T3 || data.length === 0 || tMax <= tMin) { trajectoryCacheRef.current = []; return; }
-
-    const dt      = cacheStepSizeMs / 1000; // seconds per step
-    const nSteps  = Math.ceil((tMax - tMin) / cacheStepSizeMs) + 1;
-    const MIN_SPD = 300; // km/s floor
-    const AU      = AU_IN_KM;
-    const SS      = SCENE_SCALE;
-
-    // ── Physics tuning constants ─────────────────────────────────────────
-    const SPEED_TRANSFER_RATE      = 0.0008; // per step — rear brakes, front accelerates
-    const COMPRESS_RATE            = 0.0003; // per step — front tail squashes under pressure
-    const COMPRESS_SPEED_THRESHOLD = 0.65;   // tail at 65% triggers front speed boost
-
-    // Initialise mutable state for each CME
-    interface MutState {
-      id: string;
-      speed: number;
-      dx: number; dy: number; dz: number;
-      distKm: number;
-      startMs: number;
-      halfAngle: number;
-      active: boolean;
-      tailCompression: number; // 0=normal, 1=fully squashed — permanent, never decreases
-    }
-
-    const states = new Map<string, MutState>();
-    data.forEach(cme => {
-      // Initial direction from spherical coords (same as geometry setup)
-      const dir = new T3.Vector3();
-      dir.setFromSphericalCoords(
-        1,
-        T3.MathUtils.degToRad(90 - (cme.latitude ?? 0)),
-        T3.MathUtils.degToRad(cme.longitude ?? 0)
-      );
-      states.set(cme.id, {
-        id: cme.id,
-        speed: Math.max(MIN_SPD, cme.speed),
-        dx: dir.x, dy: dir.y, dz: dir.z,
-        distKm: 0,
-        startMs: cme.startTime.getTime(),
-        halfAngle: cme.halfAngle ?? 30,
-        active: false,
-        tailCompression: 0,
-      });
-    });
-
-    const cache: Map<string, CachedCMEState>[] = [];
-    const sunRadiusKm = (PLANET_DATA_MAP.SUN.size / SS) * AU;
-
-    for (let step = 0; step < nSteps; step++) {
-      const tMs  = tMin + step * cacheStepSizeMs;
-      const snap = new Map<string, CachedCMEState>();
-
-      // ── 1. Integrate positions ────────────────────────────────────────
-      states.forEach(s => {
-        const ageSec = (tMs - s.startMs) / 1000;
-        if (ageSec < 0) { s.active = false; return; }
-        s.active = true;
-
-        // Deceleration model (same as calculateDistanceWithDeceleration)
-        const u = s.speed;
-        const a = (1.41 - 0.0035 * u) / 1000;
-        const advanceKm = Math.max(0, u + a * dt * 0.5) * dt; // semi-implicit Euler
-        s.speed = Math.max(MIN_SPD, u + a * dt);
-        s.distKm = Math.max(sunRadiusKm, s.distKm + advanceKm);
-      });
-
-      // ── 2. Interaction pass ───────────────────────────────────────────
-      // For every active pair, check overlap in world space (km)
-      const activeIds = Array.from(states.values()).filter(s => s.active);
-
-      for (let i = 0; i < activeIds.length; i++) {
-        for (let j = i + 1; j < activeIds.length; j++) {
-          const A = activeIds[i], B = activeIds[j];
-
-          // World positions (km from Sun)
-          const ax = A.dx * A.distKm, ay = A.dy * A.distKm, az = A.dz * A.distKm;
-          const bx = B.dx * B.distKm, by = B.dy * B.distKm, bz = B.dz * B.distKm;
-
-          const sepX = bx - ax, sepY = by - ay, sepZ = bz - az;
-          const separation = Math.sqrt(sepX*sepX + sepY*sepY + sepZ*sepZ);
-
-          // Physical radii (km) = dist * tan(halfAngle)
-          const rA = A.distKm * Math.tan(T3.MathUtils.degToRad(A.halfAngle));
-          const rB = B.distKm * Math.tan(T3.MathUtils.degToRad(B.halfAngle));
-          const combined = rA + rB;
-
-          if (separation >= combined || separation < 0.001) continue;
-
-          const overlap     = combined - separation;
-          const overlapFrac = Math.min(1, overlap / combined);
-
-          // ── Determine FRONT vs REAR ───────────────────────────────────
-          const front = A.distKm >= B.distKm ? A : B;
-          const rear  = A.distKm >= B.distKm ? B : A;
-          const speedDiff = Math.max(0, rear.speed - front.speed);
-          if (speedDiff <= 0) continue; // rear not actually faster, no interaction
-
-          // ── FRONT CME: tail compression + speed boost ─────────────────
-          const pressureIntensity = overlapFrac * Math.min(1, speedDiff / 500);
-          front.tailCompression   = Math.min(1, front.tailCompression + COMPRESS_RATE * pressureIntensity);
-
-          const tailLength = 1 - front.tailCompression;
-          if (tailLength < COMPRESS_SPEED_THRESHOLD) {
-            const excess     = (COMPRESS_SPEED_THRESHOLD - tailLength) / COMPRESS_SPEED_THRESHOLD;
-            const speedBoost = speedDiff * SPEED_TRANSFER_RATE * excess;
-            front.speed      = front.speed + speedBoost;
-            rear.speed       = Math.max(MIN_SPD, rear.speed - speedBoost * 0.5);
-          }
-
-          // ── REAR CME: braking only ────────────────────────────────────
-          // Even before the front CME accelerates, the rear CME loses speed
-          // just from pushing into the slower body ahead of it.
-          const brakingRate = SPEED_TRANSFER_RATE * overlapFrac;
-          rear.speed = Math.max(MIN_SPD, rear.speed - speedDiff * brakingRate);
-        }
-      }
-
-      // ── 3. Snapshot ───────────────────────────────────────────────────
-      states.forEach((s, id) => {
-        const worldX = s.dx * (s.distKm / AU) * SS;
-        const worldY = s.dy * (s.distKm / AU) * SS;
-        const worldZ = s.dz * (s.distKm / AU) * SS;
-        snap.set(id, {
-          px: worldX, py: worldY, pz: worldZ,
-          speed: s.speed,
-          dx: s.dx, dy: s.dy, dz: s.dz,
-          tailCompression: s.tailCompression,
-        });
-      });
-
-      cache.push(snap);
-    }
-
-    trajectoryCacheRef.current = cache;
-  }, []);
-
-  // Lookup cached state for a given world-time millisecond
-  const getCachedState = useCallback((cmeId: string, tMs: number, tMin: number): CachedCMEState | null => {
-    const cache = trajectoryCacheRef.current;
-    if (!cache.length) return null;
-    const idx = Math.max(0, Math.min(cache.length - 1,
-      Math.floor((tMs - tMin) / cacheStepSizeMs)
-    ));
-    return cache[idx]?.get(cmeId) ?? null;
-  }, []);
 
   const timelineValueRef    = useRef(timelineValue);
   const lastTimeRef         = useRef(0);
@@ -611,6 +368,29 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
       showFluxRope, bzSouth]);
+
+  // --- Dynamic loader: only fetches Three.js + deps when the modeler first mounts ---
+  const threeLoadedRef = useRef(false);
+  const loadThreeLibs = useCallback((): Promise<void> => {
+    if (threeLoadedRef.current && (window as any).THREE && (window as any).gsap) {
+      return Promise.resolve();
+    }
+    const loadScript = (src: string): Promise<void> =>
+      new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(s);
+      });
+
+    // OrbitControls must come after Three.js — load sequentially
+    return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
+      .then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'))
+      .then(() => loadScript('https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js'))
+      .then(() => { threeLoadedRef.current = true; });
+  }, []);
 
   const THREE = (window as any).THREE;
   const gsap  = (window as any).gsap;
@@ -639,37 +419,25 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, []);
 
   // ── updateCMEShape — angular GCS expansion + live colour ─────────────────
-  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number, cached?: any) => {
+  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
-    if (distTraveledInSceneUnits < 0) { cmeObject.visible = false; return; }
-    cmeObject.visible = true;
-    const cme: any = cmeObject.userData;
-
-    if (cached) {
-      // ── CACHED PHYSICS: position + direction come from simulation ───────
-      cmeObject.position.set(cached.px, cached.py, cached.pz);
-      const newDir = new THREE.Vector3(cached.dx, cached.dy, cached.dz).normalize();
-      cmeObject.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), newDir);
-      const dist    = Math.max(0, cmeObject.position.length() - sunRadius);
-      const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-      const sXZ     = lateral / GCS_ARC_RADIUS_FRAC;
-      const tailY_local  = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6);
-      const scaleY       = tailY_local > 0 ? Math.max(0, dist * 0.5) / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
-      cmeObject.scale.set(sXZ, scaleY, sXZ);
-      if (cmeObject.material) cmeObject.material.color = getCmeCoreColor(cached.speed);
+    if (distTraveledInSceneUnits < 0) {
+      cmeObject.visible = false;
       return;
     }
-
-    // ── FALLBACK: formula-based (cache not ready yet) ───────────────────
+    cmeObject.visible = true;
     const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const dist = Math.max(0, distTraveledInSceneUnits - sunRadius);
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + dist));
-    const lateral  = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const sXZ      = lateral / GCS_ARC_RADIUS_FRAC;
-    const tailY_local  = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6);
-    const scaleY       = tailY_local > 0 ? Math.max(0, dist * 0.5) / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
-    cmeObject.scale.set(sXZ, scaleY, sXZ);
+    const cme: any = cmeObject.userData;
+    const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
+    const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
+    cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+
+    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
+    // Calculate the CME's current speed at this moment in time.
+    // As the CME decelerates, the colour shifts down through the speed key.
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
       const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
       const a = (1.41 - 0.0035 * u) / 1000;
@@ -680,7 +448,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, [THREE]);
 
   useEffect(() => {
-    if (!mountRef.current || !THREE || rendererRef.current) return;
+    if (!mountRef.current || rendererRef.current) return;
+
+    let cancelled = false;
+    loadThreeLibs().then(() => {
+      if (cancelled || !mountRef.current || rendererRef.current) return;
+      const THREE = (window as any).THREE;
+      if (!THREE) return;
 
     resetClock();
     lastTimeRef.current = getClockElapsedTime();
@@ -748,46 +522,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       bzGroup.add(new THREE.Points(buildBzFieldLineGeometry(THREE, i), bzMat));
     }
 
-    // ── Core magnetic axis line ───────────────────────────────────────────────
-    // A Points line running through the central axis of the CME flux rope.
-    // Animated chevron pulses show field direction (north/south).
-    // Lives in the same local space as the field line helix — co-positioned
-    // with bzGroup each frame, so no separate positioning needed.
-    {
-      const AXIS_POINTS = 200;
-      const axisPositions: number[] = [];
-      const axisAlong:     number[] = [];
-      const arcR    = GCS_ARC_RADIUS_FRAC;
-      const halfSpan = GCS_ARC_SPAN * 0.5;
-
-      for (let i = 0; i < AXIS_POINTS; i++) {
-        const s = i / (AXIS_POINTS - 1);          // [0..1]
-        const t = (s * 2 - 1) * halfSpan;          // arc parameter
-        // Arc centreline — same formula as CME particles
-        const cx = arcR * Math.sin(t);
-        const cy = arcR * (Math.cos(t) - 1);
-        axisPositions.push(cx, cy, 0);
-        axisAlong.push(s);
-      }
-
-      const axisGeom = new THREE.BufferGeometry();
-      axisGeom.setAttribute('position', new THREE.Float32BufferAttribute(axisPositions, 3));
-      axisGeom.setAttribute('aAlong',   new THREE.Float32BufferAttribute(axisAlong, 1));
-
-      const axisMat = new THREE.ShaderMaterial({
-        vertexShader:   BZ_AXIS_VERTEX_SHADER,
-        fragmentShader: BZ_AXIS_FRAGMENT_SHADER,
-        uniforms: { uTime: { value: 0 }, uBzSouth: { value: 0.0 } },
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-
-      // Add to bzGroup so it's automatically co-positioned and toggled
-      bzGroup.add(new THREE.Points(axisGeom, axisMat));
-    }
-
-    bzIndicatorRef.current = null; // indicator disc removed
+    // ── Bz indicator disc ────────────────────────────────────────────────────
+    const bzInd = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShaderMaterial({
+        vertexShader:   BZ_INDICATOR_VERTEX_SHADER,
+        fragmentShader: BZ_INDICATOR_FRAGMENT_SHADER,
+        uniforms: { uBzSouth: { value: 0.0 }, uTime: { value: 0 } },
+        transparent: true, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    bzInd.visible = false; scene.add(bzInd); bzIndicatorRef.current = bzInd;
 
     // ── Stars ────────────────────────────────────────────────────────────────
     const makeStars = (n: number, spread: number, sz: number) => {
@@ -820,68 +565,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const clouds = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.01, 48, 48), new THREE.MeshLambertMaterial({ map: tex.earthClouds, transparent: true, opacity: 0.7, depthWrite: false })); clouds.name = 'clouds'; pm.add(clouds);
         const atmo = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0 }, uTime: { value: 0 } } })); atmo.name = 'atmosphere'; pm.add(atmo);
         const aur = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0 }, uCmeSpeed: { value: 0 }, uImpactTime: { value: 0 }, uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, uAuroraIntensity: { value: 0 } } })); aur.name = 'aurora'; pm.add(aur);
-      }
-      // ── Outer planet shader surfaces ─────────────────────────────────────
-      if (name === 'JUPITER') {
-        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: JUPITER_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
-        pm.name = 'jupiter';
-      }
-      if (name === 'SATURN') {
-        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: SATURN_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
-        pm.name = 'saturn';
-        // Saturn rings — flat ring geometry, two passes for inner/outer ring colour bands
-        const ringInner = data.size * 1.25;
-        const ringOuter = data.size * 2.35;
-        const ringGeo = new THREE.RingGeometry(ringInner, ringOuter, 128, 6);
-        // Remap UVs so v=0 at inner edge, v=1 at outer — for ring colour gradient
-        const pos2 = ringGeo.attributes.position;
-        const uv2  = ringGeo.attributes.uv;
-        for (let i = 0; i < pos2.count; i++) {
-          const x = pos2.getX(i), z = pos2.getZ(i);
-          const r = Math.sqrt(x*x + z*z);
-          const v = (r - ringInner) / (ringOuter - ringInner);
-          uv2.setXY(i, (Math.atan2(z, x) / (Math.PI * 2) + 0.5), v);
-        }
-        uv2.needsUpdate = true;
-        const ringMat = new THREE.ShaderMaterial({
-          side: THREE.DoubleSide, transparent: true, depthWrite: false,
-          uniforms: { uTime: { value: 0 } },
-          vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-          fragmentShader: `
-            varying vec2 vUv;
-            void main(){
-              float v = vUv.y; // 0=inner, 1=outer
-              // Cassini division at ~v=0.55 — narrow dark gap
-              float cassini = smoothstep(0.50,0.53,v) * (1.0-smoothstep(0.53,0.56,v));
-              // Ring colour: inner warmer, outer cooler/thinner
-              vec3 inner = vec3(0.85, 0.78, 0.55);
-              vec3 outer = vec3(0.65, 0.58, 0.40);
-              vec3 col = mix(inner, outer, v);
-              // Density falloff at edges + Cassini gap
-              float alpha = (1.0 - cassini) * (0.7 - v * 0.35) * smoothstep(0.0,0.05,v) * smoothstep(1.0,0.85,v);
-              if(alpha < 0.01) discard;
-              gl_FragColor = vec4(col, alpha * 0.85);
-            }`,
-        });
-        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.name = 'saturn-rings';
-        ringMesh.rotation.x = Math.PI * 0.44; // ~27° tilt
-        pm.add(ringMesh);
-      }
-      if (name === 'URANUS') {
-        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: URANUS_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
-        pm.name = 'uranus';
-        // Uranus has faint rings, nearly edge-on due to extreme axial tilt
-        const uRingGeo = new THREE.RingGeometry(data.size * 1.4, data.size * 1.9, 96, 1);
-        const uRingMat = new THREE.MeshBasicMaterial({ color: 0x8ae8e8, side: THREE.DoubleSide, transparent: true, opacity: 0.18, depthWrite: false });
-        const uRing = new THREE.Mesh(uRingGeo, uRingMat);
-        uRing.name = 'uranus-rings';
-        uRing.rotation.x = Math.PI * 0.48; // nearly edge-on (97.8° axial tilt)
-        pm.add(uRing);
-      }
-      if (name === 'NEPTUNE') {
-        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: NEPTUNE_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
-        pm.name = 'neptune';
       }
       const op = []; for (let i = 0; i <= 128; i++) op.push(new THREE.Vector3(Math.sin((i / 128) * Math.PI * 2) * data.radius, 0, Math.cos((i / 128) * Math.PI * 2) * data.radius));
       const ot = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(op), 128, 0.005 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.6 }));
@@ -955,15 +638,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const c = e.children.find((c: any) => c.name === 'clouds'); if (c) c.rotation.y += 0.01 * delta;
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
       }
-      // Animate outer planet shaders
-      ['JUPITER','SATURN','URANUS','NEPTUNE'].forEach(n => {
-        const body = celestialBodiesRef.current[n];
-        if (!body) return;
-        const mesh = body.mesh;
-        if ((mesh.material as any)?.uniforms?.uTime) (mesh.material as any).uniforms.uTime.value = elapsedTime;
-        // Slow axial rotation
-        mesh.rotation.y += delta * ({ JUPITER: 0.045, SATURN: 0.038, URANUS: 0.025, NEPTUNE: 0.028 } as any)[n];
-      });
 
       cmeGroupRef.current.children.forEach((c: any) => { if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed); });
 
@@ -977,101 +651,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => {
-          const s = (t - c.userData.startTime.getTime()) / 1000;
-          const cached = getCachedState(c.userData.id, t, timelineMinDate);
-          if (cached) {
-            updateCMEShape(c, s < 0 ? -1 : 1, s < 0 ? 0 : s, s < 0 ? undefined : cached);
-          } else {
-            updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s);
-          }
-        });
+        cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
       } else {
         cmeGroupRef.current.children.forEach((c: any) => {
-          let tSec = 0;
+          let d = 0; let tSec = 0;
           if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
             const cme = c.userData, t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
             tSec = t < 0 ? 0 : t;
-            const tMs = c.userData.startTime.getTime() + tSec * 1000;
-            const cached = getCachedState(c.userData.id, tMs, timelineMinDate);
-            if (cached) { updateCMEShape(c, 1, tSec, cached); }
-            else {
-              const d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, tSec) : calculateDistanceWithDeceleration(cme, tSec);
-              updateCMEShape(c, d, tSec);
-            }
+            d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, tSec) : calculateDistanceWithDeceleration(cme, tSec);
           } else if (!currentlyModeledCMEId) {
-            const tAbsMs = Date.now();
-            tSec = Math.max(0, (tAbsMs - c.userData.startTime.getTime()) / 1000);
-            const cached = getCachedState(c.userData.id, tAbsMs, timelineMinDate);
-            if (cached) { updateCMEShape(c, 1, tSec, cached); }
-            else {
-              const d = calculateDistanceWithDeceleration(c.userData, tSec);
-              updateCMEShape(c, d, tSec);
-            }
+            const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
+            tSec = t < 0 ? 0 : t;
+            d = calculateDistanceWithDeceleration(c.userData, tSec);
           } else { updateCMEShape(c, -1); return; }
+          updateCMEShape(c, d, tSec);
         });
       }
 
-      // ── CME TAIL WOBBLE + COMPRESSION ───────────────────────────────────
-      // Wobble: jelly oscillation on rear particles.
-      // Compression: tail particles permanently pushed toward nose when a
-      //              faster rear CME has squashed the front CME's tail.
-      {
-        cmeGroupRef.current.children.forEach((c: any) => {
-          if (!c.visible) return;
-          const ud = c.userData;
-          if (!ud.basePositions || !ud.tailFractions) return;
-          const bp     = ud.basePositions as Float32Array;
-          const tf     = ud.tailFractions as Float32Array;
-          const wp     = ud.wobblePhases  as Float32Array;
-          const posArr = c.geometry.attributes.position.array as Float32Array;
-          const n      = tf.length;
-          const maxR   = (ud.noseTopY ?? GCS_ARC_RADIUS_FRAC) * GCS_ARC_RADIUS_FRAC;
-
-          // Get this CME's current compression from trajectory cache
-          const tMs = animPropsRef.current.timelineActive
-            ? animPropsRef.current.timelineMinDate +
-              (animPropsRef.current.timelineMaxDate - animPropsRef.current.timelineMinDate) *
-              (timelineValueRef.current / 1000)
-            : Date.now();
-          const cached = getCachedState(ud.id, tMs, animPropsRef.current.timelineMinDate);
-          const compression = cached?.tailCompression ?? 0;
-
-          // tailCompression pushes rear particles upward (toward nose) in local Y.
-          // A particle at tailFrac=1 (tip) gets pushed by full compression distance.
-          // A particle at tailFrac=0 (nose) is unaffected.
-          // The push distance in local Y = compression × totalHeight × tailFrac²
-          // (squared so mid-body barely moves, only the actual tail gets squashed)
-          const totalHeight = ud.totalHeight ?? 1;
-
-          for (let i = 0; i < n; i++) {
-            const frac  = tf[i];
-            const baseX = bp[i * 3];
-            const baseY = bp[i * 3 + 1];
-            const baseZ = bp[i * 3 + 2];
-
-            // ── Compression offset (Y only — push tail toward nose) ──────
-            const compressionPush = compression * totalHeight * frac * frac;
-
-            // ── Wobble offset (X and Z only — lateral jelly motion) ──────
-            let wobbleX = 0, wobbleZ = 0;
-            if (WOBBLE_STRENGTH > 0 && frac > 0) {
-              const phase = wp[i];
-              const amp   = WOBBLE_STRENGTH * maxR * Math.pow(frac, 1.5);
-              const slow  = Math.sin(elapsedTime * 0.8 + phase);
-              const fast  = Math.sin(elapsedTime * 2.1 + phase * 1.7) * 0.35;
-              const wOff  = amp * (slow + fast);
-              wobbleX = wOff;
-              wobbleZ = wOff * 0.4;
-            }
-
-            posArr[i * 3]     = baseX + wobbleX;
-            posArr[i * 3 + 1] = baseY + compressionPush; // push tail up toward nose
-            posArr[i * 3 + 2] = baseZ + wobbleZ;
-          }
-          c.geometry.attributes.position.needsUpdate = true;
-        });
-      }
+      // Legacy torus hidden — superseded by Bz field lines
       if (fluxRopeRef.current) { fluxRopeRef.current.visible = false; fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime; }
 
       // ── Bz field lines ───────────────────────────────────────────────────────
@@ -1095,6 +692,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
       }
 
+      // ── Bz indicator disc ────────────────────────────────────────────────────
+      if (bzIndicatorRef.current) {
+        bzIndicatorRef.current.visible = shouldShowBz;
+        if (shouldShowBz) {
+          const cmeObj = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
+          if (cmeObj?.visible) {
+            // Place disc at the front face of the croissant, offset slightly forward
+            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObj.quaternion);
+            bzIndicatorRef.current.position.copy(cmeObj.position.clone().add(dir.multiplyScalar(cmeObj.scale.x * 0.18)));
+            // Always face the camera
+            bzIndicatorRef.current.quaternion.copy(cameraRef.current.quaternion);
+            // Scale proportional to CME lateral width
+            const ds = cmeObj.scale.x * 0.55;
+            bzIndicatorRef.current.scale.set(ds, ds, ds);
+            bzIndicatorRef.current.material.uniforms.uBzSouth.value = bzSouth ? 1.0 : 0.0;
+            bzIndicatorRef.current.material.uniforms.uTime.value    = elapsedTime;
+          }
+        }
+      }
+
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
       controlsRef.current.update();
@@ -1102,7 +719,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
     animate();
 
-    return () => {
+    sceneCleanupRef.current = () => {
       window.removeEventListener('resize', handleResize);
       if (rendererRef.current?.domElement) { rendererRef.current.domElement.removeEventListener('pointerdown', handlePointerDown); rendererRef.current.domElement.removeEventListener('pointerup', handlePointerUp); }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
@@ -1116,8 +733,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       });
       rendererRef.current = null; setRendererDomElement(null); onCameraReady(null);
     };
+    }); // end loadThreeLibs().then()
+
+    return () => {
+      cancelled = true;
+      sceneCleanupRef.current?.();
+      sceneCleanupRef.current = null;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [THREE]);
+  }, [loadThreeLibs]);
 
   // ── CME particle systems ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1133,135 +757,74 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
       const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
 
-      // ── CME SHAPE: TRUE TEARDROP ──────────────────────────────────────────
+      // ── TEARDROP SHAPE ────────────────────────────────────────────────────
+      // The leading edge (top of arc, t≈0) is fattest.
+      // Tube radius tapers toward the trailing legs (t→±halfSpan).
+      // taper(t) = 1.0 at t=0 (front), falls to ~0.35 at the tips.
       //
-      // Silhouette: bulging rounded front (nose), continuously narrowing body,
-      // converging to a single point at the tail toward the Sun.
-      //
-      // Cross-section half-width at depth fraction f ∈ [0,1] (0=nose, 1=tail):
-      //   hw(f) = maxHalfWidth * (1-f)^nosePow * f^tailPow  -- NO, that peaks mid.
-      //
-      // Correct formula for "fat front, pointed tail":
-      //   hw(f) = maxHalfWidth * sqrt(1 - f) * (1 - f*f*tailSharpness)
-      //
-      // Actually simplest correct approach:
-      //   Think of it as half an ellipse at the nose blending into a cone to tail.
-      //   hw(f) = maxHalfWidth * sqrt(max(0, 1 - f^tailPow))
-      //   tailPow < 1 = very gradual taper (fat cigar)
-      //   tailPow = 1 = linear taper (cone/triangle)
-      //   tailPow > 1 = fast initial taper then slow (teardrop — round front, pinched tail)
-      //
-      // We want: round at nose (slow start), then taper to point.
-      // Use tailPow = 0.6 — starts wide, tapers continuously to zero.
+      // ── BACK DEPTH (60% extra) ───────────────────────────────────────────
+      // A second pass distributes particles behind the arc centrepoint,
+      // offset along the -Y (toward-Sun) axis.  This gives front-to-back
+      // depth without going all the way back to the Sun.
+      // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
+      // Density falls off toward the tail so it looks like a tear, not a box.
 
-      const tailExtend = 5.6;
-      // One single particle pass. No separate arc + fill.
-      //
-      // Shape defined in local cylindrical coords (radius r, height y):
-      //   The teardrop profile: r_max(y) = maxR * (1 - y/noseY)^nosePow  — NO
-      //
-      // We use a 2D teardrop SDF approach:
-      //   - y runs from +noseY (front tip) to tailY (tail point), both in local space
-      //   - At each y, the allowed radius is: r_max(y) = maxR * profile(y)
-      //   - profile: smooth at nose, tapers continuously to 0 at tail
-      //
-      // Density: higher near the outer surface (shell effect) and near the nose.
-      // This gives bright leading edge + visible core + fading wake naturally.
+      const backDepthFrac = 0.60; // how far back the tail extends as fraction of arcR
+      // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
+      const mainCount = Math.floor(pCount * 0.65);
+      const tailCount = pCount - mainCount;
 
-      // Y extent: nose at top (positive), tail at bottom (negative)
-      const noseTopY  = arcR;           // nose tip protrudes arcR above origin
-      const legMidY   = 0.0;            // where legs are (~equator of the teardrop)
-      const tailY     = -(tailExtend * arcR);  // tail point
+      // Main arc particles — tapered tube
+      for (let i = 0; i < mainCount; i++) {
+        const t  = (Math.random() * 2 - 1) * hs;
+        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
+        const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-      const totalHeight = noseTopY - tailY;  // full height of teardrop
+        // Taper: cos²(t / halfSpan * π/2) gives 1.0 at t=0, 0.0 at t=±halfSpan
+        // We floor it at 0.35 so the tips still have some body
+        const taper    = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
+        const tubeR    = baseTubeR * taper;
+        const rho      = Math.sqrt(Math.random()) * tubeR;
+        const phi      = Math.random() * 2 * Math.PI;
+        pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
+      }
 
-      // Max radius at the widest point (around legMidY)
-      const maxR = arcR * Math.sin(hs) + baseTubeR * 0.6;
+      // Tail depth particles — fill behind the arc in the -Y direction
+      // (toward Sun in local space, since +Y = propagation direction)
+      for (let i = 0; i < tailCount; i++) {
+        const t  = (Math.random() * 2 - 1) * hs;
+        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
+        const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-      // Profile: given normalised y position [0=nose .. 1=tail], return allowed radius
-      // Uses a two-segment curve: nose half is convex (round cap), tail half tapers to point
-      const getRadius = (y: number): number => {
-        // f: 0 at nose top, 1 at tail
-        const f = Math.max(0, Math.min(1, (noseTopY - y) / totalHeight));
-        // Nose cap: sin curve peaks at f≈0.25, then linear taper to tail
-        const noseCap  = Math.sin(Math.min(f * Math.PI / 0.5, Math.PI)); // peaks at f=0.25
-        const taper    = Math.pow(1.0 - f, 0.6);
-        // Blend: use noseCap for front 40%, pure taper for rest
-        const blend    = Math.max(0, Math.min(1, f / 0.4));
-        return maxR * (noseCap * (1 - blend) + taper * blend);
-      };
+        // Depth offset: random penetration behind the arc surface in -Y local space
+        // More particles near 0 depth (front), fewer at full backDepth (tail tip)
+        // sqrt distribution biases toward front — gives the "rounded bullet" feel
+        const depthFrac = Math.pow(Math.random(), 1.6); // bias toward front
+        const depthY    = -depthFrac * backDepthFrac * arcR; // negative = toward Sun
 
-      for (let i = 0; i < pCount; i++) {
-        // Pick y with bias toward nose (front-heavy density)
-        const f  = Math.pow(Math.random(), 0.65);
-        const py = noseTopY - f * totalHeight;
+        // Tube radius at this depth also tapers — narrower deeper in the tail
+        // and narrower toward arc tips (same taper as main arc)
+        const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
+        const depthTaper = 1.0 - depthFrac * 0.65; // narrow toward tail tip
+        const tubeR      = baseTubeR * arcTaper * depthTaper;
+        const rho        = Math.sqrt(Math.random()) * tubeR;
+        const phi        = Math.random() * 2 * Math.PI;
 
-        const rMax = getRadius(py);
-        if (rMax < 0.0005) continue;
-
-        // Radial distribution: bias toward surface for shell/edge effect
-        const rFrac = Math.pow(Math.random(), 0.45);
-        const r     = rFrac * rMax;
-
-        const angle = Math.random() * Math.PI * 2;
+        // Offset the particle backward in Y (local propagation axis)
         pos.push(
-          r * Math.cos(angle),
-          py,
-          r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC
+          cx + rho * Math.cos(phi) * Nx,
+          cy + rho * Math.cos(phi) * Ny + depthY,
+          rho * Math.sin(phi)
         );
       }
-
-      const geom = new THREE.BufferGeometry();
-      const posAttr = new THREE.Float32BufferAttribute(pos, 3);
-      posAttr.setUsage(THREE.DynamicDrawUsage); // positions will be updated each frame
-      geom.setAttribute('position', posAttr);
-
-      // Store base positions and per-particle tail fractions for wobble animation
-      const basePositions  = new Float32Array(pos);
-      const tailFractions  = new Float32Array(pos.length / 3);
-      for (let i = 0; i < tailFractions.length; i++) {
-        const py = pos[i * 3 + 1]; // Y of this particle
-        // tailFrac: 0 = at nose, 1 = at tail tip. Only back 60% of body wobbles.
-        const rawFrac = Math.max(0, (noseTopY - py) / totalHeight);
-        tailFractions[i] = Math.max(0, (rawFrac - 0.4) / 0.6); // remap so wobble starts at 40% depth
-      }
-
-      // Random per-particle phase so wobble looks organic (not all moving in sync)
-      const wobblePhases = new Float32Array(tailFractions.length);
-      for (let i = 0; i < wobblePhases.length; i++) wobblePhases[i] = Math.random() * Math.PI * 2;
-
-      const mat = new THREE.PointsMaterial({
-        size: getCmeParticleSize(cme.speed, SCENE_SCALE),
-        sizeAttenuation: true,
-        map: pt,
-        transparent: true,
-        opacity: getCmeOpacity(cme.speed),
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        color: getCmeCoreColor(cme.speed),
-      });
-      const system = new THREE.Points(geom, mat);
-      system.userData = {
-        ...cme,
-        tailY_local:    totalHeight,
-        basePositions,
-        tailFractions,
-        wobblePhases,
-        noseTopY,
-        totalHeight,
-      };
+      const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
+      const system = new THREE.Points(geom, mat); system.userData = cme;
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
   }, [cmeData, getClockElapsedTime]);
-
-  // Build trajectory cache whenever data or timeline window changes
-  useEffect(() => {
-    if (cmeData.length > 0 && timelineMaxDate > timelineMinDate) {
-      buildTrajectoryCache(cmeData, timelineMinDate, timelineMaxDate);
-    }
-  }, [cmeData, timelineMinDate, timelineMaxDate, buildTrajectoryCache]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
@@ -1335,7 +898,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
-  useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS', 'JUPITER', 'SATURN', 'URANUS', 'NEPTUNE'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
+  useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
   useEffect(() => { if (!celestialBodiesRef.current) return; const m = celestialBodiesRef.current['MOON'], l = celestialBodiesRef.current['L1']; if (m) m.mesh.visible = showMoonL1; if (l) l.mesh.visible = showMoonL1; const e = celestialBodiesRef.current['EARTH']?.mesh; if (e) { const o = e.children.find((c: any) => c.name === 'moon-orbit'); if (o) o.visible = showMoonL1; } }, [showMoonL1]);
 
   const checkImpacts = useCallback(() => {
