@@ -6,9 +6,9 @@ import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
+const TutorialModal = lazy(() => import('./components/TutorialModal'));
 import LoadingOverlay from './components/LoadingOverlay';
-import MediaViewerModal from './components/MediaViewerModal';
+const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 
@@ -22,17 +22,17 @@ import CameraResetIcon from './components/icons/CameraResetIcon';
 import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/icons/NavBadgeIcons';
 
 // Dashboard and Banner Imports
-import ForecastDashboard from './components/ForecastDashboard';
-import SolarActivityDashboard from './components/SolarActivityDashboard';
-import UnifiedDashboardMode from './components/UnifiedDashboardMode';
+const ForecastDashboard = lazy(() => import('./components/ForecastDashboard'));
+const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDashboard'));
+const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports
-import SettingsModal from './components/SettingsModal';
-import FirstVisitTutorial from './components/FirstVisitTutorial';
-import CmeModellerTutorial from './components/CmeModellerTutorial';
-import ForecastModelsModal from './components/ForecastModelsModal';
+const SettingsModal = lazy(() => import('./components/SettingsModal'));
+const FirstVisitTutorial = lazy(() => import('./components/FirstVisitTutorial'));
+const CmeModellerTutorial = lazy(() => import('./components/CmeModellerTutorial'));
+const ForecastModelsModal = lazy(() => import('./components/ForecastModelsModal'));
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
@@ -1039,7 +1039,7 @@ const App: React.FC = () => {
 
           <div className="flex flex-grow min-h-0">
               {isDashboardMode ? (
-                <UnifiedDashboardMode refreshSignal={manualRefreshKey} />
+                <Suspense fallback={null}><UnifiedDashboardMode refreshSignal={manualRefreshKey} /></Suspense>
               ) : (
               <>
               {visitedPages.modeler && activePage === 'modeler' && (
@@ -1136,12 +1136,12 @@ const App: React.FC = () => {
                   
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
-                  <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
+                  <Suspense fallback={null}><TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} /></Suspense>
               </div>
               )}
               {visitedPages.forecast && (
                 <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
-                    <ForecastDashboard
+                    <Suspense fallback={null}><ForecastDashboard
                         setViewerMedia={setViewerMedia}
                         setCurrentAuroraScore={setCurrentAuroraScore}
                         setSubstormActivityStatus={setSubstormActivityStatus}
@@ -1152,12 +1152,12 @@ const App: React.FC = () => {
                         viewMode={forecastViewMode}
                         onViewModeChange={handleForecastViewChange}
                         refreshSignal={manualRefreshKey}
-                    />
+                    /></Suspense>
                 </div>
               )}
               {visitedPages['solar-activity'] && (
                 <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
-                    <SolarActivityDashboard
+                    <Suspense fallback={null}><SolarActivityDashboard
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
                         onViewCMEInVisualization={handleViewCMEInVisualization}
@@ -1165,15 +1165,15 @@ const App: React.FC = () => {
                         refreshSignal={manualRefreshKey}
                         onInitialLoad={handleSolarInitialLoad}
                         onInitialLoadProgress={handleSolarLoadPoint}
-                    />
+                    /></Suspense>
                 </div>
               )}
               </>
               )}
           </div>
           
-          <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
-          <SettingsModal
+          <Suspense fallback={null}><MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} /></Suspense>
+          <Suspense fallback={null}><SettingsModal
             isOpen={isSettingsOpen}
             onClose={handleCloseSettings}
             appVersion={APP_VERSION}
@@ -1184,25 +1184,25 @@ const App: React.FC = () => {
             onDefaultForecastViewChange={handleDefaultForecastViewChange}
             pageViewStats={pageViewStats}
             pageViewStorageMode={pageViewStorageMode}
-          />
+          /></Suspense>
           
-          <FirstVisitTutorial
+          <Suspense fallback={null}><FirstVisitTutorial
               isOpen={isFirstVisitTutorialOpen}
               onClose={handleCloseFirstVisitTutorial}
               onStepChange={handleTutorialStepChange}
-          />
+          /></Suspense>
 
-          <CmeModellerTutorial
+          <Suspense fallback={null}><CmeModellerTutorial
               isOpen={isCmeTutorialOpen}
               onClose={handleCloseCmeTutorial}
               onStepChange={handleTutorialStepChange}
-          />
+          /></Suspense>
 
-          <ForecastModelsModal
+          <Suspense fallback={null}><ForecastModelsModal
               isOpen={isForecastModelsModalOpen}
               onClose={() => setIsForecastModelsModalOpen(false)}
               setViewerMedia={setViewerMedia}
-          />
+          /></Suspense>
 
           <Suspense fallback={null}>
             {/* --- NEW: Render the ImpactGraphModal --- */}

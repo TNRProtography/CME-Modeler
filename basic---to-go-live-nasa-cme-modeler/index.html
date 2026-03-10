@@ -94,7 +94,12 @@
   <link rel="prefetch" as="image" href="https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        as="style" crossorigin
+        onload="this.onload=null;this.rel='stylesheet'">
+  <noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  </noscript>
 
   <!-- Make Leaflet CSS non-blocking: preload then apply -->
   <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
