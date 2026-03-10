@@ -314,30 +314,59 @@ const calculateCurrentSpeed = (cme: any, timeSinceEventSeconds: number): number 
 // Opacity scales with speed above that threshold.
 
 const SHOCK_SPEED_THRESHOLD_KMS = 600;
-const SHOCK_FORWARD_FRAC        = 0.22;  // how far ahead of CME front the shock sits
-const SHOCK_PARTICLE_COUNT      = 1800;
+const SHOCK_FORWARD_FRAC        = 0.14;  // how far ahead of CME the shock sits in local Y
+const SHOCK_PARTICLE_COUNT      = 900;   // sparser than CME — just an outline presence
 
 const buildShockGeometry = (THREE: any) => {
   const pos: number[] = [];
-  const arcR = GCS_ARC_RADIUS_FRAC;
 
-  for (let i = 0; i < SHOCK_PARTICLE_COUNT; i++) {
-    // Random point in an ellipse in the X-Z plane
-    // Radius follows the CME's lateral spread — slightly wider than the CME front
-    const angle  = Math.random() * Math.PI * 2;
-    // Non-uniform radial sampling — more particles near the rim (visible edge)
-    const r      = arcR * 1.15 * Math.sqrt(0.15 + 0.85 * Math.random());
-    const px     = r * Math.cos(angle);
-    const pz     = r * Math.sin(angle);
+  const arcR       = GCS_ARC_RADIUS_FRAC;
+  const baseTubeR  = GCS_TUBE_RADIUS_FRAC * arcR * 0.55;  // thinner tube than CME
+  const hs         = GCS_ARC_SPAN * 0.5;
+  const backDepthFrac = 0.60;  // same tail depth as CME
 
-    // Gentle forward bow: particles near the centre bulge forward in +Y
-    // bow = cos²(r / maxR * π/2) — zero at edge, max at centre
-    const bowAmount = 0.08 * arcR * Math.pow(Math.cos((r / (arcR * 1.15)) * (Math.PI / 2)), 2);
-    // The shock is placed at SHOCK_FORWARD_FRAC ahead of the CME front (cy=0).
-    // Additional bow offset in local +Y
-    const py = SHOCK_FORWARD_FRAC + bowAmount;
+  const mainCount = Math.floor(SHOCK_PARTICLE_COUNT * 0.65);
+  const tailCount = SHOCK_PARTICLE_COUNT - mainCount;
 
-    pos.push(px, py, pz);
+  // Main arc — same tapered croissant as CME, offset forward in +Y
+  for (let i = 0; i < mainCount; i++) {
+    const t  = (Math.random() * 2 - 1) * hs;
+    const cx = arcR * Math.sin(t);
+    const cy = arcR * (Math.cos(t) - 1);   // same belly-forward formula
+    const Nx = -Math.sin(t), Ny = -Math.cos(t);
+
+    const taper = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
+    const tubeR = baseTubeR * taper;
+    const rho   = Math.sqrt(Math.random()) * tubeR;
+    const phi   = Math.random() * 2 * Math.PI;
+
+    pos.push(
+      cx + rho * Math.cos(phi) * Nx,
+      cy + rho * Math.cos(phi) * Ny + SHOCK_FORWARD_FRAC,  // +Y offset = ahead of CME
+      rho * Math.sin(phi)
+    );
+  }
+
+  // Tail depth — same teardrop tail as CME, also offset forward
+  for (let i = 0; i < tailCount; i++) {
+    const t  = (Math.random() * 2 - 1) * hs;
+    const cx = arcR * Math.sin(t);
+    const cy = arcR * (Math.cos(t) - 1);
+    const Nx = -Math.sin(t), Ny = -Math.cos(t);
+
+    const depthFrac  = Math.pow(Math.random(), 1.6);
+    const depthY     = -depthFrac * backDepthFrac * arcR;
+    const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
+    const depthTaper = 1.0 - depthFrac * 0.65;
+    const tubeR      = baseTubeR * arcTaper * depthTaper;
+    const rho        = Math.sqrt(Math.random()) * tubeR;
+    const phi        = Math.random() * 2 * Math.PI;
+
+    pos.push(
+      cx + rho * Math.cos(phi) * Nx,
+      cy + rho * Math.cos(phi) * Ny + depthY + SHOCK_FORWARD_FRAC,  // depth + forward offset
+      rho * Math.sin(phi)
+    );
   }
 
   const geom = new THREE.BufferGeometry();
