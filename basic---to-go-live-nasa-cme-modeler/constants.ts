@@ -18,7 +18,11 @@ export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   EARTH:   { name: 'Earth',   radius: 1.0   * SCENE_SCALE, size: 0.02  * SCENE_SCALE, color: 0x2a6a9c, angle: 0,   labelElementId: 'earth-label',   orbitalPeriodDays: 365.25 },
   MOON:    { name: 'Moon', orbits: 'EARTH', radius: 0.15 * SCENE_SCALE, size: 0.005 * SCENE_SCALE, color: 0xbbbbbb, angle: 2.1, labelElementId: 'moon-label', orbitalPeriodDays: 27.3 },
   MARS:    { name: 'Mars',    radius: 1.52  * SCENE_SCALE, size: 0.012 * SCENE_SCALE, color: 0xff5733, angle: 5.1, labelElementId: 'mars-label',    orbitalPeriodDays: 687 },
-  SUN:     { name: 'Sun',     radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' } // Sun data for consistency
+  JUPITER: { name: 'Jupiter', radius: 5.20  * SCENE_SCALE, size: 0.055 * SCENE_SCALE, color: 0xc88b3a, angle: 0.8, labelElementId: 'jupiter-label', orbitalPeriodDays: 4333 },
+  SATURN:  { name: 'Saturn',  radius: 9.58  * SCENE_SCALE, size: 0.045 * SCENE_SCALE, color: 0xe4d191, angle: 2.2, labelElementId: 'saturn-label',  orbitalPeriodDays: 10759 },
+  URANUS:  { name: 'Uranus',  radius: 19.2  * SCENE_SCALE, size: 0.030 * SCENE_SCALE, color: 0x7de8e8, angle: 4.1, labelElementId: 'uranus-label',  orbitalPeriodDays: 30687 },
+  NEPTUNE: { name: 'Neptune', radius: 30.05 * SCENE_SCALE, size: 0.028 * SCENE_SCALE, color: 0x3f54ba, angle: 1.5, labelElementId: 'neptune-label', orbitalPeriodDays: 60190 },
+  SUN:     { name: 'Sun',     radius: 0, size: 0.1 * SCENE_SCALE, color: 0xffcc00, angle: 0, labelElementId: 'sun-label' }
 };
 
 export const POI_DATA_MAP: Record<string, POIData> = {
@@ -226,8 +230,155 @@ void main() {
 }`;
 // --- END OF MODIFICATION ---
 
-export const PRIMARY_COLOR = "#fafafa"; // neutral-50 (bright white accent)
-export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)"; // neutral-900 with alpha
-export const TEXT_COLOR = "#e5e5e5"; // neutral-200
-export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)"; // neutral-800
+export const PRIMARY_COLOR = "#fafafa";
+export const PANEL_BG_COLOR = "rgba(23, 23, 23, 0.9)";
+export const TEXT_COLOR = "#e5e5e5";
+export const HOVER_BG_COLOR = "rgba(38, 38, 38, 1)";
+
+// ── JUPITER SHADER ─────────────────────────────────────────────────────────
+// Animated banded gas giant with Great Red Spot hint
+export const JUPITER_FRAGMENT_SHADER = `
+uniform float uTime;
+varying vec2 vUv;
+
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,0.366025403784439,-0.577350269189626,0.024390243902439);
+  vec2 i=floor(v+dot(v,C.yy)); vec2 x0=v-i+dot(i,C.xx);
+  vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+  vec4 x12=x0.xyxy+C.xxzz; x12.xy-=i1; i=mod(i,289.);
+  vec3 p=permute(permute(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+  vec3 m=max(0.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.); m=m*m; m=m*m;
+  vec3 x=2.*fract(p*C.www)-1.; vec3 h=abs(x)-0.5; vec3 ox=floor(x+0.5); vec3 a0=x-ox;
+  m*=1.79284291400159-0.85373472095314*(a0*a0+h*h);
+  vec3 g; g.x=a0.x*x0.x+h.x*x0.y; g.yz=a0.yz*x12.xz+h.yz*x12.yw;
+  return 130.*dot(m,g);
+}
+void main() {
+  float t = uTime * 0.04;
+  float lat = vUv.y;
+  // Banded base — alternating warm/cool bands
+  float band = sin(lat * 18.0) * 0.5 + 0.5;
+  float turbulence = snoise(vec2(vUv.x * 4.0 + t * (0.5 + lat), lat * 6.0)) * 0.18;
+  float b = clamp(band + turbulence, 0.0, 1.0);
+  vec3 warm = vec3(0.78, 0.55, 0.25);
+  vec3 cool = vec3(0.55, 0.38, 0.18);
+  vec3 light = vec3(0.92, 0.82, 0.65);
+  vec3 col = mix(cool, warm, b);
+  col = mix(col, light, pow(b, 3.0) * 0.5);
+  // Great Red Spot region (equatorial band)
+  float spotLat = abs(lat - 0.38);
+  float spotLon = mod(vUv.x + t * 0.3, 1.0);
+  float spot = smoothstep(0.08, 0.0, spotLat) * smoothstep(0.14, 0.0, abs(spotLon - 0.5));
+  col = mix(col, vec3(0.72, 0.22, 0.10), spot * 0.85);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+// ── SATURN SHADER ──────────────────────────────────────────────────────────
+export const SATURN_FRAGMENT_SHADER = `
+uniform float uTime;
+varying vec2 vUv;
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,0.366025403784439,-0.577350269189626,0.024390243902439);
+  vec2 i=floor(v+dot(v,C.yy)); vec2 x0=v-i+dot(i,C.xx);
+  vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+  vec4 x12=x0.xyxy+C.xxzz; x12.xy-=i1; i=mod(i,289.);
+  vec3 p=permute(permute(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+  vec3 m=max(0.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.); m=m*m; m=m*m;
+  vec3 x=2.*fract(p*C.www)-1.; vec3 h=abs(x)-0.5; vec3 ox=floor(x+0.5); vec3 a0=x-ox;
+  m*=1.79284291400159-0.85373472095314*(a0*a0+h*h);
+  vec3 g; g.x=a0.x*x0.x+h.x*x0.y; g.yz=a0.yz*x12.xz+h.yz*x12.yw;
+  return 130.*dot(m,g);
+}
+void main() {
+  float t = uTime * 0.025;
+  float band = sin(vUv.y * 14.0) * 0.5 + 0.5;
+  float turb = snoise(vec2(vUv.x * 3.0 + t, vUv.y * 5.0)) * 0.12;
+  float b = clamp(band + turb, 0.0, 1.0);
+  vec3 c1 = vec3(0.87, 0.80, 0.55);
+  vec3 c2 = vec3(0.70, 0.60, 0.35);
+  vec3 c3 = vec3(0.95, 0.90, 0.72);
+  vec3 col = mix(c2, c1, b);
+  col = mix(col, c3, pow(b, 4.0) * 0.4);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+// ── URANUS SHADER ──────────────────────────────────────────────────────────
+// Pale cyan ice giant with subtle banding
+export const URANUS_FRAGMENT_SHADER = `
+uniform float uTime;
+varying vec2 vUv;
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,0.366025403784439,-0.577350269189626,0.024390243902439);
+  vec2 i=floor(v+dot(v,C.yy)); vec2 x0=v-i+dot(i,C.xx);
+  vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+  vec4 x12=x0.xyxy+C.xxzz; x12.xy-=i1; i=mod(i,289.);
+  vec3 p=permute(permute(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+  vec3 m=max(0.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.); m=m*m; m=m*m;
+  vec3 x=2.*fract(p*C.www)-1.; vec3 h=abs(x)-0.5; vec3 ox=floor(x+0.5); vec3 a0=x-ox;
+  m*=1.79284291400159-0.85373472095314*(a0*a0+h*h);
+  vec3 g; g.x=a0.x*x0.x+h.x*x0.y; g.yz=a0.yz*x12.xz+h.yz*x12.yw;
+  return 130.*dot(m,g);
+}
+void main() {
+  float t = uTime * 0.015;
+  float band = sin(vUv.y * 8.0) * 0.5 + 0.5;
+  float turb = snoise(vec2(vUv.x * 2.0 + t, vUv.y * 4.0)) * 0.08;
+  float b = clamp(band + turb, 0.0, 1.0);
+  vec3 c1 = vec3(0.49, 0.91, 0.91);
+  vec3 c2 = vec3(0.35, 0.72, 0.78);
+  vec3 c3 = vec3(0.70, 0.96, 0.96);
+  vec3 col = mix(c2, c1, b);
+  col = mix(col, c3, pow(b, 3.0) * 0.3);
+  // Limb darkening
+  float limb = pow(1.0 - abs(vUv.x - 0.5) * 2.0, 0.4) * pow(1.0 - abs(vUv.y - 0.5) * 2.0, 0.4);
+  col *= 0.75 + 0.25 * limb;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+// ── NEPTUNE SHADER ─────────────────────────────────────────────────────────
+// Deep blue with stormy dynamic bands
+export const NEPTUNE_FRAGMENT_SHADER = `
+uniform float uTime;
+varying vec2 vUv;
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,0.366025403784439,-0.577350269189626,0.024390243902439);
+  vec2 i=floor(v+dot(v,C.yy)); vec2 x0=v-i+dot(i,C.xx);
+  vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+  vec4 x12=x0.xyxy+C.xxzz; x12.xy-=i1; i=mod(i,289.);
+  vec3 p=permute(permute(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+  vec3 m=max(0.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.); m=m*m; m=m*m;
+  vec3 x=2.*fract(p*C.www)-1.; vec3 h=abs(x)-0.5; vec3 ox=floor(x+0.5); vec3 a0=x-ox;
+  m*=1.79284291400159-0.85373472095314*(a0*a0+h*h);
+  vec3 g; g.x=a0.x*x0.x+h.x*x0.y; g.yz=a0.yz*x12.xz+h.yz*x12.yw;
+  return 130.*dot(m,g);
+}
+void main() {
+  float t = uTime * 0.05; // Neptune has fast winds
+  float band = sin(vUv.y * 10.0 + snoise(vec2(vUv.x*2.0, vUv.y*3.0+t))*0.8) * 0.5 + 0.5;
+  float turb = snoise(vec2(vUv.x * 5.0 + t * 1.2, vUv.y * 4.0 - t)) * 0.2;
+  float b = clamp(band + turb, 0.0, 1.0);
+  vec3 deep  = vec3(0.10, 0.20, 0.65);
+  vec3 mid   = vec3(0.18, 0.35, 0.82);
+  vec3 light = vec3(0.35, 0.55, 0.95);
+  vec3 col = mix(deep, mid, b);
+  col = mix(col, light, pow(b, 2.5) * 0.4);
+  // Dark spot
+  float spotLat = abs(vUv.y - 0.45);
+  float spotLon = mod(vUv.x + t * 0.15, 1.0);
+  float spot = smoothstep(0.07, 0.0, spotLat) * smoothstep(0.10, 0.0, abs(spotLon - 0.3));
+  col = mix(col, vec3(0.05, 0.08, 0.30), spot * 0.7);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+// Shared simple vertex shader for all planet surface shaders
+export const PLANET_VERTEX_SHADER = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
 // --- END OF FILE constants.ts ---

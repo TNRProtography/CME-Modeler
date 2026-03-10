@@ -10,7 +10,10 @@ import {
   SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
   EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
-  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
+  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER,
+  PLANET_VERTEX_SHADER,
+  JUPITER_FRAGMENT_SHADER, SATURN_FRAGMENT_SHADER,
+  URANUS_FRAGMENT_SHADER, NEPTUNE_FRAGMENT_SHADER,
 } from '../constants';
 
 /** =========================================================
@@ -818,6 +821,68 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const atmo = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0 }, uTime: { value: 0 } } })); atmo.name = 'atmosphere'; pm.add(atmo);
         const aur = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0 }, uCmeSpeed: { value: 0 }, uImpactTime: { value: 0 }, uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, uAuroraIntensity: { value: 0 } } })); aur.name = 'aurora'; pm.add(aur);
       }
+      // ── Outer planet shader surfaces ─────────────────────────────────────
+      if (name === 'JUPITER') {
+        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: JUPITER_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
+        pm.name = 'jupiter';
+      }
+      if (name === 'SATURN') {
+        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: SATURN_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
+        pm.name = 'saturn';
+        // Saturn rings — flat ring geometry, two passes for inner/outer ring colour bands
+        const ringInner = data.size * 1.25;
+        const ringOuter = data.size * 2.35;
+        const ringGeo = new THREE.RingGeometry(ringInner, ringOuter, 128, 6);
+        // Remap UVs so v=0 at inner edge, v=1 at outer — for ring colour gradient
+        const pos2 = ringGeo.attributes.position;
+        const uv2  = ringGeo.attributes.uv;
+        for (let i = 0; i < pos2.count; i++) {
+          const x = pos2.getX(i), z = pos2.getZ(i);
+          const r = Math.sqrt(x*x + z*z);
+          const v = (r - ringInner) / (ringOuter - ringInner);
+          uv2.setXY(i, (Math.atan2(z, x) / (Math.PI * 2) + 0.5), v);
+        }
+        uv2.needsUpdate = true;
+        const ringMat = new THREE.ShaderMaterial({
+          side: THREE.DoubleSide, transparent: true, depthWrite: false,
+          uniforms: { uTime: { value: 0 } },
+          vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+          fragmentShader: `
+            varying vec2 vUv;
+            void main(){
+              float v = vUv.y; // 0=inner, 1=outer
+              // Cassini division at ~v=0.55 — narrow dark gap
+              float cassini = smoothstep(0.50,0.53,v) * (1.0-smoothstep(0.53,0.56,v));
+              // Ring colour: inner warmer, outer cooler/thinner
+              vec3 inner = vec3(0.85, 0.78, 0.55);
+              vec3 outer = vec3(0.65, 0.58, 0.40);
+              vec3 col = mix(inner, outer, v);
+              // Density falloff at edges + Cassini gap
+              float alpha = (1.0 - cassini) * (0.7 - v * 0.35) * smoothstep(0.0,0.05,v) * smoothstep(1.0,0.85,v);
+              if(alpha < 0.01) discard;
+              gl_FragColor = vec4(col, alpha * 0.85);
+            }`,
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.name = 'saturn-rings';
+        ringMesh.rotation.x = Math.PI * 0.44; // ~27° tilt
+        pm.add(ringMesh);
+      }
+      if (name === 'URANUS') {
+        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: URANUS_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
+        pm.name = 'uranus';
+        // Uranus has faint rings, nearly edge-on due to extreme axial tilt
+        const uRingGeo = new THREE.RingGeometry(data.size * 1.4, data.size * 1.9, 96, 1);
+        const uRingMat = new THREE.MeshBasicMaterial({ color: 0x8ae8e8, side: THREE.DoubleSide, transparent: true, opacity: 0.18, depthWrite: false });
+        const uRing = new THREE.Mesh(uRingGeo, uRingMat);
+        uRing.name = 'uranus-rings';
+        uRing.rotation.x = Math.PI * 0.48; // nearly edge-on (97.8° axial tilt)
+        pm.add(uRing);
+      }
+      if (name === 'NEPTUNE') {
+        pm.material = new THREE.ShaderMaterial({ vertexShader: PLANET_VERTEX_SHADER, fragmentShader: NEPTUNE_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 } } });
+        pm.name = 'neptune';
+      }
       const op = []; for (let i = 0; i <= 128; i++) op.push(new THREE.Vector3(Math.sin((i / 128) * Math.PI * 2) * data.radius, 0, Math.cos((i / 128) * Math.PI * 2) * data.radius));
       const ot = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(op), 128, 0.005 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.6 }));
       scene.add(ot); orbitsRef.current[name] = ot;
@@ -890,6 +955,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const c = e.children.find((c: any) => c.name === 'clouds'); if (c) c.rotation.y += 0.01 * delta;
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
       }
+      // Animate outer planet shaders
+      ['JUPITER','SATURN','URANUS','NEPTUNE'].forEach(n => {
+        const body = celestialBodiesRef.current[n];
+        if (!body) return;
+        const mesh = body.mesh;
+        if ((mesh.material as any)?.uniforms?.uTime) (mesh.material as any).uniforms.uTime.value = elapsedTime;
+        // Slow axial rotation
+        mesh.rotation.y += delta * ({ JUPITER: 0.045, SATURN: 0.038, URANUS: 0.025, NEPTUNE: 0.028 } as any)[n];
+      });
 
       cmeGroupRef.current.children.forEach((c: any) => { if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed); });
 
@@ -1261,7 +1335,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
-  useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
+  useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS', 'JUPITER', 'SATURN', 'URANUS', 'NEPTUNE'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
   useEffect(() => { if (!celestialBodiesRef.current) return; const m = celestialBodiesRef.current['MOON'], l = celestialBodiesRef.current['L1']; if (m) m.mesh.visible = showMoonL1; if (l) l.mesh.visible = showMoonL1; const e = celestialBodiesRef.current['EARTH']?.mesh; if (e) { const o = e.children.find((c: any) => c.name === 'moon-orbit'); if (o) o.visible = showMoonL1; } }, [showMoonL1]);
 
   const checkImpacts = useCallback(() => {
