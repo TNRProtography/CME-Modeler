@@ -262,9 +262,9 @@ const createArrowTexture = (THREE: any) => {
 //  GCS GEOMETRY CONSTANTS
 // ============================================================
 const GCS_ARC_RADIUS_FRAC  = 0.55;
-const GCS_ARC_SPAN         = Math.PI * 0.85;
+const GCS_ARC_SPAN         = Math.PI * 0.62;  // ~112° half-span — open horseshoe, not closed ring
 const GCS_TUBE_RADIUS_FRAC = 0.38;
-const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
+const GCS_AXIAL_DEPTH_FRAC = 0.38;
 
 // Number of helical field lines around the tube, and points per line
 const BZ_FIELD_LINE_COUNT  = 16;   // doubled — fills the torus more completely
