@@ -249,32 +249,28 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const helixTurns = 2.5; // more turns = denser wrapping = circular rope feel
 
   for (let i = 0; i < BZ_FIELD_LINE_POINTS; i++) {
-    const s = i / (BZ_FIELD_LINE_POINTS - 1);           // [0..1] along arc
-    const t = (s * 2 - 1) * halfSpan;                   // arc parameter
+    const s = i / (BZ_FIELD_LINE_POINTS - 1);
+    const t = (s * 2 - 1) * halfSpan;
 
-    // Arc centreline (identical formula to particle geometry — belly faces +Y)
-    const cx = arcR * Math.sin(t);
-    const cy = arcR * (Math.cos(t) - 1);
-    const cz = 0;
+    // Converge centreline toward Sun origin (0,0) — same formula as CME particles
+    const cx0 = arcR * Math.sin(t);
+    const cy0 = arcR * (Math.cos(t) - 1);
+    const tN  = Math.abs(t) / halfSpan;
+    const w   = Math.pow(tN, 2.2);
+    const cx  = cx0 * (1 - w);
+    const cy  = cy0 * (1 - w);
 
-    // Frenet normal and binormal at t
     const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-    // Taper tube radius to zero at legs — matching CME particle geometry
-    const tNorm     = Math.abs(t) / halfSpan;
-    const taper     = Math.pow(1.0 - tNorm, 1.4);
+    // Tube tapers to zero at tips — matching CME particle geometry
+    const taper     = Math.pow(1.0 - tN, 1.4);
     const tubeFinal = tubeR * taper;
 
-    // Pull leg tips inward toward Sun — same convergence as CME particles
-    const legPullY  = -tNorm * tNorm * 0.55 * arcR;
-
-    // Helical angle advances with arc position
     const helixAngle = baseAngle + s * helixTurns * Math.PI * 2;
 
-    // Point on tube surface: centreline + tubeR*(cos*N + sin*B)
     const px = cx + tubeFinal * (Math.cos(helixAngle) * Nx);
-    const py = cy + tubeFinal * (Math.cos(helixAngle) * Ny) + legPullY;
-    const pz = cz + tubeFinal * Math.sin(helixAngle);
+    const py = cy + tubeFinal * (Math.cos(helixAngle) * Ny);
+    const pz =      tubeFinal * Math.sin(helixAngle);
 
     positions.push(px, py, pz);
     aAlongArr.push(s);
@@ -737,56 +733,62 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
       const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
 
-      // ── TEARDROP SHAPE WITH CONVERGING LEGS ──────────────────────────────
-      // The leading edge (top of arc, t≈0) is fattest.
-      // Legs taper smoothly to ZERO radius at the tips — they pinch closed.
-      // Additionally the leg tips are pulled inward (-Y, toward Sun) so the
-      // shape converges rather than ending bluntly — like a real CME flux rope.
+      // ── CME SHAPE: CROISSANT BODY + LEGS CONVERGING TO SUN ───────────────
       //
-      // ── BACK DEPTH ───────────────────────────────────────────────────────
-      // A second pass fills behind the arc giving front-to-back depth.
+      // Arc centreline: cx = arcR*sin(t), cy = arcR*(cos(t)-1)
+      // At t=0 (nose): position is (0, 0) — the leading tip
+      // At t=±hs (legs): position is roughly (±arcR*sin(hs), arcR*(cos(hs)-1))
+      //
+      // SUN in local CME space = (0, 0, 0) — the origin before positioning.
+      // We lerp each particle's XY position toward (0,0) as tNorm→1,
+      // so the legs converge to a point AT the Sun footprint.
+      // The lerp weight uses a power curve so convergence accelerates at the tips.
+      //
+      // Tube radius tapers to zero at tips — legs pinch to a point.
+      // Back-depth particles fill the teardrop body behind the arc.
 
-      const backDepthFrac = 3.50; // user-tuned tail length
+      const backDepthFrac = 3.50;
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
 
-      // How far the leg tips pull back toward the Sun (in normalised arc units).
-      // 0 = no convergence, 0.5 = tips pull halfway back to Sun.
-      const LEG_CONVERGENCE = 0.55;
+      // Helper: compute converged centreline position
+      // tNorm = |t|/hs ∈ [0,1]. At tNorm=1, cx→0, cy→0 (Sun origin).
+      const convergePow = 2.2; // higher = convergence happens closer to the tips
+      const getConvergedCentre = (t: number) => {
+        const cx0 = arcR * Math.sin(t);
+        const cy0 = arcR * (Math.cos(t) - 1);
+        const tN  = Math.abs(t) / hs;
+        const w   = Math.pow(tN, convergePow); // 0 at nose, 1 at tips
+        // Lerp toward Sun at (0, 0)
+        return { cx: cx0 * (1 - w), cy: cy0 * (1 - w), tN };
+      };
 
-      // Main arc particles — fully tapered legs, converging tips
+      // Main arc particles
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
-        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
+        const { cx, cy, tN } = getConvergedCentre(t);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Taper: smoothstep to zero at the tips — no floor, legs pinch closed
-        const tNorm  = Math.abs(t) / hs;                         // 0 at front, 1 at tips
-        const taper  = Math.pow(1.0 - tNorm, 1.4);              // smooth falloff to 0
-        const tubeR  = baseTubeR * taper;
+        // Tube tapers to zero at tips
+        const taper = Math.pow(1.0 - tN, 1.4);
+        const tubeR = baseTubeR * taper;
+        const rho   = Math.sqrt(Math.random()) * tubeR;
+        const phi   = Math.random() * 2 * Math.PI;
 
-        // Pull tip inward: offset in -Y proportional to how close we are to the tip
-        const legPullY = -tNorm * tNorm * LEG_CONVERGENCE * arcR;
-
-        const rho = Math.sqrt(Math.random()) * tubeR;
-        const phi = Math.random() * 2 * Math.PI;
         pos.push(
           cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny + legPullY,
+          cy + rho * Math.cos(phi) * Ny,
           rho * Math.sin(phi)
         );
       }
 
-      // Tail depth particles — same taper + convergence, depth fills the body
+      // Tail depth particles
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
-        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
+        const { cx, cy, tN } = getConvergedCentre(t);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        const tNorm      = Math.abs(t) / hs;
-        const arcTaper   = Math.pow(1.0 - tNorm, 1.4);
-        const legPullY   = -tNorm * tNorm * LEG_CONVERGENCE * arcR;
-
+        const arcTaper   = Math.pow(1.0 - tN, 1.4);
         const depthFrac  = Math.pow(Math.random(), 1.6);
         const depthY     = -depthFrac * backDepthFrac * arcR;
         const depthTaper = 1.0 - depthFrac * 0.65;
@@ -796,7 +798,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
         pos.push(
           cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny + depthY + legPullY,
+          cy + rho * Math.cos(phi) * Ny + depthY,
           rho * Math.sin(phi)
         );
       }
