@@ -480,15 +480,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
 
     // ── DYNAMIC TAIL SCALE ───────────────────────────────────────────────────
-    // The tail tip in local space is at Y = -tailY_local.
-    // Its world-space position along the propagation axis =
-    //   (sunRadius + dist) - tailY_local * scaleY
-    // We clamp scaleY so the tail tip never goes closer to origin than sunRadius:
-    //   scaleY <= dist / tailY_local
-    // Also apply a minimum so the tail always has some visible length.
-    const tailY_local = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * GCS_AXIAL_DEPTH_FRAC * 5.6);
-    const maxTailScaleY = dist > 0.0001 ? dist / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
-    const scaleY = Math.min(sXZ * GCS_AXIAL_DEPTH_FRAC, maxTailScaleY);
+    // The tail tip travels at half the CME's speed — it lags behind.
+    // tailDist = where the tail tip currently is along the propagation axis
+    //            = half the distance the nose has travelled from Sun surface.
+    // worldTailLength = dist - tailDist  (how far the tail stretches in world space)
+    // scaleY = worldTailLength / tailY_local  (converts world length to local scale)
+    const tailDist       = dist * 0.5;  // tail tip is halfway between Sun and nose
+    const worldTailLen   = Math.max(0, dist - tailDist); // = dist * 0.5
+    const tailY_local    = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6 * Math.abs(Math.cos(Math.PI * 0.85 * 0.5) - 1));
+    const scaleY         = tailY_local > 0 ? worldTailLen / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
 
     cmeObject.scale.set(sXZ, scaleY, sXZ);
 
