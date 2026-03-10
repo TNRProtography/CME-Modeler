@@ -248,22 +248,25 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const phase      = lineIndex / BZ_FIELD_LINE_COUNT;
   const helixTurns = 2.5; // more turns = denser wrapping = circular rope feel
 
+  const legTipY_fl    = arcR * (Math.cos(halfSpan) - 1);
+  const convPt_fl     = { x: 0, y: legTipY_fl };
+  const BLEND_START_FL = 0.70;
+
   for (let i = 0; i < BZ_FIELD_LINE_POINTS; i++) {
     const s = i / (BZ_FIELD_LINE_POINTS - 1);
     const t = (s * 2 - 1) * halfSpan;
 
-    // Converge centreline toward Sun origin (0,0) — same formula as CME particles
     const cx0 = arcR * Math.sin(t);
     const cy0 = arcR * (Math.cos(t) - 1);
     const tN  = Math.abs(t) / halfSpan;
-    const w   = Math.pow(tN, 2.2);
-    const cx  = cx0 * (1 - w);
-    const cy  = cy0 * (1 - w);
+    const blendT = Math.max(0, (tN - BLEND_START_FL) / (1.0 - BLEND_START_FL));
+    const w      = blendT * blendT;
+    const cx  = cx0 + (convPt_fl.x - cx0) * w;
+    const cy  = cy0 + (convPt_fl.y - cy0) * w;
 
     const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-    // Tube tapers to zero at tips — matching CME particle geometry
-    const taper     = Math.pow(1.0 - tN, 1.4);
+    const taper     = Math.pow(Math.max(0, 1.0 - tN), 1.6);
     const tubeFinal = tubeR * taper;
 
     const helixAngle = baseAngle + s * helixTurns * Math.PI * 2;
@@ -733,44 +736,56 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
       const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
 
-      // ── CME SHAPE: CROISSANT BODY + LEGS CONVERGING TO SUN ───────────────
+      // ── CME SHAPE: CROISSANT + TIPS CONVERGING TO A POINT ────────────────
       //
-      // Arc centreline: cx = arcR*sin(t), cy = arcR*(cos(t)-1)
-      // At t=0 (nose): position is (0, 0) — the leading tip
-      // At t=±hs (legs): position is roughly (±arcR*sin(hs), arcR*(cos(hs)-1))
+      // The arc runs naturally for most of its length.
+      // In the final 30% of each leg, the centreline sweeps inward toward
+      // a single convergence point that sits behind the CME body on the
+      // propagation axis — like the tail of a raindrop or comet.
       //
-      // SUN in local CME space = (0, 0, 0) — the origin before positioning.
-      // We lerp each particle's XY position toward (0,0) as tNorm→1,
-      // so the legs converge to a point AT the Sun footprint.
-      // The lerp weight uses a power curve so convergence accelerates at the tips.
-      //
-      // Tube radius tapers to zero at tips — legs pinch to a point.
-      // Back-depth particles fill the teardrop body behind the arc.
+      // Convergence point in local space: (0, convergenceY, 0)
+      // This is on the -Y axis (toward Sun), offset behind where the legs
+      // naturally end, so the tips visibly pinch to a single point.
 
-      const backDepthFrac = 3.50;
-      const mainCount = Math.floor(pCount * 0.65);
-      const tailCount = pCount - mainCount;
+      const backDepthFrac   = 3.50;
+      const mainCount       = Math.floor(pCount * 0.65);
+      const tailCount       = pCount - mainCount;
 
-      // Helper: compute converged centreline position
-      // tNorm = |t|/hs ∈ [0,1]. At tNorm=1, cx→0, cy→0 (Sun origin).
-      const convergePow = 2.2; // higher = convergence happens closer to the tips
-      const getConvergedCentre = (t: number) => {
+      // Where the two legs converge — on the -Y axis, set to roughly where
+      // the leg tips naturally sit in Y, so they meet cleanly without
+      // collapsing the whole shape.
+      // arcR*(cos(hs)-1) is the natural Y of the leg tips — we use that
+      // as the convergence Y so the point sits right at the tail.
+      const legTipY = arcR * (Math.cos(hs) - 1); // negative value
+      const convergencePoint = { x: 0, y: legTipY };
+
+      // Blend starts at tNorm = BLEND_START and is complete at tNorm = 1
+      const BLEND_START = 0.70;
+
+      const getArcCentre = (t: number) => {
         const cx0 = arcR * Math.sin(t);
         const cy0 = arcR * (Math.cos(t) - 1);
-        const tN  = Math.abs(t) / hs;
-        const w   = Math.pow(tN, convergePow); // 0 at nose, 1 at tips
-        // Lerp toward Sun at (0, 0)
-        return { cx: cx0 * (1 - w), cy: cy0 * (1 - w), tN };
+        const tN  = Math.abs(t) / hs; // 0 at nose, 1 at tips
+
+        // Only blend in the final portion of the leg
+        const blendT = Math.max(0, (tN - BLEND_START) / (1.0 - BLEND_START));
+        const w      = blendT * blendT; // quadratic — gentle start, sharp finish
+
+        return {
+          cx: cx0 + (convergencePoint.x - cx0) * w,
+          cy: cy0 + (convergencePoint.y - cy0) * w,
+          tN,
+        };
       };
 
       // Main arc particles
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
-        const { cx, cy, tN } = getConvergedCentre(t);
+        const { cx, cy, tN } = getArcCentre(t);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Tube tapers to zero at tips
-        const taper = Math.pow(1.0 - tN, 1.4);
+        // Tube tapers to zero at tips so legs pinch closed
+        const taper = Math.pow(Math.max(0, 1.0 - tN), 1.6);
         const tubeR = baseTubeR * taper;
         const rho   = Math.sqrt(Math.random()) * tubeR;
         const phi   = Math.random() * 2 * Math.PI;
@@ -782,13 +797,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         );
       }
 
-      // Tail depth particles
+      // Tail depth particles — fill the teardrop body behind the arc
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
-        const { cx, cy, tN } = getConvergedCentre(t);
+        const { cx, cy, tN } = getArcCentre(t);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        const arcTaper   = Math.pow(1.0 - tN, 1.4);
+        const arcTaper   = Math.pow(Math.max(0, 1.0 - tN), 1.6);
         const depthFrac  = Math.pow(Math.random(), 1.6);
         const depthY     = -depthFrac * backDepthFrac * arcR;
         const depthTaper = 1.0 - depthFrac * 0.65;
