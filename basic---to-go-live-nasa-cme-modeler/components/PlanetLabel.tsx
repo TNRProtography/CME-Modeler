@@ -62,7 +62,7 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
       // 3. Distance-based Visibility Check
       const dist = planetWorldPos.distanceTo(cameraPosition);
       const minVisibleDist = SCENE_SCALE * 0.2;
-      const maxVisibleDist = SCENE_SCALE * 15;
+      const maxVisibleDist = SCENE_SCALE * 100; // covers Neptune at ~30 AU × SCENE_SCALE
       const isTooCloseOrFar = dist < minVisibleDist || dist > maxVisibleDist;
 
       const shouldBeVisible = !isOccluded && !isBehindCamera && !isTooCloseOrFar;
@@ -75,7 +75,7 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
         labelEl.style.opacity = '1';
         
         // 4. Dynamic Font Size
-        const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 10);
+        const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 9);
         labelEl.style.fontSize = `${Math.max(10, fontSize)}px`;
 
       } else {
