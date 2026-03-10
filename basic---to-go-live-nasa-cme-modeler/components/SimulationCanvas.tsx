@@ -547,47 +547,69 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const headOn = Math.abs(A.dx*nx + A.dy*ny + A.dz*nz);
           const lateral = 1 - headOn; // 0=head-on, 1=glancing
 
-          // ── Speed transfer (momentum conservation) ────────────────────
-          const mA = A.speed * A.speed, mB = B.speed * B.speed;
-          const mergedSpd = (mA * A.speed + mB * B.speed) / (mA + mB);
-          const transferRate = SPEED_TRANSFER_RATE * headOn * overlapFrac;
-          A.speed = Math.max(MIN_SPD, A.speed + (mergedSpd - A.speed) * transferRate);
-          B.speed = Math.max(MIN_SPD, B.speed + (mergedSpd - B.speed) * transferRate);
+          // ── Determine FRONT vs REAR CME ───────────────────────────────
+          // Front = further from Sun (larger distKm). Rear = closer, catching up.
+          // The rear CME is the one that deflects and warps.
+          // The front CME only speeds up (pushed), never deflects — unless the
+          // rear is dramatically faster (>2x), in which case a tiny nudge applies.
+          const front = A.distKm >= B.distKm ? A : B;
+          const rear  = A.distKm >= B.distKm ? B : A;
+          const speedRatio = rear.speed / Math.max(1, front.speed);
 
-          // ── Direction deflection ──────────────────────────────────────
-          // Glancing hits deflect most; head-on hits mostly transfer speed.
-          // Per-pair cap prevents runaway deflection over very long interactions.
-          const pairKey = A.id < B.id ? `${A.id}_${B.id}` : `${B.id}_${A.id}`;
+          // ── Speed transfer ────────────────────────────────────────────
+          // Front CME gets pushed (accelerated toward rear's speed, partially).
+          // Rear CME gets slowed (braked by the wall in front of it).
+          // Rate scales with how head-on the collision is.
+          const transferRate = SPEED_TRANSFER_RATE * headOn * overlapFrac;
+          // How much speed can transfer — proportional to speed differential
+          const speedDiff = Math.max(0, rear.speed - front.speed);
+          // Front accelerates a fraction of the differential
+          front.speed = Math.max(MIN_SPD, front.speed + speedDiff * transferRate * 0.6);
+          // Rear brakes by the same energy conservation
+          rear.speed  = Math.max(MIN_SPD, rear.speed  - speedDiff * transferRate * 0.4);
+
+          // ── Direction deflection — REAR ONLY ─────────────────────────
+          // The rear CME deflects around the front one like water around a rock.
+          // The front CME only deflects if the rear is >2x faster (violent hit).
+          const pairKey = front.id < rear.id ? `${front.id}_${rear.id}` : `${rear.id}_${front.id}`;
           const alreadyDeflected = pairDeflectionAccum.get(pairKey) ?? 0;
           const remainingBudget  = Math.max(0, MAX_DEFLECT_TOTAL - alreadyDeflected);
-          const rawDeflect   = MAX_DEFLECT_PER_STEP * lateral * overlapFrac;
-          const deflectMag   = Math.min(rawDeflect, remainingBudget);
+          const rawDeflect = MAX_DEFLECT_PER_STEP * lateral * overlapFrac;
+          const deflectMag = Math.min(rawDeflect, remainingBudget);
           pairDeflectionAccum.set(pairKey, alreadyDeflected + deflectMag);
 
-          // Deflect A away from B, B away from A
-          // Deflection axis = cross(A.dir, n)  — perpendicular to both
-          const cax = A.dy*nz - A.dz*ny, cay = A.dz*nx - A.dx*nz, caz = A.dx*ny - A.dy*nx;
-          const caLen = Math.sqrt(cax*cax + cay*cay + caz*caz);
-          if (caLen > 0.001) {
-            const il = deflectMag / caLen;
-            // Rodrigues rotation (small angle approx): v' ≈ v + θ*(axis × v)
-            const crossAx = cay*A.dz - caz*A.dy;
-            const crossAy = caz*A.dx - cax*A.dz;
-            const crossAz = cax*A.dy - cay*A.dx;
-            A.dx += crossAx * il; A.dy += crossAy * il; A.dz += crossAz * il;
-            const lenA = Math.sqrt(A.dx*A.dx + A.dy*A.dy + A.dz*A.dz);
-            A.dx /= lenA; A.dy /= lenA; A.dz /= lenA;
+          // Deflect REAR CME around the front one
+          // Axis = cross(rear.dir, separationNormal) — steers rear sideways
+          const crx = rear.dy*nz - rear.dz*ny;
+          const cry = rear.dz*nx - rear.dx*nz;
+          const crz = rear.dx*ny - rear.dy*nx;
+          const crLen = Math.sqrt(crx*crx + cry*cry + crz*crz);
+          if (crLen > 0.001 && deflectMag > 0) {
+            const il = deflectMag / crLen;
+            rear.dx += (cry*rear.dz - crz*rear.dy) * il;
+            rear.dy += (crz*rear.dx - crx*rear.dz) * il;
+            rear.dz += (crx*rear.dy - cry*rear.dx) * il;
+            const lenR = Math.sqrt(rear.dx*rear.dx + rear.dy*rear.dy + rear.dz*rear.dz);
+            rear.dx /= lenR; rear.dy /= lenR; rear.dz /= lenR;
           }
-          const cbx = B.dy*nz - B.dz*ny, cby = B.dz*nx - B.dx*nz, cbz = B.dx*ny - B.dy*nx;
-          const cbLen = Math.sqrt(cbx*cbx + cby*cby + cbz*cbz);
-          if (cbLen > 0.001) {
-            const il = deflectMag / cbLen;
-            const crossBx = cby*B.dz - cbz*B.dy;
-            const crossBy = cbz*B.dx - cbx*B.dz;
-            const crossBz = cbx*B.dy - cby*B.dx;
-            B.dx += crossBx * il; B.dy += crossBy * il; B.dz += crossBz * il;
-            const lenB = Math.sqrt(B.dx*B.dx + B.dy*B.dy + B.dz*B.dz);
-            B.dx /= lenB; B.dy /= lenB; B.dz /= lenB;
+
+          // Front CME: tiny deflection only if rear is dramatically faster (>2x)
+          // This represents the violent "cannibalism" scenario
+          if (speedRatio > 2.0 && remainingBudget > 0) {
+            const violentFrac = Math.min(1, (speedRatio - 2.0) / 2.0); // 0 at 2x, 1 at 4x
+            const frontDeflect = deflectMag * violentFrac * 0.15; // max 15% of rear deflect
+            const cfx = front.dy*nz - front.dz*ny;
+            const cfy = front.dz*nx - front.dx*nz;
+            const cfz = front.dx*ny - front.dy*nx;
+            const cfLen = Math.sqrt(cfx*cfx + cfy*cfy + cfz*cfz);
+            if (cfLen > 0.001 && frontDeflect > 0) {
+              const il = frontDeflect / cfLen;
+              front.dx += (cfy*front.dz - cfz*front.dy) * il;
+              front.dy += (cfz*front.dx - cfx*front.dz) * il;
+              front.dz += (cfx*front.dy - cfy*front.dx) * il;
+              const lenF = Math.sqrt(front.dx*front.dx + front.dy*front.dy + front.dz*front.dz);
+              front.dx /= lenF; front.dy /= lenF; front.dz /= lenF;
+            }
           }
         }
       }
