@@ -311,7 +311,8 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const phase      = lineIndex / BZ_FIELD_LINE_COUNT;
   const helixTurns = 2.5; // more turns = denser wrapping = circular rope feel
 
-  const legTipY_fl     = arcR * (Math.cos(halfSpan) - 1);
+  const arcBellyOffset_fl = arcR;  // same shift as particle geometry
+  const legTipY_fl     = arcR * (Math.cos(halfSpan) - 1) + arcBellyOffset_fl;
   const BLEND_START_FL = 0.68;
 
   for (let i = 0; i < BZ_FIELD_LINE_POINTS; i++) {
@@ -320,7 +321,7 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
     const tN = Math.abs(t) / halfSpan;
 
     const cx0  = arcR * Math.sin(t);
-    const cy0  = arcR * (Math.cos(t) - 1);
+    const cy0  = arcR * (Math.cos(t) - 1) + arcBellyOffset_fl; // shifted to match particles
     const bT   = Math.max(0, (tN - BLEND_START_FL) / (1.0 - BLEND_START_FL));
     const w    = bT * bT;
     const cx   = cx0 * (1 - w);
@@ -485,9 +486,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     //            = half the distance the nose has travelled from Sun surface.
     // worldTailLength = dist - tailDist  (how far the tail stretches in world space)
     // scaleY = worldTailLength / tailY_local  (converts world length to local scale)
-    const tailDist       = dist * 0.5;  // tail tip is halfway between Sun and nose
-    const worldTailLen   = Math.max(0, dist - tailDist); // = dist * 0.5
-    const tailY_local    = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6 * Math.abs(Math.cos(Math.PI * 0.85 * 0.5) - 1));
+    const tailDist       = dist * 0.5;
+    const worldTailLen   = Math.max(0, dist - tailDist);
+    // tailY_local: stored at build time, or fallback = tailExtend * arcR in scene units
+    const tailY_local    = cme.tailY_local ?? (GCS_ARC_RADIUS_FRAC * 5.6);
     const scaleY         = tailY_local > 0 ? worldTailLen / tailY_local : sXZ * GCS_AXIAL_DEPTH_FRAC;
 
     cmeObject.scale.set(sXZ, scaleY, sXZ);
@@ -831,9 +833,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const bStart       = 0.68;
       const legTipY      = arcR * (Math.cos(hs) - 1);
+
+      // The arc belly (the true leading nose of the CME) sits at y = -arcR in the
+      // raw formula cy = arcR*(cos(t)-1). We shift ALL geometry up by arcR so the
+      // nose is at y=0, legs at y≈+arcR, and tail extends in -Y from y=0.
+      const arcBellyOffset = arcR; // shift to put nose at origin
+
       const noseY        = 0.0;
       const tailExtend   = 5.6;
-      const tailY        = legTipY * tailExtend;  // local-space tail tip Y (negative)
+      // legTipY after shift: (legTipY + arcBellyOffset)
+      const legTipY_shifted = legTipY + arcBellyOffset;
+      const tailY        = legTipY_shifted - tailExtend * arcR; // tail extends further in -Y
       const yRange       = noseY - tailY;
 
       const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR * 0.5;
@@ -845,17 +855,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const getArcCentre = (t: number) => {
         const cx0 = arcR * Math.sin(t);
-        const cy0 = arcR * (Math.cos(t) - 1);
+        const cy0 = arcR * (Math.cos(t) - 1) + arcBellyOffset; // shifted so belly=0
         const tN  = Math.abs(t) / hs;
         const bT  = Math.max(0, (tN - bStart) / (1.0 - bStart));
         const w   = bT * bT;
-        return { cx: cx0 * (1 - w), cy: cy0 + (legTipY - cy0) * w, tN };
+        const targetY = legTipY_shifted;
+        return { cx: cx0 * (1 - w), cy: cy0 + (targetY - cy0) * w, tN };
       };
 
       const surfaceCount = Math.floor(pCount * 0.35);
       const fillCount    = pCount - surfaceCount;
 
-      // Surface arc skin
+      // Surface arc skin — ring sits at the nose (y≈0 after shift)
       for (let i = 0; i < surfaceCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const { cx, cy, tN } = getArcCentre(t);
@@ -871,7 +882,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         );
       }
 
-      // Interior teardrop fill
+      // Interior teardrop fill — from nose (y=0) back to tail (y=tailY)
       for (let i = 0; i < fillCount; i++) {
         const f  = Math.pow(Math.random(), 0.7);
         const py = noseY - f * yRange;
@@ -896,7 +907,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         color: getCmeCoreColor(cme.speed),
       });
       const system = new THREE.Points(geom, mat);
-      system.userData = { ...cme, tailY_local: Math.abs(tailY) }; // store tail depth for dynamic scaling
+      system.userData = { ...cme, tailY_local: Math.abs(tailY) };
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
