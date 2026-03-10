@@ -449,14 +449,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const SS      = SCENE_SCALE;
 
     // ── Physics tuning constants ─────────────────────────────────────────
-    const SPEED_TRANSFER_RATE   = 0.0008; // per step, scaled by headOn × overlapFrac
-    const MAX_DEFLECT_PER_STEP  = 0.0012; // radians/step, scaled by lateral × overlapFrac
-    const MAX_DEFLECT_TOTAL     = 0.436;  // hard cap per pair = 25 degrees total
-    // Tail compression: how fast the front CME's tail squashes under rear pressure.
-    // 0.0003/step means a direct sustained hit compresses ~20% over 6 hours.
-    const COMPRESS_RATE         = 0.0003;
-    // Once tail is compressed to this fraction of normal, start pushing front CME forward
-    const COMPRESS_SPEED_THRESHOLD = 0.65; // tail at 65% normal length triggers speed boost
+    const SPEED_TRANSFER_RATE      = 0.0008; // per step — rear brakes, front accelerates
+    const COMPRESS_RATE            = 0.0003; // per step — front tail squashes under pressure
+    const COMPRESS_SPEED_THRESHOLD = 0.65;   // tail at 65% triggers front speed boost
 
     // Initialise mutable state for each CME
     interface MutState {
@@ -493,9 +488,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const cache: Map<string, CachedCMEState>[] = [];
     const sunRadiusKm = (PLANET_DATA_MAP.SUN.size / SS) * AU;
-
-    // Track total deflection applied per pair so we can hard-cap it
-    const pairDeflectionAccum = new Map<string, number>(); // key: `${idA}_${idB}`
 
     for (let step = 0; step < nSteps; step++) {
       const tMs  = tMin + step * cacheStepSizeMs;
@@ -537,67 +529,32 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
           if (separation >= combined || separation < 0.001) continue;
 
-          const overlap     = combined - separation; // km
-          const overlapFrac = Math.min(1, overlap / combined); // 0–1
-
-          // ── Offset vector (normalised A→B direction) ──────────────────
-          const invSep = 1 / separation;
-          const nx = sepX * invSep, ny = sepY * invSep, nz = sepZ * invSep;
-
-          // Lateral offset fraction: how off-centre is the hit?
-          // dot(A.dir, n) ≈ 1 means head-on, ≈ 0 means glancing
-          const headOn = Math.abs(A.dx*nx + A.dy*ny + A.dz*nz);
-          const lateral = 1 - headOn; // 0=head-on, 1=glancing
+          const overlap     = combined - separation;
+          const overlapFrac = Math.min(1, overlap / combined);
 
           // ── Determine FRONT vs REAR ───────────────────────────────────
-          // Front = further from Sun. Rear = closer, catching up.
           const front = A.distKm >= B.distKm ? A : B;
           const rear  = A.distKm >= B.distKm ? B : A;
           const speedDiff = Math.max(0, rear.speed - front.speed);
+          if (speedDiff <= 0) continue; // rear not actually faster, no interaction
 
-          // ── FRONT CME: tail compression + conditional speed boost ─────
-          // Pressure from rear squashes the front CME's tail permanently.
-          // Rate scales with speed differential and overlap depth.
+          // ── FRONT CME: tail compression + speed boost ─────────────────
           const pressureIntensity = overlapFrac * Math.min(1, speedDiff / 500);
-          const compressionDelta  = COMPRESS_RATE * pressureIntensity;
-          front.tailCompression   = Math.min(1, front.tailCompression + compressionDelta);
+          front.tailCompression   = Math.min(1, front.tailCompression + COMPRESS_RATE * pressureIntensity);
 
-          // Once tail is compressed past threshold, energy transfers to forward speed
-          const tailLength = 1 - front.tailCompression; // 1=full, 0=fully squashed
+          const tailLength = 1 - front.tailCompression;
           if (tailLength < COMPRESS_SPEED_THRESHOLD) {
-            // How far past threshold — more compression = more push
-            const excess = (COMPRESS_SPEED_THRESHOLD - tailLength) / COMPRESS_SPEED_THRESHOLD;
-            const speedBoost = speedDiff * SPEED_TRANSFER_RATE * excess * headOn;
-            front.speed = Math.max(front.speed, front.speed + speedBoost);
-            // Rear brakes as it transfers energy
-            rear.speed = Math.max(MIN_SPD, rear.speed - speedBoost * 0.5);
+            const excess     = (COMPRESS_SPEED_THRESHOLD - tailLength) / COMPRESS_SPEED_THRESHOLD;
+            const speedBoost = speedDiff * SPEED_TRANSFER_RATE * excess;
+            front.speed      = front.speed + speedBoost;
+            rear.speed       = Math.max(MIN_SPD, rear.speed - speedBoost * 0.5);
           }
 
-          // ── REAR CME: deflect sideways around the front ───────────────
-          // Front CME has ZERO lateral movement — it is a wall.
-          // Rear CME steers around it, more so on glancing hits.
-          const pairKey = front.id < rear.id
-            ? `${front.id}_${rear.id}` : `${rear.id}_${front.id}`;
-          const alreadyDeflected = pairDeflectionAccum.get(pairKey) ?? 0;
-          const remainingBudget  = Math.max(0, MAX_DEFLECT_TOTAL - alreadyDeflected);
-          const rawDeflect = MAX_DEFLECT_PER_STEP * lateral * overlapFrac;
-          const deflectMag = Math.min(rawDeflect, remainingBudget);
-          pairDeflectionAccum.set(pairKey, alreadyDeflected + deflectMag);
-
-          if (deflectMag > 0) {
-            const crx = rear.dy*nz - rear.dz*ny;
-            const cry = rear.dz*nx - rear.dx*nz;
-            const crz = rear.dx*ny - rear.dy*nx;
-            const crLen = Math.sqrt(crx*crx + cry*cry + crz*crz);
-            if (crLen > 0.001) {
-              const il = deflectMag / crLen;
-              rear.dx += (cry*rear.dz - crz*rear.dy) * il;
-              rear.dy += (crz*rear.dx - crx*rear.dz) * il;
-              rear.dz += (crx*rear.dy - cry*rear.dx) * il;
-              const lenR = Math.sqrt(rear.dx*rear.dx + rear.dy*rear.dy + rear.dz*rear.dz);
-              rear.dx /= lenR; rear.dy /= lenR; rear.dz /= lenR;
-            }
-          }
+          // ── REAR CME: braking only ────────────────────────────────────
+          // Even before the front CME accelerates, the rear CME loses speed
+          // just from pushing into the slower body ahead of it.
+          const brakingRate = SPEED_TRANSFER_RATE * overlapFrac;
+          rear.speed = Math.max(MIN_SPD, rear.speed - speedDiff * brakingRate);
         }
       }
 
