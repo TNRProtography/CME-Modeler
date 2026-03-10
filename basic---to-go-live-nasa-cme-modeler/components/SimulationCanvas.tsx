@@ -74,7 +74,7 @@ const BZ_FIELD_LINE_VERTEX_SHADER = `
     vArrow = pow(max(0.0, 1.0 - abs(arrowPos - 0.5) * 8.0), 2.0);
 
     gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = 3.5;
+    gl_PointSize = 5.5;  // thicker points = more solid circular rope appearance
   }
 `;
 
@@ -100,53 +100,54 @@ const BZ_FIELD_LINE_FRAGMENT_SHADER = `
   }
 `;
 
-// ── Bz INDICATOR DISC SHADERS ─────────────────────────────────────────────────
-// A camera-facing disc rendered at the front of the CME showing a bold up/down
-// arrow so the Bz direction is immediately legible to the user.
+// ── CORE MAGNETIC AXIS SHADERS ────────────────────────────────────────────────
+// A bold line rendered along the central axis of the CME flux rope.
+// Colour = blue (northward) or red (southward).
+// Animated chevron pulses travel along the axis showing field direction.
 
-const BZ_INDICATOR_VERTEX_SHADER = `
-  varying vec2 vUv;
+const BZ_AXIS_VERTEX_SHADER = `
+  uniform float uTime;
+  uniform float uBzSouth;
+  attribute float aAlong;   // [0..1] from tail to nose of CME
+  varying float vAlpha;
+  varying float vArrow;
+
   void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    // Flow direction: northward pulses travel nose→tail (+), south tail→nose (-)
+    float flowDir = uBzSouth > 0.5 ? -1.0 : 1.0;
+    float travel  = mod(aAlong + uTime * 0.22 * flowDir, 1.0);
+
+    // Fade near the ends
+    float fade = smoothstep(0.0, 0.08, aAlong) * smoothstep(1.0, 0.92, aAlong);
+    vAlpha = fade * 0.95;
+
+    // Bright chevron pulse
+    float arrowPos = mod(travel * 5.0, 1.0);
+    vArrow = pow(max(0.0, 1.0 - abs(arrowPos - 0.5) * 9.0), 2.0);
+
+    gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = 7.0;
   }
 `;
 
-const BZ_INDICATOR_FRAGMENT_SHADER = `
+const BZ_AXIS_FRAGMENT_SHADER = `
   uniform float uBzSouth;
-  uniform float uTime;
-  varying vec2 vUv;
+  varying float vAlpha;
+  varying float vArrow;
 
   void main() {
-    vec2 p = vUv * 2.0 - 1.0;
-    float dist = length(p);
-    if (dist > 0.92) discard;
-
-    vec3 northColor = vec3(0.27, 0.53, 1.0);
-    vec3 southColor = vec3(1.0,  0.27, 0.13);
+    vec3 northColor = vec3(0.27, 0.53, 1.0);   // blue — northward
+    vec3 southColor = vec3(1.0,  0.27, 0.13);   // red  — southward
     vec3 col = mix(northColor, southColor, uBzSouth);
 
-    // Arrow shaft (vertical centre strip)
-    float shaft = step(abs(p.x), 0.10) * step(abs(p.y), 0.58);
+    // Bright white at pulse peak
+    col = mix(col, vec3(1.0), vArrow * 0.75);
 
-    // Arrowhead — points UP for north (+Y), DOWN for south (-Y)
-    float arrowDir  = uBzSouth > 0.5 ? -1.0 : 1.0;
-    float headY     = arrowDir * 0.58;
-    float headDist  = arrowDir * (p.y - headY);
-    float headWidth = 0.30 * headDist;
-    float head = step(0.0, headDist) * step(abs(p.x), headWidth) * step(headDist, 0.38);
+    // Soft circular billboard
+    vec2 uv = gl_PointCoord - 0.5;
+    float disc = 1.0 - smoothstep(0.3, 0.5, length(uv));
 
-    float arrow = clamp(shaft + head, 0.0, 1.0);
-    float pulse = 0.78 + 0.22 * sin(uTime * 2.5);
-
-    // NO dark disc background — arrow only, fully transparent elsewhere
-    // Soft glow halo just behind the arrow so it reads against the CME
-    float glow = smoothstep(0.5, 0.0, dist) * 0.18 * arrow;
-
-    float finalAlpha = (arrow * 0.90 + glow) * pulse;
-    finalAlpha *= 1.0 - smoothstep(0.80, 0.92, dist);
-
-    gl_FragColor = vec4(col * pulse, finalAlpha);
+    gl_FragColor = vec4(col, vAlpha * disc);
     if (gl_FragColor.a < 0.01) discard;
   }
 `;
@@ -203,8 +204,8 @@ const GCS_TUBE_RADIUS_FRAC = 0.38;
 const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
 
 // Number of helical field lines around the tube, and points per line
-const BZ_FIELD_LINE_COUNT  = 8;
-const BZ_FIELD_LINE_POINTS = 120;
+const BZ_FIELD_LINE_COUNT  = 16;   // doubled — fills the torus more completely
+const BZ_FIELD_LINE_POINTS = 180;  // more points = smoother helix
 
 const getCmeOpacity      = (speed: number) => { const T = (window as any).THREE; if (!T) return 0.22; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65); };
 const getCmeParticleCount = (speed: number) => { const T = (window as any).THREE; if (!T) return 4000; return Math.floor(T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000)); };
@@ -240,12 +241,12 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const aPhaseArr: number[] = [];
 
   const arcR     = GCS_ARC_RADIUS_FRAC;
-  const tubeR    = GCS_TUBE_RADIUS_FRAC * arcR * 0.92; // sit just inside tube surface
+  const tubeR    = GCS_TUBE_RADIUS_FRAC * arcR * 1.05; // full tube radius — sits ON the surface
   const halfSpan = GCS_ARC_SPAN * 0.5;
 
   const baseAngle  = (lineIndex / BZ_FIELD_LINE_COUNT) * Math.PI * 2;
   const phase      = lineIndex / BZ_FIELD_LINE_COUNT;
-  const helixTurns = 1.5; // wraps around the tube 1.5 times along the arc
+  const helixTurns = 2.5; // more turns = denser wrapping = circular rope feel
 
   for (let i = 0; i < BZ_FIELD_LINE_POINTS; i++) {
     const s = i / (BZ_FIELD_LINE_POINTS - 1);           // [0..1] along arc
@@ -339,9 +340,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const predictionLineRef  = useRef<any>(null);
   const fluxRopeRef        = useRef<any>(null);
 
-  // Bz field line group (Points objects) and front-face indicator disc
+  // Bz field line group — contains helical field lines + core axis line
   const bzFieldLinesRef = useRef<any>(null);
-  const bzIndicatorRef  = useRef<any>(null);
+  const bzIndicatorRef  = useRef<any>(null); // unused — kept to avoid ref churn
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
@@ -492,17 +493,46 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       bzGroup.add(new THREE.Points(buildBzFieldLineGeometry(THREE, i), bzMat));
     }
 
-    // ── Bz indicator disc ────────────────────────────────────────────────────
-    const bzInd = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.ShaderMaterial({
-        vertexShader:   BZ_INDICATOR_VERTEX_SHADER,
-        fragmentShader: BZ_INDICATOR_FRAGMENT_SHADER,
-        uniforms: { uBzSouth: { value: 0.0 }, uTime: { value: 0 } },
-        transparent: true, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide,
-      })
-    );
-    bzInd.visible = false; scene.add(bzInd); bzIndicatorRef.current = bzInd;
+    // ── Core magnetic axis line ───────────────────────────────────────────────
+    // A Points line running through the central axis of the CME flux rope.
+    // Animated chevron pulses show field direction (north/south).
+    // Lives in the same local space as the field line helix — co-positioned
+    // with bzGroup each frame, so no separate positioning needed.
+    {
+      const AXIS_POINTS = 200;
+      const axisPositions: number[] = [];
+      const axisAlong:     number[] = [];
+      const arcR    = GCS_ARC_RADIUS_FRAC;
+      const halfSpan = GCS_ARC_SPAN * 0.5;
+
+      for (let i = 0; i < AXIS_POINTS; i++) {
+        const s = i / (AXIS_POINTS - 1);          // [0..1]
+        const t = (s * 2 - 1) * halfSpan;          // arc parameter
+        // Arc centreline — same formula as CME particles
+        const cx = arcR * Math.sin(t);
+        const cy = arcR * (Math.cos(t) - 1);
+        axisPositions.push(cx, cy, 0);
+        axisAlong.push(s);
+      }
+
+      const axisGeom = new THREE.BufferGeometry();
+      axisGeom.setAttribute('position', new THREE.Float32BufferAttribute(axisPositions, 3));
+      axisGeom.setAttribute('aAlong',   new THREE.Float32BufferAttribute(axisAlong, 1));
+
+      const axisMat = new THREE.ShaderMaterial({
+        vertexShader:   BZ_AXIS_VERTEX_SHADER,
+        fragmentShader: BZ_AXIS_FRAGMENT_SHADER,
+        uniforms: { uTime: { value: 0 }, uBzSouth: { value: 0.0 } },
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+
+      // Add to bzGroup so it's automatically co-positioned and toggled
+      bzGroup.add(new THREE.Points(axisGeom, axisMat));
+    }
+
+    bzIndicatorRef.current = null; // indicator disc removed
 
     // ── Stars ────────────────────────────────────────────────────────────────
     const makeStars = (n: number, spread: number, sz: number) => {
@@ -658,26 +688,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                 child.material.uniforms.uBzSouth.value = bzVal;
               }
             });
-          }
-        }
-      }
-
-      // ── Bz indicator disc ────────────────────────────────────────────────────
-      if (bzIndicatorRef.current) {
-        bzIndicatorRef.current.visible = shouldShowBz;
-        if (shouldShowBz) {
-          const cmeObj = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
-          if (cmeObj?.visible) {
-            // Place disc at the front face of the croissant, offset slightly forward
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObj.quaternion);
-            bzIndicatorRef.current.position.copy(cmeObj.position.clone().add(dir.multiplyScalar(cmeObj.scale.x * 0.18)));
-            // Always face the camera
-            bzIndicatorRef.current.quaternion.copy(cameraRef.current.quaternion);
-            // Scale proportional to CME lateral width
-            const ds = cmeObj.scale.x * 0.55;
-            bzIndicatorRef.current.scale.set(ds, ds, ds);
-            bzIndicatorRef.current.material.uniforms.uBzSouth.value = bzSouth ? 1.0 : 0.0;
-            bzIndicatorRef.current.material.uniforms.uTime.value    = elapsedTime;
           }
         }
       }
