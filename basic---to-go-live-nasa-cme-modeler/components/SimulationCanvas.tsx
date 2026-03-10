@@ -153,6 +153,69 @@ const BZ_AXIS_FRAGMENT_SHADER = `
 `;
 
 /** =========================================================
+ *  CME TAIL WOBBLE SHADER
+ *
+ *  Applied to the CME particle system.
+ *  aLocalY  — particle's Y in local CME space at build time [tailY .. 0]
+ *             (stored as a normalised tail fraction 0=nose, 1=tail tip)
+ *  uTime    — absolute elapsed time
+ *  uLaunch  — elapsed time when the CME first became visible (left Sun)
+ *             Wobble starts from this moment and damps out over ~30s.
+ *  uTailLen — distance from nose to tail tip in local units (for normalisation)
+ *  uColor   — CME colour (replaces PointsMaterial color)
+ *  uOpacity — CME opacity
+ *  uSize    — point size
+ *
+ *  Wobble: tail-fraction particles get a lateral XZ displacement of:
+ *    amplitude = MAX_AMP * tailFrac^2 * exp(-damping * age) * sin(freq*age + phase)
+ *  Particles near the nose (tailFrac≈0) are unaffected.
+ *  ========================================================= */
+const CME_TAIL_VERTEX_SHADER = `
+  attribute float aLocalY;   // normalised tail depth [0=nose .. 1=tail tip]
+  attribute float aRandPhase;// per-particle random phase offset for natural look
+
+  uniform float uTime;
+  uniform float uLaunch;     // time CME became visible
+  uniform float uSize;
+  uniform float uOpacity;
+
+  varying float vOpacity;
+
+  void main() {
+    float age     = max(0.0, uTime - uLaunch);
+
+    // Elastic spring: damped sine that starts strong, decays over ~25s
+    // tailFrac^2 means only the rear half of the tail wobbles meaningfully
+    float tf      = aLocalY;                          // 0=nose, 1=tail tip
+    float damp    = exp(-age * 0.12);                 // decay rate
+    float freq    = 1.8;                              // oscillations per second
+    float maxAmp  = 0.35;                             // max lateral swing (local units)
+    float wobble  = maxAmp * tf * tf * damp * sin(freq * age + aRandPhase);
+
+    // Apply wobble perpendicular to propagation (+X in local space)
+    vec3 p = position;
+    p.x += wobble;
+
+    vOpacity = uOpacity * (1.0 - tf * 0.4);  // tail fades slightly
+
+    vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
+    gl_PointSize = uSize * (300.0 / -mvPos.z);
+    gl_Position  = projectionMatrix * mvPos;
+  }
+`;
+
+const CME_TAIL_FRAGMENT_SHADER = `
+  uniform vec3    uColor;
+  uniform sampler2D uMap;
+  varying float vOpacity;
+
+  void main() {
+    vec4 tex = texture2D(uMap, gl_PointCoord);
+    gl_FragColor = vec4(uColor, tex.a * vOpacity);
+  }
+`;
+
+/** =========================================================
  *  HELPERS
  *  ========================================================= */
 
@@ -417,15 +480,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
     cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
 
+    // Set uLaunch the very first time this CME becomes visible (elastic spring start)
+    if (cmeObject.material?.uniforms) {
+      const u = cmeObject.material.uniforms;
+      if (u.uLaunch.value > 1e8) {
+        u.uLaunch.value = u.uTime.value; // latch launch time
+      }
+    }
+
     // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
-    // Calculate the CME's current speed at this moment in time.
-    // As the CME decelerates, the colour shifts down through the speed key.
-    if (timeSinceEventSeconds !== undefined && cmeObject.material) {
+    if (timeSinceEventSeconds !== undefined && cmeObject.material?.uniforms) {
       const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
       const a = (1.41 - 0.0035 * u) / 1000;
       const tf = a < 0 ? (300 - u) / a : Infinity;
       const liveSpeed = u <= 300 ? u : t < tf ? Math.max(300, u + a * t) : 300;
-      cmeObject.material.color = getCmeCoreColor(liveSpeed);
+      cmeObject.material.uniforms.uColor.value = new THREE.Color(getCmeCoreColor(liveSpeed));
     }
   }, [THREE]);
 
@@ -644,7 +713,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => { if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed); });
+      cmeGroupRef.current.children.forEach((c: any) => { if (c.material?.uniforms?.uTime) { c.material.uniforms.uTime.value = elapsedTime; c.material.uniforms.uOpacity.value = getCmeOpacity(c.userData.speed); } });
 
       if (timelineActive) {
         if (timelinePlaying) {
@@ -759,25 +828,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const bStart       = 0.68;
       const legTipY      = arcR * (Math.cos(hs) - 1);
       const noseY        = 0.0;
-      // Extend tail further back toward the Sun
-      const tailExtend   = 2.8; // multiplier — how far past legTipY the tail reaches
-      const tailY        = legTipY * tailExtend; // more negative = further toward Sun
+      // DOUBLED tail length
+      const tailExtend   = 5.6;
+      const tailY        = legTipY * tailExtend;
       const yRange       = noseY - tailY;
 
-      // Max half-width: arc's widest X extent
       const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR * 0.5;
 
-      // Teardrop profile: wide at nose (f=0), narrows to zero at tail (f=1)
-      // sqrt(1-f) gives rounded nose, linear taper; tweak exponent for shape
       const getDropWidth = (f: number): number => {
-        // (1-f)^0.5 = round nose, slow taper
-        // (1-f)^0.7 = slightly more pointed nose
-        // We use a blend: nose is circular arc, body tapers as power curve
         const clamped = Math.max(0, Math.min(1, f));
         return maxHalfWidth * Math.pow(1.0 - clamped, 0.55);
       };
 
-      // Converged arc centreline for surface particles
       const getArcCentre = (t: number) => {
         const cx0 = arcR * Math.sin(t);
         const cy0 = arcR * (Math.cos(t) - 1);
@@ -790,7 +852,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const surfaceCount = Math.floor(pCount * 0.35);
       const fillCount    = pCount - surfaceCount;
 
-      // Surface: arc skin particles (the bright outer ring/shell)
+      // localY stores tail fraction per particle: 0=nose, 1=tail tip
+      const localYArr:    number[] = [];
+      const randPhaseArr: number[] = [];
+
+      // Surface arc skin
       for (let i = 0; i < surfaceCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const { cx, cy, tN } = getArcCentre(t);
@@ -799,33 +865,49 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const tubeR = baseTubeR * taper;
         const rho   = Math.sqrt(Math.random()) * tubeR;
         const phi   = Math.random() * 2 * Math.PI;
-        pos.push(
-          cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny,
-          rho * Math.sin(phi)
-        );
+        const px = cx + rho * Math.cos(phi) * Nx;
+        const py = cy + rho * Math.cos(phi) * Ny;
+        const pz = rho * Math.sin(phi);
+        pos.push(px, py, pz);
+        // tail fraction: arc particles live near nose (cy is slightly negative)
+        localYArr.push(Math.max(0, Math.min(1, (noseY - py) / yRange)));
+        randPhaseArr.push(Math.random() * Math.PI * 2);
       }
 
-      // Interior fill: true teardrop — fat nose, long tapering tail to a point
+      // Interior teardrop fill
       for (let i = 0; i < fillCount; i++) {
-        // f=0 → nose (Y=0), f=1 → tail point (Y=tailY)
-        // Bias sampling toward nose so front is denser
         const f  = Math.pow(Math.random(), 0.7);
         const py = noseY - f * yRange;
-
         const hw = getDropWidth(f);
         if (hw < 0.0005) continue;
-
         const angle = Math.random() * Math.PI * 2;
         const r     = Math.sqrt(Math.random()) * hw;
-        pos.push(
-          r * Math.cos(angle),
-          py,
-          r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC
-        );
+        pos.push(r * Math.cos(angle), py, r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC);
+        localYArr.push(f);  // f IS the tail fraction for fill particles
+        randPhaseArr.push(Math.random() * Math.PI * 2);
       }
-      const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
+
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position',   new THREE.Float32BufferAttribute(pos, 3));
+      geom.setAttribute('aLocalY',    new THREE.Float32BufferAttribute(localYArr, 1));
+      geom.setAttribute('aRandPhase', new THREE.Float32BufferAttribute(randPhaseArr, 1));
+
+      const col = getCmeCoreColor(cme.speed);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime:    { value: 0 },
+          uLaunch:  { value: 1e9 }, // set when CME becomes visible
+          uSize:    { value: getCmeParticleSize(cme.speed, SCENE_SCALE) * 300 },
+          uColor:   { value: new THREE.Color(col) },
+          uOpacity: { value: getCmeOpacity(cme.speed) },
+          uMap:     { value: pt },
+        },
+        vertexShader:   CME_TAIL_VERTEX_SHADER,
+        fragmentShader: CME_TAIL_FRAGMENT_SHADER,
+        transparent: true,
+        depthWrite:  false,
+        blending:    THREE.AdditiveBlending,
+      });
       const system = new THREE.Points(geom, mat); system.userData = cme;
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
