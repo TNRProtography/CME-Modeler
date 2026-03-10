@@ -1,289 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+// --- START OF FILE index.tsx ---
 
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-H8KY78RQJC"></script>
-  <script>
-    try {
-      window.dataLayer = window.dataLayer || [];
-      window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
-      window.gtag('js', new Date());
-      window.gtag('config', 'G-H8KY78RQJC');
-    } catch (_) {
-      // analytics blocked by client extensions should never break app boot
-    }
-  </script>
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
+import './styles.css';
 
-  <!-- Let Cloudflare handle caching; removing no-cache meta improves repeat visits -->
-  <!-- (Cache-Control/Pragma/Expires meta removed) -->
+// Chart.js is NOT registered here — it is registered lazily inside ForecastDashboard
+// and SolarActivityDashboard via chartSetup.ts, so it never loads on the CME modeler
+// page or on initial boot before any charts are rendered.
 
-  <!-- Canonical & robots (kept from SEO step) -->
-  <link rel="canonical" href="https://spottheaurora.co.nz/">
-  <meta name="robots" content="index,follow,max-image-preview:large">
-
-  <!-- Basic meta -->
-  <title>Spot The Aurora – Live Aurora Forecasts & Space Weather for NZ</title>
-  <meta name="description" content="Real-time aurora forecasts, space weather alerts, solar wind and flare tracking for New Zealand and the Southern Hemisphere.">
-  <meta name="author" content="Spot The Aurora">
-  <meta name="application-name" content="Spot The Aurora">
-
-  <!-- PWA -->
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#171717">
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
-  <link rel="shortcut icon" href="/favicon.ico">
-
-  <!-- Open Graph -->
-  <meta property="og:locale" content="en_NZ">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Spot The Aurora">
-  <meta property="og:title" content="Spot The Aurora – Live Aurora Forecasts & Space Weather for NZ">
-  <meta property="og:description" content="Get live aurora forecasts, solar flare alerts, and substorm signals with NZ-focused visibility guidance.">
-  <meta property="og:url" content="https://spottheaurora.co.nz/">
-  <meta property="og:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
-  <meta property="og:image:alt" content="Aurora forecast and live space weather dashboard">
-
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Spot The Aurora – Live Aurora Forecasts & Space Weather for NZ">
-  <meta name="twitter:description" content="Real-time aurora forecasts and space weather alerts for New Zealand.">
-  <meta name="twitter:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
-
-  <!-- JSON-LD -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "Spot The Aurora",
-    "url": "https://spottheaurora.co.nz",
-    "description": "Real-time aurora forecasts, space weather alerts, and solar activity tracking for New Zealand and the Southern Hemisphere.",
-    "inLanguage": "en-NZ",
-    "potentialAction": {
-      "@type": "SearchAction",
-      "target": "https://spottheaurora.co.nz/?q={search_term_string}",
-      "query-input": "required name=search_term_string"
-    }
+declare global {
+  interface Window {
+    THREE: any;
+    gsap: any;
   }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "Spot The Aurora",
-    "operatingSystem": "Web",
-    "applicationCategory": "WeatherApplication",
-    "url": "https://spottheaurora.co.nz",
-    "image": "https://spottheaurora.co.nz/background-aurora.jpg",
-    "description": "PWA providing live aurora forecasts, alerts for solar flares and substorms, and NZ visibility guidance."
+}
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </React.StrictMode>
+);
+
+if ('serviceWorker' in navigator) {
+  const host = window.location.hostname;
+  const shouldRegisterServiceWorker = host === 'localhost' || host === '127.0.0.1' || host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
+
+  if (shouldRegisterServiceWorker) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+        // Silently ignore SW registration issues on unsupported browser states.
+      });
+    });
   }
-  </script>
-
-  <!-- Perf hints -->
-  <!-- LCP image origin: saves ~310ms on first paint -->
-  <link rel="preconnect" href="https://www.tnrprotography.co.nz" crossorigin>
-  <link rel="preconnect" href="https://static.cloudflareinsights.com" crossorigin>
-  <link rel="preconnect" href="https://services.swpc.noaa.gov" crossorigin>
-  <link rel="preconnect" href="https://sdo.gsfc.nasa.gov" crossorigin>
-  <link rel="prefetch" as="image" href="/api/proxy/image?url=https%3A%2F%2Fsdo.gsfc.nasa.gov%2Fassets%2Fimg%2Flatest%2Flatest_1024_HMIBC.jpg&ttl=60">
-  <link rel="prefetch" as="image" href="https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-        as="style" crossorigin
-        onload="this.onload=null;this.rel='stylesheet'">
-  <noscript>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-  </noscript>
-
-  <!-- Make Leaflet CSS non-blocking: preload then apply -->
-  <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        as="style" crossorigin
-        onload="this.onload=null;this.rel='stylesheet'">
-  <noscript>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
-  </noscript>
-
-
-  <!-- Three.js, OrbitControls and GSAP are loaded on-demand when the CME modeler is first opened -->
-
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-      background-color: #171717;
-      color: #d4d4d4;
-      overflow: hidden;
-    }
-    button, input, select, textarea {
-      font-family: inherit;
-    }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: #737373; }
-
-    .leaflet-container { background-color: #1a1a1a !important; }
-    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
-      background: #262626;
-      color: #d4d4d4;
-      box-shadow: 0 3px 14px rgba(0,0,0,0.4);
-    }
-    .emoji-marker { background-color: transparent !important; border: none !important; }
-    .emoji-marker div {
-      width: 32px; height: 32px; line-height: 32px; text-align: center;
-      font-size: 28px; text-shadow: 0 0 5px black;
-    }
-    :root {
-      --solar-flare-ab-rgb: 34, 197, 94;
-      --solar-flare-c-rgb: 245, 158, 11;
-      --solar-flare-m-rgb: 255, 69, 0;
-      --solar-flare-x-rgb: 147, 112, 219;
-      --solar-flare-x5plus-rgb: 255, 105, 180;
-      --proton-s0-rgb: 34, 197, 94;
-      --proton-s1-rgb: 255, 215, 0;
-      --proton-s2-rgb: 255, 165, 0;
-      --proton-s3-rgb: 255, 69, 0;
-      --proton-s4-rgb: 128, 0, 128;
-      --proton-s5-rgb: 255, 20, 147;
-    }
-    .styled-scrollbar::-webkit-scrollbar { width: 8px; }
-    .styled-scrollbar::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-    .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
-
-    /* Modern micro-interactions and animated chrome */
-    @keyframes auroraFlow {
-      0% { transform: translateX(-30%) translateY(0); opacity: 0.18; }
-      50% { transform: translateX(10%) translateY(-8%); opacity: 0.32; }
-      100% { transform: translateX(40%) translateY(6%); opacity: 0.18; }
-    }
-
-    @keyframes sheenSweep {
-      0% { transform: translateX(-120%); opacity: 0; }
-      35% { opacity: 0.25; }
-      50% { transform: translateX(20%); opacity: 0.4; }
-      65% { opacity: 0.2; }
-      100% { transform: translateX(160%); opacity: 0; }
-    }
-
-    @keyframes cardFloat {
-      0% { transform: translateY(0px); box-shadow: 0 14px 36px rgba(0,0,0,0.36); }
-      50% { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(0,0,0,0.32); }
-      100% { transform: translateY(0px); box-shadow: 0 14px 36px rgba(0,0,0,0.36); }
-    }
-
-    @keyframes fadeUpSoft {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .modern-cta {
-      position: relative;
-      overflow: hidden;
-      isolation: isolate;
-    }
-    .modern-cta::before {
-      content: "";
-      position: absolute;
-      inset: -40%;
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.24), rgba(255,255,255,0));
-      animation: auroraFlow 14s ease-in-out infinite;
-      filter: blur(12px);
-      z-index: 0;
-      pointer-events: none;
-    }
-    .modern-cta::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%);
-      animation: sheenSweep 6s ease-in-out infinite;
-      z-index: 0;
-      pointer-events: none;
-    }
-    .modern-cta > * { position: relative; z-index: 1; }
-
-    .floating-panel {
-      position: relative;
-      box-shadow: 0 16px 36px rgba(0,0,0,0.28);
-      backdrop-filter: blur(14px);
-      border: 1px solid rgba(255,255,255,0.08);
-      animation: cardFloat 18s ease-in-out infinite;
-      transition: transform 180ms ease, box-shadow 180ms ease;
-    }
-    .floating-panel:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 20px 44px rgba(0,0,0,0.32);
-    }
-
-    .soft-appear { animation: fadeUpSoft 420ms ease forwards; }
-
-    .aurora-banner {
-      position: relative;
-      overflow: hidden;
-    }
-    .aurora-banner::before {
-      content: "";
-      position: absolute;
-      inset: -30% -60%;
-      background: radial-gradient(circle at 20% 60%, rgba(255,255,255,0.18), transparent 55%),
-                  radial-gradient(circle at 80% 30%, rgba(125,211,252,0.18), transparent 55%);
-      animation: auroraFlow 16s ease-in-out infinite;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .card {
-      position: relative;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.06);
-      box-shadow: 0 14px 28px rgba(0,0,0,0.25);
-      backdrop-filter: blur(14px);
-      transform-origin: center;
-      transition: transform 160ms ease, box-shadow 160ms ease;
-    }
-    .card::before {
-      content: "";
-      position: absolute;
-      inset: -45% -20%;
-      background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.08), transparent 55%),
-                  radial-gradient(circle at 80% 40%, rgba(56,189,248,0.12), transparent 55%);
-      animation: auroraFlow 20s ease-in-out infinite;
-      pointer-events: none;
-      z-index: 0;
-    }
-    .card > * { position: relative; z-index: 1; }
-    .card:hover { transform: translateY(-1px); box-shadow: 0 18px 36px rgba(0,0,0,0.28); }
-    .aurora-banner > * { position: relative; z-index: 1; }
-
-    @media (prefers-reduced-motion: reduce) {
-      .modern-cta::before,
-      .modern-cta::after,
-      .floating-panel,
-      .aurora-banner::before,
-      .card::before { animation: none !important; }
-      .floating-panel:hover { transform: none; }
-      .soft-appear { animation: none; }
-      .card { transition: none; box-shadow: 0 10px 24px rgba(0,0,0,0.22); }
-    }
-  </style>
-
-  <script type="importmap">
-  {
-    "imports": {
-      "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
-      "react": "https://esm.sh/react@^19.1.0",
-      "react/": "https://esm.sh/react@^19.1.0/"
-    }
-  }
-  </script>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
-</html>
+}
+// --- END OF FILE index.tsx ---

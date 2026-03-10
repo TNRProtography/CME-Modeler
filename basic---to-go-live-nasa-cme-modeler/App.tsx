@@ -6,9 +6,9 @@ import ControlsPanel from './components/ControlsPanel';
 import CMEListPanel from './components/CMEListPanel';
 import TimelineControls from './components/TimelineControls';
 import PlanetLabel from './components/PlanetLabel';
-const TutorialModal = lazy(() => import('./components/TutorialModal'));
+import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
 import LoadingOverlay from './components/LoadingOverlay';
-const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
+import MediaViewerModal from './components/MediaViewerModal';
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 
@@ -22,20 +22,23 @@ import CameraResetIcon from './components/icons/CameraResetIcon';
 import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/icons/NavBadgeIcons';
 
 // Dashboard and Banner Imports
+import InitialLoadingScreen from './components/InitialLoadingScreen';
+import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
+import { registerDatasetTicker } from './utils/pollingScheduler';
+import { startAppPreload } from './utils/appPreloader';
+
+// Heavy page-level components — lazy loaded so they don't bloat the initial bundle.
+// Each one is only rendered once the user navigates to that page (guarded by visitedPages).
 const ForecastDashboard = lazy(() => import('./components/ForecastDashboard'));
 const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDashboard'));
 const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
-import GlobalBanner from './components/GlobalBanner';
-import InitialLoadingScreen from './components/InitialLoadingScreen';
+const GlobalBanner = lazy(() => import('./components/GlobalBanner'));
 
-// Modal Imports
+// Heavy modal components — lazy loaded, only mounted when opened
 const SettingsModal = lazy(() => import('./components/SettingsModal'));
 const FirstVisitTutorial = lazy(() => import('./components/FirstVisitTutorial'));
 const CmeModellerTutorial = lazy(() => import('./components/CmeModellerTutorial'));
 const ForecastModelsModal = lazy(() => import('./components/ForecastModelsModal'));
-import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
-import { registerDatasetTicker } from './utils/pollingScheduler';
-import { startAppPreload } from './utils/appPreloader';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
   DEFAULT_MAIN_PAGE_KEY,
@@ -120,9 +123,8 @@ const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
 const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
 
 const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
-  if (page === 'modeler') return new Set(MODELER_INITIAL_TASKS);
-  if (page === 'solar-activity') return new Set(SOLAR_INITIAL_TASKS);
-  return new Set(FORECAST_INITIAL_TASKS); // default: forecast
+  void page;
+  return new Set([...FORECAST_INITIAL_TASKS, ...SOLAR_INITIAL_TASKS, ...MODELER_INITIAL_TASKS]);
 };
 
 const logDev = (...args: unknown[]) => {
@@ -391,9 +393,9 @@ const App: React.FC = () => {
   }, [activePage]);
 
   const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity', boolean>>(() => ({
-    forecast: true,
+    forecast: initialPageRef.current === 'forecast',
     modeler: initialPageRef.current === 'modeler',
-    'solar-activity': true,
+    'solar-activity': initialPageRef.current === 'solar-activity',
   }));
 
   useEffect(() => {
@@ -468,21 +470,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 1200);
     logDev('initial preload start');
+    startAppPreload();
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
     }
-    // Use a plain JS clock — no Three.js dependency needed here.
-    // SimulationCanvas manages its own THREE.Clock internally.
-    if (!clockRef.current) {
-      const startTime = performance.now();
-      let running = true;
-      clockRef.current = {
-        getElapsedTime: () => running ? (performance.now() - startTime) / 1000 : 0,
-        stop:  () => { running = false; },
-        start: () => { running = true;  },
-      };
+    if (!clockRef.current && (window as any).THREE) {
+      clockRef.current = new (window as any).THREE.Clock();
     }
     return () => clearTimeout(minTimer);
   }, []);
@@ -498,21 +493,7 @@ const App: React.FC = () => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
       logDev('initial preload complete');
-      setTimeout(() => {
-        setShowInitialLoader(false);
-        // Defer non-critical preloads until after the app is visible
-        startAppPreload();
-        logDev('deferred app preload start');
-        // Mark any tasks not required for the landing page as done,
-        // so navigating to other tabs doesn't stall on them.
-        // Their components are already mounted (visitedPages=true) and
-        // fetching in the background — we just don't gate the loader on them.
-        setInitialLoadTasks(prev => {
-          const next = { ...prev };
-          (Object.keys(next) as InitialLoadTaskKey[]).forEach(k => { next[k] = true; });
-          return next;
-        });
-      }, 500);
+      setTimeout(() => setShowInitialLoader(false), 500);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
 
@@ -946,7 +927,8 @@ const App: React.FC = () => {
         />
       )}
       <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
-          <GlobalBanner
+          <Suspense fallback={null}>
+            <GlobalBanner
               isFlareAlert={isFlareAlert}
               flareClass={flareClass}
               isAuroraAlert={isAuroraAlert}
@@ -960,6 +942,7 @@ const App: React.FC = () => {
               onSubstormAlertClick={handleSubstormAlertClick}
               onIpsAlertClick={handleIpsAlertClick}
           />
+          </Suspense>
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
               <div className={`flex-1 min-w-0 ${isDashboardMode ? 'hidden' : ''}`}>
@@ -1039,7 +1022,9 @@ const App: React.FC = () => {
 
           <div className="flex flex-grow min-h-0">
               {isDashboardMode ? (
-                <Suspense fallback={null}><UnifiedDashboardMode refreshSignal={manualRefreshKey} /></Suspense>
+                <Suspense fallback={null}>
+                  <UnifiedDashboardMode refreshSignal={manualRefreshKey} />
+                </Suspense>
               ) : (
               <>
               {visitedPages.modeler && activePage === 'modeler' && (
@@ -1136,12 +1121,13 @@ const App: React.FC = () => {
                   
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
-                  <Suspense fallback={null}><TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} /></Suspense>
+                  <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
               )}
               {visitedPages.forecast && (
                 <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
-                    <Suspense fallback={null}><ForecastDashboard
+                  <Suspense fallback={null}>
+                    <ForecastDashboard
                         setViewerMedia={setViewerMedia}
                         setCurrentAuroraScore={setCurrentAuroraScore}
                         setSubstormActivityStatus={setSubstormActivityStatus}
@@ -1152,12 +1138,14 @@ const App: React.FC = () => {
                         viewMode={forecastViewMode}
                         onViewModeChange={handleForecastViewChange}
                         refreshSignal={manualRefreshKey}
-                    /></Suspense>
+                    />
+                  </Suspense>
                 </div>
               )}
               {visitedPages['solar-activity'] && (
                 <div className={`w-full h-full ${activePage === 'solar-activity' ? 'block' : 'hidden'}`}>
-                    <Suspense fallback={null}><SolarActivityDashboard
+                  <Suspense fallback={null}>
+                    <SolarActivityDashboard
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
                         onViewCMEInVisualization={handleViewCMEInVisualization}
@@ -1165,44 +1153,48 @@ const App: React.FC = () => {
                         refreshSignal={manualRefreshKey}
                         onInitialLoad={handleSolarInitialLoad}
                         onInitialLoadProgress={handleSolarLoadPoint}
-                    /></Suspense>
+                    />
+                  </Suspense>
                 </div>
               )}
               </>
               )}
           </div>
           
-          <Suspense fallback={null}><MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} /></Suspense>
-          <Suspense fallback={null}><SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={handleCloseSettings}
-            appVersion={APP_VERSION}
-            onShowTutorial={handleShowTutorial}
-            defaultMainPage={defaultMainPage}
-            defaultForecastView={defaultForecastView}
-            onDefaultMainPageChange={handleDefaultMainPageChange}
-            onDefaultForecastViewChange={handleDefaultForecastViewChange}
-            pageViewStats={pageViewStats}
-            pageViewStorageMode={pageViewStorageMode}
-          /></Suspense>
-          
-          <Suspense fallback={null}><FirstVisitTutorial
-              isOpen={isFirstVisitTutorialOpen}
-              onClose={handleCloseFirstVisitTutorial}
-              onStepChange={handleTutorialStepChange}
-          /></Suspense>
+          <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
 
-          <Suspense fallback={null}><CmeModellerTutorial
-              isOpen={isCmeTutorialOpen}
-              onClose={handleCloseCmeTutorial}
-              onStepChange={handleTutorialStepChange}
-          /></Suspense>
+          <Suspense fallback={null}>
+            <SettingsModal
+              isOpen={isSettingsOpen}
+              onClose={handleCloseSettings}
+              appVersion={APP_VERSION}
+              onShowTutorial={handleShowTutorial}
+              defaultMainPage={defaultMainPage}
+              defaultForecastView={defaultForecastView}
+              onDefaultMainPageChange={handleDefaultMainPageChange}
+              onDefaultForecastViewChange={handleDefaultForecastViewChange}
+              pageViewStats={pageViewStats}
+              pageViewStorageMode={pageViewStorageMode}
+            />
+            
+            <FirstVisitTutorial
+                isOpen={isFirstVisitTutorialOpen}
+                onClose={handleCloseFirstVisitTutorial}
+                onStepChange={handleTutorialStepChange}
+            />
 
-          <Suspense fallback={null}><ForecastModelsModal
-              isOpen={isForecastModelsModalOpen}
-              onClose={() => setIsForecastModelsModalOpen(false)}
-              setViewerMedia={setViewerMedia}
-          /></Suspense>
+            <CmeModellerTutorial
+                isOpen={isCmeTutorialOpen}
+                onClose={handleCloseCmeTutorial}
+                onStepChange={handleTutorialStepChange}
+            />
+
+            <ForecastModelsModal
+                isOpen={isForecastModelsModalOpen}
+                onClose={() => setIsForecastModelsModalOpen(false)}
+                setViewerMedia={setViewerMedia}
+            />
+          </Suspense>
 
           <Suspense fallback={null}>
             {/* --- NEW: Render the ImpactGraphModal --- */}

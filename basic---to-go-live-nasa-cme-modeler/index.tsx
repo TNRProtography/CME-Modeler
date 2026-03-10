@@ -3,16 +3,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import ErrorBoundary from './components/ErrorBoundary'; // Import the new component
-import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale } from 'chart.js';
-import 'chartjs-adapter-date-fns';
-import annotationPlugin from 'chartjs-plugin-annotation';
+import ErrorBoundary from './components/ErrorBoundary';
 import './styles.css';
 
-ChartJS.register(
-  CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale,
-  annotationPlugin
-);
+// Chart.js is NOT registered here — it is registered lazily inside ForecastDashboard
+// and SolarActivityDashboard via chartSetup.ts, so it never loads on the CME modeler
+// page or on initial boot before any charts are rendered.
 
 declare global {
   interface Window {
