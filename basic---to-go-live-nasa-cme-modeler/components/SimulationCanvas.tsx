@@ -863,6 +863,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       return null;
     },
     calculateImpactProfile: () => {
+      const THREE = (window as any).THREE;
       if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
       const ed = PLANET_DATA_MAP.EARTH; if (timelineMinDate <= 0) return [];
       const gStart = Date.now(), gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
@@ -894,7 +895,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, THREE, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
+  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
   useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
