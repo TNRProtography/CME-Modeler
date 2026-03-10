@@ -311,7 +311,7 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const phase      = lineIndex / BZ_FIELD_LINE_COUNT;
   const helixTurns = 2.5; // more turns = denser wrapping = circular rope feel
 
-  const arcBellyOffset_fl = arcR;  // same shift as particle geometry
+  const arcBellyOffset_fl = arcR;
   const legTipY_fl     = arcR * (Math.cos(halfSpan) - 1) + arcBellyOffset_fl;
   const BLEND_START_FL = 0.68;
 
@@ -831,73 +831,62 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // We want: round at nose (slow start), then taper to point.
       // Use tailPow = 0.6 — starts wide, tapers continuously to zero.
 
-      const bStart       = 0.68;
-      const legTipY      = arcR * (Math.cos(hs) - 1);
+      const tailExtend = 5.6;
+      // One single particle pass. No separate arc + fill.
+      //
+      // Shape defined in local cylindrical coords (radius r, height y):
+      //   The teardrop profile: r_max(y) = maxR * (1 - y/noseY)^nosePow  — NO
+      //
+      // We use a 2D teardrop SDF approach:
+      //   - y runs from +noseY (front tip) to tailY (tail point), both in local space
+      //   - At each y, the allowed radius is: r_max(y) = maxR * profile(y)
+      //   - profile: smooth at nose, tapers continuously to 0 at tail
+      //
+      // Density: higher near the outer surface (shell effect) and near the nose.
+      // This gives bright leading edge + visible core + fading wake naturally.
 
-      // The arc belly (the true leading nose of the CME) sits at y = -arcR in the
-      // raw formula cy = arcR*(cos(t)-1). We shift ALL geometry up by arcR so the
-      // nose is at y=0, legs at y≈+arcR, and tail extends in -Y from y=0.
-      const arcBellyOffset = arcR; // shift to put nose at origin
+      // Y extent: nose at top (positive), tail at bottom (negative)
+      const noseTopY  = arcR;           // nose tip protrudes arcR above origin
+      const legMidY   = 0.0;            // where legs are (~equator of the teardrop)
+      const tailY     = -(tailExtend * arcR);  // tail point
 
-      const noseY        = 0.0;
-      const tailExtend   = 5.6;
-      // legTipY after shift: (legTipY + arcBellyOffset)
-      const legTipY_shifted = legTipY + arcBellyOffset;
-      const tailY        = legTipY_shifted - tailExtend * arcR; // tail extends further in -Y
-      const yRange       = noseY - tailY;
+      const totalHeight = noseTopY - tailY;  // full height of teardrop
 
-      const maxHalfWidth = arcR * Math.sin(hs) + baseTubeR * 0.5;
+      // Max radius at the widest point (around legMidY)
+      const maxR = arcR * Math.sin(hs) + baseTubeR * 0.6;
 
-      const getDropWidth = (f: number): number => {
-        const clamped = Math.max(0, Math.min(1, f));
-        return maxHalfWidth * Math.pow(1.0 - clamped, 0.55);
+      // Profile: given normalised y position [0=nose .. 1=tail], return allowed radius
+      // Uses a two-segment curve: nose half is convex (round cap), tail half tapers to point
+      const getRadius = (y: number): number => {
+        // f: 0 at nose top, 1 at tail
+        const f = Math.max(0, Math.min(1, (noseTopY - y) / totalHeight));
+        // Nose cap: sin curve peaks at f≈0.25, then linear taper to tail
+        const noseCap  = Math.sin(Math.min(f * Math.PI / 0.5, Math.PI)); // peaks at f=0.25
+        const taper    = Math.pow(1.0 - f, 0.6);
+        // Blend: use noseCap for front 40%, pure taper for rest
+        const blend    = Math.max(0, Math.min(1, f / 0.4));
+        return maxR * (noseCap * (1 - blend) + taper * blend);
       };
 
-      const getArcCentre = (t: number) => {
-        const cx0 = arcR * Math.sin(t);
-        const cy0 = arcR * (Math.cos(t) - 1) + arcBellyOffset; // shifted so belly=0
-        const tN  = Math.abs(t) / hs;
-        const bT  = Math.max(0, (tN - bStart) / (1.0 - bStart));
-        const w   = bT * bT;
-        const targetY = legTipY_shifted;
-        return { cx: cx0 * (1 - w), cy: cy0 + (targetY - cy0) * w, tN };
-      };
+      for (let i = 0; i < pCount; i++) {
+        // Pick y with bias toward nose (front-heavy density)
+        const f  = Math.pow(Math.random(), 0.65);
+        const py = noseTopY - f * totalHeight;
 
-      const surfaceCount = Math.floor(pCount * 0.35);
-      const fillCount    = pCount - surfaceCount;
+        const rMax = getRadius(py);
+        if (rMax < 0.0005) continue;
 
-      // Surface arc skin — ring sits at the nose (y≈0 after shift)
-      for (let i = 0; i < surfaceCount; i++) {
-        const t  = (Math.random() * 2 - 1) * hs;
-        const { cx, cy, tN } = getArcCentre(t);
-        const Nx = -Math.sin(t), Ny = -Math.cos(t);
-        const taper = Math.pow(Math.max(0, 1.0 - tN), 1.6);
-        const tubeR = baseTubeR * taper;
-        const rho   = Math.sqrt(Math.random()) * tubeR;
-        const phi   = Math.random() * 2 * Math.PI;
-        pos.push(
-          cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny,
-          rho * Math.sin(phi)
-        );
-      }
+        // Radial distribution: bias toward surface for shell/edge effect
+        // sqrt gives uniform disk; power < 0.5 biases toward edge
+        const rFrac = Math.pow(Math.random(), 0.45);
+        const r     = rFrac * rMax;
 
-      // Interior teardrop fill — starts at legTipY_shifted (where arc legs end)
-      // and tapers to a point at tailY. This closes the gap between arc and tail.
-      const fillStartY = legTipY_shifted; // top of fill = where arc legs converge
-      const fillRange  = fillStartY - tailY; // always positive
-
-      for (let i = 0; i < fillCount; i++) {
-        const f  = Math.pow(Math.random(), 0.7); // bias toward top (arc end)
-        const py = fillStartY - f * fillRange;
-
-        // Width at this point: full arc width at f=0, tapers to zero at f=1
-        // At f=0 (top of fill) match the arc's leg width so there's no seam
-        const hw = maxHalfWidth * Math.pow(1.0 - f, 0.55);
-        if (hw < 0.0005) continue;
         const angle = Math.random() * Math.PI * 2;
-        const r     = Math.sqrt(Math.random()) * hw;
-        pos.push(r * Math.cos(angle), py, r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC);
+        pos.push(
+          r * Math.cos(angle),
+          py,
+          r * Math.sin(angle) * GCS_AXIAL_DEPTH_FRAC
+        );
       }
 
       const geom = new THREE.BufferGeometry();
@@ -914,7 +903,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         color: getCmeCoreColor(cme.speed),
       });
       const system = new THREE.Points(geom, mat);
-      system.userData = { ...cme, tailY_local: fillRange };
+      system.userData = { ...cme, tailY_local: totalHeight };
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
