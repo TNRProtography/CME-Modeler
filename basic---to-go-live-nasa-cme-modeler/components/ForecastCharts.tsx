@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/ForecastCharts.tsx ---
 
 import React, { useState, useMemo } from 'react';
+import '../utils/chartSetup'; // registers Chart.js scales/plugins
 import { Line } from 'react-chartjs-2';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import { ChartOptions, ScriptableContext } from 'chart.js';

@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
