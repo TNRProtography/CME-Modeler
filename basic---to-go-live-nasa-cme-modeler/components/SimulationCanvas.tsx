@@ -1,6 +1,6 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
-import React, { useRef, useEffect, useCallback, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle, useState } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
   InteractionMode, SimulationCanvasHandle
@@ -371,6 +371,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   // --- Dynamic loader: only fetches Three.js + deps when the modeler first mounts ---
   const threeLoadedRef = useRef(false);
+  const [threeReady, setThreeReady] = useState(!!(window as any).THREE);
   const loadThreeLibs = useCallback((): Promise<void> => {
     if (threeLoadedRef.current && (window as any).THREE && (window as any).gsap) {
       return Promise.resolve();
@@ -389,7 +390,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
       .then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'))
       .then(() => loadScript('https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js'))
-      .then(() => { threeLoadedRef.current = true; });
+      .then(() => { threeLoadedRef.current = true; setThreeReady(true); });
   }, []);
 
   const THREE = (window as any).THREE;
@@ -824,7 +825,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
-  }, [cmeData, getClockElapsedTime]);
+  }, [cmeData, getClockElapsedTime, threeReady]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
@@ -841,7 +842,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]), new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE }));
       l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l;
     }
-  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime]);
+  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady]);
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
