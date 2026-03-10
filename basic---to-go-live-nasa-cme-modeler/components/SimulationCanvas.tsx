@@ -259,8 +259,11 @@ const createArrowTexture = (THREE: any) => {
 };
 
 // ============================================================
-//  GCS GEOMETRY CONSTANTS
+//  CME TAIL WOBBLE
+//  Adjust WOBBLE_STRENGTH to tune the jelly effect.
+//  0.0 = no wobble, 1.0 = dramatic, 0.18 = subtle/realistic
 // ============================================================
+const WOBBLE_STRENGTH = 0.18;
 const GCS_ARC_RADIUS_FRAC  = 0.55;
 const GCS_ARC_SPAN         = Math.PI * 0.62;  // ~112° half-span — open horseshoe, not closed ring
 const GCS_TUBE_RADIUS_FRAC = 0.38;
@@ -748,7 +751,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // Legacy torus hidden — superseded by Bz field lines
+      // ── CME TAIL WOBBLE ──────────────────────────────────────────────────
+      // Applies a jelly/flag oscillation to tail particles each frame.
+      // Only particles with tailFrac > 0 (rear 60% of body) are affected.
+      // Two overlapping sine waves at different frequencies for organic motion.
+      if (WOBBLE_STRENGTH > 0) {
+        cmeGroupRef.current.children.forEach((c: any) => {
+          if (!c.visible) return;
+          const ud = c.userData;
+          if (!ud.basePositions || !ud.tailFractions) return;
+          const bp  = ud.basePositions  as Float32Array;
+          const tf  = ud.tailFractions  as Float32Array;
+          const wp  = ud.wobblePhases   as Float32Array;
+          const posArr = c.geometry.attributes.position.array as Float32Array;
+          const n   = tf.length;
+          const maxR = (ud.noseTopY ?? GCS_ARC_RADIUS_FRAC) * GCS_ARC_RADIUS_FRAC;
+
+          for (let i = 0; i < n; i++) {
+            const frac = tf[i];
+            if (frac <= 0) continue;
+            const phase = wp[i];
+            // Two-frequency wobble: slow rolling wave + faster flutter
+            // tailFrac^1.5 means tip wobbles much more than mid-body
+            const amp = WOBBLE_STRENGTH * maxR * Math.pow(frac, 1.5);
+            const slow = Math.sin(elapsedTime * 0.8 + phase);
+            const fast = Math.sin(elapsedTime * 2.1 + phase * 1.7) * 0.35;
+            const offset = amp * (slow + fast);
+            posArr[i * 3]     = bp[i * 3]     + offset;           // wobble in X
+            posArr[i * 3 + 2] = bp[i * 3 + 2] + offset * 0.4;    // subtle Z coupling
+          }
+          c.geometry.attributes.position.needsUpdate = true;
+        });
+      }
       if (fluxRopeRef.current) { fluxRopeRef.current.visible = false; fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime; }
 
       // ── Bz field lines ───────────────────────────────────────────────────────
@@ -877,7 +911,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (rMax < 0.0005) continue;
 
         // Radial distribution: bias toward surface for shell/edge effect
-        // sqrt gives uniform disk; power < 0.5 biases toward edge
         const rFrac = Math.pow(Math.random(), 0.45);
         const r     = rFrac * rMax;
 
@@ -890,7 +923,23 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
 
       const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const posAttr = new THREE.Float32BufferAttribute(pos, 3);
+      posAttr.setUsage(THREE.DynamicDrawUsage); // positions will be updated each frame
+      geom.setAttribute('position', posAttr);
+
+      // Store base positions and per-particle tail fractions for wobble animation
+      const basePositions  = new Float32Array(pos);
+      const tailFractions  = new Float32Array(pos.length / 3);
+      for (let i = 0; i < tailFractions.length; i++) {
+        const py = pos[i * 3 + 1]; // Y of this particle
+        // tailFrac: 0 = at nose, 1 = at tail tip. Only back 60% of body wobbles.
+        const rawFrac = Math.max(0, (noseTopY - py) / totalHeight);
+        tailFractions[i] = Math.max(0, (rawFrac - 0.4) / 0.6); // remap so wobble starts at 40% depth
+      }
+
+      // Random per-particle phase so wobble looks organic (not all moving in sync)
+      const wobblePhases = new Float32Array(tailFractions.length);
+      for (let i = 0; i < wobblePhases.length; i++) wobblePhases[i] = Math.random() * Math.PI * 2;
 
       const mat = new THREE.PointsMaterial({
         size: getCmeParticleSize(cme.speed, SCENE_SCALE),
@@ -903,7 +952,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         color: getCmeCoreColor(cme.speed),
       });
       const system = new THREE.Points(geom, mat);
-      system.userData = { ...cme, tailY_local: totalHeight };
+      system.userData = {
+        ...cme,
+        tailY_local:    totalHeight,
+        basePositions,
+        tailFractions,
+        wobblePhases,
+        noseTopY,
+        totalHeight,
+      };
       const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
