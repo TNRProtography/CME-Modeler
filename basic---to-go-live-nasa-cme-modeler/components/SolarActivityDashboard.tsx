@@ -1,7 +1,6 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
@@ -1488,11 +1487,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     if (!onInitialLoad || initialLoadNotifiedRef.current) return;
 
+    // Core data is sufficient — imagery is supplementary and can be slow/unavailable
     const hasInitialCoreData = !!lastXrayUpdate && !!lastProtonUpdate && !!lastFlaresUpdate;
-    const hasAnyImagery = [suvi131, suvi195, suvi304, sdoHmiBc1024, sdoHmiB1024, sdoHmiIf1024]
-      .some((img) => !img.loading && !!img.url);
 
-    if (hasInitialCoreData && hasAnyImagery) {
+    if (hasInitialCoreData) {
       initialLoadNotifiedRef.current = true;
       onInitialLoad();
     }
@@ -1501,15 +1499,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     lastXrayUpdate,
     lastProtonUpdate,
     lastFlaresUpdate,
-    suvi131,
-    suvi304,
-    suvi195,
-    sdoHmiBc1024,
-    sdoHmiB1024,
-    sdoHmiIf1024,
-    sdoHmiBc4096,
-    sdoHmiB4096,
-    sdoHmiIf4096,
   ]);
 
   const sunspotOverviewImage = sunspotImageryMode === 'intensity'
