@@ -5,6 +5,7 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
+import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 // Import only flare functions/types (IPS removed)
 import { 
   fetchFlareData, 
