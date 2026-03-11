@@ -104,14 +104,15 @@ type InitialLoadTaskKey =
 type ForecastLoadPoint = 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi';
 type SolarLoadPoint = 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions';
 
+// Only block the loader on the 4 APIs that feed the core aurora score and solar wind display.
+// forecastData is structurally redundant (it fires milliseconds after the last API anyway).
+// ipsApi (IPS shocks) and nzMagApi (NZ magnetometer) feed secondary widgets — they load
+// silently in the background so the user reaches the forecast as fast as possible.
 const FORECAST_INITIAL_TASKS: InitialLoadTaskKey[] = [
-  'forecastData',
   'forecastApi',
   'solarWindApi',
   'goes18Api',
   'goes19Api',
-  'ipsApi',
-  'nzMagApi',
 ];
 
 const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [

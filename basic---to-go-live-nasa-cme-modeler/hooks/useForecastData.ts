@@ -522,8 +522,10 @@ export const useForecastData = (
       withInitialProgress(fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`), 'solarWindApi'),
       withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`), 'goes18Api'),
       withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`), 'goes19Api'),
-      withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`), 'ipsApi'),
-      withInitialProgress(fetchJsonWithRecovery(nzMagUrl), 'nzMagApi')
+      // ipsApi and nzMagApi are non-blocking (not in FORECAST_INITIAL_TASKS) so they don't
+      // hold the loader. Give them tighter timeouts since they feed secondary widgets only.
+      withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`, 7000), 'ipsApi'),
+      withInitialProgress(fetchJsonWithRecovery(nzMagUrl, 5000), 'nzMagApi')
     ]);
     const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
 
