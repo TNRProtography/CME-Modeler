@@ -1142,9 +1142,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const closeModal = useCallback(() => setModalState(null), []);
 
   const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
-    if (isInitialLoad.current) {
-        setState({ url: isVideo ? '' : '/placeholder.png', loading: `Loading ${isVideo ? 'video' : 'image'}...` });
-    }
+    // Only set the loading indicator — never wipe the existing url.
+    // This keeps the previous image visible while the new one loads,
+    // so switching imagery tabs doesn't flash blank.
+    setState(prev => ({ url: prev.url, loading: `Loading ${isVideo ? 'video' : 'image'}...` }));
 
     const cacheKey = `${url}::${isVideo ? 'video' : 'image'}`;
     const cached = solarImageCache.get(cacheKey);
@@ -2073,7 +2074,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       className="w-full h-full object-contain rounded-lg"
                     />
                     {(loadingSunspotRegions || sunspotOverviewImage.loading) && (
-                      <LoadingSpinner message={sunspotOverviewImage.loading || loadingSunspotRegions || ''} />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/60">
+                        <svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p className="mt-2 text-sm text-neutral-300 italic">{sunspotOverviewImage.loading || loadingSunspotRegions}</p>
+                      </div>
                     )}
                     {sunspotOverviewImage.url === '/error.png' && (
                       <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Tap to retry imagery load</div>
