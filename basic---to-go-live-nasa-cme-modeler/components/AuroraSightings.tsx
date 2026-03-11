@@ -127,7 +127,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                 <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-5 text-sm">
                     <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">Placing Your Pin</h4>
-                        <p>Enable your device GPS to place your pin and submit a report. You can fine-tune the location by tapping the map after GPS locks. To move the map, use two fingers on touch devices, or hold down the Ctrl/Cmd key while dragging/scrolling with a mouse.</p>
+                        <p>Your location is set automatically via GPS. If GPS is unavailable or permission is denied, tap anywhere on the map to place your pin manually — your report will be tagged to the nearest known location. GPS is always preferred for accuracy.</p>
                     </section>
                      <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
@@ -164,6 +164,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     const [userPosition, setUserPosition] = useState<L.LatLng | null>(null);
     const [hasGpsLock, setHasGpsLock] = useState(false);
     const [gpsError, setGpsError] = useState<string | null>(null);
+    const [gpsFailed, setGpsFailed] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState<SightingStatus | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
@@ -176,8 +177,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
     const requestGpsFix = useCallback(() => {
         if (!navigator.geolocation) {
-            setGpsError('GPS is required, but your device does not support geolocation.');
+            setGpsError('GPS not supported on this device.');
             setHasGpsLock(false);
+            setGpsFailed(true);
             return;
         }
 
@@ -186,13 +188,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             (position) => {
                 setUserPosition(new L.LatLng(position.coords.latitude, position.coords.longitude));
                 setHasGpsLock(true);
+                setGpsFailed(false);
             },
             (err) => {
-                setGpsError(`GPS is required to report sightings. Enable location and try again. (${err.message})`);
+                setGpsError(`GPS unavailable. ${err.code === err.PERMISSION_DENIED ? 'Location permission denied.' : err.message}`);
                 setHasGpsLock(false);
-                if (err.code !== err.PERMISSION_DENIED) {
-                    console.warn(`Geolocation error: ${err.message}.`);
-                }
+                setGpsFailed(true);
             },
             { timeout: 15000, enableHighAccuracy: true }
         );
@@ -241,7 +242,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
         return Math.max(0, REPORTING_COOLDOWN_MS - timePassed);
     }, [lastReportInfo]);
 
-    const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight && hasGpsLock;
+    const canSubmit = !isSubmitting && cooldownRemaining === 0 && !isDaylight && (hasGpsLock || (gpsFailed && userPosition !== null));
 
     const findNearestTownName = useCallback((lat: number, lon: number) => {
         const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -265,7 +266,8 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                 nearest = town;
             }
         }
-        return nearest.name;
+        // If more than 15km from the nearest known place, prefix with "near "
+        return best > 15 ? `near ${nearest.name}` : nearest.name;
     }, []);
 
     const handleSubmit = async () => {
@@ -358,7 +360,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                 <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
                 <div className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/40 rounded-full text-amber-200 text-sm font-semibold">
                     <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
-                    GPS is required to submit a report. Enable location services before you report.
+                    GPS is used for your location. If GPS is unavailable, you can place a pin on the map.
                 </div>
             </div>
 
@@ -370,7 +372,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                 )}
                 <div className="col-span-12 md:col-span-3 space-y-2">
                     <div className="text-xs text-neutral-400 bg-neutral-800/60 border border-neutral-700 rounded px-3 py-2">
-                        Reports are tagged to the nearest town automatically.
+                        Reports are tagged to the nearest suburb, town, or landmark automatically.
                     </div>
                 </div>
 
@@ -416,10 +418,22 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                             </div>
                         </div>
                         <div className="w-full sm:w-auto flex flex-col gap-2">
-                            {!hasGpsLock && (
+                            {!hasGpsLock && !gpsFailed && (
                                 <div className="flex items-center gap-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">
                                     <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
-                                    Enable GPS to submit. Tap "Try GPS again" if you just turned it on.
+                                    Waiting for GPS… tap "Try GPS again" if needed.
+                                </div>
+                            )}
+                            {gpsFailed && !userPosition && (
+                                <div className="flex items-center gap-2 text-xs text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded px-3 py-2">
+                                    <span className="inline-flex h-2 w-2 bg-sky-300 rounded-full animate-pulse" aria-hidden="true" />
+                                    GPS unavailable — tap the map to place your pin manually.
+                                </div>
+                            )}
+                            {gpsFailed && userPosition && (
+                                <div className="flex items-center gap-2 text-xs text-green-200 bg-green-500/10 border border-green-500/30 rounded px-3 py-2">
+                                    <span className="inline-flex h-2 w-2 bg-green-300 rounded-full" aria-hidden="true" />
+                                    Pin placed at {findNearestTownName(userPosition.lat, userPosition.lng)}. Tap map to reposition.
                                 </div>
                             )}
                             <button onClick={requestGpsFix} className="w-full sm:w-auto px-6 py-2 rounded-lg text-sm font-semibold border border-sky-400/60 text-sky-100 bg-sky-500/10 hover:bg-sky-500/20 transition-colors">Try GPS again</button>
@@ -452,8 +466,8 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
-                        <LocationFinder onLocationSelect={(latlng) => setUserPosition(latlng)} />
-                        {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={true}><Popup>Your selected location. Drag to adjust.</Popup></Marker>}
+                        <LocationFinder onLocationSelect={(latlng) => { if (gpsFailed) setUserPosition(latlng); }} />
+                        {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>{hasGpsLock ? 'Your GPS location.' : 'Your manually placed pin.'}</Popup></Marker>}
                         <>
                              {sightings.map(sighting => {
                                 const sightingId = sighting.timestamp + sighting.name;
