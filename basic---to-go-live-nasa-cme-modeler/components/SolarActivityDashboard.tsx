@@ -813,16 +813,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     reportedInitialTasks.current.add(task);
     onInitialLoadProgress?.(task);
   }, [onInitialLoadProgress]);
-  // Imagery state
-  const [suvi131, setSuvi131] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [suvi304, setSuvi304] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoHmiB1024, setSdoHmiB1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoHmiBc4096, setSdoHmiBc4096] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoHmiB4096, setSdoHmiB4096] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [sdoHmiIf4096, setSdoHmiIf4096] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
-  const [suvi195, setSuvi195] = useState({ url: '/placeholder.png', loading: 'Loading image...' });
+  // Imagery state — url starts null (no placeholder); spinner shows until fetch completes.
+  const [suvi131, setSuvi131] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [suvi304, setSuvi304] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [sdoHmiB1024, setSdoHmiB1024] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [sdoHmiBc4096, setSdoHmiBc4096] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [sdoHmiB4096, setSdoHmiB4096] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [sdoHmiIf4096, setSdoHmiIf4096] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [suvi195, setSuvi195] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
@@ -1141,21 +1141,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const closeModal = useCallback(() => setModalState(null), []);
 
-  const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
-    // Only set the loading indicator — never wipe the existing url.
-    // This keeps the previous image visible while the new one loads,
-    // so switching imagery tabs doesn't flash blank.
-    setState(prev => ({ url: prev.url, loading: `Loading ${isVideo ? 'video' : 'image'}...` }));
-
+  const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string | null, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
     const cacheKey = `${url}::${isVideo ? 'video' : 'image'}`;
     const cached = solarImageCache.get(cacheKey);
     const now = Date.now();
 
+    // Already cached and fresh — update state immediately.
     if (cached && now - cached.fetchedAt < SOLAR_IMAGE_CACHE_TTL_MS) {
       setState({ url: cached.url, loading: null });
       setLastImagesUpdate(new Date(cached.fetchedAt).toLocaleTimeString('en-NZ'));
       return;
     }
+
+    // Mark as loading without wiping url — caller decides what to show while waiting.
+    setState(prev => ({ url: prev.url, loading: `Loading ${isVideo ? 'video' : 'image'}...` }));
 
     const fetchUrl = addCacheBuster ? `${url}?_=${now}` : url;
 
@@ -1179,8 +1178,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
             setState({ url: objectUrl, loading: null });
           } else {
-            // Cross-origin image (SDO, NOAA SUVI, etc.) — set as img src directly.
-            // img tags load cross-origin JPEGs without CORS headers; no blob fetch needed.
+            // Cross-origin image (JSOC, NOAA SUVI, etc.) — set as img src directly.
             solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
             setState({ url: fetchUrl, loading: null });
           }
@@ -1189,7 +1187,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           releaseImageLoadSlot();
         } catch {
           if (attempt < MAX_FETCH_RETRIES) {
-            setState({ url: '/placeholder.png', loading: 'Retrying image…' });
+            // Keep loading state, retry silently — don't flash an error to the user.
+            setState(prev => ({ url: prev.url, loading: 'Retrying…' }));
             window.setTimeout(() => { void loadAttempt(attempt + 1); }, 350 * (attempt + 1));
             return;
           }
@@ -1201,7 +1200,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             releaseImageLoadSlot();
             return;
           }
-          setState({ url: '/error.png', loading: 'Tap image to retry' });
+          setState(prev => ({ url: prev.url, loading: 'Failed to load — tap to retry' }));
           releaseImageLoadSlot();
         }
       };
@@ -1592,7 +1591,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [overviewGeometry, selectedSunspotCloseupUrl, selectedSunspotRegion, setViewerMedia]);
 
   useEffect(() => {
-    if (!sunspotOverviewImage.url || sunspotOverviewImage.url === '/placeholder.png' || sunspotOverviewImage.url === '/error.png') {
+    if (!sunspotOverviewImage.url) {
       setOverviewGeometry(null);
       return;
     }
@@ -1717,7 +1716,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return;
     }
 
-    if (!sunspotOverviewImage4k.url || sunspotOverviewImage4k.url === '/placeholder.png' || sunspotOverviewImage4k.url === '/error.png') {
+    if (!sunspotOverviewImage4k.url) {
       setSelectedSunspotCloseupUrl(null);
       return;
     }
@@ -1980,43 +1979,43 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
               <div className="flex-grow flex justify-center items-center relative w-full h-full min-h-[500px]">
                 {activeSunImage === 'SUVI_131' && (
-                  <div onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
-                       className="w-full h-full flex justify-center items-center cursor-pointer"
+                  <div onClick={() => suvi131.url && setViewerMedia({ url: suvi131.url, type: 'image' })}
+                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['suvi-131']}>
-                    <img src={suvi131.url} alt="SUVI 131Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
-                    {suvi131.loading && <LoadingSpinner message={suvi131.loading} />}
+                    {suvi131.url && <img src={suvi131.url} alt="SUVI 131Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
+                    {suvi131.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{suvi131.loading}</p></div>}
                   </div>
                 )}
                 {activeSunImage === 'SUVI_304' && (
-                  <div onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
-                       className="w-full h-full flex justify-center items-center cursor-pointer"
+                  <div onClick={() => suvi304.url && setViewerMedia({ url: suvi304.url, type: 'image' })}
+                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['suvi-304']}>
-                    <img src={suvi304.url} alt="SUVI 304Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
-                    {suvi304.loading && <LoadingSpinner message={suvi304.loading} />}
+                    {suvi304.url && <img src={suvi304.url} alt="SUVI 304Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
+                    {suvi304.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{suvi304.loading}</p></div>}
                   </div>
                 )}
                 {activeSunImage === 'SUVI_195' && (
-                  <div onClick={() => suvi195.url !== '/placeholder.png' && suvi195.url !== '/error.png' && setViewerMedia({ url: suvi195.url, type: 'image' })}
-                       className="w-full h-full flex justify-center items-center cursor-pointer"
+                  <div onClick={() => suvi195.url && setViewerMedia({ url: suvi195.url, type: 'image' })}
+                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['suvi-195']}>
-                    <img src={suvi195.url} alt="SUVI 195Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
-                    {suvi195.loading && <LoadingSpinner message={suvi195.loading} />}
+                    {suvi195.url && <img src={suvi195.url} alt="SUVI 195Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
+                    {suvi195.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{suvi195.loading}</p></div>}
                   </div>
                 )}
                 {activeSunImage === 'SDO_HMIBC_1024' && (
-                  <div onClick={() => sdoHmiBc4096.url !== '/placeholder.png' && sdoHmiBc4096.url !== '/error.png' && setViewerMedia({ url: sdoHmiBc4096.url, type: 'image' })}
-                       className="w-full h-full flex justify-center items-center cursor-pointer"
+                  <div onClick={() => sdoHmiBc4096.url && setViewerMedia({ url: sdoHmiBc4096.url, type: 'image' })}
+                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['sdo-hmibc-1024']}>
-                    <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
-                    {sdoHmiBc1024.loading && <LoadingSpinner message={sdoHmiBc1024.loading} />}
+                    {sdoHmiBc1024.url && <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
+                    {sdoHmiBc1024.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{sdoHmiBc1024.loading}</p></div>}
                   </div>
                 )}
                 {activeSunImage === 'SDO_HMIIF_1024' && (
-                  <div onClick={() => sdoHmiIf4096.url !== '/placeholder.png' && sdoHmiIf4096.url !== '/error.png' && setViewerMedia({ url: sdoHmiIf4096.url, type: 'image' })}
-                       className="w-full h-full flex justify-center items-center cursor-pointer"
+                  <div onClick={() => sdoHmiIf4096.url && setViewerMedia({ url: sdoHmiIf4096.url, type: 'image' })}
+                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['sdo-hmiif-1024']}>
-                    <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
-                    {sdoHmiIf1024.loading && <LoadingSpinner message={sdoHmiIf1024.loading} />}
+                    {sdoHmiIf1024.url && <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
+                    {sdoHmiIf1024.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{sdoHmiIf1024.loading}</p></div>}
                   </div>
                 )}
               </div>
@@ -2046,7 +2045,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
                     onClick={() => {
-                      if (sunspotOverviewImage.url === '/error.png') {
+                      if (!sunspotOverviewImage.url && !sunspotOverviewImage.loading) {
                         fetchImage(
                           resolveSdoImageUrl(sunspotImageryMode === 'intensity' ? SDO_HMI_IF_1024_URL : sunspotImageryMode === 'magnetogram' ? SDO_HMI_B_1024_URL : SDO_HMI_BC_1024_URL, forceDirectSdoRef.current),
                           sunspotImageryMode === 'intensity' ? setSdoHmiIf1024 : sunspotImageryMode === 'magnetogram' ? setSdoHmiB1024 : setSdoHmiBc1024,
@@ -2055,7 +2054,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         );
                         return;
                       }
-                      if (sunspotOverviewImage4k.url === '/placeholder.png' || sunspotOverviewImage4k.url === '/error.png') return;
+                      if (!sunspotOverviewImage4k.url) return;
                       setViewerMedia({
                         url: sunspotOverviewImage4k.url,
                         type: 'image_with_labels',
@@ -2068,11 +2067,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       });
                     }}
                   >
-                    <img
-                      src={sunspotOverviewImage.url}
-                      alt="SDO sunspot overview"
-                      className="w-full h-full object-contain rounded-lg"
-                    />
+                    {sunspotOverviewImage.url && (
+                      <img
+                        src={sunspotOverviewImage.url}
+                        alt="SDO sunspot overview"
+                        className="w-full h-full object-contain rounded-lg"
+                      />
+                    )}
                     {(loadingSunspotRegions || sunspotOverviewImage.loading) && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/60">
                         <svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -2082,8 +2083,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <p className="mt-2 text-sm text-neutral-300 italic">{sunspotOverviewImage.loading || loadingSunspotRegions}</p>
                       </div>
                     )}
-                    {sunspotOverviewImage.url === '/error.png' && (
-                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Tap to retry imagery load</div>
+                    {(!sunspotOverviewImage.url && !sunspotOverviewImage.loading) && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Failed to load — tap to retry</div>
                     )}
 
                     {plottedSunspots.map((region) => {
@@ -2179,7 +2180,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                               </div>
                             )}
                           </div>
-                        ) : sunspotOverviewImage4k.loading || sunspotOverviewImage4k.url === '/placeholder.png' ? (
+                        ) : sunspotOverviewImage4k.loading || !sunspotOverviewImage4k.url ? (
                           <div className="w-full h-full flex items-center justify-center">
                             <LoadingSpinner message="Loading close-up image..." />
                           </div>
