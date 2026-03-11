@@ -1,5 +1,3 @@
-// --- START OF FILE index.tsx ---
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -43,4 +41,3 @@ if ('serviceWorker' in navigator) {
     });
   }
 }
-// --- END OF FILE index.tsx ---
