@@ -19,6 +19,7 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
     if (!THREE) return;
     
     const labelEl = labelRef.current;
+    let rafId: number;
     
     const updatePosition = () => {
       // Ensure world matrices are up to date
@@ -40,7 +41,6 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
         const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
         const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
 
-        // Check if planet is farther than the sun from the camera
         if (distToPlanetSq > distToSunSq) {
           const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
           const vecToSun = sunWorldPos.clone().sub(cameraPosition);
@@ -62,34 +62,40 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
       // 3. Distance-based Visibility Check
       const dist = planetWorldPos.distanceTo(cameraPosition);
       const minVisibleDist = SCENE_SCALE * 0.2;
-      const maxVisibleDist = SCENE_SCALE * 100; // covers Neptune at ~30 AU × SCENE_SCALE
+      const maxVisibleDist = SCENE_SCALE * 100;
       const isTooCloseOrFar = dist < minVisibleDist || dist > maxVisibleDist;
 
       const shouldBeVisible = !isOccluded && !isBehindCamera && !isTooCloseOrFar;
 
-      if (shouldBeVisible) {
-        const x = Math.round((projectionVector.x * 0.5 + 0.5) * rendererDomElement.clientWidth);
-        const y = Math.round((-projectionVector.y * 0.5 + 0.5) * rendererDomElement.clientHeight);
-
-        labelEl.style.transform = `translate(${x}px, ${y}px) translate(15px, -10px)`;
-        labelEl.style.opacity = '1';
-        
-        // 4. Dynamic Font Size
-        const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 9);
-        labelEl.style.fontSize = `${Math.max(10, fontSize)}px`;
-
-      } else {
-        labelEl.style.opacity = '0';
-      }
+      // Batch all DOM writes into a single rAF write phase to avoid forced reflow.
+      // Previously, reading clientWidth/clientHeight and then writing style properties
+      // in the same synchronous call caused layout thrashing on every interval tick.
+      rafId = requestAnimationFrame(() => {
+        if (!labelEl) return;
+        if (shouldBeVisible) {
+          const x = Math.round((projectionVector.x * 0.5 + 0.5) * rendererDomElement.clientWidth);
+          const y = Math.round((-projectionVector.y * 0.5 + 0.5) * rendererDomElement.clientHeight);
+          labelEl.style.transform = `translate(${x}px, ${y}px) translate(15px, -10px)`;
+          labelEl.style.opacity = '1';
+          
+          // 4. Dynamic Font Size
+          const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 9);
+          labelEl.style.fontSize = `${Math.max(10, fontSize)}px`;
+        } else {
+          labelEl.style.opacity = '0';
+        }
+      });
     };
 
-    const intervalId = setInterval(updatePosition, 32); // Update at ~30fps
+    const intervalId = setInterval(updatePosition, 32); // ~30fps
 
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      cancelAnimationFrame(rafId);
+    };
 
   }, [planetMesh, camera, rendererDomElement, label, sunMesh]);
 
-  // MODIFIED: Added a common class name for easy selection during screenshot capture
   return (
     <div
       ref={labelRef}

@@ -1,14 +1,18 @@
 // --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
-import SimulationCanvas from './components/SimulationCanvas';
-import ControlsPanel from './components/ControlsPanel';
-import CMEListPanel from './components/CMEListPanel';
-import TimelineControls from './components/TimelineControls';
-import PlanetLabel from './components/PlanetLabel';
-import TutorialModal from './components/TutorialModal'; // This is the general tutorial modal
-import LoadingOverlay from './components/LoadingOverlay';
-import MediaViewerModal from './components/MediaViewerModal';
+// Modeler-page-only components — lazy loaded so they never touch the initial bundle
+// for users landing on the forecast or solar activity pages.
+const SimulationCanvas = lazy(() => import('./components/SimulationCanvas'));
+const ControlsPanel = lazy(() => import('./components/ControlsPanel'));
+const CMEListPanel = lazy(() => import('./components/CMEListPanel'));
+const TimelineControls = lazy(() => import('./components/TimelineControls'));
+const PlanetLabel = lazy(() => import('./components/PlanetLabel'));
+const TutorialModal = lazy(() => import('./components/TutorialModal'));
+const LoadingOverlay = lazy(() => import('./components/LoadingOverlay'));
+// MediaViewerModal is used across all pages but returns null until media is set,
+// so lazy-loading it is safe and removes it from the critical path.
+const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 
@@ -474,7 +478,9 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 1200);
+    // Show the loader for at least 600ms so the animation isn't a jarring flash,
+    // but don't hold it longer than needed — dismiss as soon as data is ready.
+    const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 600);
     // Defer non-critical preloads until after first paint so they don't compete
     // with the initial render and inflate Total Blocking Time.
     const preloadTimer = setTimeout(() => {
@@ -503,7 +509,7 @@ const App: React.FC = () => {
     if (isDashboardReady && isMinTimeElapsed) {
       setIsFadingOut(true);
       logDev('initial preload complete');
-      setTimeout(() => setShowInitialLoader(false), 500);
+      setTimeout(() => setShowInitialLoader(false), 300);
     }
   }, [isDashboardReady, isMinTimeElapsed]);
 
@@ -936,7 +942,7 @@ const App: React.FC = () => {
           reloadCountdown={reloadCountdown}
         />
       )}
-      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-500 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`w-screen h-screen bg-black flex flex-col text-neutral-300 overflow-hidden transition-opacity duration-300 ${showInitialLoader ? 'opacity-0' : 'opacity-100'}`}>
           <GlobalBanner
               isFlareAlert={isFlareAlert}
               flareClass={flareClass}
@@ -1036,6 +1042,7 @@ const App: React.FC = () => {
               ) : (
               <>
               {visitedPages.modeler && activePage === 'modeler' && (
+              <Suspense fallback={null}>
               <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
                     <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
@@ -1131,6 +1138,7 @@ const App: React.FC = () => {
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
+              </Suspense>
               )}
               {visitedPages.forecast && (
                 <div className={`w-full h-full ${activePage === 'forecast' ? 'block' : 'hidden'}`}>
@@ -1169,7 +1177,9 @@ const App: React.FC = () => {
               )}
           </div>
           
-          <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
+          <Suspense fallback={null}>
+            <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
+          </Suspense>
           <Suspense fallback={null}>
             <SettingsModal
               isOpen={isSettingsOpen}
