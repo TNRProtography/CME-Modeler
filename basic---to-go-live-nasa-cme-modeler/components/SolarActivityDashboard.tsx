@@ -145,6 +145,7 @@ const SDO_HMI_IF_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_Ic_flat_1024x1024.jpg`;
 const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg`;
 const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.jpg`;
 const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_Ic_flat_4096x4096.jpg`;
+const IMAGE_PROXY_BASE = (import.meta.env.VITE_PROXY_BASE || '/api/proxy').replace(/\/$/, '');
 
 // SDO images are served as plain JPEGs over HTTPS. img tags load them fine cross-origin
 // without any proxy. The proxy was previously used to blob-fetch for canvas operations,
