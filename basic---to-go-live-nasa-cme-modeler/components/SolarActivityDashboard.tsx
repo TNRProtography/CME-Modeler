@@ -146,11 +146,7 @@ const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg
 const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.jpg`;
 const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_Ic_flat_4096x4096.jpg`;
 
-// SDO images are served as plain JPEGs over HTTPS. img tags load them fine cross-origin
-// without any proxy. The proxy was previously used to blob-fetch for canvas operations,
-// but SDO doesn't send CORS headers so that path always fell back anyway.
 // Load directly — no Worker dependency, no domain-matching issues.
-const toProxyMetaUrl = (rawUrl: string) => `${IMAGE_PROXY_BASE}/meta?url=${encodeURIComponent(rawUrl)}`;
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
 const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
@@ -239,10 +235,8 @@ const extractTargetUrlFromProxy = (url: string): string | null => {
 const isLikelySameOriginOrProxy = (url: string): boolean => {
   try {
     const parsed = new URL(url, window.location.origin);
-    // Relative proxy path (custom domain) OR absolute proxy URL (pages.dev env var)
     return parsed.origin === window.location.origin
-      || parsed.pathname.startsWith('/api/proxy/')
-      || url.startsWith(IMAGE_PROXY_BASE);
+      || parsed.pathname.startsWith('/api/proxy/');
   } catch {
     return false;
   }
@@ -1461,10 +1455,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [fetchFirstAvailableJson, fetchFirstAvailableText, reportInitialTask, stampIfChanged]);
 
   const runAllUpdates = useCallback(() => {
-    void fetchWithTimeoutAndRetry(toProxyMetaUrl(SDO_HMI_BC_1024_URL), 'json').then((meta: any) => {
-      const version = meta?.etag || meta?.lastModified || 'unknown';
-      stampIfChanged('solar-images-meta', version, setLastImagesUpdate);
-    }).catch(() => {});
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
     fetchImage(resolveSdoImageUrl(SDO_HMI_BC_1024_URL, forceDirectSdoRef.current), setSdoHmiBc1024, false, false);
