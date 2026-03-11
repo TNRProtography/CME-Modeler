@@ -113,7 +113,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <img 
               src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
               alt="TNR Protography Logo"
-              className="w-auto h-8 mr-3 hidden lg:block" 
+              className="w-auto h-8 mr-3 hidden lg:block"
+              width="182"
+              height="32"
             />
             <h1 className="text-xl font-bold text-neutral-100 leading-tight hidden lg:block">
               CME Visualization
@@ -138,7 +140,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
         <img 
           src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
           alt="TNR Protography Logo"
-          className="w-full max-w-[200px] h-auto mb-3" 
+          className="w-full max-w-[200px] h-auto mb-3"
+          width="200"
+          height="88"
         />
         <h1 className="text-xl font-bold text-neutral-100 leading-tight">
           Spot The Aurora

@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Raise the chunk size warning threshold — we split intentionally
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -19,13 +21,12 @@ export default defineConfig({
             return 'charts';
           }
 
-          // Three.js — only needed by CME modeler (already lazy-loaded at runtime,
-          // but if Vite somehow bundles it, isolate it)
+          // Three.js — only needed by CME modeler (lazy-loaded at runtime)
           if (id.includes('three') || id.includes('gsap')) {
             return 'three';
           }
 
-          // React core — keep stable for caching
+          // React core — keep stable for long-term caching
           if (
             id.includes('node_modules/react/') ||
             id.includes('node_modules/react-dom/')
@@ -33,7 +34,7 @@ export default defineConfig({
             return 'react-vendor';
           }
 
-          // Leaflet — only needed by forecast map
+          // Leaflet — only needed by the aurora sightings map
           if (id.includes('leaflet')) {
             return 'leaflet';
           }

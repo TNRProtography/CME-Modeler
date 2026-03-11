@@ -1901,7 +1901,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         <div className="container mx-auto">
           <header className="text-center mb-8">
             <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer">
-              <img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4"/>
+              <img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4" width="250" height="110"/>
             </a>
             <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
           </header>
@@ -1962,7 +1962,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <div onClick={() => suvi131.url !== '/placeholder.png' && suvi131.url !== '/error.png' && setViewerMedia({ url: suvi131.url, type: 'image' })}
                        className="w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['suvi-131']}>
-                    <img src={suvi131.url} alt="SUVI 131Å" className="w-full h-full object-contain rounded-lg" />
+                    <img src={suvi131.url} alt="SUVI 131Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
                     {suvi131.loading && <LoadingSpinner message={suvi131.loading} />}
                   </div>
                 )}
@@ -1970,7 +1970,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <div onClick={() => suvi304.url !== '/placeholder.png' && suvi304.url !== '/error.png' && setViewerMedia({ url: suvi304.url, type: 'image' })}
                        className="w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['suvi-304']}>
-                    <img src={suvi304.url} alt="SUVI 304Å" className="w-full h-full object-contain rounded-lg" />
+                    <img src={suvi304.url} alt="SUVI 304Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
                     {suvi304.loading && <LoadingSpinner message={suvi304.loading} />}
                   </div>
                 )}
@@ -1978,7 +1978,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <div onClick={() => suvi195.url !== '/placeholder.png' && suvi195.url !== '/error.png' && setViewerMedia({ url: suvi195.url, type: 'image' })}
                        className="w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['suvi-195']}>
-                    <img src={suvi195.url} alt="SUVI 195Å" className="w-full h-full object-contain rounded-lg" />
+                    <img src={suvi195.url} alt="SUVI 195Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
                     {suvi195.loading && <LoadingSpinner message={suvi195.loading} />}
                   </div>
                 )}
@@ -1986,7 +1986,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <div onClick={() => sdoHmiBc4096.url !== '/placeholder.png' && sdoHmiBc4096.url !== '/error.png' && setViewerMedia({ url: sdoHmiBc4096.url, type: 'image' })}
                        className="w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['sdo-hmibc-1024']}>
-                    <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="w-full h-full object-contain rounded-lg" />
+                    <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
                     {sdoHmiBc1024.loading && <LoadingSpinner message={sdoHmiBc1024.loading} />}
                   </div>
                 )}
@@ -1994,7 +1994,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   <div onClick={() => sdoHmiIf4096.url !== '/placeholder.png' && sdoHmiIf4096.url !== '/error.png' && setViewerMedia({ url: sdoHmiIf4096.url, type: 'image' })}
                        className="w-full h-full flex justify-center items-center cursor-pointer"
                        title={tooltipContent['sdo-hmiif-1024']}>
-                    <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="w-full h-full object-contain rounded-lg" />
+                    <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />
                     {sdoHmiIf1024.loading && <LoadingSpinner message={sdoHmiIf1024.loading} />}
                   </div>
                 )}

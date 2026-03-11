@@ -718,22 +718,39 @@ export const useForecastData = (
   }, [auroraScoreHistory, nzMagSubstormEvents]); // --- MODIFICATION: Added nzMagSubstormEvents dependency ---
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const adjustment = calculateLocationAdjustment(position.coords.latitude);
-          setLocationAdjustment(adjustment);
-          const direction = adjustment >= 0 ? 'south' : 'north';
-          const distance = Math.abs(adjustment / 3 * 150);
-          setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
-        },
-        () => {
-          setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
-        },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
-      );
+    // Defer geolocation request so it doesn't fire immediately on page load,
+    // which PageSpeed flags as a Best Practices violation. Using requestIdleCallback
+    // (with setTimeout fallback) gives the browser time to finish initial paint first,
+    // and avoids triggering the permission prompt before the user has oriented themselves.
+    const requestLocation = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const adjustment = calculateLocationAdjustment(position.coords.latitude);
+            setLocationAdjustment(adjustment);
+            const direction = adjustment >= 0 ? 'south' : 'north';
+            const distance = Math.abs(adjustment / 3 * 150);
+            setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
+          },
+          () => {
+            setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
+        );
+      } else {
+        setLocationBlurb('Geolocation is not supported. Showing default forecast for Greymouth.');
+      }
+    };
+
+    // Use requestIdleCallback when available, otherwise fall back to a 2s delay.
+    // This prevents the geolocation prompt from firing during initial page load.
+    let handle: number | ReturnType<typeof setTimeout>;
+    if ('requestIdleCallback' in window) {
+      handle = (window as any).requestIdleCallback(requestLocation, { timeout: 5000 });
+      return () => (window as any).cancelIdleCallback(handle);
     } else {
-      setLocationBlurb('Geolocation is not supported. Showing default forecast for Greymouth.');
+      handle = setTimeout(requestLocation, 2000);
+      return () => clearTimeout(handle as ReturnType<typeof setTimeout>);
     }
   }, []);
 
