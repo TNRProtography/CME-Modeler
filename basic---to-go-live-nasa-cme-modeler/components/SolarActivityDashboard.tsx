@@ -142,14 +142,12 @@ const SDO_HMI_BC_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const SDO_HMI_IF_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMII.jpg';
 
-// Defaults to a relative path so it works on the custom domain (spottheaurora.co.nz)
-// where the Worker route is attached. For other deployments (e.g. cme-modeler.pages.dev)
-// set VITE_PROXY_BASE=https://spottheaurora.co.nz/api/proxy in the Pages project
-// environment variables so requests are routed to the Worker on the live domain.
-const IMAGE_PROXY_BASE: string = (import.meta.env.VITE_PROXY_BASE as string) || '/api/proxy';
-const toProxyImageUrl = (rawUrl: string, ttlSeconds = 60) => `${IMAGE_PROXY_BASE}/image?url=${encodeURIComponent(rawUrl)}&ttl=${ttlSeconds}`;
+// SDO images are served as plain JPEGs over HTTPS. img tags load them fine cross-origin
+// without any proxy. The proxy was previously used to blob-fetch for canvas operations,
+// but SDO doesn't send CORS headers so that path always fell back anyway.
+// Load directly — no Worker dependency, no domain-matching issues.
 const toProxyMetaUrl = (rawUrl: string) => `${IMAGE_PROXY_BASE}/meta?url=${encodeURIComponent(rawUrl)}`;
-const resolveSdoImageUrl = (rawUrl: string, forceDirect: boolean) => forceDirect ? rawUrl : toProxyImageUrl(rawUrl);
+const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
 const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
@@ -1171,6 +1169,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const loadAttempt = async (attempt: number) => {
         try {
           if (isLikelySameOriginOrProxy(fetchUrl)) {
+            // Same-origin or explicit proxy URL — fetch as blob to get an objectURL.
             const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
             if (!blob.type.startsWith('image/')) {
               throw new Error(`Expected image blob but got ${blob.type || 'unknown'}`);
@@ -1179,7 +1178,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
             setState({ url: objectUrl, loading: null });
           } else {
-            // Cross-origin feeds (e.g. NOAA SUVI) can render directly in <img> without CORS-fetch restrictions.
+            // Cross-origin image (SDO, NOAA SUVI, etc.) — set as img src directly.
+            // img tags load cross-origin JPEGs without CORS headers; no blob fetch needed.
             solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
             setState({ url: fetchUrl, loading: null });
           }
