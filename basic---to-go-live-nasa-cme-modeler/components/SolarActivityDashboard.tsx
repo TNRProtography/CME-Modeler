@@ -177,6 +177,14 @@ const devLog = (...args: unknown[]) => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Thrown when a proxy request gets a definitive 404 — no point retrying.
+class ProxyUnavailableError extends Error {
+  constructor(url: string) {
+    super(`Proxy unavailable (404) for ${url}`);
+    this.name = 'ProxyUnavailableError';
+  }
+}
+
 const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 'blob' = 'json') => {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
@@ -184,12 +192,20 @@ const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 
     const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       const response = await fetch(url, { signal: controller.signal, cache: 'default' });
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      if (!response.ok) {
+        // 404 on a proxy URL means the Worker isn't deployed on this domain — skip retries.
+        if (response.status === 404 && url.includes('/api/proxy/')) {
+          throw new ProxyUnavailableError(url);
+        }
+        throw new Error(`HTTP ${response.status} for ${url}`);
+      }
       if (parseAs === 'json') return await response.json();
       if (parseAs === 'blob') return await response.blob();
       return await response.text();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      // Don't retry proxy 404s — fall through immediately to the direct-URL fallback.
+      if (lastError instanceof ProxyUnavailableError) break;
       if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
     } finally {
       window.clearTimeout(timeout);
@@ -2060,7 +2076,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       alt="SDO sunspot overview"
                       className="w-full h-full object-contain rounded-lg"
                     />
-                    {loadingSunspotRegions && <LoadingSpinner message={loadingSunspotRegions} />}
+                    {(loadingSunspotRegions || sunspotOverviewImage.loading) && (
+                      <LoadingSpinner message={sunspotOverviewImage.loading || loadingSunspotRegions || ''} />
+                    )}
                     {sunspotOverviewImage.url === '/error.png' && (
                       <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Tap to retry imagery load</div>
                     )}
