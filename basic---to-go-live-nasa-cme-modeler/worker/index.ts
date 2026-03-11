@@ -2,6 +2,7 @@ export interface Env {}
 
 const ALLOWED_HOSTS = new Set([
   'sdo.gsfc.nasa.gov',
+  'jsoc1.stanford.edu',
   'services.swpc.noaa.gov',
 ]);
 
