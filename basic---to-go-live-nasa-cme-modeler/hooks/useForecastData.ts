@@ -250,14 +250,20 @@ const parseJsonWithRowRecovery = (rawText: string) => {
   return null;
 };
 
-const fetchJsonWithRecovery = async (url: string) => {
-  const response = await fetch(url);
-  const raw = await response.text();
-  const parsed = parseJsonWithRowRecovery(raw);
-  if (parsed === null) {
-    throw new Error(`Unable to parse JSON from ${url}`);
+const fetchJsonWithRecovery = async (url: string, timeoutMs = 15000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const raw = await response.text();
+    const parsed = parseJsonWithRowRecovery(raw);
+    if (parsed === null) {
+      throw new Error(`Unable to parse JSON from ${url}`);
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timer);
   }
-  return parsed;
 };
 
 const getVisibilityBlurb = (score: number | null): string => {
