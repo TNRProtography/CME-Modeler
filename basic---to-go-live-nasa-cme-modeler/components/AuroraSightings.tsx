@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { SightingReport, SightingStatus } from '../types';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
