@@ -136,15 +136,17 @@ const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
 // HMI latest images served by JSOC/Stanford (sdo.gsfc.nasa.gov is down)
-// Naming: M_color = colorized magnetogram, M = grayscale magnetogram, Ic_flat = intensitygram
-// _1k = 1024px, _4k = 4096px
+// Confirmed filenames from jsoc1.stanford.edu/hmi_latest:
+//   Color Magnetogram  → HMI_latest_color_Mag  (.jpg)
+//   Magnetogram (b/w)  → HMI_latest_Mag        (.gif)
+//   Color Intensitygram (no limb darkening) → HMI_latest_colInt (.jpg)
 const JSOC_HMI_BASE = 'https://jsoc1.stanford.edu/data/hmi/images/latest';
 const SDO_HMI_BC_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_1024x1024.jpg`;
-const SDO_HMI_B_1024_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_1024x1024.jpg`;
-const SDO_HMI_IF_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_Ic_flat_1024x1024.jpg`;
+const SDO_HMI_B_1024_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_1024x1024.gif`;
+const SDO_HMI_IF_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_1024x1024.jpg`;
 const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg`;
-const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.jpg`;
-const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_Ic_flat_4096x4096.jpg`;
+const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.gif`;
+const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_4096x4096.jpg`;
 
 // Load directly — no Worker dependency, no domain-matching issues.
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
