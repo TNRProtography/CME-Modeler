@@ -121,8 +121,16 @@ const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
 const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
 
 const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
-  void page;
-  return new Set([...FORECAST_INITIAL_TASKS, ...SOLAR_INITIAL_TASKS, ...MODELER_INITIAL_TASKS]);
+  // Only require the tasks that belong to the page the user actually landed on.
+  // Previously this ignored `page` and required ALL tasks from all three pages,
+  // which caused the loader to hang forever once ForecastDashboard and
+  // SolarActivityDashboard became lazy — their callbacks never fired for unvisited pages.
+  switch (page) {
+    case 'forecast':      return new Set(FORECAST_INITIAL_TASKS);
+    case 'solar-activity': return new Set(SOLAR_INITIAL_TASKS);
+    case 'modeler':
+    default:              return new Set(MODELER_INITIAL_TASKS);
+  }
 };
 
 const logDev = (...args: unknown[]) => {
