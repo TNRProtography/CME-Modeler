@@ -142,7 +142,11 @@ const SDO_HMI_BC_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_
 const SDO_HMI_B_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMIB.jpg';
 const SDO_HMI_IF_4096_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_4096_HMII.jpg';
 
-const IMAGE_PROXY_BASE = '/api/proxy';
+// Defaults to a relative path so it works on the custom domain (spottheaurora.co.nz)
+// where the Worker route is attached. For other deployments (e.g. cme-modeler.pages.dev)
+// set VITE_PROXY_BASE=https://spottheaurora.co.nz/api/proxy in the Pages project
+// environment variables so requests are routed to the Worker on the live domain.
+const IMAGE_PROXY_BASE: string = (import.meta.env.VITE_PROXY_BASE as string) || '/api/proxy';
 const toProxyImageUrl = (rawUrl: string, ttlSeconds = 60) => `${IMAGE_PROXY_BASE}/image?url=${encodeURIComponent(rawUrl)}&ttl=${ttlSeconds}`;
 const toProxyMetaUrl = (rawUrl: string) => `${IMAGE_PROXY_BASE}/meta?url=${encodeURIComponent(rawUrl)}`;
 const resolveSdoImageUrl = (rawUrl: string, forceDirect: boolean) => forceDirect ? rawUrl : toProxyImageUrl(rawUrl);
@@ -217,7 +221,10 @@ const extractTargetUrlFromProxy = (url: string): string | null => {
 const isLikelySameOriginOrProxy = (url: string): boolean => {
   try {
     const parsed = new URL(url, window.location.origin);
-    return parsed.origin === window.location.origin || parsed.pathname.startsWith('/api/proxy/');
+    // Relative proxy path (custom domain) OR absolute proxy URL (pages.dev env var)
+    return parsed.origin === window.location.origin
+      || parsed.pathname.startsWith('/api/proxy/')
+      || url.startsWith(IMAGE_PROXY_BASE);
   } catch {
     return false;
   }

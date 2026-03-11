@@ -2,9 +2,26 @@ name = "spot-the-aurora-image-proxy"
 main = "worker/index.ts"
 compatibility_date = "2026-03-04"
 
+# workers_dev = true exposes the worker at
+# https://spot-the-aurora-image-proxy.<your-subdomain>.workers.dev
+# This isn't used in production but is useful for testing the worker directly.
+workers_dev = true
+
 [observability]
 enabled = true
 
+# Production route — handles proxy requests on the main custom domain.
 [[routes]]
 pattern = "spottheaurora.co.nz/api/proxy/*"
 zone_name = "spottheaurora.co.nz"
+
+# For cme-modeler.pages.dev (or any other Pages preview URL), the Worker route
+# above won't apply because Cloudflare doesn't allow routing Workers onto
+# *.pages.dev — that zone is owned by Cloudflare, not you.
+#
+# Fix: in the Cloudflare Pages project settings for cme-modeler.pages.dev,
+# add an environment variable:
+#   VITE_PROXY_BASE = https://spottheaurora.co.nz/api/proxy
+#
+# The app reads this at build time and points all proxy requests to the live
+# Worker on the custom domain, regardless of which domain the Pages app is on.
