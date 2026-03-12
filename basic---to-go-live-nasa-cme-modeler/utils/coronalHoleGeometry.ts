@@ -54,7 +54,7 @@ import { CoronalHole } from './coronalHoleData';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
-const SPIRAL_TURNS           = 0.85;
+const SPIRAL_TURNS           = 0.38;
 const CH_OVEREMPHASIS        = 1.22;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
@@ -279,7 +279,7 @@ export function buildParkerSpiralMesh(
 ): any {
   const latRad = THREE.MathUtils.degToRad(ch.lat);
   const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 800) / 600, 0, 1);
-  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.45, speedT);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.16, speedT);
   const phiMax = turns * Math.PI * 2;
 
   // ── Backbone ───────────────────────────────────────────────────────────────
@@ -294,8 +294,8 @@ export function buildParkerSpiralMesh(
     // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
     const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Azimuth: starts at 0 (+Z), curls in the same sense as solar rotation.
-    const az = -phi;
+    // Azimuth: starts at 0 (+Z), curls with solar rotation in viewer space.
+    const az = phi;
 
     // Latitude decays with distance (solar wind spreads toward equatorial plane)
     const latEff = latRad * Math.exp(-phi / (phiMax * 0.60));
