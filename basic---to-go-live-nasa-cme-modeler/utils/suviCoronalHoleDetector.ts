@@ -70,6 +70,25 @@ const MIN_CH_PIXEL_FRAC       = 0.003; // minimum CH region as fraction of disk 
 const MAX_CH_REGIONS          = 4;     // return at most this many CHs
 const PROXY_TTL_SECONDS       = 90;    // edge cache TTL
 
+// ── Sunspot rejection filters ─────────────────────────────────────────────────
+//
+// Sunspots appear as near-perfect dark circles in EUV 195Å imagery and must be
+// excluded from coronal hole detection.  Two independent tests are applied:
+//
+// 1. CIRCULARITY: 4π·area / perimeter²  (1.0 = perfect circle, lower = elongated)
+//    Real CHs are irregular and elongated; sunspots score close to 1.0.
+//    Reject any region with circularity > MAX_CH_CIRCULARITY.
+//
+// 2. ASPECT RATIO: bounding-box height / width (or width / height, whichever > 1)
+//    Sunspots are compact (ratio ≈ 1); real CHs are usually elongated (ratio > 1.5).
+//    Reject regions where the bounding box is too square (ratio < MIN_CH_ASPECT).
+//    Exception: very large CHs (> LARGE_CH_FRAC of disk) pass regardless — a polar
+//    CH that spans most of the disk can appear compact in the bounding box.
+//
+const MAX_CH_CIRCULARITY = 0.72;  // reject if 4π·area/perimeter² > this
+const MIN_CH_ASPECT      = 1.30;  // reject if bounding-box long/short < this
+const LARGE_CH_FRAC      = 0.06;  // large CHs (> 6% of disk) skip aspect check
+
 const SUVI_195_URL     = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
 const PROXY_IMAGE_PATH = '/api/proxy/image';
 
@@ -300,6 +319,65 @@ function connectedComponents(
   return regions;
 }
 
+// ── Sunspot rejection helpers ─────────────────────────────────────────────────
+
+/**
+ * Circularity = 4π · area / perimeter²
+ * Perfect circle → 1.0; elongated / irregular shapes → lower values.
+ * The perimeter is approximated as the count of border pixels (pixels that
+ * have at least one 4-connected non-region neighbour).
+ */
+function regionCircularity(region: PixelRegion): number {
+  const pixelSet = new Set<number>();
+  region.pixels.forEach(p => pixelSet.add((p.y << 16) | p.x));
+
+  let borderCount = 0;
+  for (const p of region.pixels) {
+    const { x, y } = p;
+    if (
+      !pixelSet.has(((y - 1) << 16) | x) ||
+      !pixelSet.has(((y + 1) << 16) | x) ||
+      !pixelSet.has((y << 16) | (x - 1)) ||
+      !pixelSet.has((y << 16) | (x + 1))
+    ) {
+      borderCount++;
+    }
+  }
+  if (borderCount < 4) return 1;
+  return (4 * Math.PI * region.pixels.length) / (borderCount * borderCount);
+}
+
+/**
+ * Aspect ratio = long-side / short-side of the bounding box.
+ * Returns ≥ 1.0; sunspots score close to 1, elongated CHs score > 1.5.
+ */
+function regionAspectRatio(region: PixelRegion): number {
+  const w = region.maxX - region.minX + 1;
+  const h = region.maxY - region.minY + 1;
+  return w > h ? w / h : h / w;
+}
+
+/**
+ * Returns true if the region should be kept as a coronal hole candidate.
+ * Rejects near-circular compact regions (sunspots / active-region cores).
+ */
+function isCoronalHoleCandidate(region: PixelRegion, diskPixelCount: number): boolean {
+  const areaFrac    = region.pixels.length / diskPixelCount;
+  const circularity = regionCircularity(region);
+  const aspect      = regionAspectRatio(region);
+
+  // Always reject regions that are too circular (sunspot signature)
+  if (circularity > MAX_CH_CIRCULARITY) return false;
+
+  // Large CHs can have compact bounding boxes (e.g. polar CHs) — skip aspect check
+  if (areaFrac >= LARGE_CH_FRAC) return true;
+
+  // Small/medium regions must be sufficiently elongated to be a real CH
+  if (aspect < MIN_CH_ASPECT) return false;
+
+  return true;
+}
+
 // ── Pixel → heliographic (orthographic projection) ───────────────────────────
 //
 // Standard solar disk orthographic projection:
@@ -443,6 +521,7 @@ export async function detectCoronalHolesFromSuvi195(
 
     const candidates = allRegions
       .filter(r => r.pixels.length >= minPixels)
+      .filter(r => isCoronalHoleCandidate(r, diskPixelCount))
       .sort((a, b) => b.pixels.length - a.pixels.length)
       .slice(0, MAX_CH_REGIONS);
 
