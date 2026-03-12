@@ -154,9 +154,10 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x0d3f5f, transparent: true, opacity: 0.58,
+    // Keep CH visible without creating a dark "hole" artifact on the disk.
+    color: 0x4fb7d8, transparent: true, opacity: 0.18,
     side: THREE.FrontSide, depthWrite: false,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
