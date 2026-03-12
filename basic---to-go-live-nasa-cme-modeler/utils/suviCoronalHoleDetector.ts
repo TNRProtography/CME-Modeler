@@ -57,7 +57,7 @@
 //   PROXY_TTL_SECONDS      Cloudflare edge cache TTL for the proxied image.
 
 import { CoronalHole }                 from './coronalHoleData';
-import { estimateHssSpeedFromChWidth } from './solarWindModel';
+import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 const ANALYSIS_SIZE           = 300;   // off-screen canvas resolution
@@ -427,6 +427,13 @@ export async function detectCoronalHolesFromSuvi195(
 
       const polygon = buildPolygon(region, cx, cy, diskR, 14);
 
+      let regionLumaSum = 0;
+      for (const p of region.pixels) {
+        regionLumaSum += luma(data, (p.y * size + p.x) * 4);
+      }
+      const regionLumaMean = regionLumaSum / Math.max(1, region.pixels.length);
+      const darkness = Math.max(0, Math.min(1, (median - regionLumaMean) / Math.max(1, median)));
+
       // Larger / darker CHs get slightly higher opacity
       const areaFrac  = region.pixels.length / diskPixelCount;
       const opacity   = Math.min(0.65, 0.30 + areaFrac * 3.0);
@@ -440,7 +447,8 @@ export async function detectCoronalHolesFromSuvi195(
         widthDeg:             Math.max(5, widthDeg),
         heightDeg:            Math.max(5, heightDeg),
         polygon,
-        estimatedSpeedKms:    estimateHssSpeedFromChWidth(Math.max(5, widthDeg)),
+        estimatedSpeedKms:    estimateHssSpeedFromChWidthAndDarkness(Math.max(5, widthDeg), darkness),
+        darkness,
         sourceDirectionDeg:   { lat, lon },
         expansionHalfAngleDeg,
         opacity,

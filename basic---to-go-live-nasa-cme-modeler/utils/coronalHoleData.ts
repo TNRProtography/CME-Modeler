@@ -39,6 +39,9 @@ export interface CoronalHole {
   /** Estimated solar wind stream speed (km/s) derived from widthDeg */
   estimatedSpeedKms: number;
 
+  /** Relative darkness [0..1] inside the CH vs disk median (1 = darkest) */
+  darkness: number;
+
   /** Source direction (same as centroid lat/lon) */
   sourceDirectionDeg: { lat: number; lon: number };
 

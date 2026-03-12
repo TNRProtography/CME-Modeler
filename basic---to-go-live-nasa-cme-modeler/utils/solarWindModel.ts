@@ -33,4 +33,18 @@ export function estimateHssSpeedFromChWidth(widthDeg: number): number {
   return Math.round(HSS_SPEED_MIN + clamped * (HSS_SPEED_MAX - HSS_SPEED_MIN));
 }
 
+/**
+ * Estimate HSS speed from CH width and relative darkness.
+ *
+ * @param widthDeg         CH angular width in degrees.
+ * @param darknessFraction 0..1 where 1 = much darker than the disk median.
+ */
+export function estimateHssSpeedFromChWidthAndDarkness(widthDeg: number, darknessFraction: number): number {
+  const widthSpeed = estimateHssSpeedFromChWidth(widthDeg);
+  const darkness = Math.max(0, Math.min(1, darknessFraction));
+  // Darker holes drive modestly faster streams (WSA-like enhancement).
+  const boostKms = 120 * darkness;
+  return Math.round(Math.max(HSS_SPEED_MIN, Math.min(HSS_SPEED_MAX, widthSpeed + boostKms)));
+}
+
 // --- END OF FILE utils/solarWindModel.ts ---

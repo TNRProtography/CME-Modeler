@@ -54,7 +54,7 @@ import { CoronalHole } from './coronalHoleData';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.018;  // relative to 1 scene unit
-const SPIRAL_TURNS           = 1.75;
+const SPIRAL_TURNS           = 2.15;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
 const AU_IN_KM          = 149_597_870.7;
@@ -309,6 +309,7 @@ export function buildParkerSpiralMesh(
 
   // ── Tube extrusion ─────────────────────────────────────────────────────────
   const tubeR   = SPIRAL_TUBE_RADIUS_FAC * SCENE_SCALE;
+  const spreadScale = 1 + Math.max(0.18, (ch.expansionHalfAngleDeg ?? 10) / 20);
   const sides   = SPIRAL_TUBE_SIDES;
   const pos: number[]  = [];
   const flow: number[] = [];
@@ -331,10 +332,12 @@ export function buildParkerSpiralMesh(
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
       const cr = Math.cos(a), sr = Math.sin(a);
+      const flare = 1 + Math.pow(t, 1.35) * spreadScale;
+      const rTube = tubeR * flare;
       pos.push(
-        curr.x + tubeR * (cr * right.x + sr * up2.x),
-        curr.y + tubeR * (cr * right.y + sr * up2.y),
-        curr.z + tubeR * (cr * right.z + sr * up2.z),
+        curr.x + rTube * (cr * right.x + sr * up2.x),
+        curr.y + rTube * (cr * right.y + sr * up2.y),
+        curr.z + rTube * (cr * right.z + sr * up2.z),
       );
       flow.push(t);
       edge.push(Math.abs(cr));   // 1.0 at sides of tube cross-section
@@ -368,7 +371,7 @@ export function buildParkerSpiralMesh(
       // uSunAngle: accumulated solar rotation — updated every frame by animate loop
       uSunAngle: { value: sunAngle0 },
       uTime:     { value: 0 },
-      uOpacity:  { value: ch.opacity },
+      uOpacity:  { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
     },
     transparent: true,
     side:        THREE.DoubleSide,

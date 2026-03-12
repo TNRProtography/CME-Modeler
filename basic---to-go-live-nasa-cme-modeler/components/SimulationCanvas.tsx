@@ -680,9 +680,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
 
-      // ── Solar rotation — sunMesh spins, chGroup (its child) follows automatically
-      const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
-      sunRotationRef.current += sunAngularDelta;
+      // ── Solar rotation / timeline sync ───────────────────────────────────
+      // Timeline mode: lock CH/HSS longitude to the scrubbed absolute time.
+      // The red "now" line corresponds to Date.now(); at that point angle=0.
+      if (timelineActive && timelineMaxDate > timelineMinDate) {
+        const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
+        const dtSecFromNow = (timelineNowMs - Date.now()) / 1000;
+        sunRotationRef.current = SUN_ANGULAR_VELOCITY * dtSecFromNow;
+      } else {
+        const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
+        sunRotationRef.current += sunAngularDelta;
+      }
       if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
       // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
