@@ -830,11 +830,13 @@ const App: React.FC = () => {
     const isPlaying = timelinePlaying;
 
     if (isAtEnd) {
+      setTimelineSpeed(5);
       setTimelineScrubberValue(0);
       resetClock();
       canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
     } else if (!isPlaying) {
+      setTimelineSpeed(5);
       if (isAtStart) {
         resetClock();
         canvasRef.current?.resetAnimationTimer();

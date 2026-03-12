@@ -95,6 +95,27 @@ async function fetchAsBlob(url: string): Promise<string> {
   return URL.createObjectURL(blob);
 }
 
+async function fetchAsBlobDirect(url: string): Promise<string> {
+  const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+  if (!res.ok) throw new Error(`Direct fetch failed: ${res.status} for ${url}`);
+  const blob = await res.blob();
+  if (!blob.type.startsWith('image/')) throw new Error(`Expected image, got ${blob.type}`);
+  return URL.createObjectURL(blob);
+}
+
+async function fetchAsBlobWithFallback(url: string): Promise<string> {
+  try {
+    return await fetchAsBlob(url);
+  } catch (proxyErr) {
+    try {
+      return await fetchAsBlobDirect(url);
+    } catch {
+      const msg = proxyErr instanceof Error ? proxyErr.message : String(proxyErr);
+      throw new Error(`SUVI image fetch failed (proxy/direct): ${msg}`);
+    }
+  }
+}
+
 // ── Draw onto canvas → ImageData ──────────────────────────────────────────────
 async function toImageData(blobUrl: string, size: number): Promise<ImageData> {
   return new Promise<ImageData>((resolve, reject) => {
@@ -372,7 +393,7 @@ export async function detectCoronalHolesFromSuvi195(
     if (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:') || imageUrl.startsWith(window.location.origin)) {
       blobUrl = imageUrl;
     } else {
-      blobUrl = await fetchAsBlob(imageUrl);
+      blobUrl = await fetchAsBlobWithFallback(imageUrl);
     }
 
     // ── 2. Canvas render ──────────────────────────────────────────────────
