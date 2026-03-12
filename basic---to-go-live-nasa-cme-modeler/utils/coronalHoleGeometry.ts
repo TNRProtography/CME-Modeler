@@ -296,8 +296,8 @@ export function buildParkerSpiralMesh(
     // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
     const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Azimuth: starts at 0 (+Z), curls with solar rotation in viewer space.
-    const az = phi;
+    // Azimuth: starts at 0 (+Z), with tail trailing behind source rotation.
+    const az = -phi;
 
     // Latitude decays with distance (solar wind spreads toward equatorial plane)
     const latEff = latRad * Math.exp(-phi / (phiMax * 0.60));
