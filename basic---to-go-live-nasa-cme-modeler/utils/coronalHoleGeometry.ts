@@ -1,38 +1,73 @@
 // --- START OF FILE utils/coronalHoleGeometry.ts ---
 //
-// Pure geometry helpers for Coronal Hole (CH) footprint rendering and
-// High-Speed Stream (HSS) volume generation.
+// Three.js geometry for Coronal Hole surface patches and
+// Parker-spiral High-Speed Stream arms.
 //
-// These functions are stateless and rely on `window.THREE` exactly like the
-// rest of SimulationCanvas.tsx — no import needed at call sites.
+// ═══════════════════════════════════════════════════════════════
+// ARCHITECTURE OVERVIEW
+// ═══════════════════════════════════════════════════════════════
 //
-// KEY CONCEPTS
-// ════════════
-//  • The CH footprint is modelled as a polygon (or ellipse fallback) in
-//    heliographic coordinates.  We project it onto the solar sphere using
-//    spherical-to-Cartesian conversion.
+//  1. CH SURFACE PATCHES  (buildChSurfaceMesh / buildChOutlineLine)
+//     ─────────────────────────────────────────────────────────────
+//     Live in *sunMesh local space* — chGroup is a child of sunMesh,
+//     so patches rotate automatically as sunMesh.rotation.y is driven
+//     each frame. No per-frame update needed.
 //
-//  • The HSS is a lofted "open corridor" that extrudes the CH footprint
-//    radially outward.  Cross-sections widen with heliocentric distance.
-//    Near the Sun the HSS strongly resembles the CH shape; far out it widens
-//    into a broad plume.
+//     Heliographic coordinates from the SUVI detector are in
+//     *disk-centre-relative* space (what's facing Earth right now),
+//     NOT full Carrington longitude. We treat them as offsets from
+//     the Sun's current facing direction — which is correct because
+//     the SUVI image always shows the Earth-facing hemisphere.
 //
-//  • All distances are in the same normalised *scene units* used by the rest
-//    of SimulationCanvas (SCENE_SCALE from constants.ts).
+//  2. PARKER SPIRAL HSS ARMS  (buildParkerSpiralMesh)
+//     ─────────────────────────────────────────────────
+//     Live in *world space*. The arm backbone is built with φ=0
+//     pointing along +Z (the reference direction). The CH's Carrington
+//     longitude offset (heliographic lon from SUVI, in radians) and
+//     the accumulated solar rotation angle are combined in the vertex
+//     shader as a single Y-rotation:
+//
+//         totalAngle = uChLon + uSunAngle
+//
+//     where:
+//       uChLon    = ch.lon converted to radians (fixed at build time, updated as uniform)
+//       uSunAngle = accumulated solar rotation since scene init (updated every frame)
+//
+//     The Parker spiral formula: r(φ) = r₀ + k·φ
+//       k = v_sw / ω_sun  (scene-units per radian of solar rotation)
+//
+//     The arm bends backward (negative φ direction) because the solar
+//     wind outpaces the sun's rotation at 1 AU. Wider CHs → faster
+//     wind → tighter spiral pitch.
+//
+// ═══════════════════════════════════════════════════════════════
+// TUNING CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+//   SPIRAL_POINTS          backbone sample resolution
+//   SPIRAL_TUBE_SIDES      tube cross-section polygon sides
+//   SPIRAL_TUBE_RADIUS_FAC tube radius as fraction of SCENE_SCALE
+//   SPIRAL_TURNS           how many full wraps the arm makes before ending
 
 import { CoronalHole } from './coronalHoleData';
 
-// ─── Coordinate helpers ───────────────────────────────────────────────────────
+// ─── Tuning ───────────────────────────────────────────────────────────────────
+const SPIRAL_POINTS          = 220;
+const SPIRAL_TUBE_SIDES      = 8;
+const SPIRAL_TUBE_RADIUS_FAC = 0.018;  // relative to 1 scene unit
+const SPIRAL_TURNS           = 1.75;
 
-/**
- * Convert heliographic (lat, lon) in degrees to a unit Cartesian vector.
- * Conventions match the rest of the scene:
- *   +Y = north solar pole
- *   +X = Carrington longitude 90°
- *   +Z = Carrington longitude 0° (toward observer by default)
- */
-function heliographicToCartesian(THREE: any, lat: number, lon: number): any {
-  const phi   = THREE.MathUtils.degToRad(90 - lat);   // colatitude
+// Physical constants (replicated to avoid circular dep on constants.ts)
+const AU_IN_KM          = 149_597_870.7;
+const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
+const SUN_OMEGA_REAL    = 2.61799e-6;    // rad/s  (27.27-day synodic period)
+const OSS               = 2000;          // simulation speed multiplier
+
+// ─── Coordinate helper ────────────────────────────────────────────────────────
+
+/** Heliographic (lat, lon) degrees → unit Cartesian.
+ *  Scene: +Y = north pole, +Z = lon 0 toward Earth. */
+function hgToVec(THREE: any, lat: number, lon: number): any {
+  const phi   = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon);
   return new THREE.Vector3(
     Math.sin(phi) * Math.sin(theta),
@@ -41,339 +76,309 @@ function heliographicToCartesian(THREE: any, lat: number, lon: number): any {
   );
 }
 
-// ─── CH polygon utilities ─────────────────────────────────────────────────────
+// ─── CH footprint points ──────────────────────────────────────────────────────
 
-/**
- * Build an array of 3-D points on the solar sphere surface representing
- * the CH boundary polygon.
- *
- * @param THREE        window.THREE reference
- * @param ch           The coronal hole data
- * @param sunRadius    Radius of the solar sphere in scene units
- * @returns            Array of THREE.Vector3 on the sphere surface (closed loop)
- */
-export function buildChFootprintPoints(THREE: any, ch: CoronalHole, sunRadius: number): any[] {
+/** Boundary polygon on the solar sphere in sunMesh local space. */
+export function buildChFootprintPoints(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any[] {
+  const r = sunRadius * 1.003;
+
   if (ch.polygon && ch.polygon.length >= 3) {
-    // Convert polygon vertices (relative offsets from centroid) to world coords.
-    const pts = ch.polygon.map(v => {
-      const absLat = ch.lat + v.lat;
-      const absLon = ch.lon + v.lon;
-      return heliographicToCartesian(THREE, absLat, absLon).multiplyScalar(sunRadius);
-    });
-    // Close the loop
+    const pts = ch.polygon.map((v: any) =>
+      hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).multiplyScalar(r)
+    );
     pts.push(pts[0].clone());
     return pts;
   }
 
-  // ── Ellipse fallback ──────────────────────────────────────────────────────
-  // When no polygon is provided, approximate the CH as an ellipse on the
-  // sphere.  We build points in the local tangent plane then project back.
-  const N = 24; // number of ellipse points
-  const halfW = THREE.MathUtils.degToRad((ch.widthDeg  ?? 20) / 2);
-  const halfH = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2);
-  const centre = heliographicToCartesian(THREE, ch.lat, ch.lon);
-
-  // Build a local tangent frame: up = northward, right = eastward
-  const north  = new THREE.Vector3(0, 1, 0);
-  const right  = new THREE.Vector3().crossVectors(north, centre).normalize();
-  const up     = new THREE.Vector3().crossVectors(centre, right).normalize();
+  // Ellipse fallback
+  const N    = 24;
+  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2);
+  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2);
+  const cen  = hgToVec(THREE, ch.lat, ch.lon);
+  const north = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(north, cen).normalize();
+  const up    = new THREE.Vector3().crossVectors(cen, right).normalize();
 
   const pts: any[] = [];
   for (let i = 0; i <= N; i++) {
     const a = (i / N) * Math.PI * 2;
-    const localX = Math.cos(a) * halfW;
-    const localY = Math.sin(a) * halfH;
-    // Displace in tangent plane then re-project to sphere surface
-    const displaced = centre.clone()
-      .addScaledVector(right, localX)
-      .addScaledVector(up,    localY)
-      .normalize()
-      .multiplyScalar(sunRadius);
-    pts.push(displaced);
+    pts.push(
+      cen.clone()
+        .addScaledVector(right, Math.cos(a) * hw)
+        .addScaledVector(up,    Math.sin(a) * hh)
+        .normalize().multiplyScalar(r)
+    );
   }
   return pts;
 }
 
-// ─── CH surface mesh ─────────────────────────────────────────────────────────
+// ─── CH surface mesh ──────────────────────────────────────────────────────────
 
-/**
- * Create a THREE.Mesh that renders the coronal hole as a dark semi-transparent
- * patch on the solar sphere surface.
- *
- * The mesh sits just above the photosphere (sunRadius * 1.003) so it always
- * draws over the sun shader / photosphere texture without z-fighting.
- *
- * @returns  THREE.Mesh — add to scene, set `.visible = true/false` as needed.
- */
-export function buildChSurfaceMesh(THREE: any, ch: CoronalHole, sunRadius: number): any {
-  const footprint = buildChFootprintPoints(THREE, ch, sunRadius * 1.003);
+/** Dark triangle-fan patch. Parented to sunMesh → rotates with the sun. */
+export function buildChSurfaceMesh(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any {
+  const fp  = buildChFootprintPoints(THREE, ch, sunRadius);
+  const cen = new THREE.Vector3();
+  fp.forEach((p: any) => cen.add(p));
+  cen.divideScalar(fp.length).normalize().multiplyScalar(sunRadius * 1.003);
 
-  // Tessellate the footprint polygon as a triangle fan around the centroid.
-  // This is sufficient for CH polygons with ≤ 30 vertices.
-  const centroid = new THREE.Vector3();
-  footprint.forEach(p => centroid.add(p));
-  centroid.divideScalar(footprint.length);
-  centroid.normalize().multiplyScalar(sunRadius * 1.003);
-
-  const positions: number[] = [];
-  const n = footprint.length - 1; // last point == first
-  for (let i = 0; i < n; i++) {
-    const a = footprint[i];
-    const b = footprint[i + 1];
-    positions.push(centroid.x, centroid.y, centroid.z);
-    positions.push(a.x, a.y, a.z);
-    positions.push(b.x, b.y, b.z);
+  const pos: number[] = [];
+  for (let i = 0; i < fp.length - 1; i++) {
+    const a = fp[i], b = fp[i + 1];
+    pos.push(cen.x, cen.y, cen.z, a.x, a.y, a.z, b.x, b.y, b.z);
   }
 
   const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    color:       0x001a2e,      // Very dark blue-black — open magnetic field region
-    transparent: true,
-    opacity:     0.72,
-    side:        THREE.FrontSide,
-    depthWrite:  false,
-    blending:    THREE.NormalBlending,
+    color: 0x001830, transparent: true, opacity: 0.82,
+    side: THREE.FrontSide, depthWrite: false,
+    blending: THREE.NormalBlending,
   });
-
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name    = `ch-surface-${ch.id}`;
+  const mesh    = new THREE.Mesh(geom, mat);
+  mesh.name     = `ch-surface-${ch.id}`;
   mesh.userData = { coronalHoleId: ch.id };
-  mesh.renderOrder = 1;  // draw on top of sun photosphere layer
+  mesh.renderOrder = 1;
   return mesh;
 }
 
-// ─── CH outline ring ──────────────────────────────────────────────────────────
+// ─── CH outline ───────────────────────────────────────────────────────────────
 
-/**
- * Create a THREE.Line that draws the coronal hole boundary outline.
- * Gives the CH a subtle glowing border so it reads clearly on the Sun.
- */
-export function buildChOutlineLine(THREE: any, ch: CoronalHole, sunRadius: number): any {
-  const footprint = buildChFootprintPoints(THREE, ch, sunRadius * 1.005);
-  const geom = new THREE.BufferGeometry().setFromPoints(footprint);
-  const mat = new THREE.LineBasicMaterial({
-    color:       0x4499cc,
-    transparent: true,
-    opacity:     0.55,
-    depthWrite:  false,
-    blending:    THREE.AdditiveBlending,
+/** Cyan additive-blend border. Also in sunMesh local space. */
+export function buildChOutlineLine(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any {
+  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.005);
+  const geom = new THREE.BufferGeometry().setFromPoints(fp);
+  const mat  = new THREE.LineBasicMaterial({
+    color: 0x33aadd, transparent: true, opacity: 0.65,
+    depthWrite: false, blending: THREE.AdditiveBlending,
   });
-  const line = new THREE.Line(geom, mat);
+  const line    = new THREE.Line(geom, mat);
   line.name     = `ch-outline-${ch.id}`;
   line.userData = { coronalHoleId: ch.id };
   return line;
 }
 
-// ─── HSS stream volume ────────────────────────────────────────────────────────
+// ─── Parker Spiral Shaders ────────────────────────────────────────────────────
+//
+// KEY DESIGN DECISION
+// ────────────────────
+// The spiral backbone is built with φ=0 pointing along +Z.
+// uChLon (radians) = the CH's longitude from SUVI (disk-centre-relative).
+// uSunAngle (radians) = accumulated solar rotation since scene init.
+//
+// The vertex shader rotates every point by (uChLon + uSunAngle) about Y.
+// This means:
+//   - At t=0: arm starts at the CH's initial SUVI longitude.
+//   - As the sun rotates: uSunAngle increases, arm sweeps with it.
+//   - When SUVI refreshes and a new CH lon arrives: uChLon is updated,
+//     instantly re-anchoring the arm to the new detected position.
 
-// Shader constants
-const HSS_VERTEX_SHADER = `
+const VERT = /* glsl */`
+  uniform float uChLon;    // CH longitude from SUVI (radians, updated on refresh)
+  uniform float uSunAngle; // Accumulated solar rotation (radians, updated each frame)
   uniform float uTime;
-  uniform float uAnimPhase;
-  varying vec3  vWorldPos;
-  varying float vDist;       // normalised heliocentric distance [0..1]
-  varying float vEdge;       // 0 = centre of stream, 1 = edge
-  varying float vRipple;
+
+  attribute float aFlow;   // [0..1] = distance along spiral from Sun
+  attribute float aEdge;   // [0..1] = edge distance in tube cross-section
+
+  varying float vFlow;
+  varying float vEdge;
 
   void main() {
-    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-    vDist     = clamp(length(vWorldPos) / 12.0, 0.0, 1.0);  // 12 = ~scene far
+    vFlow = aFlow;
+    vEdge = aEdge;
 
-    // Edge factor — stored in uv.x: 0=centre, 1=edge  (set in buildHssGeometry)
-    vEdge = uv.x;
+    // Total rotation = CH's Carrington longitude + how far the Sun has rotated
+    float angle = uChLon + uSunAngle;
+    float cosA  = cos(angle);
+    float sinA  = sin(angle);
 
-    // Animated ripple: periodic pulse that travels away from the Sun
-    float phase = uAnimPhase + uTime * 0.12;
-    vRipple = 0.5 + 0.5 * sin((vDist * 14.0 - phase) * 3.14159);
+    vec3 p  = position;   // baked in +Z-reference frame
+    float x = p.x * cosA - p.z * sinA;
+    float z = p.x * sinA + p.z * cosA;
 
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(x, p.y, z, 1.0);
   }
 `;
 
-const HSS_FRAGMENT_SHADER = `
-  uniform float uOpacity;
+const FRAG = /* glsl */`
   uniform float uTime;
-  varying float vDist;
+  uniform float uOpacity;
+
+  varying float vFlow;
   varying float vEdge;
-  varying float vRipple;
 
   void main() {
-    // Core colour: pale cyan-gold for fast solar wind
-    vec3 nearColour = vec3(0.55, 0.85, 1.0);   // cyan-white near Sun
-    vec3 farColour  = vec3(0.9,  0.75, 0.3);   // warm gold far from Sun
-    vec3 col = mix(nearColour, farColour, vDist);
+    // Colour ramp: electric cyan near Sun → warm amber at 1 AU
+    vec3 nearCol = vec3(0.30, 0.85, 1.00);
+    vec3 farCol  = vec3(0.95, 0.68, 0.18);
+    vec3 col     = mix(nearCol, farCol, pow(vFlow, 0.65));
 
-    // Opacity: highest in the core, fades at the edges and far end
-    float edgeFade = 1.0 - smoothstep(0.55, 1.0, vEdge);
-    float distFade = 1.0 - smoothstep(0.45, 1.0, vDist);
-    float ripple   = 0.6 + 0.4 * vRipple;
+    // Outward-travelling ripple (solar wind blowing away from Sun)
+    float ripple = fract(vFlow - uTime * 0.18);
+    float pulse  = pow(1.0 - abs(ripple - 0.5) * 2.0, 4.0);
 
-    float alpha = uOpacity * edgeFade * distFade * ripple;
-    alpha = clamp(alpha, 0.0, 0.7);
+    // Soft tube cross-section (makes it read as ribbon, not hard cylinder)
+    float edgeFade = 1.0 - smoothstep(0.30, 1.00, vEdge);
+
+    // Taper to nothing at arm tip
+    float tipFade  = 1.0 - smoothstep(0.68, 1.00, vFlow);
+
+    // Bright ridge highlight that pulses with the ripple
+    col = mix(col, vec3(1.00, 1.00, 0.95), pulse * 0.45 * edgeFade);
+
+    float alpha = uOpacity * edgeFade * tipFade * (0.32 + 0.68 * pulse);
+    alpha = clamp(alpha, 0.0, 0.88);
 
     gl_FragColor = vec4(col, alpha);
-    if (gl_FragColor.a < 0.005) discard;
+    if (gl_FragColor.a < 0.003) discard;
   }
 `;
 
+// ─── Parker spiral mesh ───────────────────────────────────────────────────────
+
 /**
- * Build the HSS stream volume as a lofted mesh that originates from the CH
- * footprint on the solar surface and expands radially outward.
+ * Build a Parker-spiral tube arm for one coronal hole.
  *
- * GEOMETRY STRATEGY
- * ─────────────────
- * We define N "rings" at increasing heliocentric distances.
- * Ring 0 sits just above the CH footprint (sunRadius * 1.05).
- * Ring N-1 sits at `maxReach` scene units from the Sun.
+ * The backbone is built in a canonical frame (φ=0 → +Z axis).
+ * The vertex shader rotates the arm by (uChLon + uSunAngle) every frame,
+ * so the arm root always tracks the CH's current rotated longitude.
  *
- * At each ring, the cross-section polygon is the CH footprint scaled and
- * rotated to track the outward axis, then expanded by the expansion rate.
- *
- * The UV.x channel carries the normalised edge distance [0=centre, 1=edge]
- * so the fragment shader can fade the HSS edges softly.
- *
- * @param THREE               window.THREE
- * @param ch                  Coronal hole source data
- * @param sunRadius           Solar sphere radius in scene units
- * @param maxReach            How far the HSS extends (scene units, ~1.5–2 AU)
- * @returns                   THREE.Mesh — toggle .visible for the HSS control
+ * @param sunAngle0  Solar rotation angle at build time — used to initialise
+ *                   uSunAngle so the arm starts at the correct position immediately.
  */
-export function buildHssMesh(THREE: any, ch: CoronalHole, sunRadius: number, maxReach: number): any {
-  // Number of radial rings along the stream axis
-  const RINGS  = 18;
-  const RING_PTS = ch.polygon ? ch.polygon.length : 24; // points per ring
+export function buildParkerSpiralMesh(
+  THREE: any,
+  ch: CoronalHole,
+  sunRadius: number,
+  maxReach: number,
+  sunAngle0: number,
+): any {
 
-  // Outward axis direction (unit vector) based on CH centroid
-  const axis = heliographicToCartesian(THREE, ch.sourceDirectionDeg.lat, ch.sourceDirectionDeg.lon);
+  // Parker spiral pitch: k = v_sw / ω_sim  [scene-units / radian]
+  const omegaSim = SUN_OMEGA_REAL * OSS;
+  const vSwScene = (ch.estimatedSpeedKms / AU_IN_KM) * SCENE_SCALE;  // scene-u/s
+  const k        = vSwScene / omegaSim;
 
-  // Build a local frame (right, up) perpendicular to the outward axis
-  const worldUp = Math.abs(axis.y) < 0.99
-    ? new THREE.Vector3(0, 1, 0)
-    : new THREE.Vector3(1, 0, 0);
-  const axisRight = new THREE.Vector3().crossVectors(axis, worldUp).normalize();
-  const axisUp    = new THREE.Vector3().crossVectors(axisRight, axis).normalize();
+  const latRad = THREE.MathUtils.degToRad(ch.lat);
+  const phiMax = SPIRAL_TURNS * Math.PI * 2;
 
-  // Collect the CH footprint as a 2-D shape in the tangent plane at the Sun.
-  // We express each footprint point as (r, angle) from the centroid.
-  const chCentreWorld = axis.clone().multiplyScalar(sunRadius);
-  const footprint3d   = buildChFootprintPoints(THREE, ch, sunRadius);
-  // Project to 2-D tangent plane
-  const fp2d = footprint3d.slice(0, -1).map((p: any) => {
-    const delta = p.clone().sub(chCentreWorld);
-    return { u: delta.dot(axisRight), v: delta.dot(axisUp) };
-  });
+  // ── Backbone ───────────────────────────────────────────────────────────────
+  // Built in the canonical frame: φ=0 at +Z, arm curls in the -φ direction
+  // (Parker spiral bends backward opposite to solar rotation because the wind
+  //  travels faster than the sun rotates at 1 AU).
+  const backbone: any[] = [];
+  for (let i = 0; i <= SPIRAL_POINTS; i++) {
+    const t   = i / SPIRAL_POINTS;
+    const phi = t * phiMax;
 
-  // For each ring, compute the radially expanded cross-section
-  const positions: number[] = [];
-  const uvs:       number[] = [];
-  const indices:   number[] = [];
+    const r = sunRadius + k * phi;
+    if (r > maxReach) break;
 
-  // Pre-compute each ring's points
-  const ringPoints: any[][] = [];
-  for (let ri = 0; ri < RINGS; ri++) {
-    const t       = ri / (RINGS - 1);                 // 0..1 along stream
-    const dist    = THREE.MathUtils.lerp(sunRadius * 1.04, maxReach, t);
-    const centre  = axis.clone().multiplyScalar(dist);
+    // Azimuth: starts at 0 (+Z), curls in -φ direction (Parker backward curl)
+    const az = -phi;
 
-    // Expansion: half-angle grows linearly with distance beyond the Sun
-    const distAU  = dist;                              // already in scene units ≈ AU scale
-    const spreadFac = 1.0 + (ch.expansionHalfAngleDeg / 30.0) * t * 3.5;
+    // Latitude decays with distance (solar wind spreads toward equatorial plane)
+    const latEff = latRad * Math.exp(-phi / (phiMax * 0.60));
+    const cosLat = Math.cos(latEff);
 
-    const ring: any[] = [];
-    for (let pi = 0; pi < RING_PTS; pi++) {
-      const idx = pi % fp2d.length;
-      const { u, v } = fp2d[idx];
-      const ru = u * spreadFac;
-      const rv = v * spreadFac;
-      const pt = centre.clone()
-        .addScaledVector(axisRight, ru)
-        .addScaledVector(axisUp,    rv);
-      ring.push(pt);
-    }
-    ringPoints.push(ring);
+    backbone.push(new THREE.Vector3(
+      r * cosLat * Math.sin(az),
+      r * Math.sin(latEff),
+      r * cosLat * Math.cos(az),
+    ));
   }
 
-  // Compute centroid of ring 0 for UV edge mapping
-  const computeCentroid = (ring: any[]) => {
-    const c = new THREE.Vector3();
-    ring.forEach(p => c.add(p));
-    return c.divideScalar(ring.length);
-  };
-
-  // Build the vertex buffers and index buffer (quad strips between adjacent rings)
-  for (let ri = 0; ri < RINGS; ri++) {
-    const ring   = ringPoints[ri];
-    const cent   = computeCentroid(ring);
-    // maxRingRadius — used to normalise UV edge
-    let maxR = 0;
-    ring.forEach(p => { const d = p.distanceTo(cent); if (d > maxR) maxR = d; });
-
-    for (let pi = 0; pi < RING_PTS; pi++) {
-      const p    = ring[pi];
-      const edge = maxR > 0 ? p.distanceTo(cent) / maxR : 0;
-      positions.push(p.x, p.y, p.z);
-      uvs.push(edge, ri / (RINGS - 1));
-    }
+  const N = backbone.length;
+  if (N < 2) {
+    // Degenerate case — quiet Sun, arm too short
+    const dummy = new THREE.Points(
+      new THREE.BufferGeometry(),
+      new THREE.PointsMaterial({ visible: false })
+    );
+    dummy.name = `hss-spiral-${ch.id}`;
+    return dummy;
   }
 
-  // Quad strips: connect ring ri to ring ri+1
-  for (let ri = 0; ri < RINGS - 1; ri++) {
-    for (let pi = 0; pi < RING_PTS; pi++) {
-      const piNext = (pi + 1) % RING_PTS;
-      const a = ri       * RING_PTS + pi;
-      const b = ri       * RING_PTS + piNext;
-      const c = (ri + 1) * RING_PTS + pi;
-      const d = (ri + 1) * RING_PTS + piNext;
-      // Two triangles per quad
-      indices.push(a, b, c);
-      indices.push(b, d, c);
+  // ── Tube extrusion ─────────────────────────────────────────────────────────
+  const tubeR   = SPIRAL_TUBE_RADIUS_FAC * SCENE_SCALE;
+  const sides   = SPIRAL_TUBE_SIDES;
+  const pos: number[]  = [];
+  const flow: number[] = [];
+  const edge: number[] = [];
+  const idx: number[]  = [];
+
+  for (let i = 0; i < N; i++) {
+    const t    = i / (N - 1);
+    const curr = backbone[i];
+    const prev = backbone[Math.max(0, i - 1)];
+    const next = backbone[Math.min(N - 1, i + 1)];
+
+    const tang = next.clone().sub(prev).normalize();
+    const up   = new THREE.Vector3(0, 1, 0);
+    let right  = new THREE.Vector3().crossVectors(tang, up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    const up2  = new THREE.Vector3().crossVectors(right, tang).normalize();
+
+    for (let s = 0; s < sides; s++) {
+      const a  = (s / sides) * Math.PI * 2;
+      const cr = Math.cos(a), sr = Math.sin(a);
+      pos.push(
+        curr.x + tubeR * (cr * right.x + sr * up2.x),
+        curr.y + tubeR * (cr * right.y + sr * up2.y),
+        curr.z + tubeR * (cr * right.z + sr * up2.z),
+      );
+      flow.push(t);
+      edge.push(Math.abs(cr));   // 1.0 at sides of tube cross-section
     }
   }
 
-  // Close the end cap at the solar surface (ring 0) using a fan
-  // and optionally the far end (ring RINGS-1) — we leave far end open (stream continues)
-  const capRing = ringPoints[0];
-  const capCent = computeCentroid(capRing);
-  const capCentIdx = positions.length / 3;
-  positions.push(capCent.x, capCent.y, capCent.z);
-  uvs.push(0, 0);
-  for (let pi = 0; pi < RING_PTS; pi++) {
-    const piNext = (pi + 1) % RING_PTS;
-    const a = pi;
-    const b = piNext;
-    indices.push(capCentIdx, b, a);   // inward-facing cap
+  for (let i = 0; i < N - 1; i++) {
+    for (let s = 0; s < sides; s++) {
+      const sn = (s + 1) % sides;
+      const a  = i * sides + s,  b  = i * sides + sn;
+      const c  = (i+1) * sides + s, d = (i+1) * sides + sn;
+      idx.push(a, b, c, b, d, c);
+    }
   }
 
   const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,       2));
-  geom.setIndex(indices);
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('aFlow',    new THREE.Float32BufferAttribute(flow, 1));
+  geom.setAttribute('aEdge',    new THREE.Float32BufferAttribute(edge, 1));
+  geom.setIndex(idx);
   geom.computeVertexNormals();
 
+  const lonRad = THREE.MathUtils.degToRad(ch.lon);
+
   const mat = new THREE.ShaderMaterial({
-    vertexShader:   HSS_VERTEX_SHADER,
-    fragmentShader: HSS_FRAGMENT_SHADER,
+    vertexShader:   VERT,
+    fragmentShader: FRAG,
     uniforms: {
-      uTime:      { value: 0 },
-      uAnimPhase: { value: ch.animPhase },
-      uOpacity:   { value: ch.opacity },
+      // uChLon: fixed CH longitude from SUVI (updated when SUVI refreshes)
+      uChLon:    { value: lonRad },
+      // uSunAngle: accumulated solar rotation — updated every frame by animate loop
+      uSunAngle: { value: sunAngle0 },
+      uTime:     { value: 0 },
+      uOpacity:  { value: ch.opacity },
     },
-    transparent:  true,
-    side:         THREE.DoubleSide,
-    depthWrite:   false,
-    blending:     THREE.AdditiveBlending,
+    transparent: true,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
   });
 
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name     = `hss-stream-${ch.id}`;
-  mesh.userData = {
-    coronalHoleId:     ch.id,
-    estimatedSpeedKms: ch.estimatedSpeedKms,
-    isHssMesh:         true,
-  };
+  const mesh    = new THREE.Mesh(geom, mat);
+  mesh.name     = `hss-spiral-${ch.id}`;
+  mesh.userData = { coronalHoleId: ch.id, isHssMesh: true };
   return mesh;
 }
 

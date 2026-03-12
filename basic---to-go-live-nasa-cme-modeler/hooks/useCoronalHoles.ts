@@ -1,58 +1,62 @@
 // --- START OF FILE hooks/useCoronalHoles.ts ---
 //
 // React hook that runs the SUVI 195 coronal-hole detector on mount and
-// periodically thereafter.  Falls back to DEFAULT_CORONAL_HOLES if the
-// detection fails (network error, CORS, image not yet loaded, etc.).
+// periodically thereafter.
 //
-// Usage:
-//   const { coronalHoles, detectionStatus } = useCoronalHoles();
-//
-// `coronalHoles` is always a non-empty CoronalHole[] — either real detected
-// holes or the hard-coded fallback — so downstream code never has to handle
-// an empty list.
+// Policy: REAL DATA ONLY.
+//   • If detection succeeds → use the detected holes.
+//   • If detection fails or finds nothing → coronalHoles is [] (empty).
+//     The scene simply shows no CH patches or HSS arms until the next
+//     successful fetch.  There is no simulated fallback data.
 //
 // REFRESH_INTERVAL_MS:
-//   SUVI images update every ~4 minutes.  We re-analyse every 15 minutes so
-//   the CH positions stay reasonably fresh without hammering the proxy.
+//   SUVI images update every ~4 minutes.  We re-analyse every 15 minutes
+//   to stay fresh without hammering the proxy.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { CoronalHole, DEFAULT_CORONAL_HOLES }        from '../utils/coronalHoleData';
-import { detectCoronalHolesFromSuvi195, SuviDetectionResult } from '../utils/suviCoronalHoleDetector';
+import { CoronalHole }                              from '../utils/coronalHoleData';
+import {
+  detectCoronalHolesFromSuvi195,
+  SuviDetectionResult,
+} from '../utils/suviCoronalHoleDetector';
 
 // ── TUNE ──────────────────────────────────────────────────────────────────────
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;  // 15 minutes
-const INITIAL_DELAY_MS    = 3000;             // wait 3 s after mount so we don't block page paint
+const INITIAL_DELAY_MS    = 3_000;            // 3 s after mount (don't block paint)
 
-// ── Status type exposed to consumers ──────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 export type CoronalHoleDetectionStatus =
-  | 'idle'
-  | 'loading'
-  | 'detected'     // live SUVI result
-  | 'fallback'     // using DEFAULT_CORONAL_HOLES due to an error
-  | 'error';
+  | 'idle'       // not started yet
+  | 'loading'    // fetch + analysis in progress
+  | 'detected'   // live SUVI result — coronalHoles is populated
+  | 'empty'      // analysis ran but found no holes (quiet Sun or poor image)
+  | 'error';     // network / CORS / canvas error
 
 export interface CoronalHolesState {
-  /** Live or fallback coronal holes — always populated */
+  /** Live detected coronal holes — empty array if none found or on error */
   coronalHoles:    CoronalHole[];
   detectionStatus: CoronalHoleDetectionStatus;
   lastDetectedAt:  Date | null;
   errorMessage:    string | undefined;
-  /** Full result object for debug use (e.g. showing disk overlay) */
+  /** Full result object for optional debug display */
   lastResult:      SuviDetectionResult | null;
   /** Manually trigger a fresh analysis */
   refresh:         () => void;
 }
 
-export function useCoronalHoles(): CoronalHolesState {
-  const [coronalHoles,    setCoronalHoles]    = useState<CoronalHole[]>(DEFAULT_CORONAL_HOLES);
-  const [status,          setStatus]          = useState<CoronalHoleDetectionStatus>('idle');
-  const [lastDetectedAt,  setLastDetectedAt]  = useState<Date | null>(null);
-  const [errorMessage,    setErrorMessage]    = useState<string | undefined>(undefined);
-  const [lastResult,      setLastResult]      = useState<SuviDetectionResult | null>(null);
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
-  const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mountedRef   = useRef(true);
+export function useCoronalHoles(): CoronalHolesState {
+  const [coronalHoles,   setCoronalHoles]   = useState<CoronalHole[]>([]);
+  const [status,         setStatus]         = useState<CoronalHoleDetectionStatus>('idle');
+  const [lastDetectedAt, setLastDetectedAt] = useState<Date | null>(null);
+  const [errorMessage,   setErrorMessage]   = useState<string | undefined>(undefined);
+  const [lastResult,     setLastResult]     = useState<SuviDetectionResult | null>(null);
+
+  const timerRef    = useRef<ReturnType<typeof setTimeout>  | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef  = useRef(true);
 
   const runDetection = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -61,41 +65,39 @@ export function useCoronalHoles(): CoronalHolesState {
 
     try {
       const result = await detectCoronalHolesFromSuvi195();
-
       if (!mountedRef.current) return;
+
       setLastResult(result);
       setLastDetectedAt(result.analysedAt);
 
-      if (result.succeeded && result.coronalHoles.length > 0) {
+      if (!result.succeeded) {
+        // Network / CORS / canvas failure
+        setCoronalHoles([]);
+        setStatus('error');
+        setErrorMessage(result.errorMessage ?? 'SUVI 195 analysis failed');
+      } else if (result.coronalHoles.length === 0) {
+        // Analysis ran cleanly but found no dark regions (quiet Sun)
+        setCoronalHoles([]);
+        setStatus('empty');
+        setErrorMessage('No coronal holes detected in latest SUVI 195 image');
+      } else {
+        // Success
         setCoronalHoles(result.coronalHoles);
         setStatus('detected');
-      } else {
-        // Detection ran but found nothing (e.g. quiet Sun) or failed — use fallback
-        setCoronalHoles(DEFAULT_CORONAL_HOLES);
-        setStatus(result.succeeded ? 'fallback' : 'error');
-        setErrorMessage(result.errorMessage ?? 'No coronal holes detected — using simulated data');
       }
     } catch (err) {
       if (!mountedRef.current) return;
-      const msg = err instanceof Error ? err.message : String(err);
-      setCoronalHoles(DEFAULT_CORONAL_HOLES);
+      setCoronalHoles([]);
       setStatus('error');
-      setErrorMessage(msg);
+      setErrorMessage(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
 
-    // Delay the first run so the rest of the page paints first
-    timerRef.current = setTimeout(() => {
-      void runDetection();
-    }, INITIAL_DELAY_MS);
-
-    // Periodic refresh
-    intervalRef.current = setInterval(() => {
-      void runDetection();
-    }, REFRESH_INTERVAL_MS);
+    timerRef.current    = setTimeout(() => { void runDetection(); }, INITIAL_DELAY_MS);
+    intervalRef.current = setInterval(() => { void runDetection(); }, REFRESH_INTERVAL_MS);
 
     return () => {
       mountedRef.current = false;
