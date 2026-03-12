@@ -769,6 +769,12 @@ const App: React.FC = () => {
     return filteredCmes;
   }, [currentlyModeledCMEId, cmeData, filteredCmes]);
 
+  const shouldShowTimelineControls =
+    activePage === 'modeler' &&
+    !isLoading &&
+    cmeData.length > 0 &&
+    timelineMaxDate > timelineMinDate;
+
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
   
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -1154,7 +1160,6 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <TimelineControls isVisible={false} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
                 </main>
 
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
@@ -1209,7 +1214,7 @@ const App: React.FC = () => {
               stacking contexts so position:fixed works correctly on desktop AND mobile. */}
           <Suspense fallback={null}>
             <TimelineControls
-              isVisible={activePage === 'modeler' && !isLoading && cmesToRender.length > 0}
+              isVisible={shouldShowTimelineControls}
               isPlaying={timelinePlaying}
               onPlayPause={handleTimelinePlayPause}
               onScrub={handleTimelineScrub}
