@@ -320,13 +320,9 @@ interface SimulationCanvasProps {
   showFluxRope: boolean;
   /** true = southward Bz (RED — high storm risk), false = northward (BLUE — low risk) */
   bzSouth: boolean;
-  /** Controls whether the HSS stream graphic is visible in the scene.
-   *  The underlying coronal hole source geometry is always present. */
+  /** Whether the Parker-spiral HSS stream arms are visible */
   showHss: boolean;
-  /**
-   * Live coronal hole data from the SUVI detector (or fallback defaults).
-   * When this array changes the CH/HSS geometry is rebuilt in the scene.
-   */
+  /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
   coronalHoles: CoronalHole[];
   dataVersion: number;
   interactionMode: InteractionMode;
@@ -360,14 +356,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const bzIndicatorRef  = useRef<any>(null);
 
   // ── Coronal Hole / HSS refs ───────────────────────────────────────────────
-  // chGroupRef  : THREE.Group parented to sunMesh — rotates with the sun automatically
-  // hssGroupRef : Parker spiral arms in world space — updated each frame by sun rotation angle
-  const chGroupRef       = useRef<any>(null);
-  const hssGroupRef      = useRef<any>(null);
-  // Ref to the sunMesh so we can read/set its rotation in the animate loop
-  const sunMeshRef       = useRef<any>(null);
-  // Accumulates the solar rotation angle (radians) scaled by the simulation speed multiplier
-  const sunRotationRef   = useRef<number>(0);
+  // chGroupRef  — parented to sunMesh; patches rotate with the sun for free
+  // hssGroupRef — world-space Parker spiral arms; vertex shader rotates per frame
+  const chGroupRef     = useRef<any>(null);
+  const hssGroupRef    = useRef<any>(null);
+  const sunMeshRef     = useRef<any>(null);
+  const sunRotationRef = useRef<number>(0);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
@@ -580,37 +574,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sunMeshRef.current = sunMesh;
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
-    // Photosphere texture overlay — also parented to sunMesh so it rotates with it
+    // Photosphere overlay — child of sunMesh so it rotates with the sun
     const sunPhoto = new THREE.Mesh(
       new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64),
       new THREE.MeshBasicMaterial({ map: tex.sunPhoto, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
     );
     sunPhoto.name = 'sun-photosphere';
-    sunMesh.add(sunPhoto); // child of sunMesh → rotates with it
+    sunMesh.add(sunPhoto);
 
-    // ── Coronal Holes & Parker Spiral HSS ────────────────────────────────────
-    //
-    // ARCHITECTURE:
-    //   chGroup  → child of sunMesh.  CH patches are in solar-surface space.
-    //              They automatically rotate with the sun every frame.
-    //
-    //   hssGroup → child of scene (world space).  Contains Parker-spiral arm
-    //              meshes, one per CH.  Each arm is rebuilt (or its uniforms
-    //              updated) every frame from the current sunRotationRef angle,
-    //              so the spiral root tracks the CH's current longitude as the
-    //              Sun rotates.
-    //
-    // Both groups are populated in the coronalHoles useEffect below so they
-    // update whenever fresh SUVI data arrives.
-    const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';
-    sunMesh.add(chGroup);                          // ← parented to sun
-    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';
-    scene.add(hssGroup);                           // ← world space
+    // ── Coronal Holes & Parker Spiral HSS ──────────────────────────────────
+    // chGroup: child of sunMesh → patches rotate with the sun automatically
+    // hssGroup: world-space → vertex shader rotates arms via uSunAngle uniform
+    const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  sunMesh.add(chGroup);
+    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    scene.add(hssGroup);
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
-
-    // Initial populate from whatever coronalHoles are available at mount.
-    // The useEffect below rebuilds when they change.
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     props.coronalHoles.forEach(ch => {
@@ -702,28 +680,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
 
-      // ── Solar rotation ────────────────────────────────────────────────────────
-      // Accumulate the solar rotation angle scaled by the simulation speed (OSS=2000).
-      // chGroup is parented to sunMesh so CH patches rotate automatically.
-      // Parker spiral arms receive uSunAngle each frame so their roots track the CH.
+      // ── Solar rotation — sunMesh spins, chGroup (its child) follows automatically
       const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
       sunRotationRef.current += sunAngularDelta;
-      if (sunMeshRef.current) {
-        sunMeshRef.current.rotation.y = sunRotationRef.current;
-      }
+      if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
-      // ── HSS Parker spiral & visibility ───────────────────────────────────────
+      // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
-          // uSunAngle drives the Y-rotation of the arm in the vertex shader
           if (u.uSunAngle !== undefined) u.uSunAngle.value = sunRotationRef.current;
-          // uTime drives the animated outward-flow ripple in the fragment shader
           if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
         });
       }
+
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh; e.rotation.y += 0.05 * delta;
         const c = e.children.find((c: any) => c.name === 'clouds'); if (c) c.rotation.y += 0.01 * delta;
@@ -834,44 +806,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadThreeLibs]);
 
-  // ── Rebuild CH/HSS geometry when coronalHoles prop changes ────────────────
-  // Runs whenever the SUVI detector returns fresh results (or falls back).
-  // Disposes all old CH/HSS meshes, then repopulates from the new data.
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-
-    // Helper: dispose all children of a group
-    const clearGroup = (group: any) => {
-      while (group.children.length > 0) {
-        const child = group.children[0];
-        group.remove(child);
-        child.geometry?.dispose?.();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
-          else child.material.dispose?.();
-        }
-      }
-    };
-
-    clearGroup(chGroupRef.current);
-    clearGroup(hssGroupRef.current);
-
-    const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-
-    coronalHoles.forEach(ch => {
-      // CH patches live inside sunMesh (chGroup is a child of sunMesh),
-      // so they're defined in solar-surface local coordinates and rotate for free.
-      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
-      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-      // Parker spiral arms are in world space; sunRotationRef provides the
-      // current solar rotation angle so the arm root starts at the right longitude.
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, sunRotationRef.current));
-    });
-  // threeReady ensures this re-runs after Three.js loads; coronalHoles on every fresh detection
-  }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── CME particle systems ──────────────────────────────────────────────────
   useEffect(() => {
     const THREE = (window as any).THREE;
@@ -971,6 +905,35 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l;
     }
   }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady]);
+
+  // ── Rebuild CH/HSS geometry when fresh SUVI data arrives ─────────────────
+  useEffect(() => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
+
+    const clearGroup = (group: any) => {
+      while (group.children.length > 0) {
+        const child = group.children[0];
+        group.remove(child);
+        child.geometry?.dispose?.();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
+          else child.material.dispose?.();
+        }
+      }
+    };
+
+    clearGroup(chGroupRef.current);
+    clearGroup(hssGroupRef.current);
+
+    const sunR     = PLANET_DATA_MAP.SUN.size;
+    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
+    coronalHoles.forEach(ch => {
+      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
+      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
+      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, sunRotationRef.current));
+    });
+  }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;

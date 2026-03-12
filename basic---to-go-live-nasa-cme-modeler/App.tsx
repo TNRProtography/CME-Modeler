@@ -15,7 +15,6 @@ const LoadingOverlay = lazy(() => import('./components/LoadingOverlay'));
 const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
-import { useCoronalHoles } from './hooks/useCoronalHoles';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -51,6 +50,7 @@ import {
   SETTINGS_PATH,
   TUTORIAL_PATH,
 } from './utils/navigation';
+import { useCoronalHoles } from './hooks/useCoronalHoles';
 
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -210,8 +210,6 @@ const App: React.FC = () => {
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [showFluxRope, setShowFluxRope] = useState(false);
   const [showHss, setShowHss] = useState(true);
-
-  // ── Coronal hole detection from live SUVI 195 imagery ─────────────────────
   const { coronalHoles, detectionStatus: chDetectionStatus } = useCoronalHoles();
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
@@ -1080,7 +1078,6 @@ const App: React.FC = () => {
                         showFluxRope={showFluxRope}
                         showHss={showHss}
                         coronalHoles={coronalHoles}
-                        bzSouth={false}
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}

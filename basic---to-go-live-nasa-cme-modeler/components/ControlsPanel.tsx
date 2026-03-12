@@ -58,8 +58,7 @@ interface ControlsPanelProps {
   onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
-  /** Status of the live SUVI coronal hole detector */
-  chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'fallback' | 'error';
+  chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'empty' | 'error';
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -233,7 +232,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 </p>
               </div>
             )}
-            {/* ── HSS stream toggle ───────────────────────────────────────── */}
+            {/* ── High-Speed Stream toggle ──────────────────────────────────── */}
             <div className="flex items-center justify-between">
               <ToggleSwitch
                 id="show-hss-toggle"
@@ -258,14 +257,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 }`} />
                 {chDetectionStatus === 'detected' && 'Live SUVI 195 data'}
                 {chDetectionStatus === 'loading'  && 'Analysing SUVI 195…'}
-                {(chDetectionStatus === 'fallback' || chDetectionStatus === 'error') && 'Simulated CH data'}
+                {chDetectionStatus === 'empty'    && 'Quiet Sun — no CH detected'}
+                {chDetectionStatus === 'error'    && 'SUVI fetch failed — retrying'}
               </div>
             )}
             {showHss && (
               <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/30 px-3 py-2 text-xs text-neutral-300 space-y-1">
                 <p className="font-semibold text-cyan-300/80">High-Speed Stream (HSS)</p>
                 <p>
-                  Fast solar wind emerging from coronal holes (dark patches on the Sun).
+                  Fast solar wind from coronal holes (dark patches). Spiral arms rotate with the Sun.
                   Wider holes produce faster streams (350–800 km/s).
                 </p>
               </div>
