@@ -564,8 +564,8 @@ export function buildParkerSpiralMesh(
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
       const cr = Math.cos(a), sr = Math.sin(a);
-      // Tube radius: starts at the CH angular width at the sun, grows to 2× by Earth (t=1)
-      const flare  = 1.0 + t;           // 1× at sun → 2× at Earth
+      // Tube radius: starts at the CH angular width at the sun, grows to 4× by Earth (t=1)
+      const flare  = 1.0 + t * 3.0;     // 1× at sun → 4× at Earth
       const rTube  = tubeR0 * flare;
       pos.push(
         curr.x + rTube * (cr * right.x + sr * up2.x),
