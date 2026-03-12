@@ -598,4 +598,4 @@ export async function detectCoronalHolesFromSuvi195(
   // Note: blobUrl is NOT revoked — the caller may display it for debug.
 }
 
-// --- END OF FILE utils/suviCoronalHoleDetector.ts ---
+// --- END OF FILE utils/suviCoronalHoleDetector.ts --- 
