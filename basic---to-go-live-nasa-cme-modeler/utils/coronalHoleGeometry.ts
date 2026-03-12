@@ -263,7 +263,7 @@ export function buildChSurfaceMesh(
   if (pts.length < 3) return new THREE.Object3D();
 
   // Build tangent-plane basis at the CH centroid for 2D projection
-  const PATCH_R = sunRadius * 1.012;   // raised well above sun surface to avoid z-fight
+  const PATCH_R = sunRadius * 1.018;   // raised well above sun surface to avoid z-fight
   const cenVec = new THREE.Vector3();
   pts.forEach((p: any) => cenVec.add(p));
   cenVec.divideScalar(pts.length).normalize();
@@ -305,7 +305,7 @@ export function buildChSurfaceMesh(
     color: 0x020204, transparent: false, opacity: 1.0,
     side: THREE.FrontSide, depthWrite: true, depthTest: true,
     blending: THREE.NormalBlending,
-    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -10,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
@@ -320,13 +320,13 @@ export function buildChSurfaceMesh(
 export function buildChOutlineLine(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any {
-  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.014);
+  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.020);
 
   // Smooth the outline in 2D tangent space then unproject back to sphere
   const cenVec = new THREE.Vector3();
   fp.forEach((p: any) => cenVec.add(p));
   cenVec.divideScalar(fp.length).normalize();
-  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.014);
+  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.020);
   const north = new THREE.Vector3(0, 1, 0);
   let right = new THREE.Vector3().crossVectors(north, cenVec);
   if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
@@ -337,7 +337,7 @@ export function buildChOutlineLine(
   const smooth2d = smoothPolygon(raw2d, 1, 1.2);
   const smoothPts = smooth2d.map(({ x, y }: { x: number; y: number }) =>
     cen.clone().addScaledVector(right, x).addScaledVector(up, y)
-      .normalize().multiplyScalar(sunRadius * 1.014)
+      .normalize().multiplyScalar(sunRadius * 1.020)
   );
   smoothPts.push(smoothPts[0].clone()); // close loop
 
