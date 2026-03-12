@@ -397,29 +397,65 @@ const VERT = /* glsl */`
 const FRAG = /* glsl */`
   uniform float uTime;
   uniform float uOpacity;
-  uniform vec3  uStreamColor;  // speed-matched color passed from JS
+  uniform float uSourceSpeed;  // HSS speed at source (km/s), e.g. 800–1400
 
-  varying float vFlow;
-  varying float vEdge;
+  varying float vFlow;  // 0 = Sun surface, 1 = arm tip
+  varying float vEdge;  // 0 = centre, 1 = tube edge
+
+  // ── Same drag-model used by CME colour transitions ──────────────────────────
+  // a = (1.41 - 0.0035 * v0) / 1000  [km/s per second of travel time]
+  // The arm tip represents ~5 days of travel time to 1 AU.
+  // vFlow maps to travel-time: t = vFlow * TRAVEL_TIME_SECONDS
+  // liveSpeed = clamp( v0 + a * t, 300, v0 )
+  float deceleratedSpeed(float v0, float frac) {
+    float TRAVEL_SECONDS = 5.0 * 24.0 * 3600.0; // ~5 days to arm tip
+    float a = (1.41 - 0.0035 * v0) / 1000.0;   // negative → decelerates
+    float t = frac * TRAVEL_SECONDS;
+    float v = v0 + a * t;
+    return clamp(v, 300.0, v0);
+  }
+
+  // ── CME-matched speed-to-colour ramp ────────────────────────────────────────
+  // Breakpoints (km/s): 1800 purple | 1000 red-orange | 800 orange |
+  //                     500 yellow  | 350 grey-yellow lerp | <350 grey
+  vec3 speedToColor(float spd) {
+    if (spd >= 1800.0) return vec3(0.576, 0.439, 0.859); // medium purple
+    if (spd >= 1000.0) {
+      float t = (spd - 1000.0) / 800.0;
+      return mix(vec3(1.0, 0.271, 0.0), vec3(0.576, 0.439, 0.859), t); // orange-red → purple
+    }
+    if (spd >= 800.0) {
+      float t = (spd - 800.0) / 200.0;
+      return mix(vec3(1.0, 0.647, 0.0), vec3(1.0, 0.271, 0.0), t); // orange → orange-red
+    }
+    if (spd >= 500.0) {
+      float t = (spd - 500.0) / 300.0;
+      return mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.647, 0.0), t); // yellow → orange
+    }
+    if (spd >= 350.0) {
+      float t = (spd - 350.0) / 150.0;
+      return mix(vec3(0.502, 0.502, 0.502), vec3(1.0, 1.0, 0.0), t); // grey → yellow
+    }
+    return vec3(0.502, 0.502, 0.502); // grey (ambient wind)
+  }
 
   void main() {
-    // Colour ramp: speed-matched color near Sun, fades to slightly warmer at tip
-    vec3 nearCol = uStreamColor;
-    vec3 farCol  = mix(uStreamColor, vec3(0.95, 0.68, 0.18), 0.35);
-    vec3 col     = mix(nearCol, farCol, pow(vFlow, 0.65));
+    // Current speed at this point along the arm after deceleration
+    float liveSpeed = deceleratedSpeed(uSourceSpeed, vFlow);
+    vec3 col = speedToColor(liveSpeed);
 
     // Outward-travelling ripple (solar wind blowing away from Sun)
     float ripple = fract(vFlow - uTime * 0.18);
     float pulse  = pow(1.0 - abs(ripple - 0.5) * 2.0, 4.0);
 
-    // Soft tube cross-section (makes it read as ribbon, not hard cylinder)
+    // Soft tube cross-section
     float edgeFade = 1.0 - smoothstep(0.30, 1.00, vEdge);
 
     // Taper to nothing at arm tip
-    float tipFade  = 1.0 - smoothstep(0.68, 1.00, vFlow);
+    float tipFade = 1.0 - smoothstep(0.68, 1.00, vFlow);
 
     // Bright ridge highlight that pulses with the ripple
-    col = mix(col, vec3(1.00, 1.00, 0.95), pulse * 0.45 * edgeFade);
+    col = mix(col, vec3(1.00, 1.00, 0.95), pulse * 0.35 * edgeFade);
 
     float alpha = uOpacity * edgeFade * tipFade * (0.32 + 0.68 * pulse);
     alpha = clamp(alpha, 0.0, 0.88);
@@ -441,25 +477,6 @@ const FRAG = /* glsl */`
  * @param sunAngle0  Solar rotation angle at build time — used to initialise
  *                   uSunAngle so the arm starts at the correct position immediately.
  */
-/**
- * Map HSS estimated speed to the same color scheme used for CMEs.
- * ≥2500 → hot pink  |  ≥1800 → purple  |  ≥1000 → red-orange
- * ≥800  → orange    |  ≥500  → yellow   |  350–500 → grey→yellow lerp
- * <350  → grey
- */
-function hssSpeedColor(THREE: any, speedKms: number): any {
-  if (speedKms >= 2500) return new THREE.Color(0xff69b4); // hot pink
-  if (speedKms >= 1800) return new THREE.Color(0x9370db); // medium purple
-  if (speedKms >= 1000) return new THREE.Color(0xff4500); // orange-red
-  if (speedKms >= 800)  return new THREE.Color(0xffa500); // orange
-  if (speedKms >= 500)  return new THREE.Color(0xffff00); // yellow
-  if (speedKms >= 350) {
-    const t = THREE.MathUtils.mapLinear(speedKms, 350, 500, 0, 1);
-    return new THREE.Color(0x808080).lerp(new THREE.Color(0xffff00), t);
-  }
-  return new THREE.Color(0x808080); // grey
-}
-
 export function buildParkerSpiralMesh(
   THREE: any,
   ch: CoronalHole,
@@ -563,7 +580,6 @@ export function buildParkerSpiralMesh(
   geom.computeVertexNormals();
 
   const lonRad = THREE.MathUtils.degToRad(ch.lon);
-  const streamColor = hssSpeedColor(THREE, ch.estimatedSpeedKms);
 
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
@@ -573,7 +589,7 @@ export function buildParkerSpiralMesh(
       uSunAngle:    { value: sunAngle0 },
       uTime:        { value: 0 },
       uOpacity:     { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
-      uStreamColor: { value: streamColor },
+      uSourceSpeed: { value: ch.estimatedSpeedKms },  // km/s — drives gradient deceleration
     },
     transparent: true,
     side:        THREE.DoubleSide,
