@@ -3,7 +3,9 @@
 import React from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
-import 'chartjs-adapter-date-fns';
+// chartSetup registers ALL required Chart.js components including TimeScale + adapter.
+// Must be imported before any chart renders, or "time is not a registered scale" is thrown.
+import '../utils/chartSetup';
 import CloseIcon from './icons/CloseIcon';
 
 interface ImpactDataPoint {

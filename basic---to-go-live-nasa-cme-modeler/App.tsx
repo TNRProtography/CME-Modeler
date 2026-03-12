@@ -822,21 +822,20 @@ const App: React.FC = () => {
 
 
   const handleTimelinePlayPause = useCallback(() => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
+    // Allow play if we have any CME data (filtered or raw) or a selected CME
+    const availableCmes = filteredCmes.length > 0 ? filteredCmes : cmeData;
+    if (availableCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
-    if (timelineMaxDate <= timelineMinDate) {
-      const source = filteredCmes.length > 0 ? filteredCmes : cmeData;
-      if (source.length > 0) {
-        const minDate = Math.min(...source.map((c) => c.startTime.getTime()));
-        const maxDate = Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
-        setTimelineMinDate(minDate);
-        setTimelineMaxDate(maxDate);
-      }
+    // Always ensure dates are set before playing
+    if (timelineMaxDate <= timelineMinDate && availableCmes.length > 0) {
+      const minDate = Math.min(...availableCmes.map((c) => c.startTime.getTime()));
+      const maxDate = Math.max(...availableCmes.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     }
 
     const isAtEnd = timelineScrubberValue >= 999;
-    const isAtStart = timelineScrubberValue < 1;
     const isPlaying = timelinePlaying;
 
     if (isAtEnd) {
@@ -846,8 +845,9 @@ const App: React.FC = () => {
       canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
     } else if (!isPlaying) {
-      setTimelineSpeed(5);
-      if (isAtStart) {
+      // Default to 5x speed on play
+      if (timelineSpeed === 0) setTimelineSpeed(5);
+      if (timelineScrubberValue < 1) {
         resetClock();
         canvasRef.current?.resetAnimationTimer();
       }
@@ -855,7 +855,7 @@ const App: React.FC = () => {
     } else {
       setTimelinePlaying(false);
     }
-  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock]);
+  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, timelineSpeed, resetClock]);
 
   const handleTimelineScrub = useCallback((value: number) => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
