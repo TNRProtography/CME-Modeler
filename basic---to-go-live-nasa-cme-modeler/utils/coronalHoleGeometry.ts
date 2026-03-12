@@ -66,7 +66,9 @@ const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
  *  Scene: +Y = north pole, +Z = lon 0 toward Earth. */
 function hgToVec(THREE: any, lat: number, lon: number): any {
   const phi   = THREE.MathUtils.degToRad(90 - lat);
-  const theta = THREE.MathUtils.degToRad(lon);
+  // Use negative lon so CH overlays match the sun's apparent rotation sense
+  // in the top-view camera framing.
+  const theta = THREE.MathUtils.degToRad(-lon);
   return new THREE.Vector3(
     Math.sin(phi) * Math.sin(theta),
     Math.cos(phi),
@@ -372,7 +374,7 @@ export function buildParkerSpiralMesh(
   geom.setIndex(idx);
   geom.computeVertexNormals();
 
-  const lonRad = THREE.MathUtils.degToRad(ch.lon);
+  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
 
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
