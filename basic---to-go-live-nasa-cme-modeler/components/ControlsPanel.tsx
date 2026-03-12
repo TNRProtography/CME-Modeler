@@ -56,6 +56,8 @@ interface ControlsPanelProps {
   onShowMoonL1Change: (show: boolean) => void;
   showFluxRope: boolean; // --- NEW: Prop for Flux Rope ---
   onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
+  showHss: boolean;
+  onShowHssChange: (show: boolean) => void;
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -101,6 +103,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowMoonL1Change,
   showFluxRope,
   onShowFluxRopeChange,
+  showHss,
+  onShowHssChange,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -223,6 +227,24 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 </div>
                 <p>
                   When the field points south (down toward Earth), aurora odds and KP tend to increase.
+                </p>
+              </div>
+            )}
+            {/* ── HSS stream toggle ───────────────────────────────────────── */}
+            <div className="flex items-center justify-between">
+              <ToggleSwitch
+                id="show-hss-toggle"
+                label="Show High-Speed Stream"
+                checked={showHss}
+                onChange={onShowHssChange}
+              />
+            </div>
+            {showHss && (
+              <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/30 px-3 py-2 text-xs text-neutral-300 space-y-1">
+                <p className="font-semibold text-cyan-300/80">High-Speed Stream (HSS)</p>
+                <p>
+                  Fast solar wind emerging from coronal holes (dark patches on the Sun).
+                  Wider holes produce faster streams (350–800 km/s).
                 </p>
               </div>
             )}

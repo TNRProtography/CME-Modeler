@@ -208,6 +208,7 @@ const App: React.FC = () => {
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [showFluxRope, setShowFluxRope] = useState(false);
+  const [showHss, setShowHss] = useState(true);
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
@@ -1046,7 +1047,7 @@ const App: React.FC = () => {
               <Suspense fallback={null}>
               <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={setShowHss} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
@@ -1073,6 +1074,8 @@ const App: React.FC = () => {
                         showExtraPlanets={showExtraPlanets}
                         showMoonL1={showMoonL1}
                         showFluxRope={showFluxRope}
+                        showHss={showHss}
+                        bzSouth={false}
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}

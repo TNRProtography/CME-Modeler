@@ -12,6 +12,12 @@ import {
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
   FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
+import { DEFAULT_CORONAL_HOLES } from '../utils/coronalHoleData';
+import {
+  buildChSurfaceMesh,
+  buildChOutlineLine,
+  buildHssMesh,
+} from '../utils/coronalHoleGeometry';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS
@@ -313,6 +319,9 @@ interface SimulationCanvasProps {
   showFluxRope: boolean;
   /** true = southward Bz (RED — high storm risk), false = northward (BLUE — low risk) */
   bzSouth: boolean;
+  /** Controls whether the HSS stream graphic is visible in the scene.
+   *  The underlying coronal hole source geometry is always present. */
+  showHss: boolean;
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
@@ -325,7 +334,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth, showHss, dataVersion, interactionMode, onSunClick,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -344,6 +353,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const bzFieldLinesRef = useRef<any>(null);
   const bzIndicatorRef  = useRef<any>(null);
 
+  // ── Coronal Hole / HSS refs ───────────────────────────────────────────────
+  // chGroupRef  : THREE.Group containing CH surface patches + outlines (always visible)
+  // hssGroupRef : THREE.Group containing HSS stream meshes (toggled by showHss prop)
+  const chGroupRef  = useRef<any>(null);
+  const hssGroupRef = useRef<any>(null);
+
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
@@ -357,17 +372,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
     timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope, bzSouth,
+    showFluxRope, bzSouth, showHss,
   });
   useEffect(() => {
     animPropsRef.current = {
       onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, bzSouth,
+      showFluxRope, bzSouth, showHss,
     };
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, bzSouth]);
+      showFluxRope, bzSouth, showHss]);
 
   // --- Dynamic loader: only fetches Three.js + deps when the modeler first mounts ---
   const threeLoadedRef = useRef(false);
@@ -551,6 +566,34 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
     scene.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64), new THREE.MeshBasicMaterial({ map: tex.sunPhoto, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })), { name: "sun-photosphere" }));
 
+    // ── Coronal Holes & HSS streams ──────────────────────────────────────────
+    //
+    // CH patches render on the solar surface regardless of the HSS toggle.
+    // HSS stream meshes are children of hssGroup and toggled by showHss.
+    //
+    // Both groups are built once here at scene initialisation.  The animate
+    // loop updates the HSS shader uniforms (uTime) each frame.
+    const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  scene.add(chGroup);
+    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    scene.add(hssGroup);
+    chGroupRef.current  = chGroup;
+    hssGroupRef.current = hssGroup;
+
+    const sunR  = PLANET_DATA_MAP.SUN.size;
+    // HSS extends to ~1.8 AU equivalent in scene units (beyond Earth's orbit)
+    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
+
+    DEFAULT_CORONAL_HOLES.forEach(ch => {
+      // 1. CH surface patch (always present — drives simulation source)
+      const chSurface = buildChSurfaceMesh(THREE, ch, sunR);
+      const chOutline = buildChOutlineLine(THREE, ch, sunR);
+      chGroup.add(chSurface);
+      chGroup.add(chOutline);
+
+      // 2. HSS stream volume (visibility driven by showHss prop)
+      const hssMesh = buildHssMesh(THREE, ch, sunR, hssReach);
+      hssGroup.add(hssMesh);
+    });
+
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
 
     // ── Planets ──────────────────────────────────────────────────────────────
@@ -615,7 +658,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      const { currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd, showFluxRope, bzSouth } = animPropsRef.current;
+      const { currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd, showFluxRope, bzSouth, showHss } = animPropsRef.current;
       const elapsedTime = getClockElapsedTime();
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
@@ -709,6 +752,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             bzIndicatorRef.current.material.uniforms.uBzSouth.value = bzSouth ? 1.0 : 0.0;
             bzIndicatorRef.current.material.uniforms.uTime.value    = elapsedTime;
           }
+        }
+      }
+
+      // ── Coronal Holes & HSS streams ──────────────────────────────────────────
+      // CH patches on the sun are always visible (they are the source model).
+      // HSS stream meshes are shown/hidden based on the showHss toggle.
+      if (hssGroupRef.current) {
+        hssGroupRef.current.visible = showHss;
+        if (showHss) {
+          // Advance the animated ripple shader uniform on every HSS mesh
+          hssGroupRef.current.children.forEach((child: any) => {
+            if (child.material?.uniforms?.uTime) {
+              child.material.uniforms.uTime.value = elapsedTime;
+            }
+          });
         }
       }
 
