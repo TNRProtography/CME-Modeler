@@ -263,10 +263,11 @@ export function buildChSurfaceMesh(
   if (pts.length < 3) return new THREE.Object3D();
 
   // Build tangent-plane basis at the CH centroid for 2D projection
+  const PATCH_R = sunRadius * 1.012;   // raised well above sun surface to avoid z-fight
   const cenVec = new THREE.Vector3();
   pts.forEach((p: any) => cenVec.add(p));
   cenVec.divideScalar(pts.length).normalize();
-  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.003);
+  const cen = cenVec.clone().multiplyScalar(PATCH_R);
 
   const north = new THREE.Vector3(0, 1, 0);
   let right = new THREE.Vector3().crossVectors(north, cenVec);
@@ -281,13 +282,13 @@ export function buildChSurfaceMesh(
 
   if (triIdx.length === 0) return new THREE.Object3D();
 
-  // Unproject smoothed 2D points back onto the sphere surface
+  // Unproject smoothed 2D points back onto the sphere surface at PATCH_R
   const pts3d = poly2d.map(({ x, y }: { x: number; y: number }) =>
     cen.clone()
       .addScaledVector(right, x)
       .addScaledVector(up, y)
       .normalize()
-      .multiplyScalar(sunRadius * 1.003)
+      .multiplyScalar(PATCH_R)
   );
 
   const pos: number[] = [];
@@ -304,11 +305,12 @@ export function buildChSurfaceMesh(
     color: 0x020204, transparent: false, opacity: 1.0,
     side: THREE.FrontSide, depthWrite: true, depthTest: true,
     blending: THREE.NormalBlending,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
   mesh.userData = { coronalHoleId: ch.id };
-  mesh.renderOrder = 2;  // render after sun (renderOrder 0) so depth test wins
+  mesh.renderOrder = 3;
   return mesh;
 }
 
@@ -318,13 +320,13 @@ export function buildChSurfaceMesh(
 export function buildChOutlineLine(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any {
-  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.006);
+  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.014);
 
   // Smooth the outline in 2D tangent space then unproject back to sphere
   const cenVec = new THREE.Vector3();
   fp.forEach((p: any) => cenVec.add(p));
   cenVec.divideScalar(fp.length).normalize();
-  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.006);
+  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.014);
   const north = new THREE.Vector3(0, 1, 0);
   let right = new THREE.Vector3().crossVectors(north, cenVec);
   if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
@@ -335,7 +337,7 @@ export function buildChOutlineLine(
   const smooth2d = smoothPolygon(raw2d, 1, 1.2);
   const smoothPts = smooth2d.map(({ x, y }: { x: number; y: number }) =>
     cen.clone().addScaledVector(right, x).addScaledVector(up, y)
-      .normalize().multiplyScalar(sunRadius * 1.006)
+      .normalize().multiplyScalar(sunRadius * 1.014)
   );
   smoothPts.push(smoothPts[0].clone()); // close loop
 
@@ -347,7 +349,7 @@ export function buildChOutlineLine(
   const line    = new THREE.Line(geom, mat);
   line.name     = `ch-outline-${ch.id}`;
   line.userData = { coronalHoleId: ch.id };
-  line.renderOrder = 2;
+  line.renderOrder = 4;
   return line;
 }
 
