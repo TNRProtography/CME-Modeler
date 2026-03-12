@@ -153,9 +153,17 @@
       --proton-s4-rgb: 128, 0, 128;
       --proton-s5-rgb: 255, 20, 147;
     }
-    .styled-scrollbar::-webkit-scrollbar { width: 8px; }
-    .styled-scrollbar::-webkit-scrollbar-track { background: #262626; border-radius: 10px; }
-    .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; border-radius: 10px; }
+    /* Timeline controls portal — must sit outside #root and be unclipped */
+    #timeline-portal {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3000;
+      overflow: visible;
+    }
+    #timeline-portal > * {
+      pointer-events: auto;
+    }
 
     /* Modern micro-interactions and animated chrome */
     @keyframes auroraFlow {
@@ -278,6 +286,7 @@
 </head>
 <body>
   <div id="root"></div>
+  <div id="timeline-portal"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>

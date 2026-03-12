@@ -154,12 +154,12 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    // MultiplyBlending darkens whatever is drawn behind the mesh (the bright
-    // yellow photosphere) by multiplying it with the CH color.
-    // A dark brown/grey color + moderate opacity = visible dark region on the
-    // sun without creating an opaque black disc artifact.
-    color: 0x1a1008, transparent: true, opacity: 0.82,
-    side: THREE.FrontSide, depthWrite: false,
+    // depthTest:true means this mesh only draws on pixels where the sun sphere
+    // has already written depth — it cannot bleed over black space.
+    // CustomBlending subtracts brightness, darkening the yellow photosphere
+    // to a brownish shadow (like real coronal holes in EUV imagery).
+    color: 0x221408, transparent: true, opacity: 0.78,
+    side: THREE.FrontSide, depthWrite: false, depthTest: true,
     blending: THREE.MultiplyBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
@@ -178,10 +178,8 @@ export function buildChOutlineLine(
   const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.006);
   const geom = new THREE.BufferGeometry().setFromPoints(fp);
   const mat  = new THREE.LineBasicMaterial({
-    // Bright sky-blue outline — clearly visible against both the dark patch
-    // and the bright yellow photosphere.
     color: 0x55ddff, transparent: true, opacity: 0.90,
-    depthWrite: false, blending: THREE.NormalBlending,
+    depthWrite: false, depthTest: true, blending: THREE.NormalBlending,
   });
   const line    = new THREE.Line(geom, mat);
   line.name     = `ch-outline-${ch.id}`;
