@@ -992,6 +992,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const ed = PLANET_DATA_MAP.EARTH; if (timelineMinDate <= 0) return [];
       const gStart = Date.now(), gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
       const graphData = []; const ns = 200, as = 350, ad = 5;
+      const wrapPi = (a: number) => {
+        let v = a;
+        while (v > Math.PI) v -= Math.PI * 2;
+        while (v < -Math.PI) v += Math.PI * 2;
+        return v;
+      };
       for (let i = 0; i <= ns; i++) {
         const ct = gStart + gDur * (i / ns);
         const ea = ed.angle + ((2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600)) * ((ct - timelineMinDate) / 1000);
@@ -1015,11 +1021,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             }
           }
         });
+
+        // Add CH/HSS contribution when Earth intersects the rotating Parker stream.
+        coronalHoles.forEach((ch) => {
+          const sourceSpeed = Math.max(800, Math.min(1400, ch.estimatedSpeedKms));
+          const travelSec = AU_IN_KM / sourceSpeed;
+          const emissionTime = ct - travelSec * 1000;
+
+          const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
+          const sourceAzAtEmission = sourceLon0 + SUN_ANGULAR_VELOCITY * ((emissionTime - gStart) / 1000);
+          const earthAz = Math.atan2(ep.x, ep.z);
+
+          const diff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
+          const halfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
+          const spread = halfAngle + 0.22; // stream broadens with radial distance
+          if (diff < spread) {
+            const x = diff / spread;
+            const intensity = (1 - x * x) * (1 - x * x);
+            const earthSpeed = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 520, 900);
+            ts = Math.max(ts, as + (earthSpeed - as) * intensity);
+
+            const densityPeak = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 8, 24)
+              + ((ch.darkness ?? 0) * 10)
+              + THREE.MathUtils.mapLinear(Math.min(60, Math.max(5, ch.widthDeg)), 5, 60, 1, 6);
+            td += densityPeak * intensity;
+          }
+        });
+
         graphData.push({ time: ct, speed: ts, density: td });
       }
       return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
+  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
   useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
