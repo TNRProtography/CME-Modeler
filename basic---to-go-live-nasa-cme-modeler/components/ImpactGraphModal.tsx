@@ -107,7 +107,7 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
         </div>
         
         <div className="overflow-y-auto p-4 styled-scrollbar pr-2 flex-grow space-y-6">
-            <p className="text-sm text-neutral-400 text-center italic">This graph shows the calculated solar wind speed and density at Earth's position based on the CMEs in the 3D simulation. It is a visual guide and not an official forecast.</p>
+            <p className="text-sm text-neutral-400 text-center italic">This graph shows the calculated solar wind speed and density at Earth's position based on CMEs and coronal-hole high-speed streams in the 3D simulation. It is a visual guide and not an official forecast.</p>
             <div className="h-64">
                 <Line options={speedOptions} data={chartDataSpeed} />
             </div>

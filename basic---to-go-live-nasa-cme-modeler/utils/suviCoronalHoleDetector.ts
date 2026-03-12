@@ -57,7 +57,7 @@
 //   PROXY_TTL_SECONDS      Cloudflare edge cache TTL for the proxied image.
 
 import { CoronalHole }                 from './coronalHoleData';
-import { estimateHssSpeedFromChWidth } from './solarWindModel';
+import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 const ANALYSIS_SIZE           = 300;   // off-screen canvas resolution
@@ -93,6 +93,27 @@ async function fetchAsBlob(url: string): Promise<string> {
   const blob = await res.blob();
   if (!blob.type.startsWith('image/')) throw new Error(`Expected image, got ${blob.type}`);
   return URL.createObjectURL(blob);
+}
+
+async function fetchAsBlobDirect(url: string): Promise<string> {
+  const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+  if (!res.ok) throw new Error(`Direct fetch failed: ${res.status} for ${url}`);
+  const blob = await res.blob();
+  if (!blob.type.startsWith('image/')) throw new Error(`Expected image, got ${blob.type}`);
+  return URL.createObjectURL(blob);
+}
+
+async function fetchAsBlobWithFallback(url: string): Promise<string> {
+  try {
+    return await fetchAsBlob(url);
+  } catch (proxyErr) {
+    try {
+      return await fetchAsBlobDirect(url);
+    } catch {
+      const msg = proxyErr instanceof Error ? proxyErr.message : String(proxyErr);
+      throw new Error(`SUVI image fetch failed (proxy/direct): ${msg}`);
+    }
+  }
 }
 
 // ── Draw onto canvas → ImageData ──────────────────────────────────────────────
@@ -308,31 +329,40 @@ function pixelToHG(
 function buildPolygon(
   region: PixelRegion,
   cx: number, cy: number, diskR: number,
-  nPoints = 12,
+  nPoints = 48,
 ): Array<{ lat: number; lon: number }> | undefined {
   const { pixels, centroidX, centroidY } = region;
   if (pixels.length < 6) return undefined;
 
-  // Sample the boundary pixel farthest from centroid in each angular sector
+  // Derive a true perimeter by keeping only region pixels that border non-region
+  // pixels. This better preserves the observed SUVI CH morphology.
+  const pixelSet = new Set<number>();
+  pixels.forEach(p => pixelSet.add((p.y << 16) | p.x));
+
+  const perimeter: Array<{ x: number; y: number; angle: number }> = [];
+  for (const p of pixels) {
+    const x = p.x, y = p.y;
+    const neighbors = [
+      ((y - 1) << 16) | x,
+      ((y + 1) << 16) | x,
+      (y << 16) | (x - 1),
+      (y << 16) | (x + 1),
+    ];
+    if (neighbors.some(n => !pixelSet.has(n))) {
+      perimeter.push({ x, y, angle: Math.atan2(y - centroidY, x - centroidX) });
+    }
+  }
+
+  if (perimeter.length < 6) return undefined;
+  perimeter.sort((a, b) => a.angle - b.angle);
+
+  // Downsample boundary in angular order to a manageable polygon size.
   const poly: Array<{ lat: number; lon: number }> = [];
-  for (let i = 0; i < nPoints; i++) {
-    const targetAngle = (i / nPoints) * Math.PI * 2;
-    const tolerance   = Math.PI / nPoints;
-    let bestDist = 0;
-    let best: { x: number; y: number } | null = null;
-
-    for (const p of pixels) {
-      const pAngle = Math.atan2(p.y - centroidY, p.x - centroidX);
-      const diff = Math.abs(((pAngle - targetAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-      if (diff > tolerance) continue;
-      const dist = Math.hypot(p.x - centroidX, p.y - centroidY);
-      if (dist > bestDist) { bestDist = dist; best = p; }
-    }
-
-    if (best) {
-      const hg = pixelToHG(best.x, best.y, cx, cy, diskR);
-      if (hg) poly.push(hg);
-    }
+  const step = Math.max(1, Math.floor(perimeter.length / nPoints));
+  for (let i = 0; i < perimeter.length; i += step) {
+    const p = perimeter[i];
+    const hg = pixelToHG(p.x, p.y, cx, cy, diskR);
+    if (hg) poly.push(hg);
   }
 
   // Convert to offsets from centroid
@@ -361,6 +391,7 @@ export interface SuviDetectionResult {
  * Returns CoronalHole[] — empty if none detected.  Never returns fake data.
  */
 export async function detectCoronalHolesFromSuvi195(
+  imageUrl: string = SUVI_195_URL,
   animPhaseOffset = 0.3,
 ): Promise<SuviDetectionResult> {
 
@@ -368,7 +399,11 @@ export async function detectCoronalHolesFromSuvi195(
 
   try {
     // ── 1. Fetch ──────────────────────────────────────────────────────────
-    blobUrl = await fetchAsBlob(SUVI_195_URL);
+    if (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:') || imageUrl.startsWith(window.location.origin)) {
+      blobUrl = imageUrl;
+    } else {
+      blobUrl = await fetchAsBlobWithFallback(imageUrl);
+    }
 
     // ── 2. Canvas render ──────────────────────────────────────────────────
     const size = ANALYSIS_SIZE;
@@ -427,6 +462,13 @@ export async function detectCoronalHolesFromSuvi195(
 
       const polygon = buildPolygon(region, cx, cy, diskR, 14);
 
+      let regionLumaSum = 0;
+      for (const p of region.pixels) {
+        regionLumaSum += luma(data, (p.y * size + p.x) * 4);
+      }
+      const regionLumaMean = regionLumaSum / Math.max(1, region.pixels.length);
+      const darkness = Math.max(0, Math.min(1, (median - regionLumaMean) / Math.max(1, median)));
+
       // Larger / darker CHs get slightly higher opacity
       const areaFrac  = region.pixels.length / diskPixelCount;
       const opacity   = Math.min(0.65, 0.30 + areaFrac * 3.0);
@@ -440,7 +482,8 @@ export async function detectCoronalHolesFromSuvi195(
         widthDeg:             Math.max(5, widthDeg),
         heightDeg:            Math.max(5, heightDeg),
         polygon,
-        estimatedSpeedKms:    estimateHssSpeedFromChWidth(Math.max(5, widthDeg)),
+        estimatedSpeedKms:    estimateHssSpeedFromChWidthAndDarkness(Math.max(5, widthDeg), darkness),
+        darkness,
         sourceDirectionDeg:   { lat, lon },
         expansionHalfAngleDeg,
         opacity,

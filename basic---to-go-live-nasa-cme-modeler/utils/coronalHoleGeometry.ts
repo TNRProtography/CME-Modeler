@@ -53,14 +53,12 @@ import { CoronalHole } from './coronalHoleData';
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
-const SPIRAL_TUBE_RADIUS_FAC = 0.018;  // relative to 1 scene unit
-const SPIRAL_TURNS           = 1.75;
+const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
+const SPIRAL_TURNS           = 0.38;
+const CH_OVEREMPHASIS        = 1.22;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
-const AU_IN_KM          = 149_597_870.7;
 const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
-const SUN_OMEGA_REAL    = 2.61799e-6;    // rad/s  (27.27-day synodic period)
-const OSS               = 2000;          // simulation speed multiplier
 
 // ─── Coordinate helper ────────────────────────────────────────────────────────
 
@@ -68,7 +66,9 @@ const OSS               = 2000;          // simulation speed multiplier
  *  Scene: +Y = north pole, +Z = lon 0 toward Earth. */
 function hgToVec(THREE: any, lat: number, lon: number): any {
   const phi   = THREE.MathUtils.degToRad(90 - lat);
-  const theta = THREE.MathUtils.degToRad(lon);
+  // Use negative lon so CH overlays match the sun's apparent rotation sense
+  // in the top-view camera framing.
+  const theta = THREE.MathUtils.degToRad(-lon);
   return new THREE.Vector3(
     Math.sin(phi) * Math.sin(theta),
     Math.cos(phi),
@@ -83,23 +83,41 @@ export function buildChFootprintPoints(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any[] {
   const r = sunRadius * 1.003;
+  const cenVec = hgToVec(THREE, ch.lat, ch.lon).normalize();
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
+
+  const sortAndInflate = (raw: any[]): any[] => {
+    const sorted = raw
+      .map((p: any) => {
+        const n = p.clone().normalize();
+        return { p: n, a: Math.atan2(n.dot(up), n.dot(right)) };
+      })
+      .sort((a: any, b: any) => a.a - b.a)
+      .map((v: any) => v.p);
+
+    const inflated = sorted.map((p: any) =>
+      cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r)
+    );
+    inflated.push(inflated[0].clone());
+    return inflated;
+  };
 
   if (ch.polygon && ch.polygon.length >= 3) {
     const pts = ch.polygon.map((v: any) =>
       hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).multiplyScalar(r)
     );
-    pts.push(pts[0].clone());
-    return pts;
+    return sortAndInflate(pts);
   }
 
   // Ellipse fallback
   const N    = 24;
-  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2);
-  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2);
+  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
+  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
   const cen  = hgToVec(THREE, ch.lat, ch.lon);
-  const north = new THREE.Vector3(0, 1, 0);
-  const right = new THREE.Vector3().crossVectors(north, cen).normalize();
-  const up    = new THREE.Vector3().crossVectors(cen, right).normalize();
 
   const pts: any[] = [];
   for (let i = 0; i <= N; i++) {
@@ -136,9 +154,10 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x001830, transparent: true, opacity: 0.82,
+    // Keep CH visible without creating a dark "hole" artifact on the disk.
+    color: 0x4fb7d8, transparent: true, opacity: 0.18,
     side: THREE.FrontSide, depthWrite: false,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
@@ -261,14 +280,10 @@ export function buildParkerSpiralMesh(
   maxReach: number,
   sunAngle0: number,
 ): any {
-
-  // Parker spiral pitch: k = v_sw / ω_sim  [scene-units / radian]
-  const omegaSim = SUN_OMEGA_REAL * OSS;
-  const vSwScene = (ch.estimatedSpeedKms / AU_IN_KM) * SCENE_SCALE;  // scene-u/s
-  const k        = vSwScene / omegaSim;
-
   const latRad = THREE.MathUtils.degToRad(ch.lat);
-  const phiMax = SPIRAL_TURNS * Math.PI * 2;
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 800) / 600, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.16, speedT);
+  const phiMax = turns * Math.PI * 2;
 
   // ── Backbone ───────────────────────────────────────────────────────────────
   // Built in the canonical frame: φ=0 at +Z, arm curls in the -φ direction
@@ -279,10 +294,10 @@ export function buildParkerSpiralMesh(
     const t   = i / SPIRAL_POINTS;
     const phi = t * phiMax;
 
-    const r = sunRadius + k * phi;
-    if (r > maxReach) break;
+    // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
+    const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Azimuth: starts at 0 (+Z), curls in -φ direction (Parker backward curl)
+    // Azimuth: starts at 0 (+Z), with tail trailing behind source rotation.
     const az = -phi;
 
     // Latitude decays with distance (solar wind spreads toward equatorial plane)
@@ -309,6 +324,7 @@ export function buildParkerSpiralMesh(
 
   // ── Tube extrusion ─────────────────────────────────────────────────────────
   const tubeR   = SPIRAL_TUBE_RADIUS_FAC * SCENE_SCALE;
+  const spreadScale = 1 + Math.max(0.18, (ch.expansionHalfAngleDeg ?? 10) / 20);
   const sides   = SPIRAL_TUBE_SIDES;
   const pos: number[]  = [];
   const flow: number[] = [];
@@ -331,10 +347,12 @@ export function buildParkerSpiralMesh(
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
       const cr = Math.cos(a), sr = Math.sin(a);
+      const flare = 1 + t * (2.2 + spreadScale);
+      const rTube = tubeR * flare;
       pos.push(
-        curr.x + tubeR * (cr * right.x + sr * up2.x),
-        curr.y + tubeR * (cr * right.y + sr * up2.y),
-        curr.z + tubeR * (cr * right.z + sr * up2.z),
+        curr.x + rTube * (cr * right.x + sr * up2.x),
+        curr.y + rTube * (cr * right.y + sr * up2.y),
+        curr.z + rTube * (cr * right.z + sr * up2.z),
       );
       flow.push(t);
       edge.push(Math.abs(cr));   // 1.0 at sides of tube cross-section
@@ -357,7 +375,7 @@ export function buildParkerSpiralMesh(
   geom.setIndex(idx);
   geom.computeVertexNormals();
 
-  const lonRad = THREE.MathUtils.degToRad(ch.lon);
+  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
 
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
@@ -368,7 +386,7 @@ export function buildParkerSpiralMesh(
       // uSunAngle: accumulated solar rotation — updated every frame by animate loop
       uSunAngle: { value: sunAngle0 },
       uTime:     { value: 0 },
-      uOpacity:  { value: ch.opacity },
+      uOpacity:  { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
     },
     transparent: true,
     side:        THREE.DoubleSide,

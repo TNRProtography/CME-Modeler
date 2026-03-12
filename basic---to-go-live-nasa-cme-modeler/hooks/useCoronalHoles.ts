@@ -45,9 +45,14 @@ export interface CoronalHolesState {
   refresh:         () => void;
 }
 
+interface UseCoronalHolesOptions {
+  enabled?: boolean;
+  sourceImageUrl?: string | null;
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useCoronalHoles(): CoronalHolesState {
+export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalHolesOptions = {}): CoronalHolesState {
   const [coronalHoles,   setCoronalHoles]   = useState<CoronalHole[]>([]);
   const [status,         setStatus]         = useState<CoronalHoleDetectionStatus>('idle');
   const [lastDetectedAt, setLastDetectedAt] = useState<Date | null>(null);
@@ -64,7 +69,7 @@ export function useCoronalHoles(): CoronalHolesState {
     setErrorMessage(undefined);
 
     try {
-      const result = await detectCoronalHolesFromSuvi195();
+      const result = await detectCoronalHolesFromSuvi195(sourceImageUrl ?? undefined);
       if (!mountedRef.current) return;
 
       setLastResult(result);
@@ -91,20 +96,33 @@ export function useCoronalHoles(): CoronalHolesState {
       setStatus('error');
       setErrorMessage(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [sourceImageUrl]);
 
   useEffect(() => {
     mountedRef.current = true;
 
+    if (!enabled) {
+      setStatus('idle');
+      setErrorMessage(undefined);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      timerRef.current = null;
+      intervalRef.current = null;
+      return;
+    }
+
     timerRef.current    = setTimeout(() => { void runDetection(); }, INITIAL_DELAY_MS);
     intervalRef.current = setInterval(() => { void runDetection(); }, REFRESH_INTERVAL_MS);
+
+    // If the user just enabled HSS/CH overlay, run immediately so they see feedback.
+    void runDetection();
 
     return () => {
       mountedRef.current = false;
       if (timerRef.current)    clearTimeout(timerRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [runDetection]);
+  }, [enabled, runDetection, sourceImageUrl]);
 
   return {
     coronalHoles,

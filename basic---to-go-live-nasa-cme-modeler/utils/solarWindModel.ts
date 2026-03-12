@@ -16,8 +16,8 @@
 // The mapping is linear between these bounds then clamped.  To make the
 // speed curve non-linear, replace the lerp with a pow() or sqrt() call.
 
-const HSS_SPEED_MIN      = 350;   // km/s  — narrow CH slow stream floor
-const HSS_SPEED_MAX      = 800;   // km/s  — wide CH fast stream ceiling
+const HSS_SPEED_MIN      = 800;   // km/s  — CH outflow speed floor at source
+const HSS_SPEED_MAX      = 1400;  // km/s  — very dark CH source speed ceiling
 const HSS_CH_WIDTH_MIN_DEG = 5;   // degrees CH width -> speed floor
 const HSS_CH_WIDTH_MAX_DEG = 60;  // degrees CH width -> speed ceiling
 
@@ -31,6 +31,20 @@ export function estimateHssSpeedFromChWidth(widthDeg: number): number {
   const t = (widthDeg - HSS_CH_WIDTH_MIN_DEG) / (HSS_CH_WIDTH_MAX_DEG - HSS_CH_WIDTH_MIN_DEG);
   const clamped = Math.max(0, Math.min(1, t));
   return Math.round(HSS_SPEED_MIN + clamped * (HSS_SPEED_MAX - HSS_SPEED_MIN));
+}
+
+/**
+ * Estimate HSS speed from CH width and relative darkness.
+ *
+ * @param widthDeg         CH angular width in degrees.
+ * @param darknessFraction 0..1 where 1 = much darker than the disk median.
+ */
+export function estimateHssSpeedFromChWidthAndDarkness(widthDeg: number, darknessFraction: number): number {
+  const widthSpeed = estimateHssSpeedFromChWidth(widthDeg);
+  const darkness = Math.max(0, Math.min(1, darknessFraction));
+  // Darker holes drive stronger source outflow speeds.
+  const boostKms = 260 * darkness;
+  return Math.round(Math.max(HSS_SPEED_MIN, Math.min(HSS_SPEED_MAX, widthSpeed + boostKms)));
 }
 
 // --- END OF FILE utils/solarWindModel.ts ---

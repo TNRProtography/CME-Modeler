@@ -209,8 +209,12 @@ const App: React.FC = () => {
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [showFluxRope, setShowFluxRope] = useState(false);
-  const [showHss, setShowHss] = useState(true);
-  const { coronalHoles, detectionStatus: chDetectionStatus } = useCoronalHoles();
+  const [showHss, setShowHss] = useState(false);
+  const [sharedSuvi195Url, setSharedSuvi195Url] = useState<string | null>(null);
+  const { coronalHoles, detectionStatus: chDetectionStatus } = useCoronalHoles({
+    enabled: showHss,
+    sourceImageUrl: sharedSuvi195Url,
+  });
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
@@ -821,16 +825,28 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
+    if (timelineMaxDate <= timelineMinDate) {
+      const source = filteredCmes.length > 0 ? filteredCmes : cmeData;
+      if (source.length > 0) {
+        const minDate = Math.min(...source.map((c) => c.startTime.getTime()));
+        const maxDate = Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
+        setTimelineMinDate(minDate);
+        setTimelineMaxDate(maxDate);
+      }
+    }
+
     const isAtEnd = timelineScrubberValue >= 999;
     const isAtStart = timelineScrubberValue < 1;
     const isPlaying = timelinePlaying;
 
     if (isAtEnd) {
+      setTimelineSpeed(5);
       setTimelineScrubberValue(0);
       resetClock();
       canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
     } else if (!isPlaying) {
+      setTimelineSpeed(5);
       if (isAtStart) {
         resetClock();
         canvasRef.current?.resetAnimationTimer();
@@ -839,7 +855,7 @@ const App: React.FC = () => {
     } else {
       setTimelinePlaying(false);
     }
-  }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
+  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock]);
 
   const handleTimelineScrub = useCallback((value: number) => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
@@ -1171,6 +1187,7 @@ const App: React.FC = () => {
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
                         onViewCMEInVisualization={handleViewCMEInVisualization}
+                        onSuvi195ImageUrlChange={setSharedSuvi195Url}
                         navigationTarget={navigationTarget}
                         refreshSignal={manualRefreshKey}
                         onInitialLoad={handleSolarInitialLoad}

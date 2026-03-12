@@ -247,16 +247,21 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 chDetectionStatus === 'detected'
                   ? 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300/80'
                   : chDetectionStatus === 'loading'
-                  ? 'border-neutral-600/40 bg-neutral-900/40 text-neutral-400'
+                  ? 'border-indigo-500/30 bg-indigo-950/35 text-indigo-200/90'
                   : 'border-yellow-700/30 bg-yellow-950/30 text-yellow-400/70'
               }`}>
-                <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  chDetectionStatus === 'detected' ? 'bg-cyan-400 animate-pulse' :
-                  chDetectionStatus === 'loading'  ? 'bg-neutral-400 animate-spin' :
-                  'bg-yellow-500'
-                }`} />
+                {chDetectionStatus === 'loading' ? (
+                  <svg className="h-3.5 w-3.5 flex-shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.28" strokeWidth="3" />
+                    <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    chDetectionStatus === 'detected' ? 'bg-cyan-400 animate-pulse' : 'bg-yellow-500'
+                  }`} />
+                )}
                 {chDetectionStatus === 'detected' && 'Live SUVI 195 data'}
-                {chDetectionStatus === 'loading'  && 'Analysing SUVI 195…'}
+                {chDetectionStatus === 'loading'  && 'Loading SUVI 195 and extracting coronal holes…'}
                 {chDetectionStatus === 'empty'    && 'Quiet Sun — no CH detected'}
                 {chDetectionStatus === 'error'    && 'SUVI fetch failed — retrying'}
               </div>
@@ -266,7 +271,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 <p className="font-semibold text-cyan-300/80">High-Speed Stream (HSS)</p>
                 <p>
                   Fast solar wind from coronal holes (dark patches). Spiral arms rotate with the Sun.
-                  Wider holes produce faster streams (350–800 km/s).
+                  Darker/wider holes produce faster source streams (800–1400 km/s).
                 </p>
               </div>
             )}

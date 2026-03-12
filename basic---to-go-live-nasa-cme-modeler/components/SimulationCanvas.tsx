@@ -360,6 +360,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // hssGroupRef — world-space Parker spiral arms; vertex shader rotates per frame
   const chGroupRef     = useRef<any>(null);
   const hssGroupRef    = useRef<any>(null);
+  const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
 
@@ -584,17 +585,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     // ── Coronal Holes & Parker Spiral HSS ──────────────────────────────────
     // chGroup: child of sunMesh → patches rotate with the sun automatically
-    // hssGroup: world-space → vertex shader rotates arms via uSunAngle uniform
+    // hssGroup: child of sunMesh so HSS roots are locked to CH/source rotation.
     const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  sunMesh.add(chGroup);
-    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    scene.add(hssGroup);
+    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    sunMesh.add(hssGroup);
+    const hssAuRings = new THREE.Group(); hssAuRings.name = 'hss-au-rings'; scene.add(hssAuRings);
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
+    hssAuRingsRef.current = hssAuRings;
+
+    // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
+    // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
+    [0.25, 0.5, 0.75, 1.0, 1.25, 1.5].forEach((au) => {
+      const ringPts = [];
+      const r = au * SCENE_SCALE;
+      for (let i = 0; i <= 192; i++) {
+        const a = (i / 192) * Math.PI * 2;
+        ringPts.push(new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r));
+      }
+      const color = Math.abs(au - 1.0) < 0.001 ? 0x6ec1ff : 0x315670;
+      const opacity = Math.abs(au - 1.0) < 0.001 ? 0.65 : 0.35;
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(ringPts),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+      );
+      line.name = `hss-au-ring-${au.toFixed(2)}au`;
+      hssAuRings.add(line);
+    });
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     props.coronalHoles.forEach(ch => {
       chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroup.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, sunRotationRef.current));
+      hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
@@ -680,9 +702,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
 
-      // ── Solar rotation — sunMesh spins, chGroup (its child) follows automatically
-      const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
-      sunRotationRef.current += sunAngularDelta;
+      // ── Solar rotation / timeline sync ───────────────────────────────────
+      // Timeline mode: lock CH/HSS longitude to the scrubbed absolute time.
+      // The red "now" line corresponds to Date.now(); at that point angle=0.
+      if (timelineActive && timelineMaxDate > timelineMinDate) {
+        const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
+        const dtSecFromNow = (timelineNowMs - Date.now()) / 1000;
+        sunRotationRef.current = SUN_ANGULAR_VELOCITY * dtSecFromNow;
+      } else {
+        const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
+        sunRotationRef.current += sunAngularDelta;
+      }
       if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
       // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
@@ -691,10 +721,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
-          if (u.uSunAngle !== undefined) u.uSunAngle.value = sunRotationRef.current;
+          if (u.uSunAngle !== undefined) u.uSunAngle.value = 0;
           if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
         });
       }
+      if (hssAuRingsRef.current) hssAuRingsRef.current.visible = showHss;
 
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh; e.rotation.y += 0.05 * delta;
@@ -931,7 +962,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     coronalHoles.forEach(ch => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, sunRotationRef.current));
+      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
   }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -961,6 +992,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const ed = PLANET_DATA_MAP.EARTH; if (timelineMinDate <= 0) return [];
       const gStart = Date.now(), gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
       const graphData = []; const ns = 200, as = 350, ad = 5;
+      const wrapPi = (a: number) => {
+        let v = a;
+        while (v > Math.PI) v -= Math.PI * 2;
+        while (v < -Math.PI) v += Math.PI * 2;
+        return v;
+      };
       for (let i = 0; i <= ns; i++) {
         const ct = gStart + gDur * (i / ns);
         const ea = ed.angle + ((2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600)) * ((ct - timelineMinDate) / 1000);
@@ -984,11 +1021,38 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             }
           }
         });
+
+        // Add CH/HSS contribution when Earth intersects the rotating Parker stream.
+        coronalHoles.forEach((ch) => {
+          const sourceSpeed = Math.max(800, Math.min(1400, ch.estimatedSpeedKms));
+          const travelSec = AU_IN_KM / sourceSpeed;
+          const emissionTime = ct - travelSec * 1000;
+
+          const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
+          const sourceAzAtEmission = sourceLon0 + SUN_ANGULAR_VELOCITY * ((emissionTime - gStart) / 1000);
+          const earthAz = Math.atan2(ep.x, ep.z);
+
+          const diff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
+          const halfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
+          const spread = halfAngle + 0.22; // stream broadens with radial distance
+          if (diff < spread) {
+            const x = diff / spread;
+            const intensity = (1 - x * x) * (1 - x * x);
+            const earthSpeed = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 520, 900);
+            ts = Math.max(ts, as + (earthSpeed - as) * intensity);
+
+            const densityPeak = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 8, 24)
+              + ((ch.darkness ?? 0) * 10)
+              + THREE.MathUtils.mapLinear(Math.min(60, Math.max(5, ch.widthDeg)), 5, 60, 1, 6);
+            td += densityPeak * intensity;
+          }
+        });
+
         graphData.push({ time: ct, speed: ts, density: td });
       }
       return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData]);
+  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
   useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
