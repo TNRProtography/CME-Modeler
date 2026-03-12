@@ -585,9 +585,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     // ── Coronal Holes & Parker Spiral HSS ──────────────────────────────────
     // chGroup: child of sunMesh → patches rotate with the sun automatically
-    // hssGroup: world-space → vertex shader rotates arms via uSunAngle uniform
+    // hssGroup: child of sunMesh so HSS roots are locked to CH/source rotation.
     const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  sunMesh.add(chGroup);
-    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    scene.add(hssGroup);
+    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    sunMesh.add(hssGroup);
     const hssAuRings = new THREE.Group(); hssAuRings.name = 'hss-au-rings'; scene.add(hssAuRings);
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
@@ -616,7 +616,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     props.coronalHoles.forEach(ch => {
       chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroup.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, sunRotationRef.current));
+      hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
@@ -721,7 +721,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
-          if (u.uSunAngle !== undefined) u.uSunAngle.value = sunRotationRef.current;
+          if (u.uSunAngle !== undefined) u.uSunAngle.value = 0;
           if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
         });
       }
@@ -962,7 +962,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     coronalHoles.forEach(ch => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, sunRotationRef.current));
+      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
   }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
