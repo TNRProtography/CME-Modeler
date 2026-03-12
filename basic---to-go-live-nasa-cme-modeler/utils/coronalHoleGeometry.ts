@@ -106,10 +106,16 @@ export function buildChFootprintPoints(
   };
 
   if (ch.polygon && ch.polygon.length >= 3) {
-    const pts = ch.polygon.map((v: any) =>
-      hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).multiplyScalar(r)
-    );
-    return sortAndInflate(pts);
+    const pts = ch.polygon.map((v: any) => {
+      const p = hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).normalize();
+      // Inflate each point slightly away from the CH centroid — do NOT re-sort.
+      // buildPolygon already sorts by angle in pixel space; re-sorting here from
+      // a different origin destroys all concavities and produces a convex hull
+      // that looks like a perfect circle for large irregular CHs.
+      return cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r);
+    });
+    pts.push(pts[0].clone()); // close the loop
+    return pts;
   }
 
   // Ellipse fallback

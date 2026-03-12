@@ -540,7 +540,7 @@ export async function detectCoronalHolesFromSuvi195(
       const widthDeg  = leftHG && rightHG  ? Math.abs(rightHG.lon  - leftHG.lon)  : 15;
       const heightDeg = topHG  && bottomHG ? Math.abs(bottomHG.lat - topHG.lat)   : widthDeg;
 
-      const polygon = buildPolygon(region, cx, cy, diskR, 14);
+      const polygon = buildPolygon(region, cx, cy, diskR, 48);
 
       let regionLumaSum = 0;
       for (const p of region.pixels) {
@@ -571,6 +571,17 @@ export async function detectCoronalHolesFromSuvi195(
         animPhase:            (idx * animPhaseOffset) % 1,
       };
     });
+
+    // Debug: log what was detected so shape issues can be diagnosed
+    console.log('[SUVI CH detector] detected', coronalHoles.length, 'coronal holes:',
+      coronalHoles.map(ch => ({
+        id: ch.id, lat: ch.lat.toFixed(1), lon: ch.lon.toFixed(1),
+        widthDeg: ch.widthDeg.toFixed(1), heightDeg: ch.heightDeg?.toFixed(1),
+        polygonPts: ch.polygon?.length ?? 'ellipse-fallback',
+        areaFracPct: ((allRegions.find((_r, i) => i === parseInt(ch.id.replace('CH_SUVI_', '')))?.pixels.length ?? 0) / diskPixelCount * 100).toFixed(2) + '%',
+        darkness: ch.darkness.toFixed(2),
+      }))
+    );
 
     return {
       coronalHoles,
