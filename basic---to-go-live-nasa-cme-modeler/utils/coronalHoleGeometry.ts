@@ -54,7 +54,7 @@ import { CoronalHole } from './coronalHoleData';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
-const SPIRAL_TURNS           = 2.6;
+const SPIRAL_TURNS           = 1.35;
 const CH_OVEREMPHASIS        = 1.22;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
@@ -278,8 +278,8 @@ export function buildParkerSpiralMesh(
   sunAngle0: number,
 ): any {
   const latRad = THREE.MathUtils.degToRad(ch.lat);
-  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 350) / 450, 0, 1);
-  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 1.55, speedT);
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 800) / 600, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.90, speedT);
   const phiMax = turns * Math.PI * 2;
 
   // ── Backbone ───────────────────────────────────────────────────────────────
@@ -294,8 +294,8 @@ export function buildParkerSpiralMesh(
     // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
     const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Azimuth: starts at 0 (+Z), curls in -φ direction (Parker backward curl)
-    const az = -phi;
+    // Azimuth: starts at 0 (+Z), curls forward from the CH source.
+    const az = phi;
 
     // Latitude decays with distance (solar wind spreads toward equatorial plane)
     const latEff = latRad * Math.exp(-phi / (phiMax * 0.60));
@@ -344,7 +344,7 @@ export function buildParkerSpiralMesh(
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
       const cr = Math.cos(a), sr = Math.sin(a);
-      const flare = 1 + Math.pow(t, 1.35) * spreadScale;
+      const flare = 1 + t * (2.2 + spreadScale);
       const rTube = tubeR * flare;
       pos.push(
         curr.x + rTube * (cr * right.x + sr * up2.x),

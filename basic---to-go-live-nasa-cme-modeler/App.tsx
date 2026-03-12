@@ -825,6 +825,16 @@ const App: React.FC = () => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
+    if (timelineMaxDate <= timelineMinDate) {
+      const source = filteredCmes.length > 0 ? filteredCmes : cmeData;
+      if (source.length > 0) {
+        const minDate = Math.min(...source.map((c) => c.startTime.getTime()));
+        const maxDate = Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
+        setTimelineMinDate(minDate);
+        setTimelineMaxDate(maxDate);
+      }
+    }
+
     const isAtEnd = timelineScrubberValue >= 999;
     const isAtStart = timelineScrubberValue < 1;
     const isPlaying = timelinePlaying;
@@ -845,7 +855,7 @@ const App: React.FC = () => {
     } else {
       setTimelinePlaying(false);
     }
-  }, [filteredCmes, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, resetClock]);
+  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock]);
 
   const handleTimelineScrub = useCallback((value: number) => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;

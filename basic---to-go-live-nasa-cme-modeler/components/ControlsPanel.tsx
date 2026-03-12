@@ -271,7 +271,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 <p className="font-semibold text-cyan-300/80">High-Speed Stream (HSS)</p>
                 <p>
                   Fast solar wind from coronal holes (dark patches). Spiral arms rotate with the Sun.
-                  Wider holes produce faster streams (350–800 km/s).
+                  Darker/wider holes produce faster source streams (800–1400 km/s).
                 </p>
               </div>
             )}
