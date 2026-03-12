@@ -60,7 +60,7 @@ import { CoronalHole }                 from './coronalHoleData';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
-const ANALYSIS_SIZE           = 300;   // off-screen canvas resolution
+const ANALYSIS_SIZE           = 400;   // off-screen canvas resolution — 400 gives sharper polygon boundaries
 const N_LIMB_ANGLES           = 360;   // directions to scan for limb detection
 const LIMB_SCAN_START         = 0.35;  // start limb scan at this fraction of image half-size
 const LIMB_SCAN_END           = 0.99;  // end limb scan at this fraction of image half-size
@@ -405,48 +405,91 @@ function pixelToHG(
 }
 
 // ── Build boundary polygon for a region ──────────────────────────────────────
+//
+// Uses Moore neighbourhood contour tracing (Jacob's stopping criterion) to
+// walk the TRUE boundary of the region in order.  This correctly represents
+// concave shapes (diagonal slashes, L-shapes, etc.) that angle-sort sampling
+// cannot reproduce — angle-sort forces a convex/radial ordering that loses
+// the actual morphology.
+//
+// After tracing, the ordered boundary is downsampled to ~nPoints vertices and
+// converted to heliographic coordinate offsets from the centroid.
 function buildPolygon(
   region: PixelRegion,
   cx: number, cy: number, diskR: number,
-  nPoints = 48,
+  nPoints = 64,
 ): Array<{ lat: number; lon: number }> | undefined {
   const { pixels, centroidX, centroidY } = region;
   if (pixels.length < 6) return undefined;
 
-  // Derive a true perimeter by keeping only region pixels that border non-region
-  // pixels. This better preserves the observed SUVI CH morphology.
+  // Build fast lookup set
   const pixelSet = new Set<number>();
-  pixels.forEach(p => pixelSet.add((p.y << 16) | p.x));
+  pixels.forEach(p => pixelSet.add(p.y * 2048 + p.x)); // use stride 2048 (> ANALYSIS_SIZE)
+  const has = (x: number, y: number) => pixelSet.has(y * 2048 + x);
 
-  const perimeter: Array<{ x: number; y: number; angle: number }> = [];
+  // ── Step 1: find a guaranteed boundary start pixel (topmost, then leftmost)
+  let startX = pixels[0].x, startY = pixels[0].y;
   for (const p of pixels) {
-    const x = p.x, y = p.y;
-    const neighbors = [
-      ((y - 1) << 16) | x,
-      ((y + 1) << 16) | x,
-      (y << 16) | (x - 1),
-      (y << 16) | (x + 1),
-    ];
-    if (neighbors.some(n => !pixelSet.has(n))) {
-      perimeter.push({ x, y, angle: Math.atan2(y - centroidY, x - centroidX) });
+    if (p.y < startY || (p.y === startY && p.x < startX)) {
+      startX = p.x; startY = p.y;
     }
   }
 
-  if (perimeter.length < 6) return undefined;
-  perimeter.sort((a, b) => a.angle - b.angle);
+  // ── Step 2: Moore neighbourhood trace (8-connected boundary walk)
+  // Directions: E=0, NE=1, N=2, NW=3, W=4, SW=5, S=6, SE=7
+  const DX = [1, 1, 0,-1,-1,-1, 0, 1];
+  const DY = [0,-1,-1,-1, 0, 1, 1, 1];
 
-  // Downsample boundary in angular order to a manageable polygon size.
+  const boundary: Array<{ x: number; y: number }> = [];
+  const MAX_TRACE = Math.min(8000, pixels.length * 4);
+
+  // Entry direction is from the west (we come from a non-region pixel to the left)
+  let cx0 = startX, cy0 = startY;
+  let dir = 4; // came from West (outside), so next to check is W direction = 4, backtrack = dir+4 mod 8
+
+  // For Moore tracing: start direction is the "backtrack" direction into non-region
+  dir = 6; // start pixel found from above, so "previous" position was from South (dir=6 goes S)
+  
+  let traced = 0;
+  let x = cx0, y = cy0;
+  const startKey = y * 2048 + x;
+
+  do {
+    boundary.push({ x, y });
+
+    // Scan 8-neighbours CCW starting from backtrack direction
+    const backDir = (dir + 4) % 8;
+    let found = false;
+    for (let i = 1; i <= 8; i++) {
+      const d = (backDir + i) % 8;
+      const nx = x + DX[d];
+      const ny = y + DY[d];
+      if (has(nx, ny)) {
+        dir = d;
+        x = nx; y = ny;
+        found = true;
+        break;
+      }
+    }
+    if (!found) break; // isolated pixel
+    traced++;
+  } while (traced < MAX_TRACE && !(x === cx0 && y === cy0 && traced > 2));
+
+  if (boundary.length < 6) return undefined;
+
+  // ── Step 3: Downsample ordered boundary to nPoints vertices
   const poly: Array<{ lat: number; lon: number }> = [];
-  const step = Math.max(1, Math.floor(perimeter.length / nPoints));
-  for (let i = 0; i < perimeter.length; i += step) {
-    const p = perimeter[i];
+  const step = Math.max(1, Math.floor(boundary.length / nPoints));
+  for (let i = 0; i < boundary.length; i += step) {
+    const p = boundary[i];
     const hg = pixelToHG(p.x, p.y, cx, cy, diskR);
     if (hg) poly.push(hg);
   }
 
-  // Convert to offsets from centroid
   const hgCen = pixelToHG(centroidX, centroidY, cx, cy, diskR);
   if (!hgCen || poly.length < 3) return undefined;
+
+  // Return as offsets from centroid (same convention as before)
   return poly.map(p => ({ lat: p.lat - hgCen.lat, lon: p.lon - hgCen.lon }));
 }
 
@@ -545,7 +588,7 @@ export async function detectCoronalHolesFromSuvi195(
       const widthDeg  = leftHG && rightHG  ? Math.abs(rightHG.lon  - leftHG.lon)  : 15;
       const heightDeg = topHG  && bottomHG ? Math.abs(bottomHG.lat - topHG.lat)   : widthDeg;
 
-      const polygon = buildPolygon(region, cx, cy, diskR, 48);
+      const polygon = buildPolygon(region, cx, cy, diskR, 96);
 
       // Reject regions that have no usable polygon AND no meaningful size.
       // These are typically sunspot fragments or noise that slipped past the shape filter.

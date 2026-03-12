@@ -276,7 +276,7 @@ export function buildChSurfaceMesh(
 
   // Project polygon to 2D tangent plane, smooth, triangulate, unproject back to 3D
   const poly2d_raw = pts.map((p: any) => projectTo2D(p, cen, right, up));
-  const poly2d = smoothPolygon(poly2d_raw, 3, 1.8);
+  const poly2d = smoothPolygon(poly2d_raw, 1, 1.2);
   const triIdx = earClip(poly2d);
 
   if (triIdx.length === 0) return new THREE.Object3D();
@@ -332,7 +332,7 @@ export function buildChOutlineLine(
   const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
 
   const raw2d = fp.slice(0, -1).map((p: any) => projectTo2D(p, cen, right, up));
-  const smooth2d = smoothPolygon(raw2d, 3, 1.8);
+  const smooth2d = smoothPolygon(raw2d, 1, 1.2);
   const smoothPts = smooth2d.map(({ x, y }: { x: number; y: number }) =>
     cen.clone().addScaledVector(right, x).addScaledVector(up, y)
       .normalize().multiplyScalar(sunRadius * 1.006)
