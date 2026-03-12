@@ -1098,7 +1098,7 @@ const App: React.FC = () => {
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
                     />
-                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (name === 'CORONAL HOLE') return showHss; if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
                         <div className="flex items-start text-center space-x-3 pointer-events-auto">
                             <div className="flex flex-col items-center w-16 lg:hidden">
@@ -1149,7 +1149,7 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <TimelineControls isVisible={!isLoading && (cmesToRender.length > 0)} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
+                    <TimelineControls isVisible={false} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
                 </main>
 
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
@@ -1199,7 +1199,25 @@ const App: React.FC = () => {
               </>
               )}
           </div>
-          
+
+          {/* TimelineControls rendered at top-level — outside all Suspense boundaries and
+              stacking contexts so position:fixed works correctly on desktop AND mobile. */}
+          <Suspense fallback={null}>
+            <TimelineControls
+              isVisible={activePage === 'modeler' && !isLoading && cmesToRender.length > 0}
+              isPlaying={timelinePlaying}
+              onPlayPause={handleTimelinePlayPause}
+              onScrub={handleTimelineScrub}
+              scrubberValue={timelineScrubberValue}
+              onStepFrame={handleTimelineStep}
+              playbackSpeed={timelineSpeed}
+              onSetSpeed={handleTimelineSetSpeed}
+              minDate={timelineMinDate}
+              maxDate={timelineMaxDate}
+              onOpenImpactGraph={handleOpenImpactGraph}
+            />
+          </Suspense>
+
           <Suspense fallback={null}>
             <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
           </Suspense>

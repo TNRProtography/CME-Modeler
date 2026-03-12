@@ -17,6 +17,7 @@ import { CoronalHole } from '../utils/coronalHoleData';
 import {
   buildChSurfaceMesh,
   buildChOutlineLine,
+  buildChLabelAnchor,
   buildParkerSpiralMesh,
 } from '../utils/coronalHoleGeometry';
 
@@ -362,6 +363,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const hssGroupRef    = useRef<any>(null);
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
+  const setPlanetLabelsRef = useRef(setPlanetMeshesForLabels);
   const sunRotationRef = useRef<number>(0);
 
   const starsNearRef = useRef<any>(null);
@@ -617,9 +619,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroup.add(buildChOutlineLine(THREE, ch, sunR));
       hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
+      const anchor = buildChLabelAnchor(THREE, ch, sunR);
+      chGroup.add(anchor);
     });
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
+    // CH labels — added here so PlanetLabel can track world position via sunMesh parent
+    props.coronalHoles.forEach(ch => {
+      const anchor = chGroup.getObjectByName(`ch-label-anchor-${ch.id}`);
+      if (anchor) planetLabelInfos.push({ id: `ch-label-${ch.id}`, name: 'Coronal Hole', mesh: anchor });
+    });
 
     // ── Planets ──────────────────────────────────────────────────────────────
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
@@ -963,7 +972,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
+      const anchor = buildChLabelAnchor(THREE, ch, sunR);
+      chGroupRef.current.add(anchor);
     });
+
+    // Re-emit updated label list including new CH anchors
+    // Walk up to find the sunMesh (chGroup is a child of sunMesh)
+    const sunMesh = chGroupRef.current.parent;
+    if (sunMesh && setPlanetLabelsRef.current) {
+      const existingLabels: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
+      // Re-add planet labels from celestialBodiesRef if accessible
+      coronalHoles.forEach(ch => {
+        const anchor = chGroupRef.current.getObjectByName(`ch-label-anchor-${ch.id}`);
+        if (anchor) existingLabels.push({ id: `ch-label-${ch.id}`, name: 'Coronal Hole', mesh: anchor });
+      });
+      setPlanetLabelsRef.current(existingLabels);
+    }
   }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {

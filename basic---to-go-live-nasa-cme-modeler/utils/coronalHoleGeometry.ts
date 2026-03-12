@@ -301,14 +301,14 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x050508, transparent: true, opacity: 0.80,
-    side: THREE.DoubleSide, depthWrite: false, depthTest: true,
+    color: 0x020204, transparent: false, opacity: 1.0,
+    side: THREE.FrontSide, depthWrite: true, depthTest: true,
     blending: THREE.NormalBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
   mesh.userData = { coronalHoleId: ch.id };
-  mesh.renderOrder = 1;
+  mesh.renderOrder = 2;  // render after sun (renderOrder 0) so depth test wins
   return mesh;
 }
 
@@ -349,6 +349,20 @@ export function buildChOutlineLine(
   line.userData = { coronalHoleId: ch.id };
   line.renderOrder = 2;
   return line;
+}
+
+/**
+ * Returns a tiny invisible Object3D positioned at the CH centroid on the solar
+ * surface (in sunMesh local space).  Used as the mesh anchor for PlanetLabel.
+ */
+export function buildChLabelAnchor(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any {
+  const pos = hgToVec(THREE, ch.lat, ch.lon).normalize().multiplyScalar(sunRadius * 1.012);
+  const obj = new THREE.Object3D();
+  obj.position.copy(pos);
+  obj.name = `ch-label-anchor-${ch.id}`;
+  return obj;
 }
 
 // ─── Parker Spiral Shaders ────────────────────────────────────────────────────
