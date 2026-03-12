@@ -990,7 +990,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const THREE = (window as any).THREE;
       if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
       const ed = PLANET_DATA_MAP.EARTH; if (timelineMinDate <= 0) return [];
-      const gStart = Date.now(), gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
+      const timelineNow = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
+      const gStart = timelineNow, gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
       const graphData = []; const ns = 200, as = 350, ad = 5;
       const wrapPi = (a: number) => {
         let v = a;
@@ -1038,51 +1039,66 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         });
 
-        // CH/HSS contribution: fast stream + Stream Interaction Region (SIR) density enhancement.
-        // The SIR forms where fast HSS plows into slow solar wind AHEAD of it.
-        // Observation: density peaks at the SIR BEFORE the speed increase of the fast stream.
+        // CH/HSS contribution: single-pulse profile aligned to timeline time.
+        // Requested behavior:
+        // - realistic peak for modest CH size (~580-630 km/s max)
+        // - no "double bump"
+        // - 12h ramp up, 12h plateau, 12h ramp down
         coronalHoles.forEach((ch) => {
-          const sourceSpeed = Math.max(800, Math.min(1400, ch.estimatedSpeedKms));
+          const sourceSpeed = Math.max(700, Math.min(1200, ch.estimatedSpeedKms));
           const travelSec = AU_IN_KM / sourceSpeed;
           const emissionTime = ct - travelSec * 1000;
 
           const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
-          const sourceAzAtEmission = sourceLon0 + SUN_ANGULAR_VELOCITY * ((emissionTime - gStart) / 1000);
+          const sourceAzAtEmission = sourceLon0 + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineMinDate) / 1000);
           const earthAz = Math.atan2(ep.x, ep.z);
 
-          const diff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
-          const halfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
-          const spread = halfAngle + 0.22;
+          const signedDiff = wrapPi(earthAz - sourceAzAtEmission);
+          const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
+          const relativeAngularRate = Math.abs(SUN_ANGULAR_VELOCITY - earthAngularVelocity) > 1e-6
+            ? (SUN_ANGULAR_VELOCITY - earthAngularVelocity)
+            : (SUN_ANGULAR_VELOCITY >= 0 ? 1e-6 : -1e-6);
 
-          // SIR: density enhancement in the slow wind just AHEAD of the fast stream boundary.
-          // Angularly it appears at slightly larger diff than the fast stream edge (spread).
-          const sirWidth = spread * 0.18; // SIR width ~18% of stream half-angle
-          const sirOuter = spread + sirWidth;
+          const hoursFromCenter = (signedDiff / relativeAngularRate) / 3600;
+          const rampHours = 12;
+          const plateauHours = 12;
+          const halfPlateau = plateauHours / 2;
+          const envelopeStart = -(rampHours + halfPlateau);
+          const envelopeEnd = rampHours + halfPlateau;
 
-          if (diff < spread) {
-            // Inside the fast stream: speed increase with moderate density
-            const x = diff / spread;
-            const intensity = (1 - x * x) * (1 - x * x);
-            const earthSpeed = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 520, 900);
-            ts = Math.max(ts, as + (earthSpeed - as) * intensity);
-            const densityPeak = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 8, 24)
-              + ((ch.darkness ?? 0) * 10)
-              + THREE.MathUtils.mapLinear(Math.min(60, Math.max(5, ch.widthDeg)), 5, 60, 1, 6);
-            td += densityPeak * intensity;
-          } else if (diff < sirOuter) {
-            // SIR leading edge: density spike with minimal speed increase (slow compressed wind)
-            const sirPos = (diff - spread) / sirWidth; // 0 at stream boundary, 1 at SIR front
-            const sirInten = Math.sin((1 - sirPos) * Math.PI); // peaks right at stream boundary
-            td += THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 10, 28) * sirInten;
-            ts = Math.max(ts, as + 35 * sirInten); // barely elevated speed in SIR
+          let profile = 0;
+          if (hoursFromCenter >= envelopeStart && hoursFromCenter < -halfPlateau) {
+            profile = (hoursFromCenter - envelopeStart) / rampHours;
+          } else if (hoursFromCenter >= -halfPlateau && hoursFromCenter <= halfPlateau) {
+            profile = 1;
+          } else if (hoursFromCenter > halfPlateau && hoursFromCenter <= envelopeEnd) {
+            profile = 1 - ((hoursFromCenter - halfPlateau) / rampHours);
           }
+
+          if (profile <= 0) return;
+
+          const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
+          const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
+          const peakSpeed = THREE.MathUtils.clamp(
+            560
+              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 20, 50)
+              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 20),
+            580,
+            630,
+          );
+
+          const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
+            + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 6);
+
+          ts = Math.max(ts, as + (peakSpeed - as) * profile);
+          td += Math.max(0, peakDensity - ad) * profile;
         });
 
         graphData.push({ time: ct, speed: ts, density: td });
       }
       return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
+  }), [moveCamera, getClockElapsedTime, timelineMinDate, timelineMaxDate, timelineValue, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
   useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
