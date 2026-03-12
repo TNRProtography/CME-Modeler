@@ -225,7 +225,7 @@ const App: React.FC = () => {
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
-  const clockRef = useRef<any>(null);
+  const clockStartRef = useRef<number>(performance.now());
   const canvasRef = useRef<SimulationCanvasHandle>(null);
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
@@ -500,9 +500,6 @@ const App: React.FC = () => {
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
     }
-    if (!clockRef.current && (window as any).THREE) {
-      clockRef.current = new (window as any).THREE.Clock();
-    }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
   }, []);
 
@@ -641,8 +638,8 @@ const App: React.FC = () => {
     }
   }, [navigateToPage]);
 
-  const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
-  const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
+  const getClockElapsedTime = useCallback(() => (performance.now() - clockStartRef.current) / 1000, []);
+  const resetClock = useCallback(() => { clockStartRef.current = performance.now(); }, []);
 
   const getDefaultTimelineRange = useCallback((days: TimeRange) => {
     const endDate = new Date();
@@ -894,8 +891,45 @@ const App: React.FC = () => {
   }, [timelineMinDate, timelineMaxDate]);
 
   const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
-  const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
+  const handleScrubberChangeByAnim = useCallback((value: number) => {
+    if (timelinePlaying) return;
+    setTimelineScrubberValue(value);
+  }, [timelinePlaying]);
   const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
+  useEffect(() => {
+    if (!timelineActive || !timelinePlaying) return;
+
+    const timelineRangeMs = timelineMaxDate - timelineMinDate;
+    if (timelineRangeMs <= 0) return;
+
+    let animationFrameId = 0;
+    let lastTickAt = performance.now();
+
+    const tick = (now: number) => {
+      const deltaSeconds = (now - lastTickAt) / 1000;
+      lastTickAt = now;
+
+      setTimelineScrubberValue((prev) => {
+        if (prev >= 1000) {
+          setTimelinePlaying(false);
+          return 1000;
+        }
+
+        const next = prev + (deltaSeconds * (3 * timelineSpeed * 3600 * 1000) / timelineRangeMs) * 1000;
+        if (next >= 1000) {
+          setTimelinePlaying(false);
+          return 1000;
+        }
+        return next;
+      });
+
+      animationFrameId = window.requestAnimationFrame(tick);
+    };
+
+    animationFrameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(animationFrameId);
+  }, [timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
+
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
   const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
