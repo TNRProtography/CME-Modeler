@@ -89,22 +89,6 @@ export function buildChFootprintPoints(
   right.normalize();
   const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
 
-  const sortAndInflate = (raw: any[]): any[] => {
-    const sorted = raw
-      .map((p: any) => {
-        const n = p.clone().normalize();
-        return { p: n, a: Math.atan2(n.dot(up), n.dot(right)) };
-      })
-      .sort((a: any, b: any) => a.a - b.a)
-      .map((v: any) => v.p);
-
-    const inflated = sorted.map((p: any) =>
-      cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r)
-    );
-    inflated.push(inflated[0].clone());
-    return inflated;
-  };
-
   if (ch.polygon && ch.polygon.length >= 3) {
     const pts = ch.polygon.map((v: any) => {
       const p = hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).normalize();
@@ -222,6 +206,48 @@ function earClip(poly: Array<{ x: number; y: number }>): number[] {
   return indices;
 }
 
+/**
+ * Smooth a closed polygon using a simple Gaussian-weighted moving average.
+ * Reduces jagged pixel-detection artifacts while preserving the overall shape.
+ * `passes` controls how many smoothing rounds to apply.
+ */
+function smoothPolygon(
+  pts: Array<{ x: number; y: number }>,
+  passes = 3,
+  sigma = 1.8
+): Array<{ x: number; y: number }> {
+  // Build a small Gaussian kernel (5-tap)
+  const ks = 5;
+  const half = Math.floor(ks / 2);
+  const kernel: number[] = [];
+  let ksum = 0;
+  for (let i = 0; i < ks; i++) {
+    const d = i - half;
+    const w = Math.exp(-(d * d) / (2 * sigma * sigma));
+    kernel.push(w);
+    ksum += w;
+  }
+  const k = kernel.map(w => w / ksum);
+
+  let result = [...pts];
+  for (let p = 0; p < passes; p++) {
+    const n = result.length;
+    const next: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < n; i++) {
+      let sx = 0, sy = 0;
+      for (let j = 0; j < ks; j++) {
+        const idx = ((i + j - half) % n + n) % n;
+        sx += result[idx].x * k[j];
+        sy += result[idx].y * k[j];
+      }
+      next.push({ x: sx, y: sy });
+    }
+    result = next;
+  }
+  return result;
+}
+
+
 /** Dark patch on the solar surface. Uses ear-clipping triangulation so concave
  *  CH shapes (X, lightning-bolt, irregular blobs) render correctly without
  *  filling their convex hull. Parented to sunMesh → rotates with the sun. */
@@ -248,15 +274,25 @@ export function buildChSurfaceMesh(
   right.normalize();
   const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
 
-  // Project polygon to 2D tangent plane, triangulate, unproject back to 3D
-  const poly2d = pts.map((p: any) => projectTo2D(p, cen, right, up));
+  // Project polygon to 2D tangent plane, smooth, triangulate, unproject back to 3D
+  const poly2d_raw = pts.map((p: any) => projectTo2D(p, cen, right, up));
+  const poly2d = smoothPolygon(poly2d_raw, 3, 1.8);
   const triIdx = earClip(poly2d);
 
   if (triIdx.length === 0) return new THREE.Object3D();
 
+  // Unproject smoothed 2D points back onto the sphere surface
+  const pts3d = poly2d.map(({ x, y }: { x: number; y: number }) =>
+    cen.clone()
+      .addScaledVector(right, x)
+      .addScaledVector(up, y)
+      .normalize()
+      .multiplyScalar(sunRadius * 1.003)
+  );
+
   const pos: number[] = [];
   for (let i = 0; i < triIdx.length; i += 3) {
-    const a = pts[triIdx[i]], b = pts[triIdx[i + 1]], c = pts[triIdx[i + 2]];
+    const a = pts3d[triIdx[i]], b = pts3d[triIdx[i + 1]], c = pts3d[triIdx[i + 2]];
     pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
   }
 
@@ -283,7 +319,27 @@ export function buildChOutlineLine(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any {
   const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.006);
-  const geom = new THREE.BufferGeometry().setFromPoints(fp);
+
+  // Smooth the outline in 2D tangent space then unproject back to sphere
+  const cenVec = new THREE.Vector3();
+  fp.forEach((p: any) => cenVec.add(p));
+  cenVec.divideScalar(fp.length).normalize();
+  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.006);
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
+
+  const raw2d = fp.slice(0, -1).map((p: any) => projectTo2D(p, cen, right, up));
+  const smooth2d = smoothPolygon(raw2d, 3, 1.8);
+  const smoothPts = smooth2d.map(({ x, y }: { x: number; y: number }) =>
+    cen.clone().addScaledVector(right, x).addScaledVector(up, y)
+      .normalize().multiplyScalar(sunRadius * 1.006)
+  );
+  smoothPts.push(smoothPts[0].clone()); // close loop
+
+  const geom = new THREE.BufferGeometry().setFromPoints(smoothPts);
   const mat  = new THREE.LineBasicMaterial({
     color: 0x55ddff, transparent: true, opacity: 0.90,
     depthWrite: false, depthTest: true, blending: THREE.NormalBlending,
@@ -341,14 +397,15 @@ const VERT = /* glsl */`
 const FRAG = /* glsl */`
   uniform float uTime;
   uniform float uOpacity;
+  uniform vec3  uStreamColor;  // speed-matched color passed from JS
 
   varying float vFlow;
   varying float vEdge;
 
   void main() {
-    // Colour ramp: electric cyan near Sun → warm amber at 1 AU
-    vec3 nearCol = vec3(0.30, 0.85, 1.00);
-    vec3 farCol  = vec3(0.95, 0.68, 0.18);
+    // Colour ramp: speed-matched color near Sun, fades to slightly warmer at tip
+    vec3 nearCol = uStreamColor;
+    vec3 farCol  = mix(uStreamColor, vec3(0.95, 0.68, 0.18), 0.35);
     vec3 col     = mix(nearCol, farCol, pow(vFlow, 0.65));
 
     // Outward-travelling ripple (solar wind blowing away from Sun)
@@ -384,6 +441,25 @@ const FRAG = /* glsl */`
  * @param sunAngle0  Solar rotation angle at build time — used to initialise
  *                   uSunAngle so the arm starts at the correct position immediately.
  */
+/**
+ * Map HSS estimated speed to the same color scheme used for CMEs.
+ * ≥2500 → hot pink  |  ≥1800 → purple  |  ≥1000 → red-orange
+ * ≥800  → orange    |  ≥500  → yellow   |  350–500 → grey→yellow lerp
+ * <350  → grey
+ */
+function hssSpeedColor(THREE: any, speedKms: number): any {
+  if (speedKms >= 2500) return new THREE.Color(0xff69b4); // hot pink
+  if (speedKms >= 1800) return new THREE.Color(0x9370db); // medium purple
+  if (speedKms >= 1000) return new THREE.Color(0xff4500); // orange-red
+  if (speedKms >= 800)  return new THREE.Color(0xffa500); // orange
+  if (speedKms >= 500)  return new THREE.Color(0xffff00); // yellow
+  if (speedKms >= 350) {
+    const t = THREE.MathUtils.mapLinear(speedKms, 350, 500, 0, 1);
+    return new THREE.Color(0x808080).lerp(new THREE.Color(0xffff00), t);
+  }
+  return new THREE.Color(0x808080); // grey
+}
+
 export function buildParkerSpiralMesh(
   THREE: any,
   ch: CoronalHole,
@@ -487,17 +563,17 @@ export function buildParkerSpiralMesh(
   geom.computeVertexNormals();
 
   const lonRad = THREE.MathUtils.degToRad(ch.lon);
+  const streamColor = hssSpeedColor(THREE, ch.estimatedSpeedKms);
 
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
     fragmentShader: FRAG,
     uniforms: {
-      // uChLon: fixed CH longitude from SUVI (updated when SUVI refreshes)
-      uChLon:    { value: lonRad },
-      // uSunAngle: accumulated solar rotation — updated every frame by animate loop
-      uSunAngle: { value: sunAngle0 },
-      uTime:     { value: 0 },
-      uOpacity:  { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
+      uChLon:       { value: lonRad },
+      uSunAngle:    { value: sunAngle0 },
+      uTime:        { value: 0 },
+      uOpacity:     { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
+      uStreamColor: { value: streamColor },
     },
     transparent: true,
     side:        THREE.DoubleSide,
