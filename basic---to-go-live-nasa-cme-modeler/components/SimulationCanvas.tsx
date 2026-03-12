@@ -360,6 +360,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // hssGroupRef — world-space Parker spiral arms; vertex shader rotates per frame
   const chGroupRef     = useRef<any>(null);
   const hssGroupRef    = useRef<any>(null);
+  const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
 
@@ -587,8 +588,29 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // hssGroup: world-space → vertex shader rotates arms via uSunAngle uniform
     const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  sunMesh.add(chGroup);
     const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    scene.add(hssGroup);
+    const hssAuRings = new THREE.Group(); hssAuRings.name = 'hss-au-rings'; scene.add(hssAuRings);
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
+    hssAuRingsRef.current = hssAuRings;
+
+    // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
+    // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
+    [0.25, 0.5, 0.75, 1.0, 1.25, 1.5].forEach((au) => {
+      const ringPts = [];
+      const r = au * SCENE_SCALE;
+      for (let i = 0; i <= 192; i++) {
+        const a = (i / 192) * Math.PI * 2;
+        ringPts.push(new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r));
+      }
+      const color = Math.abs(au - 1.0) < 0.001 ? 0x6ec1ff : 0x315670;
+      const opacity = Math.abs(au - 1.0) < 0.001 ? 0.65 : 0.35;
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(ringPts),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+      );
+      line.name = `hss-au-ring-${au.toFixed(2)}au`;
+      hssAuRings.add(line);
+    });
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     props.coronalHoles.forEach(ch => {
@@ -703,6 +725,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
         });
       }
+      if (hssAuRingsRef.current) hssAuRingsRef.current.visible = showHss;
 
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh; e.rotation.y += 0.05 * delta;
