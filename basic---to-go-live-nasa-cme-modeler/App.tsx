@@ -644,6 +644,32 @@ const App: React.FC = () => {
   const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
   const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
 
+  const getDefaultTimelineRange = useCallback((days: TimeRange) => {
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    const futureDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - days);
+    futureDate.setDate(endDate.getDate() + 3);
+    return {
+      minDate: startDate.getTime(),
+      maxDate: futureDate.getTime(),
+    };
+  }, []);
+
+  const getTimelineRangeFromData = useCallback((data: ProcessedCME[], days: TimeRange) => {
+    if (data.length === 0) {
+      return getDefaultTimelineRange(days);
+    }
+
+    const defaultRange = getDefaultTimelineRange(days);
+    const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), defaultRange.minDate);
+
+    return {
+      minDate: Math.min(defaultRange.minDate, earliestCMEStartTime),
+      maxDate: defaultRange.maxDate,
+    };
+  }, [getDefaultTimelineRange]);
+
   const loadCMEData = useCallback(async (days: TimeRange, options: { silent?: boolean } = {}) => {
     const { silent = false } = options;
     if (!silent) {
@@ -660,19 +686,9 @@ const App: React.FC = () => {
     try {
       const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
-      if (data.length > 0) {
-        const endDate = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - days);
-        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
-        setTimelineMaxDate(futureDate.getTime());
-      } else {
-        setTimelineMinDate(0);
-        setTimelineMaxDate(0);
-      }
+      const { minDate, maxDate } = getTimelineRangeFromData(data, days);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -681,6 +697,9 @@ const App: React.FC = () => {
         setFetchError((err as Error).message || "Unknown error fetching data.");
       }
       setCmeData([]);
+      const { minDate, maxDate } = getDefaultTimelineRange(days);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     } finally {
       if (!silent) {
         setIsLoading(false);
@@ -689,7 +708,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [resetClock, apiKey, markInitialTaskDone]);
+  }, [resetClock, apiKey, markInitialTaskDone, getTimelineRangeFromData, getDefaultTimelineRange]);
 
 
   useEffect(() => {
@@ -798,21 +817,11 @@ const App: React.FC = () => {
       setTimelineActive(false);
       setTimelinePlaying(false);
       setTimelineScrubberValue(0);
-      if (cmeData.length > 0) {
-        const endDate = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = cmeData.reduce((min: number, cme_item: ProcessedCME) => Math.min(min, cme_item.startTime.getTime()), Date.now());
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - activeTimeRange);
-        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
-        setTimelineMaxDate(futureDate.getTime());
-      } else {
-        setTimelineMinDate(0);
-        setTimelineMaxDate(0);
-      }
+      const { minDate, maxDate } = getTimelineRangeFromData(cmeData, activeTimeRange);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     }
-  }, [cmeData, activeTimeRange]);
+  }, [cmeData, activeTimeRange, getTimelineRangeFromData]);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
     handleSelectCMEForModeling(cme);
@@ -829,17 +838,18 @@ const App: React.FC = () => {
 
 
   const handleTimelinePlayPause = useCallback(() => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
     if (timelineMaxDate <= timelineMinDate) {
       const source = filteredCmes.length > 0 ? filteredCmes : cmeData;
-      if (source.length > 0) {
-        const minDate = Math.min(...source.map((c) => c.startTime.getTime()));
-        const maxDate = Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
-        setTimelineMinDate(minDate);
-        setTimelineMaxDate(maxDate);
-      }
+      const { minDate, maxDate } = source.length > 0
+        ? {
+            minDate: Math.min(...source.map((c) => c.startTime.getTime())),
+            maxDate: Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000))),
+          }
+        : getDefaultTimelineRange(activeTimeRange);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     }
 
     const isAtEnd = timelineScrubberValue >= 999;
@@ -862,17 +872,15 @@ const App: React.FC = () => {
     } else {
       setTimelinePlaying(false);
     }
-  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock]);
+  }, [filteredCmes, cmeData, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock, getDefaultTimelineRange, activeTimeRange]);
 
   const handleTimelineScrub = useCallback((value: number) => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, []);
 
   const handleTimelineStep = useCallback((direction: -1 | 1) => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     const timeRange = timelineMaxDate - timelineMinDate;
@@ -883,7 +891,7 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-  }, [filteredCmes, currentlyModeledCMEId, timelineMinDate, timelineMaxDate]);
+  }, [timelineMinDate, timelineMaxDate]);
 
   const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
   const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
