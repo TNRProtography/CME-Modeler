@@ -1039,11 +1039,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         });
 
-        // CH/HSS contribution: single-pulse profile aligned to timeline time.
-        // Requested behavior:
-        // - realistic peak for modest CH size (~580-630 km/s max)
-        // - no "double bump"
-        // - 12h ramp up, 12h plateau, 12h ramp down
+        // CH/HSS contribution: smooth, single-event profiles.
+        // Density starts rising before speed arrival, then tapers smoothly.
         coronalHoles.forEach((ch) => {
           const sourceSpeed = Math.max(700, Math.min(1200, ch.estimatedSpeedKms));
           const travelSec = AU_IN_KM / sourceSpeed;
@@ -1054,28 +1051,54 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const sourceAzAtEmission = sourceAzAtTimelineNow + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineNow) / 1000);
           const earthAz = Math.atan2(ep.x, ep.z);
 
-          const centerDiff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
+          const signedDiff = wrapPi(earthAz - sourceAzAtEmission);
+          const centerDiff = Math.abs(signedDiff);
 
           const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
           const relativeAngularRateAbs = Math.max(1e-6, Math.abs(SUN_ANGULAR_VELOCITY - earthAngularVelocity));
 
-          const rampHours = 12;
-          const plateauHours = 12;
-          const rampAngle = relativeAngularRateAbs * rampHours * 3600;
-          const plateauAngle = relativeAngularRateAbs * plateauHours * 3600;
+          const speedRampHours = 12;
+          const speedPlateauHours = 12;
+          const densityLeadHours = 8;
+          const densityTailHours = 18;
+
+          const speedRampAngle = relativeAngularRateAbs * speedRampHours * 3600;
+          const speedPlateauAngle = relativeAngularRateAbs * speedPlateauHours * 3600;
+          const densityLeadAngle = relativeAngularRateAbs * densityLeadHours * 3600;
+          const densityTailAngle = relativeAngularRateAbs * densityTailHours * 3600;
 
           const chHalfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
-          const plateauHalfAngle = Math.max(chHalfAngle * 0.45, plateauAngle * 0.5);
-          const envelopeHalfAngle = plateauHalfAngle + rampAngle;
+          const speedPlateauHalfAngle = Math.max(chHalfAngle * 0.45, speedPlateauAngle * 0.5);
+          const speedEnvelopeHalfAngle = speedPlateauHalfAngle + speedRampAngle;
 
-          let profile = 0;
-          if (centerDiff <= plateauHalfAngle) {
-            profile = 1;
-          } else if (centerDiff <= envelopeHalfAngle) {
-            profile = 1 - ((centerDiff - plateauHalfAngle) / Math.max(1e-6, rampAngle));
+          const densityCenterShift = densityLeadAngle * 0.5; // start density rise slightly before wind-speed peak
+          const densityCenterDiff = Math.abs(signedDiff + densityCenterShift);
+          const densityPlateauHalfAngle = speedPlateauHalfAngle * 1.15;
+          const densityEnvelopeHalfAngle = densityPlateauHalfAngle + densityLeadAngle + densityTailAngle;
+
+          const smoothstep = (edge0: number, edge1: number, x: number) => {
+            const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
+            return t * t * (3 - 2 * t);
+          };
+
+          let speedProfile = 0;
+          if (centerDiff <= speedPlateauHalfAngle) {
+            speedProfile = 1;
+          } else if (centerDiff <= speedEnvelopeHalfAngle) {
+            const falloff = (centerDiff - speedPlateauHalfAngle) / Math.max(1e-6, speedRampAngle);
+            speedProfile = 1 - smoothstep(0, 1, falloff);
           }
 
-          if (profile <= 0) return;
+          let densityProfile = 0;
+          if (densityCenterDiff <= densityPlateauHalfAngle) {
+            densityProfile = 1;
+          } else if (densityCenterDiff <= densityEnvelopeHalfAngle) {
+            const envelopeSpan = densityEnvelopeHalfAngle - densityPlateauHalfAngle;
+            const falloff = (densityCenterDiff - densityPlateauHalfAngle) / Math.max(1e-6, envelopeSpan);
+            densityProfile = 1 - smoothstep(0, 1, falloff);
+          }
+
+          if (speedProfile <= 0 && densityProfile <= 0) return;
 
           const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
           const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
@@ -1090,8 +1113,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
             + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 6);
 
-          ts = Math.max(ts, as + (peakSpeed - as) * profile);
-          td += Math.max(0, peakDensity - ad) * profile;
+          ts = Math.max(ts, as + (peakSpeed - as) * speedProfile);
+          td += Math.max(0, peakDensity - ad) * densityProfile;
         });
 
         graphData.push({ time: ct, speed: ts, density: td });
