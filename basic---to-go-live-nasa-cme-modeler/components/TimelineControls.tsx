@@ -1,6 +1,6 @@
 // --- START OF FILE TimelineControls.tsx ---
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
@@ -57,14 +57,15 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
   isVisible, isPlaying, onPlayPause, onScrub, scrubberValue, onStepFrame,
   playbackSpeed, onSetSpeed, minDate, maxDate, onOpenImpactGraph
 }) => {
-  // Resolve portal target after mount — document.getElementById is safe in useEffect on all browsers.
-  // Synchronous resolution during render can return null on some mobile browsers before the DOM settles.
-  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
-  useEffect(() => {
-    setPortalTarget(document.getElementById('timeline-portal') ?? document.body);
-  }, []);
+  // useState lazy initializer runs synchronously on first render — unlike useEffect,
+  // there is NO first-render null gap that can cause the component to stay hidden.
+  // The DOM always has #timeline-portal available (defined in index.html before React boots).
+  // Falls back to document.body if somehow not found.
+  const [portalTarget] = useState<Element>(() =>
+    document.getElementById('timeline-portal') ?? document.body
+  );
 
-  if (!isVisible || !portalTarget) return null;
+  if (!isVisible) return null;
 
   const getCurrentTimelineDate = () => {
     if (!minDate || !maxDate || maxDate <= minDate) return "N/A";
@@ -97,8 +98,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
     padding: '10px 12px',
     boxShadow: '0 4px 32px rgba(0,0,0,0.7)',
     color: '#d4d4d4',
-    // 2003: above canvas/header (2001), below panels (2005), modals (3000+), loading (5000)
-    zIndex: 2003,
+    zIndex: 2003,  // above header (2001), below panels (2005), modals (3000+), loading screen (5000)
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
@@ -160,7 +160,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
         <SpeedButton id="timeline-speed-20x-button" onClick={() => onSetSpeed(20)} isActive={playbackSpeed === 20}>20x</SpeedButton>
       </div>
     </div>,
-    portalTarget,
+    portalTarget
   );
 };
 
