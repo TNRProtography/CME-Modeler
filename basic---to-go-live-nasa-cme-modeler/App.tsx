@@ -769,11 +769,7 @@ const App: React.FC = () => {
     return filteredCmes;
   }, [currentlyModeledCMEId, cmeData, filteredCmes]);
 
-  const shouldShowTimelineControls =
-    activePage === 'modeler' &&
-    !isLoading &&
-    cmeData.length > 0 &&
-    timelineMaxDate > timelineMinDate;
+  const shouldShowTimelineControls = activePage === 'modeler';
 
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
   
