@@ -12,7 +12,7 @@ import {
   AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
   FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER
 } from '../constants';
-import { DEFAULT_CORONAL_HOLES } from '../utils/coronalHoleData';
+import { CoronalHole } from '../utils/coronalHoleData';
 import {
   buildChSurfaceMesh,
   buildChOutlineLine,
@@ -322,6 +322,11 @@ interface SimulationCanvasProps {
   /** Controls whether the HSS stream graphic is visible in the scene.
    *  The underlying coronal hole source geometry is always present. */
   showHss: boolean;
+  /**
+   * Live coronal hole data from the SUVI detector (or fallback defaults).
+   * When this array changes the CH/HSS geometry is rebuilt in the scene.
+   */
+  coronalHoles: CoronalHole[];
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
@@ -334,7 +339,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth, showHss, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth, showHss, coronalHoles, dataVersion, interactionMode, onSunClick,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -571,27 +576,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // CH patches render on the solar surface regardless of the HSS toggle.
     // HSS stream meshes are children of hssGroup and toggled by showHss.
     //
-    // Both groups are built once here at scene initialisation.  The animate
-    // loop updates the HSS shader uniforms (uTime) each frame.
+    // Groups are created here once. Geometry inside them is rebuilt by a
+    // separate useEffect whenever `coronalHoles` prop changes (SUVI refresh).
     const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  scene.add(chGroup);
     const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    scene.add(hssGroup);
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
 
-    const sunR  = PLANET_DATA_MAP.SUN.size;
-    // HSS extends to ~1.8 AU equivalent in scene units (beyond Earth's orbit)
+    // Initial populate — will be rebuilt on coronalHoles prop changes below
+    const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-
-    DEFAULT_CORONAL_HOLES.forEach(ch => {
-      // 1. CH surface patch (always present — drives simulation source)
-      const chSurface = buildChSurfaceMesh(THREE, ch, sunR);
-      const chOutline = buildChOutlineLine(THREE, ch, sunR);
-      chGroup.add(chSurface);
-      chGroup.add(chOutline);
-
-      // 2. HSS stream volume (visibility driven by showHss prop)
-      const hssMesh = buildHssMesh(THREE, ch, sunR, hssReach);
-      hssGroup.add(hssMesh);
+    props.coronalHoles.forEach(ch => {
+      chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
+      chGroup.add(buildChOutlineLine(THREE, ch, sunR));
+      hssGroup.add(buildHssMesh(THREE, ch, sunR, hssReach));
     });
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
@@ -800,6 +798,40 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadThreeLibs]);
+
+  // ── Rebuild CH/HSS geometry when coronalHoles prop changes ────────────────
+  // Runs whenever the SUVI detector returns fresh results (or falls back).
+  // Disposes all old CH/HSS meshes, then repopulates from the new data.
+  useEffect(() => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
+
+    // Helper: dispose all children of a group
+    const clearGroup = (group: any) => {
+      while (group.children.length > 0) {
+        const child = group.children[0];
+        group.remove(child);
+        child.geometry?.dispose?.();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
+          else child.material.dispose?.();
+        }
+      }
+    };
+
+    clearGroup(chGroupRef.current);
+    clearGroup(hssGroupRef.current);
+
+    const sunR     = PLANET_DATA_MAP.SUN.size;
+    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
+
+    coronalHoles.forEach(ch => {
+      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
+      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
+      hssGroupRef.current.add(buildHssMesh(THREE, ch, sunR, hssReach));
+    });
+  // threeReady ensures this re-runs after Three.js loads; coronalHoles on every fresh detection
+  }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── CME particle systems ──────────────────────────────────────────────────
   useEffect(() => {

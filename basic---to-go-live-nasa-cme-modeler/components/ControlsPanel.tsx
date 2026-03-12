@@ -58,6 +58,8 @@ interface ControlsPanelProps {
   onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
+  /** Status of the live SUVI coronal hole detector */
+  chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'fallback' | 'error';
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -105,6 +107,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowFluxRopeChange,
   showHss,
   onShowHssChange,
+  chDetectionStatus,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -239,6 +242,25 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 onChange={onShowHssChange}
               />
             </div>
+            {/* CH detection status badge */}
+            {chDetectionStatus && chDetectionStatus !== 'idle' && (
+              <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${
+                chDetectionStatus === 'detected'
+                  ? 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300/80'
+                  : chDetectionStatus === 'loading'
+                  ? 'border-neutral-600/40 bg-neutral-900/40 text-neutral-400'
+                  : 'border-yellow-700/30 bg-yellow-950/30 text-yellow-400/70'
+              }`}>
+                <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  chDetectionStatus === 'detected' ? 'bg-cyan-400 animate-pulse' :
+                  chDetectionStatus === 'loading'  ? 'bg-neutral-400 animate-spin' :
+                  'bg-yellow-500'
+                }`} />
+                {chDetectionStatus === 'detected' && 'Live SUVI 195 data'}
+                {chDetectionStatus === 'loading'  && 'Analysing SUVI 195…'}
+                {(chDetectionStatus === 'fallback' || chDetectionStatus === 'error') && 'Simulated CH data'}
+              </div>
+            )}
             {showHss && (
               <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/30 px-3 py-2 text-xs text-neutral-300 space-y-1">
                 <p className="font-semibold text-cyan-300/80">High-Speed Stream (HSS)</p>
