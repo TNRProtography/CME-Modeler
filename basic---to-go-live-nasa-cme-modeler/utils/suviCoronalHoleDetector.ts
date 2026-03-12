@@ -527,10 +527,15 @@ export async function detectCoronalHolesFromSuvi195(
       .slice(0, MAX_CH_REGIONS);
 
     // ── 7. Convert to CoronalHole objects ──────────────────────────────────
-    const coronalHoles: CoronalHole[] = candidates.map((region, idx) => {
+    const coronalHoles: CoronalHole[] = candidates.flatMap((region, idx) => {
       const hgCen  = pixelToHG(region.centroidX, region.centroidY, cx, cy, diskR);
-      const lat    = hgCen?.lat ?? 0;
-      const lon    = hgCen?.lon ?? 0;
+
+      // If the centroid maps outside the disk (null), this region is invalid — skip it.
+      // This catches noise clusters whose centroid lands at the very edge or outside.
+      if (!hgCen) return [];
+
+      const lat    = hgCen.lat;
+      const lon    = hgCen.lon;
 
       const leftHG   = pixelToHG(region.minX, region.centroidY, cx, cy, diskR);
       const rightHG  = pixelToHG(region.maxX, region.centroidY, cx, cy, diskR);
@@ -542,6 +547,11 @@ export async function detectCoronalHolesFromSuvi195(
 
       const polygon = buildPolygon(region, cx, cy, diskR, 48);
 
+      // Reject regions that have no usable polygon AND no meaningful size.
+      // These are typically sunspot fragments or noise that slipped past the shape filter.
+      const areaFrac = region.pixels.length / diskPixelCount;
+      if (!polygon && areaFrac < SUNSPOT_MAX_FRAC) return [];
+
       let regionLumaSum = 0;
       for (const p of region.pixels) {
         regionLumaSum += luma(data, (p.y * size + p.x) * 4);
@@ -549,13 +559,10 @@ export async function detectCoronalHolesFromSuvi195(
       const regionLumaMean = regionLumaSum / Math.max(1, region.pixels.length);
       const darkness = Math.max(0, Math.min(1, (median - regionLumaMean) / Math.max(1, median)));
 
-      // Larger / darker CHs get slightly higher opacity
-      const areaFrac  = region.pixels.length / diskPixelCount;
       const opacity   = Math.min(0.65, 0.30 + areaFrac * 3.0);
-
       const expansionHalfAngleDeg = Math.min(22, 8 + widthDeg * 0.30);
 
-      return {
+      return [{
         id:                   `CH_SUVI_${idx}`,
         lat,
         lon,
@@ -569,7 +576,7 @@ export async function detectCoronalHolesFromSuvi195(
         opacity,
         hssVisible:           true,
         animPhase:            (idx * animPhaseOffset) % 1,
-      };
+      }];
     });
 
     // Debug: log what was detected so shape issues can be diagnosed
@@ -578,7 +585,6 @@ export async function detectCoronalHolesFromSuvi195(
         id: ch.id, lat: ch.lat.toFixed(1), lon: ch.lon.toFixed(1),
         widthDeg: ch.widthDeg.toFixed(1), heightDeg: ch.heightDeg?.toFixed(1),
         polygonPts: ch.polygon?.length ?? 'ellipse-fallback',
-        areaFracPct: ((allRegions.find((_r, i) => i === parseInt(ch.id.replace('CH_SUVI_', '')))?.pixels.length ?? 0) / diskPixelCount * 100).toFixed(2) + '%',
         darkness: ch.darkness.toFixed(2),
       }))
     );
