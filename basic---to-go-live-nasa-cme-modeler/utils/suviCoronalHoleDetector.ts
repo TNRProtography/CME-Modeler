@@ -65,7 +65,7 @@ const N_LIMB_ANGLES           = 360;   // directions to scan for limb detection
 const LIMB_SCAN_START         = 0.35;  // start limb scan at this fraction of image half-size
 const LIMB_SCAN_END           = 0.99;  // end limb scan at this fraction of image half-size
 const LIMB_EXCLUSION_FRAC     = 0.06;  // exclude outer 6% of per-angle limb radius
-const CH_DARK_THRESHOLD_FRAC  = 0.40;  // CH pixel if luma < this × disk median
+const CH_DARK_THRESHOLD_FRAC  = 0.52;  // CH pixel if luma < this × disk median (raised from 0.40 to catch full CH extent)
 const MIN_CH_PIXEL_FRAC       = 0.003; // minimum CH region as fraction of disk area
 const MAX_CH_REGIONS          = 4;     // return at most this many CHs
 const PROXY_TTL_SECONDS       = 90;    // edge cache TTL
@@ -78,16 +78,16 @@ const PROXY_TTL_SECONDS       = 90;    // edge cache TTL
 // 1. CIRCULARITY: 4π·area / perimeter²  (1.0 = perfect circle, lower = elongated)
 //    Real CHs are irregular and elongated; sunspots score close to 1.0.
 //    Reject any region with circularity > MAX_CH_CIRCULARITY.
+//    Note: only applied to SMALL regions — large CHs are exempt because
+//    a high-threshold darkMask may only capture the most irregular cores.
 //
 // 2. ASPECT RATIO: bounding-box height / width (or width / height, whichever > 1)
-//    Sunspots are compact (ratio ≈ 1); real CHs are usually elongated (ratio > 1.5).
-//    Reject regions where the bounding box is too square (ratio < MIN_CH_ASPECT).
-//    Exception: very large CHs (> LARGE_CH_FRAC of disk) pass regardless — a polar
-//    CH that spans most of the disk can appear compact in the bounding box.
+//    Sunspots are compact (ratio ≈ 1); most CHs are elongated (ratio > 1.2).
+//    Only applied to small regions; large CHs (like CH31) can be square in bbox.
 //
-const MAX_CH_CIRCULARITY = 0.72;  // reject if 4π·area/perimeter² > this
-const MIN_CH_ASPECT      = 1.30;  // reject if bounding-box long/short < this
-const LARGE_CH_FRAC      = 0.06;  // large CHs (> 6% of disk) skip aspect check
+const MAX_CH_CIRCULARITY = 0.80;  // reject if 4π·area/perimeter² > this (sunspot = ~0.95+)
+const MIN_CH_ASPECT      = 1.20;  // reject if bounding-box long/short < this
+const SUNSPOT_MAX_FRAC   = 0.025; // only apply shape filters to regions below this size
 
 const SUVI_195_URL     = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
 const PROXY_IMAGE_PATH = '/api/proxy/image';
@@ -360,19 +360,20 @@ function regionAspectRatio(region: PixelRegion): number {
 /**
  * Returns true if the region should be kept as a coronal hole candidate.
  * Rejects near-circular compact regions (sunspots / active-region cores).
+ * Shape filters are ONLY applied to small regions — large CHs like CH31
+ * can be nearly square in their bounding box and still be genuine coronal holes.
  */
 function isCoronalHoleCandidate(region: PixelRegion, diskPixelCount: number): boolean {
-  const areaFrac    = region.pixels.length / diskPixelCount;
-  const circularity = regionCircularity(region);
-  const aspect      = regionAspectRatio(region);
+  const areaFrac = region.pixels.length / diskPixelCount;
 
-  // Always reject regions that are too circular (sunspot signature)
+  // Large regions pass unconditionally — they can't be sunspots
+  if (areaFrac >= SUNSPOT_MAX_FRAC) return true;
+
+  // Small regions: apply circularity and aspect ratio filters
+  const circularity = regionCircularity(region);
   if (circularity > MAX_CH_CIRCULARITY) return false;
 
-  // Large CHs can have compact bounding boxes (e.g. polar CHs) — skip aspect check
-  if (areaFrac >= LARGE_CH_FRAC) return true;
-
-  // Small/medium regions must be sufficiently elongated to be a real CH
+  const aspect = regionAspectRatio(region);
   if (aspect < MIN_CH_ASPECT) return false;
 
   return true;
@@ -598,4 +599,4 @@ export async function detectCoronalHolesFromSuvi195(
   // Note: blobUrl is NOT revoked — the caller may display it for debug.
 }
 
-// --- END OF FILE utils/suviCoronalHoleDetector.ts --- 
+// --- END OF FILE utils/suviCoronalHoleDetector.ts ---
