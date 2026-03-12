@@ -209,8 +209,12 @@ const App: React.FC = () => {
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [showFluxRope, setShowFluxRope] = useState(false);
-  const [showHss, setShowHss] = useState(true);
-  const { coronalHoles, detectionStatus: chDetectionStatus } = useCoronalHoles();
+  const [showHss, setShowHss] = useState(false);
+  const [sharedSuvi195Url, setSharedSuvi195Url] = useState<string | null>(null);
+  const { coronalHoles, detectionStatus: chDetectionStatus } = useCoronalHoles({
+    enabled: showHss,
+    sourceImageUrl: sharedSuvi195Url,
+  });
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
@@ -1171,6 +1175,7 @@ const App: React.FC = () => {
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
                         onViewCMEInVisualization={handleViewCMEInVisualization}
+                        onSuvi195ImageUrlChange={setSharedSuvi195Url}
                         navigationTarget={navigationTarget}
                         refreshSignal={manualRefreshKey}
                         onInitialLoad={handleSolarInitialLoad}

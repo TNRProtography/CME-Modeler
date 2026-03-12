@@ -20,6 +20,7 @@ interface SolarActivityDashboardProps {
   onViewCMEInVisualization: (cmeId: string) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
   refreshSignal: number;
+  onSuvi195ImageUrlChange?: (url: string | null) => void;
   onInitialLoad?: () => void;
   onInitialLoadProgress?: (task: 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions') => void;
 }
@@ -804,7 +805,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onInitialLoad, onInitialLoadProgress }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
 
@@ -825,6 +826,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suvi195, setSuvi195] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
+
+  useEffect(() => {
+    onSuvi195ImageUrlChange?.(suvi195.url);
+  }, [onSuvi195ImageUrlChange, suvi195.url]);
 
   // Chart state
   const [allXrayData, setAllXrayData] = useState<any[]>([]);

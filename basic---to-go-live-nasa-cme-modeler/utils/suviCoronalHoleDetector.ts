@@ -361,6 +361,7 @@ export interface SuviDetectionResult {
  * Returns CoronalHole[] — empty if none detected.  Never returns fake data.
  */
 export async function detectCoronalHolesFromSuvi195(
+  imageUrl: string = SUVI_195_URL,
   animPhaseOffset = 0.3,
 ): Promise<SuviDetectionResult> {
 
@@ -368,7 +369,11 @@ export async function detectCoronalHolesFromSuvi195(
 
   try {
     // ── 1. Fetch ──────────────────────────────────────────────────────────
-    blobUrl = await fetchAsBlob(SUVI_195_URL);
+    if (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:') || imageUrl.startsWith(window.location.origin)) {
+      blobUrl = imageUrl;
+    } else {
+      blobUrl = await fetchAsBlob(imageUrl);
+    }
 
     // ── 2. Canvas render ──────────────────────────────────────────────────
     const size = ANALYSIS_SIZE;
