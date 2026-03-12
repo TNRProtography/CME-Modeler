@@ -568,7 +568,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // ── Sun ──────────────────────────────────────────────────────────────────
     const sunMesh = new THREE.Mesh(
       new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64),
-      new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER, transparent: true, depthWrite: true })
+      new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER })
     );
     sunMesh.name = 'sun-shader';
     scene.add(sunMesh);

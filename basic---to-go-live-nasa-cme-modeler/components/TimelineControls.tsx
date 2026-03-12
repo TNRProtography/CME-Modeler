@@ -92,7 +92,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
     padding: '10px 12px',
     boxShadow: '0 4px 32px rgba(0,0,0,0.7)',
     color: '#d4d4d4',
-    zIndex: 99999,
+    zIndex: 2003,
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',

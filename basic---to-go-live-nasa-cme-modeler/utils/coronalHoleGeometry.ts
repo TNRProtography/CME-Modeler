@@ -63,12 +63,11 @@ const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
 // ─── Coordinate helper ────────────────────────────────────────────────────────
 
 /** Heliographic (lat, lon) degrees → unit Cartesian.
- *  Scene: +Y = north pole, +Z = lon 0 toward Earth. */
+ *  Scene: +Y = north pole, +Z = lon 0 toward Earth.
+ *  Positive lon = East on the solar disk = positive X in scene. */
 function hgToVec(THREE: any, lat: number, lon: number): any {
   const phi   = THREE.MathUtils.degToRad(90 - lat);
-  // Use negative lon so CH overlays match the sun's apparent rotation sense
-  // in the top-view camera framing.
-  const theta = THREE.MathUtils.degToRad(-lon);
+  const theta = THREE.MathUtils.degToRad(lon);  // positive lon → East → +X
   return new THREE.Vector3(
     Math.sin(phi) * Math.sin(theta),
     Math.cos(phi),
@@ -154,13 +153,14 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    // depthTest:true means this mesh only draws on pixels where the sun sphere
-    // has already written depth — it cannot bleed over black space.
-    // CustomBlending subtracts brightness, darkening the yellow photosphere
-    // to a brownish shadow (like real coronal holes in EUV imagery).
-    color: 0x221408, transparent: true, opacity: 0.78,
+    // Sun is now opaque (no transparent:true) so it writes to the depth buffer.
+    // depthTest:true means this mesh ONLY draws over pixels where the sun sphere
+    // already passed the depth test — it cannot bleed over black space.
+    // NormalBlending with dark semi-transparent color darkens the photosphere
+    // to create the characteristic dark coronal hole appearance.
+    color: 0x050508, transparent: true, opacity: 0.80,
     side: THREE.FrontSide, depthWrite: false, depthTest: true,
-    blending: THREE.MultiplyBlending,
+    blending: THREE.NormalBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
@@ -379,7 +379,7 @@ export function buildParkerSpiralMesh(
   geom.setIndex(idx);
   geom.computeVertexNormals();
 
-  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
+  const lonRad = THREE.MathUtils.degToRad(ch.lon);
 
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
