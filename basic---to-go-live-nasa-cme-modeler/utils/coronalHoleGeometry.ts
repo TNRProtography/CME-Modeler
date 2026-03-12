@@ -154,10 +154,13 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    // Keep CH visible without creating a dark "hole" artifact on the disk.
-    color: 0x4fb7d8, transparent: true, opacity: 0.18,
+    // Dark coronal hole: real CHs appear as near-black regions on the sun
+    // (low-density, low-temperature open field regions).
+    // Use NormalBlending + dark color so the patch darkens the sun surface,
+    // making it clearly visible against the bright yellow photosphere.
+    color: 0x0a0a14, transparent: true, opacity: 0.72,
     side: THREE.FrontSide, depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
@@ -168,19 +171,22 @@ export function buildChSurfaceMesh(
 
 // ─── CH outline ───────────────────────────────────────────────────────────────
 
-/** Cyan additive-blend border. Also in sunMesh local space. */
+/** Bright border around the dark coronal hole patch. Also in sunMesh local space. */
 export function buildChOutlineLine(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any {
-  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.005);
+  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.006);
   const geom = new THREE.BufferGeometry().setFromPoints(fp);
   const mat  = new THREE.LineBasicMaterial({
-    color: 0x33aadd, transparent: true, opacity: 0.65,
-    depthWrite: false, blending: THREE.AdditiveBlending,
+    // Bright sky-blue outline — clearly visible against both the dark patch
+    // and the bright yellow photosphere.
+    color: 0x55ddff, transparent: true, opacity: 0.90,
+    depthWrite: false, blending: THREE.NormalBlending,
   });
   const line    = new THREE.Line(geom, mat);
   line.name     = `ch-outline-${ch.id}`;
   line.userData = { coronalHoleId: ch.id };
+  line.renderOrder = 2;
   return line;
 }
 

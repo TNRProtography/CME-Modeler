@@ -75,7 +75,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
 
   return (
-    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
+    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2 z-[3000]`} style={{ bottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
         <PlaybackButton id="timeline-back-step-button" onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
