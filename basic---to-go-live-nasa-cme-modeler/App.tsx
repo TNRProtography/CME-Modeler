@@ -704,9 +704,12 @@ const App: React.FC = () => {
   const handleRefreshAppData = useCallback(async () => {
     setIsRefreshing(true);
     setManualRefreshKey((v) => v + 1);
+    // Force CME data re-fetch regardless of page
+    cmePageLoadedOnce.current = false;
     await Promise.allSettled([
       loadCMEData(activeTimeRange, { silent: true }),
     ]);
+    cmePageLoadedOnce.current = true;
     setIsRefreshing(false);
   }, [activeTimeRange, loadCMEData]);
 
@@ -732,22 +735,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (activePage !== 'modeler') return;
-
-    const ensureInitialLoad = async () => {
-      if (!cmePageLoadedOnce.current) {
-        await loadCMEData(activeTimeRange);
+    // Load CME data when navigating TO the modeler page (first time only).
+    // There is NO auto-refresh ticker here — data only refreshes when:
+    //   1. The user navigates to this page from another page (cmePageLoadedOnce resets on page leave)
+    //   2. The user presses the manual refresh button (top-right)
+    // This prevents mid-playback data updates that would reset the timeline controls.
+    if (!cmePageLoadedOnce.current) {
+      loadCMEData(activeTimeRange).then(() => {
         cmePageLoadedOnce.current = true;
-      }
-    };
-
-    ensureInitialLoad();
-
-    return registerDatasetTicker('modeler-cme-data', async () => {
-      if (cmePageLoadedOnce.current) {
-        await loadCMEData(activeTimeRange, { silent: true });
-      }
-    }, 60_000);
+      });
+    }
   }, [activePage, activeTimeRange, loadCMEData]);
+
+  // Reset loaded flag when leaving the modeler page so navigating back always gets fresh data
+  useEffect(() => {
+    if (activePage !== 'modeler') {
+      cmePageLoadedOnce.current = false;
+    }
+  }, [activePage]);
 
   const handleTimeRangeChange = (range: TimeRange) => {
       setActiveTimeRange(range);
@@ -822,20 +827,21 @@ const App: React.FC = () => {
 
 
   const handleTimelinePlayPause = useCallback(() => {
-    // Allow play if we have any CME data (filtered or raw) or a selected CME
-    const availableCmes = filteredCmes.length > 0 ? filteredCmes : cmeData;
-    if (availableCmes.length === 0 && !currentlyModeledCMEId) return;
+    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
-    // Always ensure dates are set before playing
-    if (timelineMaxDate <= timelineMinDate && availableCmes.length > 0) {
-      const minDate = Math.min(...availableCmes.map((c) => c.startTime.getTime()));
-      const maxDate = Math.max(...availableCmes.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
-      setTimelineMinDate(minDate);
-      setTimelineMaxDate(maxDate);
+    if (timelineMaxDate <= timelineMinDate) {
+      const source = filteredCmes.length > 0 ? filteredCmes : cmeData;
+      if (source.length > 0) {
+        const minDate = Math.min(...source.map((c) => c.startTime.getTime()));
+        const maxDate = Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
+        setTimelineMinDate(minDate);
+        setTimelineMaxDate(maxDate);
+      }
     }
 
     const isAtEnd = timelineScrubberValue >= 999;
+    const isAtStart = timelineScrubberValue < 1;
     const isPlaying = timelinePlaying;
 
     if (isAtEnd) {
@@ -845,9 +851,8 @@ const App: React.FC = () => {
       canvasRef.current?.resetAnimationTimer();
       setTimelinePlaying(true);
     } else if (!isPlaying) {
-      // Default to 5x speed on play
-      if (timelineSpeed === 0) setTimelineSpeed(5);
-      if (timelineScrubberValue < 1) {
+      setTimelineSpeed(5);
+      if (isAtStart) {
         resetClock();
         canvasRef.current?.resetAnimationTimer();
       }
@@ -855,7 +860,7 @@ const App: React.FC = () => {
     } else {
       setTimelinePlaying(false);
     }
-  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, timelineSpeed, resetClock]);
+  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock]);
 
   const handleTimelineScrub = useCallback((value: number) => {
     if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
@@ -1098,7 +1103,7 @@ const App: React.FC = () => {
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
                     />
-                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (name === 'CORONAL HOLE') return showHss; if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                    {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
                         <div className="flex items-start text-center space-x-3 pointer-events-auto">
                             <div className="flex flex-col items-center w-16 lg:hidden">

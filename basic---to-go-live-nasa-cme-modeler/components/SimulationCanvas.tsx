@@ -17,7 +17,6 @@ import { CoronalHole } from '../utils/coronalHoleData';
 import {
   buildChSurfaceMesh,
   buildChOutlineLine,
-  buildChLabelAnchor,
   buildParkerSpiralMesh,
 } from '../utils/coronalHoleGeometry';
 
@@ -363,7 +362,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const hssGroupRef    = useRef<any>(null);
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
-  const setPlanetLabelsRef = useRef(setPlanetMeshesForLabels);
   const sunRotationRef = useRef<number>(0);
 
   const starsNearRef = useRef<any>(null);
@@ -619,16 +617,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroup.add(buildChOutlineLine(THREE, ch, sunR));
       hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
-      const anchor = buildChLabelAnchor(THREE, ch, sunR);
-      chGroup.add(anchor);
     });
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
-    // CH labels — added here so PlanetLabel can track world position via sunMesh parent
-    props.coronalHoles.forEach(ch => {
-      const anchor = chGroup.getObjectByName(`ch-label-anchor-${ch.id}`);
-      if (anchor) planetLabelInfos.push({ id: `ch-label-${ch.id}`, name: 'Coronal Hole', mesh: anchor });
-    });
 
     // ── Planets ──────────────────────────────────────────────────────────────
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
@@ -972,22 +963,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
-      const anchor = buildChLabelAnchor(THREE, ch, sunR);
-      chGroupRef.current.add(anchor);
     });
-
-    // Re-emit updated label list including new CH anchors
-    // Walk up to find the sunMesh (chGroup is a child of sunMesh)
-    const sunMesh = chGroupRef.current.parent;
-    if (sunMesh && setPlanetLabelsRef.current) {
-      const existingLabels: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
-      // Re-add planet labels from celestialBodiesRef if accessible
-      coronalHoles.forEach(ch => {
-        const anchor = chGroupRef.current.getObjectByName(`ch-label-anchor-${ch.id}`);
-        if (anchor) existingLabels.push({ id: `ch-label-${ch.id}`, name: 'Coronal Hole', mesh: anchor });
-      });
-      setPlanetLabelsRef.current(existingLabels);
-    }
   }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
@@ -1034,19 +1010,37 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(co.quaternion);
             if (cdir.angleTo(ep.clone().normalize()) < THREE.MathUtils.degToRad(cme.halfAngle)) {
               const de = ep.length(), cth = SCENE_SCALE * 0.3;
+              const a2 = (1.41 - 0.0035 * cme.speed) / 1000;
+              const cs = Math.max(MIN_CME_SPEED_KMS, cme.speed + a2 * tsc);
+
+              // Main ejecta body: speed spike + density enhancement
               if (de < cd && de > cd - cth) {
-                const a2 = (1.41 - 0.0035 * cme.speed) / 1000;
-                const cs = Math.max(MIN_CME_SPEED_KMS, cme.speed + a2 * tsc);
                 const pen = cd - de, ct2 = cth * 0.25;
                 const inten = pen <= ct2 ? 1 : 0.5 * (1 + Math.cos(((pen - ct2) / (cth - ct2)) * Math.PI));
                 ts = Math.max(ts, as + (cs - as) * inten);
                 td += (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ad) * inten;
               }
+
+              // Sheath / density bow wave: compressed solar wind AHEAD of the CME leading edge.
+              // Physically: fast CME pushes into slow solar wind, compressing it into a dense sheath.
+              // The density spike arrives BEFORE the main speed increase — a defining observational signature.
+              const sheathThickness = cth * 0.4;
+              if (de >= cd && de < cd + sheathThickness) {
+                // Bell-curve density across the sheath, peaking at the leading edge (de ≈ cd)
+                const sheathPos = (de - cd) / sheathThickness; // 0 at leading edge, 1 at sheath front
+                const sheathInten = Math.sin((1 - sheathPos) * Math.PI); // max at leading edge
+                // Sheath density scales with CME speed (faster = stronger compression)
+                td += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 6, 35) * sheathInten;
+                // Speed barely elevated in sheath — compressed slow wind, not fast ejecta
+                ts = Math.max(ts, as + (cs - as) * 0.15 * sheathInten);
+              }
             }
           }
         });
 
-        // Add CH/HSS contribution when Earth intersects the rotating Parker stream.
+        // CH/HSS contribution: fast stream + Stream Interaction Region (SIR) density enhancement.
+        // The SIR forms where fast HSS plows into slow solar wind AHEAD of it.
+        // Observation: density peaks at the SIR BEFORE the speed increase of the fast stream.
         coronalHoles.forEach((ch) => {
           const sourceSpeed = Math.max(800, Math.min(1400, ch.estimatedSpeedKms));
           const travelSec = AU_IN_KM / sourceSpeed;
@@ -1058,17 +1052,29 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
           const diff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
           const halfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
-          const spread = halfAngle + 0.22; // stream broadens with radial distance
+          const spread = halfAngle + 0.22;
+
+          // SIR: density enhancement in the slow wind just AHEAD of the fast stream boundary.
+          // Angularly it appears at slightly larger diff than the fast stream edge (spread).
+          const sirWidth = spread * 0.18; // SIR width ~18% of stream half-angle
+          const sirOuter = spread + sirWidth;
+
           if (diff < spread) {
+            // Inside the fast stream: speed increase with moderate density
             const x = diff / spread;
             const intensity = (1 - x * x) * (1 - x * x);
             const earthSpeed = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 520, 900);
             ts = Math.max(ts, as + (earthSpeed - as) * intensity);
-
             const densityPeak = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 8, 24)
               + ((ch.darkness ?? 0) * 10)
               + THREE.MathUtils.mapLinear(Math.min(60, Math.max(5, ch.widthDeg)), 5, 60, 1, 6);
             td += densityPeak * intensity;
+          } else if (diff < sirOuter) {
+            // SIR leading edge: density spike with minimal speed increase (slow compressed wind)
+            const sirPos = (diff - spread) / sirWidth; // 0 at stream boundary, 1 at SIR front
+            const sirInten = Math.sin((1 - sirPos) * Math.PI); // peaks right at stream boundary
+            td += THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 10, 28) * sirInten;
+            ts = Math.max(ts, as + 35 * sirInten); // barely elevated speed in SIR
           }
         });
 

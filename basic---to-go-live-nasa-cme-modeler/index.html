@@ -114,12 +114,25 @@
   <!-- Three.js, OrbitControls and GSAP are loaded on-demand when the CME modeler is first opened -->
 
   <style>
+    /* overflow:hidden on html (not body) is the correct cross-browser fix.
+       iOS Safari clips position:fixed descendants when overflow:hidden is on body,
+       but respects fixed positioning when it's on html instead. */
+    html {
+      overflow: hidden;
+      height: 100%;
+    }
     body {
       margin: 0;
       font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
       background-color: #171717;
       color: #d4d4d4;
+      height: 100%;
+      /* No overflow:hidden here — that would clip position:fixed on iOS Safari */
+    }
+    #root {
       overflow: hidden;
+      height: 100%;
+      position: relative;
     }
     button, input, select, textarea {
       font-family: inherit;
@@ -153,15 +166,9 @@
       --proton-s4-rgb: 128, 0, 128;
       --proton-s5-rgb: 255, 20, 147;
     }
-    /* Timeline portal: sits outside #root, unaffected by overflow:hidden on body/root */
+    /* Timeline portal: sits outside #root so it's unaffected by #root's overflow:hidden.
+       Children use position:fixed independently — the portal just needs to exist in the DOM. */
     #timeline-portal {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 0;           /* no height - children use their own fixed positioning */
-      overflow: visible;
-      z-index: 3000;
       pointer-events: none;
     }
     #timeline-portal > * {
