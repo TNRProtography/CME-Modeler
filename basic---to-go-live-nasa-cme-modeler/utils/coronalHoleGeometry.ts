@@ -451,13 +451,17 @@ const FRAG = /* glsl */`
     // Soft tube cross-section
     float edgeFade = 1.0 - smoothstep(0.30, 1.00, vEdge);
 
+    // Soft fade-in: stream organises gradually as it leaves the CH surface.
+    // No hard edge at the sun — onset over first 12% of arm length.
+    float fadeIn  = smoothstep(0.0, 0.12, vFlow);
+
     // Taper to nothing at arm tip
     float tipFade = 1.0 - smoothstep(0.68, 1.00, vFlow);
 
     // Bright ridge highlight that pulses with the ripple
     col = mix(col, vec3(1.00, 1.00, 0.95), pulse * 0.35 * edgeFade);
 
-    float alpha = uOpacity * edgeFade * tipFade * (0.32 + 0.68 * pulse);
+    float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse);
     alpha = clamp(alpha, 0.0, 0.88);
 
     gl_FragColor = vec4(col, alpha);
@@ -527,9 +531,18 @@ export function buildParkerSpiralMesh(
   }
 
   // ── Tube extrusion ─────────────────────────────────────────────────────────
-  const tubeR   = SPIRAL_TUBE_RADIUS_FAC * SCENE_SCALE;
-  const spreadScale = 1 + Math.max(0.18, (ch.expansionHalfAngleDeg ?? 10) / 20);
-  const sides   = SPIRAL_TUBE_SIDES;
+  //
+  // Base width is derived from the CH's actual angular half-width so the HSS
+  // stream boundary physically matches the coronal hole that launched it.
+  //
+  // Physical rationale:
+  //   widthDeg → half-angle (degrees) → arc length at sunRadius → scene units
+  //   Then flare linearly to 2× that width by the time t=1 (Earth distance),
+  //   matching the observed ~factor-2 radial expansion of HSS streams by 1 AU.
+  //
+  const chHalfAngleRad = THREE.MathUtils.degToRad((ch.widthDeg ?? 15) / 2);
+  const tubeR0 = sunRadius * Math.sin(chHalfAngleRad); // CH width → arc at sun surface
+  const sides  = SPIRAL_TUBE_SIDES;
   const pos: number[]  = [];
   const flow: number[] = [];
   const edge: number[] = [];
@@ -551,8 +564,9 @@ export function buildParkerSpiralMesh(
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
       const cr = Math.cos(a), sr = Math.sin(a);
-      const flare = 1 + t * (2.2 + spreadScale);
-      const rTube = tubeR * flare;
+      // Tube radius: starts at the CH angular width at the sun, grows to 2× by Earth (t=1)
+      const flare  = 1.0 + t;           // 1× at sun → 2× at Earth
+      const rTube  = tubeR0 * flare;
       pos.push(
         curr.x + rTube * (cr * right.x + sr * up2.x),
         curr.y + rTube * (cr * right.y + sr * up2.y),
