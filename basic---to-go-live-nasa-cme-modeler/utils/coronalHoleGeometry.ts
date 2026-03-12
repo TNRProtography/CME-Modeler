@@ -53,14 +53,12 @@ import { CoronalHole } from './coronalHoleData';
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
-const SPIRAL_TUBE_RADIUS_FAC = 0.018;  // relative to 1 scene unit
-const SPIRAL_TURNS           = 2.15;
+const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
+const SPIRAL_TURNS           = 2.6;
+const CH_OVEREMPHASIS        = 1.22;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
-const AU_IN_KM          = 149_597_870.7;
 const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
-const SUN_OMEGA_REAL    = 2.61799e-6;    // rad/s  (27.27-day synodic period)
-const OSS               = 2000;          // simulation speed multiplier
 
 // ─── Coordinate helper ────────────────────────────────────────────────────────
 
@@ -83,23 +81,41 @@ export function buildChFootprintPoints(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any[] {
   const r = sunRadius * 1.003;
+  const cenVec = hgToVec(THREE, ch.lat, ch.lon).normalize();
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
+
+  const sortAndInflate = (raw: any[]): any[] => {
+    const sorted = raw
+      .map((p: any) => {
+        const n = p.clone().normalize();
+        return { p: n, a: Math.atan2(n.dot(up), n.dot(right)) };
+      })
+      .sort((a: any, b: any) => a.a - b.a)
+      .map((v: any) => v.p);
+
+    const inflated = sorted.map((p: any) =>
+      cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r)
+    );
+    inflated.push(inflated[0].clone());
+    return inflated;
+  };
 
   if (ch.polygon && ch.polygon.length >= 3) {
     const pts = ch.polygon.map((v: any) =>
       hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).multiplyScalar(r)
     );
-    pts.push(pts[0].clone());
-    return pts;
+    return sortAndInflate(pts);
   }
 
   // Ellipse fallback
   const N    = 24;
-  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2);
-  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2);
+  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
+  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
   const cen  = hgToVec(THREE, ch.lat, ch.lon);
-  const north = new THREE.Vector3(0, 1, 0);
-  const right = new THREE.Vector3().crossVectors(north, cen).normalize();
-  const up    = new THREE.Vector3().crossVectors(cen, right).normalize();
 
   const pts: any[] = [];
   for (let i = 0; i <= N; i++) {
@@ -136,7 +152,7 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x001830, transparent: true, opacity: 0.82,
+    color: 0x0d3f5f, transparent: true, opacity: 0.58,
     side: THREE.FrontSide, depthWrite: false,
     blending: THREE.NormalBlending,
   });
@@ -261,14 +277,10 @@ export function buildParkerSpiralMesh(
   maxReach: number,
   sunAngle0: number,
 ): any {
-
-  // Parker spiral pitch: k = v_sw / ω_sim  [scene-units / radian]
-  const omegaSim = SUN_OMEGA_REAL * OSS;
-  const vSwScene = (ch.estimatedSpeedKms / AU_IN_KM) * SCENE_SCALE;  // scene-u/s
-  const k        = vSwScene / omegaSim;
-
   const latRad = THREE.MathUtils.degToRad(ch.lat);
-  const phiMax = SPIRAL_TURNS * Math.PI * 2;
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 350) / 450, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 1.55, speedT);
+  const phiMax = turns * Math.PI * 2;
 
   // ── Backbone ───────────────────────────────────────────────────────────────
   // Built in the canonical frame: φ=0 at +Z, arm curls in the -φ direction
@@ -279,8 +291,8 @@ export function buildParkerSpiralMesh(
     const t   = i / SPIRAL_POINTS;
     const phi = t * phiMax;
 
-    const r = sunRadius + k * phi;
-    if (r > maxReach) break;
+    // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
+    const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
     // Azimuth: starts at 0 (+Z), curls in -φ direction (Parker backward curl)
     const az = -phi;
