@@ -139,19 +139,125 @@ export function buildChFootprintPoints(
 
 // ─── CH surface mesh ──────────────────────────────────────────────────────────
 
-/** Dark triangle-fan patch. Parented to sunMesh → rotates with the sun. */
+/**
+ * Project a 3D sphere-surface point to 2D tangent-plane coordinates
+ * centred on `cen` with basis vectors `right` and `up`.
+ */
+function projectTo2D(
+  p: any, cen: any, right: any, up: any
+): { x: number; y: number } {
+  const d = p.clone().sub(cen);
+  return { x: d.dot(right), y: d.dot(up) };
+}
+
+/**
+ * Ear-clipping triangulation of a 2D polygon (array of {x,y}).
+ * Returns flat array of triangle indices into the original vertex array.
+ * Handles concave polygons correctly — unlike a fan from centre.
+ */
+function earClip(poly: Array<{ x: number; y: number }>): number[] {
+  const n = poly.length;
+  if (n < 3) return [];
+
+  // Compute signed area to determine winding
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
+  }
+  // Ensure counter-clockwise winding
+  const verts = area < 0 ? [...poly].reverse() : [...poly];
+
+  const indices: number[] = [];
+  const idx = Array.from({ length: n }, (_, i) => i);
+
+  const isEar = (prev: number, curr: number, next: number): boolean => {
+    const a = verts[prev], b = verts[curr], c = verts[next];
+    // Must be a left turn (convex at this vertex)
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (cross <= 0) return false;
+    // No other vertex inside this triangle
+    for (const i of idx) {
+      if (i === prev || i === curr || i === next) continue;
+      const p = verts[i];
+      // Point-in-triangle test
+      const d1 = (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+      const d2 = (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y);
+      const d3 = (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y);
+      const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+      const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+      if (!(hasNeg && hasPos)) return false; // point is inside
+    }
+    return true;
+  };
+
+  let remaining = [...idx];
+  let safety = n * n * 2;
+  while (remaining.length > 3 && safety-- > 0) {
+    let clipped = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const prev = remaining[(i + remaining.length - 1) % remaining.length];
+      const curr = remaining[i];
+      const next = remaining[(i + 1) % remaining.length];
+      if (isEar(prev, curr, next)) {
+        // Map back to original (pre-reversal) indices if needed
+        const origPrev = area < 0 ? (n - 1 - prev) : prev;
+        const origCurr = area < 0 ? (n - 1 - curr) : curr;
+        const origNext = area < 0 ? (n - 1 - next) : next;
+        indices.push(origPrev, origCurr, origNext);
+        remaining.splice(i, 1);
+        clipped = true;
+        break;
+      }
+    }
+    if (!clipped) break; // degenerate polygon, abort
+  }
+  if (remaining.length === 3) {
+    const [a, b, c] = remaining;
+    const origA = area < 0 ? (n - 1 - a) : a;
+    const origB = area < 0 ? (n - 1 - b) : b;
+    const origC = area < 0 ? (n - 1 - c) : c;
+    indices.push(origA, origB, origC);
+  }
+  return indices;
+}
+
+/** Dark patch on the solar surface. Uses ear-clipping triangulation so concave
+ *  CH shapes (X, lightning-bolt, irregular blobs) render correctly without
+ *  filling their convex hull. Parented to sunMesh → rotates with the sun. */
 export function buildChSurfaceMesh(
   THREE: any, ch: CoronalHole, sunRadius: number
 ): any {
-  const fp  = buildChFootprintPoints(THREE, ch, sunRadius);
-  const cen = new THREE.Vector3();
-  fp.forEach((p: any) => cen.add(p));
-  cen.divideScalar(fp.length).normalize().multiplyScalar(sunRadius * 1.003);
+  const fp = buildChFootprintPoints(THREE, ch, sunRadius);
+  // Drop the closing duplicate for triangulation
+  const pts = fp[fp.length - 1] &&
+    fp[0].distanceToSquared(fp[fp.length - 1]) < 1e-10
+    ? fp.slice(0, -1) : fp;
+
+  if (pts.length < 3) return new THREE.Object3D();
+
+  // Build tangent-plane basis at the CH centroid for 2D projection
+  const cenVec = new THREE.Vector3();
+  pts.forEach((p: any) => cenVec.add(p));
+  cenVec.divideScalar(pts.length).normalize();
+  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.003);
+
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
+
+  // Project polygon to 2D tangent plane, triangulate, unproject back to 3D
+  const poly2d = pts.map((p: any) => projectTo2D(p, cen, right, up));
+  const triIdx = earClip(poly2d);
+
+  if (triIdx.length === 0) return new THREE.Object3D();
 
   const pos: number[] = [];
-  for (let i = 0; i < fp.length - 1; i++) {
-    const a = fp[i], b = fp[i + 1];
-    pos.push(cen.x, cen.y, cen.z, a.x, a.y, a.z, b.x, b.y, b.z);
+  for (let i = 0; i < triIdx.length; i += 3) {
+    const a = pts[triIdx[i]], b = pts[triIdx[i + 1]], c = pts[triIdx[i + 2]];
+    pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
   }
 
   const geom = new THREE.BufferGeometry();
@@ -159,13 +265,8 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    // Sun is now opaque (no transparent:true) so it writes to the depth buffer.
-    // depthTest:true means this mesh ONLY draws over pixels where the sun sphere
-    // already passed the depth test — it cannot bleed over black space.
-    // NormalBlending with dark semi-transparent color darkens the photosphere
-    // to create the characteristic dark coronal hole appearance.
     color: 0x050508, transparent: true, opacity: 0.80,
-    side: THREE.FrontSide, depthWrite: false, depthTest: true,
+    side: THREE.DoubleSide, depthWrite: false, depthTest: true,
     blending: THREE.NormalBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
