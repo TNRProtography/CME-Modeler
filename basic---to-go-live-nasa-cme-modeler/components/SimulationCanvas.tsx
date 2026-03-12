@@ -1050,29 +1050,29 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const emissionTime = ct - travelSec * 1000;
 
           const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
-          const sourceAzAtEmission = sourceLon0 + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineMinDate) / 1000);
+          const sourceAzAtTimelineNow = sourceLon0 + SUN_ANGULAR_VELOCITY * ((timelineNow - Date.now()) / 1000);
+          const sourceAzAtEmission = sourceAzAtTimelineNow + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineNow) / 1000);
           const earthAz = Math.atan2(ep.x, ep.z);
 
-          const signedDiff = wrapPi(earthAz - sourceAzAtEmission);
-          const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
-          const relativeAngularRate = Math.abs(SUN_ANGULAR_VELOCITY - earthAngularVelocity) > 1e-6
-            ? (SUN_ANGULAR_VELOCITY - earthAngularVelocity)
-            : (SUN_ANGULAR_VELOCITY >= 0 ? 1e-6 : -1e-6);
+          const centerDiff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
 
-          const hoursFromCenter = (signedDiff / relativeAngularRate) / 3600;
+          const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
+          const relativeAngularRateAbs = Math.max(1e-6, Math.abs(SUN_ANGULAR_VELOCITY - earthAngularVelocity));
+
           const rampHours = 12;
           const plateauHours = 12;
-          const halfPlateau = plateauHours / 2;
-          const envelopeStart = -(rampHours + halfPlateau);
-          const envelopeEnd = rampHours + halfPlateau;
+          const rampAngle = relativeAngularRateAbs * rampHours * 3600;
+          const plateauAngle = relativeAngularRateAbs * plateauHours * 3600;
+
+          const chHalfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
+          const plateauHalfAngle = Math.max(chHalfAngle * 0.45, plateauAngle * 0.5);
+          const envelopeHalfAngle = plateauHalfAngle + rampAngle;
 
           let profile = 0;
-          if (hoursFromCenter >= envelopeStart && hoursFromCenter < -halfPlateau) {
-            profile = (hoursFromCenter - envelopeStart) / rampHours;
-          } else if (hoursFromCenter >= -halfPlateau && hoursFromCenter <= halfPlateau) {
+          if (centerDiff <= plateauHalfAngle) {
             profile = 1;
-          } else if (hoursFromCenter > halfPlateau && hoursFromCenter <= envelopeEnd) {
-            profile = 1 - ((hoursFromCenter - halfPlateau) / rampHours);
+          } else if (centerDiff <= envelopeHalfAngle) {
+            profile = 1 - ((centerDiff - plateauHalfAngle) / Math.max(1e-6, rampAngle));
           }
 
           if (profile <= 0) return;
