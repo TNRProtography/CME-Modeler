@@ -1,6 +1,7 @@
 // --- START OF FILE TimelineControls.tsx ---
 
 import React from 'react';
+import ReactDOM from 'react-dom';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
 import NextIcon from './icons/NextIcon';
@@ -74,7 +75,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
   }
 
 
-  return (
+  return ReactDOM.createPortal(
     <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2 z-[3000]`} style={{ bottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
@@ -129,7 +130,8 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
         <SpeedButton id="timeline-speed-10x-button" onClick={() => onSetSpeed(10)} isActive={playbackSpeed === 10}>10x</SpeedButton>
         <SpeedButton id="timeline-speed-20x-button" onClick={() => onSetSpeed(20)} isActive={playbackSpeed === 20}>20x</SpeedButton>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

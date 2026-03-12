@@ -154,13 +154,13 @@ export function buildChSurfaceMesh(
   geom.computeVertexNormals();
 
   const mat = new THREE.MeshBasicMaterial({
-    // Dark coronal hole: real CHs appear as near-black regions on the sun
-    // (low-density, low-temperature open field regions).
-    // Use NormalBlending + dark color so the patch darkens the sun surface,
-    // making it clearly visible against the bright yellow photosphere.
-    color: 0x0a0a14, transparent: true, opacity: 0.72,
+    // MultiplyBlending darkens whatever is drawn behind the mesh (the bright
+    // yellow photosphere) by multiplying it with the CH color.
+    // A dark brown/grey color + moderate opacity = visible dark region on the
+    // sun without creating an opaque black disc artifact.
+    color: 0x1a1008, transparent: true, opacity: 0.82,
     side: THREE.FrontSide, depthWrite: false,
-    blending: THREE.NormalBlending,
+    blending: THREE.MultiplyBlending,
   });
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `ch-surface-${ch.id}`;
