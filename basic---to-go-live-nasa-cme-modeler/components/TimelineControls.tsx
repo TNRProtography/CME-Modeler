@@ -75,9 +75,31 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
   }
 
 
-  const portalTarget = document.getElementById('timeline-portal') || document.body;
+  const portalTarget = document.getElementById('timeline-portal') ?? document.body;
+
+  const containerStyle: React.CSSProperties = {
+    position: 'fixed',
+    bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: '92%',
+    maxWidth: '768px',
+    backgroundColor: 'rgba(10, 10, 10, 0.92)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(64, 64, 64, 0.9)',
+    borderRadius: '10px',
+    padding: '10px 12px',
+    boxShadow: '0 4px 32px rgba(0,0,0,0.7)',
+    color: '#d4d4d4',
+    zIndex: 99999,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  };
+
   return ReactDOM.createPortal(
-    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2 z-[3000]`} style={{ bottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}>
+    <div id="timeline-controls-container" style={containerStyle}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
         <PlaybackButton id="timeline-back-step-button" onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
@@ -113,7 +135,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             )}
         </div>
         
-        {/* --- NEW: Graph Button --- */}
+        {/* --- Graph Button --- */}
         <PlaybackButton onClick={onOpenImpactGraph} title="Show Impact Graphs">
             <ChartIcon className="w-4 h-4" />
         </PlaybackButton>

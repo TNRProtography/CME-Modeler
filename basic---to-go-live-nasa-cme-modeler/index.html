@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-H8KY78RQJC"></script>
@@ -153,13 +153,16 @@
       --proton-s4-rgb: 128, 0, 128;
       --proton-s5-rgb: 255, 20, 147;
     }
-    /* Timeline controls portal — must sit outside #root and be unclipped */
+    /* Timeline portal: sits outside #root, unaffected by overflow:hidden on body/root */
     #timeline-portal {
       position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3000;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 0;           /* no height - children use their own fixed positioning */
       overflow: visible;
+      z-index: 3000;
+      pointer-events: none;
     }
     #timeline-portal > * {
       pointer-events: auto;
