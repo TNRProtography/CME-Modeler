@@ -788,7 +788,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       // ── Bz indicator disc ────────────────────────────────────────────────────
       if (bzIndicatorRef.current) {
-        bzIndicatorRef.current.visible = shouldShowBz;
+        bzIndicatorRef.current.visible = false;
         if (shouldShowBz) {
           const cmeObj = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObj?.visible) {
@@ -1057,48 +1057,47 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
           const relativeAngularRateAbs = Math.max(1e-6, Math.abs(SUN_ANGULAR_VELOCITY - earthAngularVelocity));
 
-          const speedRampHours = 12;
-          const speedPlateauHours = 12;
-          const densityLeadHours = 8;
-          const densityTailHours = 18;
+          const speedRampHours = 10;
+          const speedPlateauHours = 14;
+          const densityLeadHours = 10;
+          const densityDecayHours = 34;
 
           const speedRampAngle = relativeAngularRateAbs * speedRampHours * 3600;
           const speedPlateauAngle = relativeAngularRateAbs * speedPlateauHours * 3600;
           const densityLeadAngle = relativeAngularRateAbs * densityLeadHours * 3600;
-          const densityTailAngle = relativeAngularRateAbs * densityTailHours * 3600;
+          const densityDecayAngle = relativeAngularRateAbs * densityDecayHours * 3600;
 
           const chHalfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
-          const speedPlateauHalfAngle = Math.max(chHalfAngle * 0.45, speedPlateauAngle * 0.5);
+          const speedPlateauHalfAngle = Math.max(chHalfAngle * 0.42, speedPlateauAngle * 0.5);
           const speedEnvelopeHalfAngle = speedPlateauHalfAngle + speedRampAngle;
-
-          const densityCenterShift = densityLeadAngle * 0.5; // start density rise slightly before wind-speed peak
-          const densityCenterDiff = Math.abs(signedDiff + densityCenterShift);
-          const densityPlateauHalfAngle = speedPlateauHalfAngle * 1.15;
-          const densityEnvelopeHalfAngle = densityPlateauHalfAngle + densityLeadAngle + densityTailAngle;
 
           const smoothstep = (edge0: number, edge1: number, x: number) => {
             const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
             return t * t * (3 - 2 * t);
           };
 
+          // Speed: smooth rise -> broad top -> smooth fall (matching red trace shape)
           let speedProfile = 0;
-          if (centerDiff <= speedPlateauHalfAngle) {
-            speedProfile = 1;
-          } else if (centerDiff <= speedEnvelopeHalfAngle) {
-            const falloff = (centerDiff - speedPlateauHalfAngle) / Math.max(1e-6, speedRampAngle);
-            speedProfile = 1 - smoothstep(0, 1, falloff);
+          if (centerDiff <= speedEnvelopeHalfAngle) {
+            const rise = 1 - smoothstep(speedPlateauHalfAngle, speedEnvelopeHalfAngle, centerDiff);
+            const flatness = centerDiff <= speedPlateauHalfAngle
+              ? 1
+              : 1 - smoothstep(speedPlateauHalfAngle * 0.65, speedPlateauHalfAngle, centerDiff);
+            speedProfile = Math.max(0, Math.min(1, 0.78 * rise + 0.22 * flatness));
           }
 
+          // Density: smooth pre-arrival rise, then monotonic long decay after peak
+          const densityCenterShift = densityLeadAngle * 0.7;
+          const densitySigned = signedDiff + densityCenterShift;
           let densityProfile = 0;
-          if (densityCenterDiff <= densityPlateauHalfAngle) {
-            densityProfile = 1;
-          } else if (densityCenterDiff <= densityEnvelopeHalfAngle) {
-            const envelopeSpan = densityEnvelopeHalfAngle - densityPlateauHalfAngle;
-            const falloff = (densityCenterDiff - densityPlateauHalfAngle) / Math.max(1e-6, envelopeSpan);
-            densityProfile = 1 - smoothstep(0, 1, falloff);
+          if (densitySigned < 0) {
+            const pre = 1 - (Math.abs(densitySigned) / Math.max(1e-6, densityLeadAngle));
+            densityProfile = smoothstep(0, 1, Math.max(0, pre));
+          } else {
+            densityProfile = Math.exp(-densitySigned / Math.max(1e-6, densityDecayAngle));
           }
 
-          if (speedProfile <= 0 && densityProfile <= 0) return;
+          if (speedProfile <= 0.002 && densityProfile <= 0.002) return;
 
           const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
           const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
