@@ -14,7 +14,7 @@ const LoadingOverlay = lazy(() => import('./components/LoadingOverlay'));
 // so lazy-loading it is safe and removes it from the critical path.
 const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock, ImpactDataPoint } from './types';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -78,13 +78,6 @@ interface IpsAlertData {
         bt: string;
         bz: string;
     };
-}
-
-// --- NEW: Type for impact graph data points ---
-interface ImpactDataPoint {
-    time: number;
-    speed: number;
-    density: number;
 }
 
 type InitialLoadTaskKey =

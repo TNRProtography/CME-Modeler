@@ -1,18 +1,13 @@
 // --- START OF FILE src/components/ImpactGraphModal.tsx ---
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
+import { ImpactDataPoint } from '../types';
 // chartSetup registers ALL required Chart.js components including TimeScale + adapter.
 // Must be imported before any chart renders, or "time is not a registered scale" is thrown.
 import '../utils/chartSetup';
 import CloseIcon from './icons/CloseIcon';
-
-interface ImpactDataPoint {
-  time: number;
-  speed: number;
-  density: number;
-}
 
 interface ImpactGraphModalProps {
   isOpen: boolean;
@@ -63,6 +58,55 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
     return null;
   }
 
+  const disturbanceMarkers = useMemo(() => {
+    const markers: { time: number; label: string }[] = [];
+    let lastLabel: string | null = null;
+
+    data.forEach((point) => {
+      if (!point.disturbanceType) {
+        lastLabel = null;
+        return;
+      }
+      const label = point.disturbanceType === 'CME'
+        ? `CME: ${point.disturbanceName ?? 'Unknown'}`
+        : 'Coronal Hole';
+
+      if (label !== lastLabel) {
+        markers.push({ time: point.time, label });
+      }
+      lastLabel = label;
+    });
+
+    return markers.slice(0, 8);
+  }, [data]);
+
+  const disturbanceAnnotations = useMemo(() => {
+    const annotations: Record<string, any> = {};
+    disturbanceMarkers.forEach((marker, index) => {
+      annotations[`disturbance-${index}`] = {
+        type: 'line',
+        xMin: marker.time,
+        xMax: marker.time,
+        borderColor: 'rgba(255, 255, 255, 0.35)',
+        borderWidth: 1,
+        borderDash: [4, 4],
+        label: {
+          display: true,
+          content: marker.label,
+          color: '#e5e7eb',
+          backgroundColor: 'rgba(10,10,10,0.78)',
+          borderColor: 'rgba(163,163,163,0.35)',
+          borderWidth: 1,
+          position: 'start',
+          yAdjust: 10 + (index % 2) * 18,
+          font: { size: 10, weight: '600' },
+          padding: 4,
+        },
+      };
+    });
+    return annotations;
+  }, [disturbanceMarkers]);
+
   const chartDataSpeed = {
     labels: data.map(d => d.time),
     datasets: [{
@@ -89,7 +133,7 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
     }],
   };
 
-  const speedOptions: ChartOptions<'line'> = { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, title: { display: true, text: 'Speed (km/s)' } } } };
+  const speedOptions: ChartOptions<'line'> = { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, title: { display: true, text: 'Speed (km/s)' } } }, plugins: { ...chartOptions.plugins, annotation: { annotations: disturbanceAnnotations } as any } };
   const densityOptions: ChartOptions<'line'> = { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, title: { display: true, text: 'Relative Density' } } } };
 
   return (
@@ -110,10 +154,20 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
         
         <div className="overflow-y-auto p-4 styled-scrollbar pr-2 flex-grow space-y-6">
             <p className="text-sm text-neutral-400 text-center italic">This graph shows the calculated solar wind speed and density at Earth's position based on CMEs and coronal-hole high-speed streams in the 3D simulation. It is a visual guide and not an official forecast.</p>
+            {disturbanceMarkers.length > 0 && (
+              <div className="text-xs text-neutral-400 text-center">
+                Disturbances: {disturbanceMarkers.map((m) => m.label).join(' · ')}
+              </div>
+            )}
             <div className="h-64">
                 <Line options={speedOptions} data={chartDataSpeed} />
             </div>
-             <div className="h-64">
+             {disturbanceMarkers.length > 0 && (
+              <div className="text-xs text-neutral-400 text-center">
+                Disturbances: {disturbanceMarkers.map((m) => m.label).join(' · ')}
+              </div>
+            )}
+            <div className="h-64">
                 <Line options={densityOptions} data={chartDataDensity} />
             </div>
         </div>

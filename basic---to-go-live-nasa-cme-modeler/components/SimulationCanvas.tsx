@@ -1006,6 +1006,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const ea = ed.angle + ((2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600)) * ((ct - timelineMinDate) / 1000);
         const ep = new THREE.Vector3(ed.radius * Math.sin(ea), 0, ed.radius * Math.cos(ea));
         let ts = as, td = ad;
+        let dominantDisturbanceType: ImpactDataPoint['disturbanceType'] = undefined;
+        let dominantDisturbanceName: string | undefined;
+        let dominantContribution = 0;
         cmeGroupRef.current.children.forEach((co: any) => {
           const cme = co.userData as ProcessedCME, tsc = (ct - cme.startTime.getTime()) / 1000;
           if (tsc > 0) {
@@ -1020,8 +1023,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
               if (de < cd && de > cd - cth) {
                 const pen = cd - de, ct2 = cth * 0.25;
                 const inten = pen <= ct2 ? 1 : 0.5 * (1 + Math.cos(((pen - ct2) / (cth - ct2)) * Math.PI));
-                ts = Math.max(ts, as + (cs - as) * inten);
+                const cmeSpeedAtEarth = as + (cs - as) * inten;
+                ts = Math.max(ts, cmeSpeedAtEarth);
                 td += (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ad) * inten;
+                const cmeContribution = Math.max(0, cmeSpeedAtEarth - as);
+                if (cmeContribution > dominantContribution) {
+                  dominantContribution = cmeContribution;
+                  dominantDisturbanceType = "CME";
+                  dominantDisturbanceName = cme.id;
+                }
               }
 
               // Sheath / density bow wave: compressed solar wind AHEAD of the CME leading edge.
@@ -1035,7 +1045,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                 // Sheath density scales with CME speed (faster = stronger compression)
                 td += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 6, 35) * sheathInten;
                 // Speed barely elevated in sheath — compressed slow wind, not fast ejecta
-                ts = Math.max(ts, as + (cs - as) * 0.15 * sheathInten);
+                const sheathSpeed = as + (cs - as) * 0.15 * sheathInten;
+                ts = Math.max(ts, sheathSpeed);
+                const sheathContribution = Math.max(0, sheathSpeed - as);
+                if (sheathContribution > dominantContribution) {
+                  dominantContribution = sheathContribution;
+                  dominantDisturbanceType = "CME";
+                  dominantDisturbanceName = cme.id;
+                }
               }
             }
           }
@@ -1113,11 +1130,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
             + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 6);
 
-          ts = Math.max(ts, as + (peakSpeed - as) * speedProfile);
+          const chSpeedAtEarth = as + (peakSpeed - as) * speedProfile;
+          ts = Math.max(ts, chSpeedAtEarth);
           td += Math.max(0, peakDensity - ad) * densityProfile;
+          const chContribution = Math.max(0, chSpeedAtEarth - as);
+          if (chContribution > dominantContribution) {
+            dominantContribution = chContribution;
+            dominantDisturbanceType = "Coronal Hole";
+            dominantDisturbanceName = undefined;
+          }
         });
 
-        graphData.push({ time: ct, speed: ts, density: td });
+        graphData.push({ time: ct, speed: ts, density: td, disturbanceType: dominantDisturbanceType, disturbanceName: dominantDisturbanceName });
       }
       return graphData;
     }

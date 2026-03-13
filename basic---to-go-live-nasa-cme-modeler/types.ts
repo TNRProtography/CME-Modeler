@@ -135,6 +135,15 @@ export interface SimulationCanvasHandle {
   resetView: () => void;
   resetAnimationTimer: () => void;
   captureCanvasAsDataURL: () => string | null;
+  calculateImpactProfile: () => ImpactDataPoint[];
+}
+
+export interface ImpactDataPoint {
+  time: number;
+  speed: number;
+  density: number;
+  disturbanceType?: 'CME' | 'Coronal Hole';
+  disturbanceName?: string;
 }
 
 export type SightingStatus = 
