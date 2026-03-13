@@ -788,7 +788,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       // ── Bz indicator disc ────────────────────────────────────────────────────
       if (bzIndicatorRef.current) {
-        bzIndicatorRef.current.visible = shouldShowBz;
+        bzIndicatorRef.current.visible = false;
         if (shouldShowBz) {
           const cmeObj = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
           if (cmeObj?.visible) {
@@ -868,46 +868,48 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
 
-      // Main arc particles — tapered tube
+      // Main arc particles — rounded front cap for a teardrop head.
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Taper: cos²(t / halfSpan * π/2) gives 1.0 at t=0, 0.0 at t=±halfSpan
-        // We floor it at 0.35 so the tips still have some body
-        const taper    = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const tubeR    = baseTubeR * taper;
-        const rho      = Math.sqrt(Math.random()) * tubeR;
-        const phi      = Math.random() * 2 * Math.PI;
+        // Keep the front broad/smooth; tips thinner to avoid crescent "horns".
+        const tNorm = Math.abs(t / hs);
+        const taper = 0.30 + 0.70 * Math.pow(1 - tNorm, 1.8);
+        const tubeR = baseTubeR * taper;
+        const rho   = Math.sqrt(Math.random()) * tubeR;
+        const phi   = Math.random() * 2 * Math.PI;
         pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
       }
 
-      // Tail depth particles — fill behind the arc in the -Y direction
-      // (toward Sun in local space, since +Y = propagation direction)
+      // Tail particles — converge toward a single apex so whole CME reads teardrop.
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Depth offset: random penetration behind the arc surface in -Y local space
-        // More particles near 0 depth (front), fewer at full backDepth (tail tip)
-        // sqrt distribution biases toward front — gives the "rounded bullet" feel
-        const depthFrac = Math.pow(Math.random(), 1.6); // bias toward front
-        const depthY    = -depthFrac * backDepthFrac * arcR; // negative = toward Sun
+        const depthFrac = Math.pow(Math.random(), 2.1); // strong front bias
+        const depthCurve = Math.pow(depthFrac, 1.55);
+        const depthY = -depthCurve * backDepthFrac * arcR;
 
-        // Tube radius at this depth also tapers — narrower deeper in the tail
-        // and narrower toward arc tips (same taper as main arc)
-        const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const depthTaper = 1.0 - depthFrac * 0.65; // narrow toward tail tip
-        const tubeR      = baseTubeR * arcTaper * depthTaper;
-        const rho        = Math.sqrt(Math.random()) * tubeR;
-        const phi        = Math.random() * 2 * Math.PI;
+        // As depth increases, collapse lateral span toward a centerline apex.
+        const toApex = Math.pow(depthFrac, 1.15);
+        const apexX = 0;
+        const apexY = -arcR * 1.10;
+        const tailCx = cx * (1 - toApex) + apexX * toApex;
+        const tailCy = cy * (1 - toApex) + apexY * toApex;
 
-        // Offset the particle backward in Y (local propagation axis)
+        const arcTaper = 0.25 + 0.75 * Math.pow(1 - Math.abs(t / hs), 1.9);
+        const depthTaper = Math.max(0.10, 1.0 - Math.pow(depthFrac, 0.72) * 0.90);
+        const apexTaper = Math.max(0.08, 1.0 - toApex * 0.94);
+        const tubeR = baseTubeR * arcTaper * depthTaper * apexTaper;
+        const rho   = Math.sqrt(Math.random()) * tubeR;
+        const phi   = Math.random() * 2 * Math.PI;
+
         pos.push(
-          cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny + depthY,
+          tailCx + rho * Math.cos(phi) * Nx,
+          tailCy + rho * Math.cos(phi) * Ny + depthY,
           rho * Math.sin(phi)
         );
       }
@@ -990,7 +992,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const THREE = (window as any).THREE;
       if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
       const ed = PLANET_DATA_MAP.EARTH; if (timelineMinDate <= 0) return [];
-      const gStart = Date.now(), gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
+      const timelineNow = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
+      const gStart = timelineNow, gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
       const graphData = []; const ns = 200, as = 350, ad = 5;
       const wrapPi = (a: number) => {
         let v = a;
@@ -1003,6 +1006,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const ea = ed.angle + ((2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600)) * ((ct - timelineMinDate) / 1000);
         const ep = new THREE.Vector3(ed.radius * Math.sin(ea), 0, ed.radius * Math.cos(ea));
         let ts = as, td = ad;
+        let dominantDisturbanceType: ImpactDataPoint['disturbanceType'] = undefined;
+        let dominantDisturbanceName: string | undefined;
+        let dominantContribution = 0;
         cmeGroupRef.current.children.forEach((co: any) => {
           const cme = co.userData as ProcessedCME, tsc = (ct - cme.startTime.getTime()) / 1000;
           if (tsc > 0) {
@@ -1017,8 +1023,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
               if (de < cd && de > cd - cth) {
                 const pen = cd - de, ct2 = cth * 0.25;
                 const inten = pen <= ct2 ? 1 : 0.5 * (1 + Math.cos(((pen - ct2) / (cth - ct2)) * Math.PI));
-                ts = Math.max(ts, as + (cs - as) * inten);
+                const cmeSpeedAtEarth = as + (cs - as) * inten;
+                ts = Math.max(ts, cmeSpeedAtEarth);
                 td += (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ad) * inten;
+                const cmeContribution = Math.max(0, cmeSpeedAtEarth - as);
+                if (cmeContribution > dominantContribution) {
+                  dominantContribution = cmeContribution;
+                  dominantDisturbanceType = "CME";
+                  dominantDisturbanceName = cme.id;
+                }
               }
 
               // Sheath / density bow wave: compressed solar wind AHEAD of the CME leading edge.
@@ -1032,57 +1045,107 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                 // Sheath density scales with CME speed (faster = stronger compression)
                 td += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 6, 35) * sheathInten;
                 // Speed barely elevated in sheath — compressed slow wind, not fast ejecta
-                ts = Math.max(ts, as + (cs - as) * 0.15 * sheathInten);
+                const sheathSpeed = as + (cs - as) * 0.15 * sheathInten;
+                ts = Math.max(ts, sheathSpeed);
+                const sheathContribution = Math.max(0, sheathSpeed - as);
+                if (sheathContribution > dominantContribution) {
+                  dominantContribution = sheathContribution;
+                  dominantDisturbanceType = "CME";
+                  dominantDisturbanceName = cme.id;
+                }
               }
             }
           }
         });
 
-        // CH/HSS contribution: fast stream + Stream Interaction Region (SIR) density enhancement.
-        // The SIR forms where fast HSS plows into slow solar wind AHEAD of it.
-        // Observation: density peaks at the SIR BEFORE the speed increase of the fast stream.
+        // CH/HSS contribution: smooth, single-event profiles.
+        // Density starts rising before speed arrival, then tapers smoothly.
         coronalHoles.forEach((ch) => {
-          const sourceSpeed = Math.max(800, Math.min(1400, ch.estimatedSpeedKms));
+          const sourceSpeed = Math.max(700, Math.min(1200, ch.estimatedSpeedKms));
           const travelSec = AU_IN_KM / sourceSpeed;
           const emissionTime = ct - travelSec * 1000;
 
           const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
-          const sourceAzAtEmission = sourceLon0 + SUN_ANGULAR_VELOCITY * ((emissionTime - gStart) / 1000);
+          const sourceAzAtTimelineNow = sourceLon0 + SUN_ANGULAR_VELOCITY * ((timelineNow - Date.now()) / 1000);
+          const sourceAzAtEmission = sourceAzAtTimelineNow + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineNow) / 1000);
           const earthAz = Math.atan2(ep.x, ep.z);
 
-          const diff = Math.abs(wrapPi(earthAz - sourceAzAtEmission));
-          const halfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
-          const spread = halfAngle + 0.22;
+          const signedDiff = wrapPi(earthAz - sourceAzAtEmission);
+          const centerDiff = Math.abs(signedDiff);
 
-          // SIR: density enhancement in the slow wind just AHEAD of the fast stream boundary.
-          // Angularly it appears at slightly larger diff than the fast stream edge (spread).
-          const sirWidth = spread * 0.18; // SIR width ~18% of stream half-angle
-          const sirOuter = spread + sirWidth;
+          const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
+          const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - earthAngularVelocity;
+          const safeAngularRate = Math.abs(relativeAngularRateSigned) > 1e-6
+            ? relativeAngularRateSigned
+            : (relativeAngularRateSigned >= 0 ? 1e-6 : -1e-6);
 
-          if (diff < spread) {
-            // Inside the fast stream: speed increase with moderate density
-            const x = diff / spread;
-            const intensity = (1 - x * x) * (1 - x * x);
-            const earthSpeed = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 520, 900);
-            ts = Math.max(ts, as + (earthSpeed - as) * intensity);
-            const densityPeak = THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 8, 24)
-              + ((ch.darkness ?? 0) * 10)
-              + THREE.MathUtils.mapLinear(Math.min(60, Math.max(5, ch.widthDeg)), 5, 60, 1, 6);
-            td += densityPeak * intensity;
-          } else if (diff < sirOuter) {
-            // SIR leading edge: density spike with minimal speed increase (slow compressed wind)
-            const sirPos = (diff - spread) / sirWidth; // 0 at stream boundary, 1 at SIR front
-            const sirInten = Math.sin((1 - sirPos) * Math.PI); // peaks right at stream boundary
-            td += THREE.MathUtils.mapLinear(sourceSpeed, 800, 1400, 10, 28) * sirInten;
-            ts = Math.max(ts, as + 35 * sirInten); // barely elevated speed in SIR
+          const hoursFromPeak = signedDiff / safeAngularRate / 3600;
+
+          const smoothstep = (edge0: number, edge1: number, x: number) => {
+            const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
+            return t * t * (3 - 2 * t);
+          };
+
+          // Speed profile: smoother shoulders + broad top around arrival.
+          const speedRiseHours = 8;
+          const speedPlateauHours = 14;
+          const speedFallHours = 10;
+          const speedPlateauHalf = speedPlateauHours / 2;
+          const speedStart = -speedRiseHours - speedPlateauHalf;
+          const speedEnd = speedPlateauHalf + speedFallHours;
+
+          let speedProfile = 0;
+          if (hoursFromPeak >= speedStart && hoursFromPeak < -speedPlateauHalf) {
+            const riseT = (hoursFromPeak - speedStart) / speedRiseHours;
+            speedProfile = smoothstep(0, 1, riseT);
+          } else if (hoursFromPeak >= -speedPlateauHalf && hoursFromPeak <= speedPlateauHalf) {
+            speedProfile = 1;
+          } else if (hoursFromPeak > speedPlateauHalf && hoursFromPeak <= speedEnd) {
+            const fallT = (hoursFromPeak - speedPlateauHalf) / speedFallHours;
+            speedProfile = 1 - smoothstep(0, 1, fallT);
+          }
+
+          // Density profile: pre-arrival rise constrained to <=12h, then smooth decay.
+          const densityLeadHours = 12;
+          const densityDecayHours = 16;
+          let densityProfile = 0;
+          if (hoursFromPeak >= -densityLeadHours && hoursFromPeak < 0) {
+            densityProfile = smoothstep(-densityLeadHours, 0, hoursFromPeak);
+          } else if (hoursFromPeak >= 0) {
+            densityProfile = Math.exp(-hoursFromPeak / densityDecayHours);
+          }
+
+          if (speedProfile <= 0.002 && densityProfile <= 0.002) return;
+
+          const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
+          const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
+          const peakSpeed = THREE.MathUtils.clamp(
+            560
+              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 20, 50)
+              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 20),
+            580,
+            630,
+          );
+
+          const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
+            + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 6);
+
+          const chSpeedAtEarth = as + (peakSpeed - as) * speedProfile;
+          ts = Math.max(ts, chSpeedAtEarth);
+          td += Math.max(0, peakDensity - ad) * densityProfile;
+          const chContribution = Math.max(0, chSpeedAtEarth - as);
+          if (chContribution > dominantContribution) {
+            dominantContribution = chContribution;
+            dominantDisturbanceType = "Coronal Hole";
+            dominantDisturbanceName = undefined;
           }
         });
 
-        graphData.push({ time: ct, speed: ts, density: td });
+        graphData.push({ time: ct, speed: ts, density: td, disturbanceType: dominantDisturbanceType, disturbanceName: dominantDisturbanceName });
       }
       return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, timelineMinDate, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
+  }), [moveCamera, getClockElapsedTime, timelineMinDate, timelineMaxDate, timelineValue, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
   useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);

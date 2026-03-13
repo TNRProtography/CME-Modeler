@@ -14,7 +14,7 @@ const LoadingOverlay = lazy(() => import('./components/LoadingOverlay'));
 // so lazy-loading it is safe and removes it from the critical path.
 const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock, ImpactDataPoint } from './types';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -78,13 +78,6 @@ interface IpsAlertData {
         bt: string;
         bz: string;
     };
-}
-
-// --- NEW: Type for impact graph data points ---
-interface ImpactDataPoint {
-    time: number;
-    speed: number;
-    density: number;
 }
 
 type InitialLoadTaskKey =
@@ -225,7 +218,7 @@ const App: React.FC = () => {
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
-  const clockRef = useRef<any>(null);
+  const clockStartRef = useRef<number>(performance.now());
   const canvasRef = useRef<SimulationCanvasHandle>(null);
   const apiKey = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
@@ -500,9 +493,6 @@ const App: React.FC = () => {
     if (!hasSeenTutorial) {
       setIsFirstVisitTutorialOpen(true);
     }
-    if (!clockRef.current && (window as any).THREE) {
-      clockRef.current = new (window as any).THREE.Clock();
-    }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
   }, []);
 
@@ -641,8 +631,34 @@ const App: React.FC = () => {
     }
   }, [navigateToPage]);
 
-  const getClockElapsedTime = useCallback(() => (clockRef.current ? clockRef.current.getElapsedTime() : 0), []);
-  const resetClock = useCallback(() => { if (clockRef.current) { clockRef.current.stop(); clockRef.current.start(); } }, []);
+  const getClockElapsedTime = useCallback(() => (performance.now() - clockStartRef.current) / 1000, []);
+  const resetClock = useCallback(() => { clockStartRef.current = performance.now(); }, []);
+
+  const getDefaultTimelineRange = useCallback((days: TimeRange) => {
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    const futureDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - days);
+    futureDate.setDate(endDate.getDate() + 3);
+    return {
+      minDate: startDate.getTime(),
+      maxDate: futureDate.getTime(),
+    };
+  }, []);
+
+  const getTimelineRangeFromData = useCallback((data: ProcessedCME[], days: TimeRange) => {
+    if (data.length === 0) {
+      return getDefaultTimelineRange(days);
+    }
+
+    const defaultRange = getDefaultTimelineRange(days);
+    const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), defaultRange.minDate);
+
+    return {
+      minDate: Math.min(defaultRange.minDate, earliestCMEStartTime),
+      maxDate: defaultRange.maxDate,
+    };
+  }, [getDefaultTimelineRange]);
 
   const loadCMEData = useCallback(async (days: TimeRange, options: { silent?: boolean } = {}) => {
     const { silent = false } = options;
@@ -660,19 +676,9 @@ const App: React.FC = () => {
     try {
       const data = await fetchCMEData(days, apiKey);
       setCmeData(data);
-      if (data.length > 0) {
-        const endDate = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), Date.now());
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - days);
-        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
-        setTimelineMaxDate(futureDate.getTime());
-      } else {
-        setTimelineMinDate(0);
-        setTimelineMaxDate(0);
-      }
+      const { minDate, maxDate } = getTimelineRangeFromData(data, days);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -681,6 +687,9 @@ const App: React.FC = () => {
         setFetchError((err as Error).message || "Unknown error fetching data.");
       }
       setCmeData([]);
+      const { minDate, maxDate } = getDefaultTimelineRange(days);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     } finally {
       if (!silent) {
         setIsLoading(false);
@@ -689,7 +698,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [resetClock, apiKey, markInitialTaskDone]);
+  }, [resetClock, apiKey, markInitialTaskDone, getTimelineRangeFromData, getDefaultTimelineRange]);
 
 
   useEffect(() => {
@@ -769,6 +778,8 @@ const App: React.FC = () => {
     return filteredCmes;
   }, [currentlyModeledCMEId, cmeData, filteredCmes]);
 
+  const shouldShowTimelineControls = activePage === 'modeler';
+
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
   
   const handleViewChange = (view: ViewMode) => setActiveView(view);
@@ -796,21 +807,11 @@ const App: React.FC = () => {
       setTimelineActive(false);
       setTimelinePlaying(false);
       setTimelineScrubberValue(0);
-      if (cmeData.length > 0) {
-        const endDate = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(endDate.getDate() + 3);
-        const earliestCMEStartTime = cmeData.reduce((min: number, cme_item: ProcessedCME) => Math.min(min, cme_item.startTime.getTime()), Date.now());
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - activeTimeRange);
-        setTimelineMinDate(Math.min(startDate.getTime(), earliestCMEStartTime));
-        setTimelineMaxDate(futureDate.getTime());
-      } else {
-        setTimelineMinDate(0);
-        setTimelineMaxDate(0);
-      }
+      const { minDate, maxDate } = getTimelineRangeFromData(cmeData, activeTimeRange);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     }
-  }, [cmeData, activeTimeRange]);
+  }, [cmeData, activeTimeRange, getTimelineRangeFromData]);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
     handleSelectCMEForModeling(cme);
@@ -827,17 +828,18 @@ const App: React.FC = () => {
 
 
   const handleTimelinePlayPause = useCallback(() => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
 
     if (timelineMaxDate <= timelineMinDate) {
       const source = filteredCmes.length > 0 ? filteredCmes : cmeData;
-      if (source.length > 0) {
-        const minDate = Math.min(...source.map((c) => c.startTime.getTime()));
-        const maxDate = Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000)));
-        setTimelineMinDate(minDate);
-        setTimelineMaxDate(maxDate);
-      }
+      const { minDate, maxDate } = source.length > 0
+        ? {
+            minDate: Math.min(...source.map((c) => c.startTime.getTime())),
+            maxDate: Math.max(...source.map((c) => c.predictedArrivalTime?.getTime() ?? (c.startTime.getTime() + 72 * 3600_000))),
+          }
+        : getDefaultTimelineRange(activeTimeRange);
+      setTimelineMinDate(minDate);
+      setTimelineMaxDate(maxDate);
     }
 
     const isAtEnd = timelineScrubberValue >= 999;
@@ -860,17 +862,15 @@ const App: React.FC = () => {
     } else {
       setTimelinePlaying(false);
     }
-  }, [filteredCmes, cmeData, currentlyModeledCMEId, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock]);
+  }, [filteredCmes, cmeData, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock, getDefaultTimelineRange, activeTimeRange]);
 
   const handleTimelineScrub = useCallback((value: number) => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     setTimelineScrubberValue(value);
-  }, [filteredCmes, currentlyModeledCMEId]);
+  }, []);
 
   const handleTimelineStep = useCallback((direction: -1 | 1) => {
-    if (filteredCmes.length === 0 && !currentlyModeledCMEId) return;
     setTimelineActive(true);
     setTimelinePlaying(false);
     const timeRange = timelineMaxDate - timelineMinDate;
@@ -881,11 +881,48 @@ const App: React.FC = () => {
     } else {
       setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
     }
-  }, [filteredCmes, currentlyModeledCMEId, timelineMinDate, timelineMaxDate]);
+  }, [timelineMinDate, timelineMaxDate]);
 
   const handleTimelineSetSpeed = useCallback((speed: number) => setTimelineSpeed(speed), []);
-  const handleScrubberChangeByAnim = useCallback((value: number) => setTimelineScrubberValue(value), []);
+  const handleScrubberChangeByAnim = useCallback((value: number) => {
+    if (timelinePlaying) return;
+    setTimelineScrubberValue(value);
+  }, [timelinePlaying]);
   const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
+  useEffect(() => {
+    if (!timelineActive || !timelinePlaying) return;
+
+    const timelineRangeMs = timelineMaxDate - timelineMinDate;
+    if (timelineRangeMs <= 0) return;
+
+    let animationFrameId = 0;
+    let lastTickAt = performance.now();
+
+    const tick = (now: number) => {
+      const deltaSeconds = (now - lastTickAt) / 1000;
+      lastTickAt = now;
+
+      setTimelineScrubberValue((prev) => {
+        if (prev >= 1000) {
+          setTimelinePlaying(false);
+          return 1000;
+        }
+
+        const next = prev + (deltaSeconds * (3 * timelineSpeed * 3600 * 1000) / timelineRangeMs) * 1000;
+        if (next >= 1000) {
+          setTimelinePlaying(false);
+          return 1000;
+        }
+        return next;
+      });
+
+      animationFrameId = window.requestAnimationFrame(tick);
+    };
+
+    animationFrameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(animationFrameId);
+  }, [timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
+
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
   const isFlareAlert = useMemo(() => latestXrayFlux !== null && latestXrayFlux >= 1e-5, [latestXrayFlux]);
@@ -1154,7 +1191,6 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <TimelineControls isVisible={false} isPlaying={timelinePlaying} onPlayPause={handleTimelinePlayPause} onScrub={handleTimelineScrub} scrubberValue={timelineScrubberValue} onStepFrame={handleTimelineStep} playbackSpeed={timelineSpeed} onSetSpeed={handleTimelineSetSpeed} minDate={timelineMinDate} maxDate={timelineMaxDate} onOpenImpactGraph={handleOpenImpactGraph} />
                 </main>
 
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
@@ -1209,7 +1245,7 @@ const App: React.FC = () => {
               stacking contexts so position:fixed works correctly on desktop AND mobile. */}
           <Suspense fallback={null}>
             <TimelineControls
-              isVisible={activePage === 'modeler' && !isLoading && cmesToRender.length > 0}
+              isVisible={shouldShowTimelineControls}
               isPlaying={timelinePlaying}
               onPlayPause={handleTimelinePlayPause}
               onScrub={handleTimelineScrub}
