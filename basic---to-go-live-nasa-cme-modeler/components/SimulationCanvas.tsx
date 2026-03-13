@@ -694,7 +694,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const OSS = 2000;
       Object.values(celestialBodiesRef.current).forEach(body => {
         const d = body.userData as PlanetData | undefined;
-        if (d?.orbitalPeriodDays) { const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * OSS) * elapsedTime; body.mesh.position.set(d.radius * Math.sin(a), 0, d.radius * Math.cos(a)); }
+        if (!d?.orbitalPeriodDays || body.name === 'EARTH') return;
+        const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * OSS) * elapsedTime;
+        body.mesh.position.set(d.radius * Math.sin(a), 0, d.radius * Math.cos(a));
       });
 
       const l1 = celestialBodiesRef.current['L1'], eb = celestialBodiesRef.current['EARTH'];
@@ -1003,8 +1005,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       };
       for (let i = 0; i <= ns; i++) {
         const ct = gStart + gDur * (i / ns);
-        const ea = ed.angle + ((2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600)) * ((ct - timelineMinDate) / 1000);
-        const ep = new THREE.Vector3(ed.radius * Math.sin(ea), 0, ed.radius * Math.cos(ea));
+        const earthAz = ed.angle;
+        const ep = new THREE.Vector3(ed.radius * Math.sin(earthAz), 0, ed.radius * Math.cos(earthAz));
         let ts = as, td = ad;
         let dominantDisturbanceType: ImpactDataPoint['disturbanceType'] = undefined;
         let dominantDisturbanceName: string | undefined;
@@ -1068,13 +1070,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
           const sourceAzAtTimelineNow = sourceLon0 + SUN_ANGULAR_VELOCITY * ((timelineNow - Date.now()) / 1000);
           const sourceAzAtEmission = sourceAzAtTimelineNow + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineNow) / 1000);
-          const earthAz = Math.atan2(ep.x, ep.z);
+          const earthCurrentAz = Math.atan2(ep.x, ep.z);
 
-          const signedDiff = wrapPi(earthAz - sourceAzAtEmission);
+          const signedDiff = wrapPi(earthCurrentAz - sourceAzAtEmission);
           const centerDiff = Math.abs(signedDiff);
 
-          const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
-          const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - earthAngularVelocity;
+          const EARTH_ANGULAR_VELOCITY = 0;
+          const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - EARTH_ANGULAR_VELOCITY;
           const safeAngularRate = Math.abs(relativeAngularRateSigned) > 1e-6
             ? relativeAngularRateSigned
             : (relativeAngularRateSigned >= 0 ? 1e-6 : -1e-6);
