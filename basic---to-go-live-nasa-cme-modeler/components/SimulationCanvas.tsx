@@ -868,47 +868,48 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
 
-      // Main arc particles — tapered tube
+      // Main arc particles — rounded front cap for a teardrop head.
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Taper: cos²(t / halfSpan * π/2) gives 1.0 at t=0, 0.0 at t=±halfSpan
-        // We floor it at 0.35 so the tips still have some body
-        const taper    = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const tubeR    = baseTubeR * taper;
-        const rho      = Math.sqrt(Math.random()) * tubeR;
-        const phi      = Math.random() * 2 * Math.PI;
+        // Keep the front broad/smooth; tips thinner to avoid crescent "horns".
+        const tNorm = Math.abs(t / hs);
+        const taper = 0.30 + 0.70 * Math.pow(1 - tNorm, 1.8);
+        const tubeR = baseTubeR * taper;
+        const rho   = Math.sqrt(Math.random()) * tubeR;
+        const phi   = Math.random() * 2 * Math.PI;
         pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
       }
 
-      // Tail depth particles — fill behind the arc in the -Y direction
-      // (toward Sun in local space, since +Y = propagation direction)
+      // Tail particles — converge toward a single apex so whole CME reads teardrop.
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Depth offset: random penetration behind the arc surface in -Y local space
-        // More particles near 0 depth (front), fewer at full backDepth (tail tip)
-        // sqrt distribution biases toward front — gives the "rounded bullet" feel
-        const depthFrac = Math.pow(Math.random(), 1.9); // stronger bias toward front
-        const depthCurve = Math.pow(depthFrac, 1.35);
-        const depthY    = -depthCurve * backDepthFrac * arcR; // negative = toward Sun
+        const depthFrac = Math.pow(Math.random(), 2.1); // strong front bias
+        const depthCurve = Math.pow(depthFrac, 1.55);
+        const depthY = -depthCurve * backDepthFrac * arcR;
 
-        // Tube radius at this depth also tapers — narrower deeper in the tail
-        // and narrower toward arc tips (same taper as main arc)
-        const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const depthTaper = Math.max(0.18, 1.0 - Math.pow(depthFrac, 0.78) * 0.82); // thinner, sculpted tail
-        const tubeR      = baseTubeR * arcTaper * depthTaper;
-        const rho        = Math.sqrt(Math.random()) * tubeR;
-        const phi        = Math.random() * 2 * Math.PI;
+        // As depth increases, collapse lateral span toward a centerline apex.
+        const toApex = Math.pow(depthFrac, 1.15);
+        const apexX = 0;
+        const apexY = -arcR * 1.10;
+        const tailCx = cx * (1 - toApex) + apexX * toApex;
+        const tailCy = cy * (1 - toApex) + apexY * toApex;
 
-        // Offset the particle backward in Y (local propagation axis)
+        const arcTaper = 0.25 + 0.75 * Math.pow(1 - Math.abs(t / hs), 1.9);
+        const depthTaper = Math.max(0.10, 1.0 - Math.pow(depthFrac, 0.72) * 0.90);
+        const apexTaper = Math.max(0.08, 1.0 - toApex * 0.94);
+        const tubeR = baseTubeR * arcTaper * depthTaper * apexTaper;
+        const rho   = Math.sqrt(Math.random()) * tubeR;
+        const phi   = Math.random() * 2 * Math.PI;
+
         pos.push(
-          cx + rho * Math.cos(phi) * Nx,
-          cy + rho * Math.cos(phi) * Ny + depthY,
+          tailCx + rho * Math.cos(phi) * Nx,
+          tailCy + rho * Math.cos(phi) * Ny + depthY,
           rho * Math.sin(phi)
         );
       }
