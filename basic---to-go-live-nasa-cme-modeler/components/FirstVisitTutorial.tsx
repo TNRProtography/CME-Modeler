@@ -10,10 +10,10 @@ interface TutorialStep {
 }
 
 const STEPS: TutorialStep[] = [
-  { targetId: 'nav-forecast', title: 'Aurora Forecast', content: 'This is your go-to page for live aurora forecasts, substorm detection, and sighting maps. Check here to see if an aurora might be visible tonight!', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-solar-activity', title: 'Solar Activity', content: 'Dive deep into the latest solar data and active regions. See real-time solar flares and imagery directly from the Sun.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-modeler', title: 'CME Visualization', content: 'Explore Coronal Mass Ejections (CMEs) in a 3D simulation! This tool helps visualize how solar events travel toward Earth.', placement: 'bottom', widthClass: 'w-80' }, 
-  { targetId: 'nav-settings', title: 'App Settings', content: 'Finally, here you can configure app settings, manage notifications, and install the app to your device. Note: If you are in an in-app browser (like Facebook), the install button may not work. Please open this site in your phone\'s main browser (e.g., Chrome or Safari) to install.', placement: 'left', widthClass: 'w-72' },
+  { targetId: 'nav-forecast', title: 'Forecast: Start Here Daily', content: 'Use this page first for near-real-time aurora risk and tonight\'s outlook. Switch to Advanced View here when you want the deeper "why" behind aurora conditions.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-solar-activity', title: 'Solar Activity: Track the Sun', content: 'Use this dashboard to track solar flares, sunspots/active regions, and solar imagery in real time. Think of this page as live solar monitoring, while Forecast Advanced View explains aurora impact.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-modeler', title: 'CME Visualization: Explore Scenarios', content: 'Open this 3D CME page to inspect direction and timing context. Inside the modeler settings, the Coronal Hole / High-Speed Stream toggle adds extra solar-wind context.', placement: 'bottom', widthClass: 'w-80' }, 
+  { targetId: 'nav-settings', title: 'Settings: Alerts, Defaults, and Help', content: 'Configure your app defaults, notifications, and restart tutorials at any time. Note: install-to-home-screen may fail inside in-app browsers (Facebook/Instagram). Open in Chrome/Safari for install support.', placement: 'left', widthClass: 'w-72' },
 ];
 
 interface FirstVisitTutorialProps {

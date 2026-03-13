@@ -27,7 +27,7 @@ const STEPS: TutorialStep[] = [
   { 
     targetId: 'mobile-controls-button', 
     title: 'Visualization Settings', 
-    content: 'Use this button to open the settings panel. Here you can change the date range, camera view, and toggle the visibility of planets and labels.', 
+    content: 'Use this button to open the settings panel. Here you can change date range, camera, labels, and enable the Coronal Hole / High-Speed Stream toggle for additional solar-wind context.', 
     placement: 'right', 
     widthClass: 'w-72' 
   },
