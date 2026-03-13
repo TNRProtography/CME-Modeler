@@ -10,8 +10,8 @@ interface TutorialStep {
 }
 
 const STEPS: TutorialStep[] = [
-  { targetId: 'nav-forecast', title: 'Forecast: Start Here Daily', content: 'Use this page first for near-real-time aurora risk, substorm activity, and sighting context. If you are deciding whether to look outside tonight, this is the quickest answer.', placement: 'bottom', widthClass: 'w-80' },
-  { targetId: 'nav-solar-activity', title: 'Solar Activity: Why Conditions Change', content: 'Use this page to understand what is driving changes in aurora conditions (flares, regions, and solar imagery). It adds the "why" behind the forecast.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-forecast', title: 'Forecast: Start Here Daily', content: 'Use this page first for near-real-time aurora risk and tonight\'s outlook. Switch to Advanced View here when you want the deeper "why" behind aurora conditions.', placement: 'bottom', widthClass: 'w-80' },
+  { targetId: 'nav-solar-activity', title: 'Solar Activity: Track the Sun', content: 'Use this dashboard to track solar flares, sunspots/active regions, and solar imagery in real time. Think of this page as live solar monitoring, while Forecast Advanced View explains aurora impact.', placement: 'bottom', widthClass: 'w-80' },
   { targetId: 'nav-modeler', title: 'CME Visualization: Explore Scenarios', content: 'Open this 3D CME page to inspect direction and timing context. Inside the modeler settings, the Coronal Hole / High-Speed Stream toggle adds extra solar-wind context.', placement: 'bottom', widthClass: 'w-80' }, 
   { targetId: 'nav-settings', title: 'Settings: Alerts, Defaults, and Help', content: 'Configure your app defaults, notifications, and restart tutorials at any time. Note: install-to-home-screen may fail inside in-app browsers (Facebook/Instagram). Open in Chrome/Safari for install support.', placement: 'left', widthClass: 'w-72' },
 ];
