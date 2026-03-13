@@ -542,13 +542,18 @@ const App: React.FC = () => {
   }, [reloadCountdown]);
 
   useEffect(() => {
-    if (activePage === 'modeler' && !isLoading) {
+    if (
+      activePage === 'modeler' &&
+      !isLoading &&
+      !isFirstVisitTutorialOpen &&
+      !isTutorialOpen
+    ) {
       const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
       if (!hasSeenCmeTutorial) {
         setTimeout(() => setIsCmeTutorialOpen(true), 200);
       }
     }
-  }, [activePage, isLoading]);
+  }, [activePage, isLoading, isFirstVisitTutorialOpen, isTutorialOpen]);
 
   useEffect(() => {
     if (navigationTarget) {
@@ -620,6 +625,8 @@ const App: React.FC = () => {
   }, [navigateToPage]);
 
   const handleOpenTutorial = useCallback(() => {
+    setIsFirstVisitTutorialOpen(false);
+    setIsCmeTutorialOpen(false);
     navigateToPath(TUTORIAL_PATH);
     setIsTutorialOpen(true);
   }, [navigateToPath]);
@@ -738,6 +745,8 @@ const App: React.FC = () => {
   }, [isDashboardMode, activeTimeRange, loadCMEData]);
 
   const handleShowTutorial = useCallback(() => {
+    setIsTutorialOpen(false);
+    setIsCmeTutorialOpen(false);
     setIsFirstVisitTutorialOpen(true);
     navigateToPath(TUTORIAL_PATH);
   }, [navigateToPath]);
