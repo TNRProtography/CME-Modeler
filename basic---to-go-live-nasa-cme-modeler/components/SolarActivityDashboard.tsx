@@ -696,6 +696,18 @@ const getFirstText = (entries: Array<any>, selector: (entry: any) => string | nu
   return null;
 };
 
+
+const getOverallOccurrenceProbability = (values: Array<number | null | undefined>): number => {
+  const sanitized = values
+    .map((value) => (value !== null && value !== undefined && Number.isFinite(value) ? Math.min(100, Math.max(0, Number(value))) : null))
+    .filter((value): value is number => value !== null)
+    .map((value) => value / 100);
+
+  if (sanitized.length === 0) return 0;
+  const noneProbability = sanitized.reduce((acc, value) => acc * (1 - value), 1);
+  return Math.max(0, Math.min(100, (1 - noneProbability) * 100));
+};
+
 const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>): number => {
   let score = 0;
   if (entry.magneticClass) score++;
@@ -1922,6 +1934,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     const sunspotCount = displayedSunspotRegions.length;
     const sunspotScore = sunspotCount >= 10 ? 4 : sunspotCount >= 7 ? 3 : sunspotCount >= 4 ? 2 : sunspotCount >= 1 ? 1 : 0;
+    const overallMFlareProbability = getOverallOccurrenceProbability(displayedSunspotRegions.map((region) => region.mFlareProbability));
+    const overallXFlareProbability = getOverallOccurrenceProbability(displayedSunspotRegions.map((region) => region.xFlareProbability));
 
     const combined = xrayScore * 0.45 + flareScore * 0.35 + sunspotScore * 0.2;
 
@@ -1933,8 +1947,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return {
       label,
       maxFlareProbability,
+      overallMFlareProbability,
+      overallXFlareProbability,
       sunspotCount,
-      explanation: `Based on X-ray class ${currentXraySummary.class || 'N/A'}, max flare probability ${maxFlareProbability.toFixed(0)}%, and ${sunspotCount} Earth-facing sunspot regions.`,
     };
   }, [currentXraySummary.class, currentXraySummary.flux, displayedSunspotRegions]);
 
@@ -1966,8 +1981,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   }`}>{solarStatus.label}</span>
                 </h3>
                 <p>X-ray Flux: <span className="font-mono text-cyan-300">{currentXraySummary.flux !== null ? currentXraySummary.flux.toExponential(2) : 'N/A'}</span> ({currentXraySummary.class || 'N/A'})</p>
-                <p>Max flare probability: <span className="font-mono text-amber-300">{solarStatus.maxFlareProbability.toFixed(0)}%</span> · Sunspots: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
-                <p className="text-[11px] text-neutral-400 mt-1">{solarStatus.explanation}</p>
+                <p>Overall M flare probability: <span className="font-mono text-orange-300">{solarStatus.overallMFlareProbability.toFixed(0)}%</span> · Overall X flare probability: <span className="font-mono text-red-300">{solarStatus.overallXFlareProbability.toFixed(0)}%</span></p>
+                <p>Max flare probability: <span className="font-mono text-amber-300">{solarStatus.maxFlareProbability.toFixed(0)}%</span> · Sunspot regions: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
               </div>
               <div className="flex-1 text-center sm:text-right">
                 <h3 className="text-neutral-200 font-semibold mb-1">Latest Event:</h3>
@@ -2220,11 +2235,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Classification</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.classification || '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Observed (NZ)</span><span className="text-neutral-100 font-semibold">{formatNZTimestamp(selectedSunspotRegion.observedTime)}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : '—'}</span></div>
