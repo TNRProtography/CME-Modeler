@@ -653,7 +653,7 @@ const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'tre
         spotCount,
         latitude: coords.latitude,
         longitude: normalizeSolarLongitude(coords.longitude),
-        observedTime: Date.now(),
+        observedTime: null,
         cFlareProbability: null,
         mFlareProbability: null,
         xFlareProbability: null,
@@ -694,6 +694,20 @@ const getFirstText = (entries: Array<any>, selector: (entry: any) => string | nu
     if (value && value.trim()) return value;
   }
   return null;
+};
+
+const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>): number => {
+  let score = 0;
+  if (entry.magneticClass) score++;
+  if (entry.classification) score++;
+  if (entry.area !== null) score++;
+  if (entry.spotCount !== null) score++;
+  if (entry.mFlareProbability !== null) score++;
+  if (entry.xFlareProbability !== null) score++;
+  if (entry.protonProbability !== null) score++;
+  if (entry.previousActivity) score++;
+  if (entry.cFlareEvents24h !== null || entry.mFlareEvents24h !== null || entry.xFlareEvents24h !== null) score++;
+  return score;
 };
 
 // --- REUSABLE COMPONENTS ---
@@ -1369,14 +1383,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const textRegions = parseNoaaSolarRegionsText(rawText);
       const textRegionIds = new Set(textRegions.map((region) => region.region));
 
-      const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
-        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']),
-        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']),
-      ]);
+      const jsonResults = await Promise.allSettled(
+        NOAA_ACTIVE_REGIONS_URLS.map((url) => fetchFirstAvailableJson([url])),
+      );
 
       const combined = [
-        ...extractActiveRegionEntries(sunspotReportRaw, 'sunspot_report.json'),
-        ...extractActiveRegionEntries(solarRegionsRaw, 'solar_regions.json'),
+        ...jsonResults.flatMap((result, idx) => {
+          if (result.status !== 'fulfilled') return [];
+          const source = NOAA_ACTIVE_REGIONS_URLS[idx]?.split('/').pop() || 'NOAA';
+          return extractActiveRegionEntries(result.value, source);
+        }),
         ...textRegions,
       ].filter((entry) => textRegionIds.has(entry.region));
 
@@ -1401,6 +1417,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               const ta = a?.observedTime ?? 0;
               const tb = b?.observedTime ?? 0;
               if (tb !== ta) return tb - ta;
+              const completenessDelta = getSunspotDetailCompleteness(b) - getSunspotDetailCompleteness(a);
+              if (completenessDelta !== 0) return completenessDelta;
               return ((b as any)?._sourceIndex ?? 0) - ((a as any)?._sourceIndex ?? 0);
             });
 
@@ -1435,6 +1453,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               return lon !== null && Math.abs(lon) <= 90 ? lon : null;
             })(),
             classification: cleanLatest.classification ?? null,
+            area: getFirstNumber(sorted, (entry) => entry?.area ?? null),
+            spotCount: getFirstNumber(sorted, (entry) => entry?.spotCount ?? null),
+            magneticClass: getFirstText(sorted, (entry) => entry?.magneticClass ?? null),
+            cFlareProbability: getFirstNumber(sorted, (entry) => entry?.cFlareProbability ?? null),
+            mFlareProbability: getFirstNumber(sorted, (entry) => entry?.mFlareProbability ?? null),
+            xFlareProbability: getFirstNumber(sorted, (entry) => entry?.xFlareProbability ?? null),
             protonProbability: getFirstNumber(sorted, (entry) => entry?.protonProbability ?? null),
             cFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.cFlareEvents24h ?? null),
             mFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.mFlareEvents24h ?? null),
