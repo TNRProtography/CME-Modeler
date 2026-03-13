@@ -216,6 +216,42 @@ const BZ_FIELD_LINE_POINTS = 120;
 const getCmeOpacity      = (speed: number) => { const T = (window as any).THREE; if (!T) return 0.22; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65); };
 const getCmeParticleCount = (speed: number) => { const T = (window as any).THREE; if (!T) return 4000; return Math.floor(T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000)); };
 const getCmeParticleSize  = (speed: number, scale: number) => { const T = (window as any).THREE; if (!T) return 0.05 * scale; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.08 * scale); };
+
+const HSS_ALIGNMENT_LON_DEG = 10;
+const HSS_ALIGNMENT_LAT_DEG = 8;
+
+/**
+ * Prevent visually "passing through" HSS spirals when two coronal holes are
+ * nearly co-aligned in longitude/latitude (same lane in the top/heliocentric view).
+ *
+ * For each aligned pair, clamp the faster stream's rendered source speed to the
+ * slower one. This preserves a stable front-ordering where the slower stream can
+ * remain ahead instead of being overtaken purely by geometry winding.
+ */
+function getRenderStableHssCoronalHoles(coronalHoles: CoronalHole[]): CoronalHole[] {
+  if (coronalHoles.length < 2) return coronalHoles;
+
+  const adjusted = coronalHoles.map((ch) => ({ ...ch }));
+
+  const areAligned = (a: CoronalHole, b: CoronalHole): boolean => {
+    const dLon = Math.abs(a.lon - b.lon);
+    const lonDelta = Math.min(dLon, 360 - dLon);
+    const latDelta = Math.abs(a.lat - b.lat);
+    return lonDelta <= HSS_ALIGNMENT_LON_DEG && latDelta <= HSS_ALIGNMENT_LAT_DEG;
+  };
+
+  for (let i = 0; i < adjusted.length; i++) {
+    for (let j = i + 1; j < adjusted.length; j++) {
+      if (!areAligned(adjusted[i], adjusted[j])) continue;
+      const sharedSpeed = Math.min(adjusted[i].estimatedSpeedKms, adjusted[j].estimatedSpeedKms);
+      adjusted[i].estimatedSpeedKms = Math.min(adjusted[i].estimatedSpeedKms, sharedSpeed);
+      adjusted[j].estimatedSpeedKms = Math.min(adjusted[j].estimatedSpeedKms, sharedSpeed);
+    }
+  }
+
+  return adjusted;
+}
+
 const getCmeCoreColor     = (speed: number) => {
   const T = (window as any).THREE; if (!T) return { setHex: () => {} };
   if (speed >= 2500) return new T.Color(0xff69b4);
@@ -613,7 +649,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-    props.coronalHoles.forEach(ch => {
+    getRenderStableHssCoronalHoles(props.coronalHoles).forEach(ch => {
       chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroup.add(buildChOutlineLine(THREE, ch, sunR));
       hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
@@ -963,7 +999,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-    coronalHoles.forEach(ch => {
+    getRenderStableHssCoronalHoles(coronalHoles).forEach(ch => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
