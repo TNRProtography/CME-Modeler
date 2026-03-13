@@ -123,6 +123,7 @@ const NOAA_PROTON_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
 ];
 const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
+const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
 const NOAA_ACTIVE_REGIONS_URLS = [
   'https://services.swpc.noaa.gov/json/sunspot_report.json',
   'https://services.swpc.noaa.gov/json/solar_regions.json',
@@ -653,7 +654,7 @@ const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'tre
         spotCount,
         latitude: coords.latitude,
         longitude: normalizeSolarLongitude(coords.longitude),
-        observedTime: Date.now(),
+        observedTime: null,
         cFlareProbability: null,
         mFlareProbability: null,
         xFlareProbability: null,
@@ -694,6 +695,21 @@ const getFirstText = (entries: Array<any>, selector: (entry: any) => string | nu
     if (value && value.trim()) return value;
   }
   return null;
+};
+
+
+const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>): number => {
+  let score = 0;
+  if (entry.magneticClass) score++;
+  if (entry.classification) score++;
+  if (entry.area !== null) score++;
+  if (entry.spotCount !== null) score++;
+  if (entry.mFlareProbability !== null) score++;
+  if (entry.xFlareProbability !== null) score++;
+  if (entry.protonProbability !== null) score++;
+  if (entry.previousActivity) score++;
+  if (entry.cFlareEvents24h !== null || entry.mFlareEvents24h !== null || entry.xFlareEvents24h !== null) score++;
+  return score;
 };
 
 // --- REUSABLE COMPONENTS ---
@@ -849,6 +865,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [lastSunspotRegionsUpdate, setLastSunspotRegionsUpdate] = useState<string | null>(null);
   const [sunspotImageryMode, setSunspotImageryMode] = useState<SunspotImageryMode>('colorized');
   const [selectedSunspotRegion, setSelectedSunspotRegion] = useState<ActiveSunspotRegion | null>(null);
+  const [noaaOverallFlareProbabilities, setNoaaOverallFlareProbabilities] = useState<{ c: number; m: number; x: number; sourceDate: string | null } | null>(null);
   const [selectedSunspotCloseupUrl, setSelectedSunspotCloseupUrl] = useState<string | null>(null);
   const [isCloseupImageLoading, setIsCloseupImageLoading] = useState(false);
   const [overviewGeometry, setOverviewGeometry] = useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
@@ -1359,6 +1376,37 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
   }, [reportInitialTask, stampIfChanged]);
 
+  const fetchNoaaSolarProbabilities = useCallback(async () => {
+    try {
+      const raw = await fetchFirstAvailableJson([NOAA_SOLAR_PROBABILITIES_URL]);
+      const rows = Array.isArray(raw) ? raw : [];
+      const latest = [...rows].sort((a, b) => {
+        const ta = parseNoaaUtcTimestamp(a?.date) ?? 0;
+        const tb = parseNoaaUtcTimestamp(b?.date) ?? 0;
+        return tb - ta;
+      })[0];
+
+      if (!latest) {
+        setNoaaOverallFlareProbabilities(null);
+        return;
+      }
+
+      const c = toNumberOrNull(latest?.c_class_1_day ?? latest?.c_class) ?? 0;
+      const m = toNumberOrNull(latest?.m_class_1_day ?? latest?.m_class) ?? 0;
+      const x = toNumberOrNull(latest?.x_class_1_day ?? latest?.x_class) ?? 0;
+
+      setNoaaOverallFlareProbabilities({
+        c: Math.max(0, Math.min(100, c)),
+        m: Math.max(0, Math.min(100, m)),
+        x: Math.max(0, Math.min(100, x)),
+        sourceDate: latest?.date ? String(latest.date) : null,
+      });
+    } catch (error) {
+      console.error('Error fetching NOAA solar probabilities:', error);
+      setNoaaOverallFlareProbabilities(null);
+    }
+  }, [fetchFirstAvailableJson]);
+
   const fetchSunspotRegions = useCallback(async () => {
     if (isInitialLoad.current) {
       setLoadingSunspotRegions('Loading active sunspot regions...');
@@ -1369,14 +1417,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const textRegions = parseNoaaSolarRegionsText(rawText);
       const textRegionIds = new Set(textRegions.map((region) => region.region));
 
-      const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
-        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']),
-        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']),
-      ]);
+      const jsonResults = await Promise.allSettled(
+        NOAA_ACTIVE_REGIONS_URLS.map((url) => fetchFirstAvailableJson([url])),
+      );
 
       const combined = [
-        ...extractActiveRegionEntries(sunspotReportRaw, 'sunspot_report.json'),
-        ...extractActiveRegionEntries(solarRegionsRaw, 'solar_regions.json'),
+        ...jsonResults.flatMap((result, idx) => {
+          if (result.status !== 'fulfilled') return [];
+          const source = NOAA_ACTIVE_REGIONS_URLS[idx]?.split('/').pop() || 'NOAA';
+          return extractActiveRegionEntries(result.value, source);
+        }),
         ...textRegions,
       ].filter((entry) => textRegionIds.has(entry.region));
 
@@ -1401,6 +1451,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               const ta = a?.observedTime ?? 0;
               const tb = b?.observedTime ?? 0;
               if (tb !== ta) return tb - ta;
+              const completenessDelta = getSunspotDetailCompleteness(b) - getSunspotDetailCompleteness(a);
+              if (completenessDelta !== 0) return completenessDelta;
               return ((b as any)?._sourceIndex ?? 0) - ((a as any)?._sourceIndex ?? 0);
             });
 
@@ -1435,6 +1487,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               return lon !== null && Math.abs(lon) <= 90 ? lon : null;
             })(),
             classification: cleanLatest.classification ?? null,
+            area: getFirstNumber(sorted, (entry) => entry?.area ?? null),
+            spotCount: getFirstNumber(sorted, (entry) => entry?.spotCount ?? null),
+            magneticClass: getFirstText(sorted, (entry) => entry?.magneticClass ?? null),
+            cFlareProbability: getFirstNumber(sorted, (entry) => entry?.cFlareProbability ?? null),
+            mFlareProbability: getFirstNumber(sorted, (entry) => entry?.mFlareProbability ?? null),
+            xFlareProbability: getFirstNumber(sorted, (entry) => entry?.xFlareProbability ?? null),
             protonProbability: getFirstNumber(sorted, (entry) => entry?.protonProbability ?? null),
             cFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.cFlareEvents24h ?? null),
             mFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.mFlareEvents24h ?? null),
@@ -1473,7 +1531,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     fetchProtonFlux();
     fetchFlares();
     fetchSunspotRegions();
-  }, [fetchFlares, fetchImage, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
+    fetchNoaaSolarProbabilities();
+  }, [fetchFlares, fetchImage, fetchNoaaSolarProbabilities, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
 
   useEffect(() => {
     runAllUpdates();
@@ -1890,11 +1949,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const xrayFlux = currentXraySummary.flux ?? 0;
     const xrayScore = xrayFlux >= 1e-4 ? 4 : xrayFlux >= 1e-5 ? 3 : xrayFlux >= 1e-6 ? 2 : xrayFlux >= 1e-7 ? 1 : 0;
 
-    const maxFlareProbability = displayedSunspotRegions.reduce((max, region) => {
-      const localMax = Math.max(region.cFlareProbability ?? 0, region.mFlareProbability ?? 0, region.xFlareProbability ?? 0);
-      return Math.max(max, localMax);
-    }, 0);
-    const flareScore = maxFlareProbability >= 70 ? 4 : maxFlareProbability >= 45 ? 3 : maxFlareProbability >= 25 ? 2 : maxFlareProbability >= 10 ? 1 : 0;
+    const overallCFlareProbability = noaaOverallFlareProbabilities?.c ?? 0;
+    const overallMFlareProbability = noaaOverallFlareProbabilities?.m ?? 0;
+    const overallXFlareProbability = noaaOverallFlareProbabilities?.x ?? 0;
+    const effectiveFlareProbability = Math.max(overallMFlareProbability, overallXFlareProbability);
+    const flareScore = effectiveFlareProbability >= 70 ? 4 : effectiveFlareProbability >= 45 ? 3 : effectiveFlareProbability >= 25 ? 2 : effectiveFlareProbability >= 10 ? 1 : 0;
 
     const sunspotCount = displayedSunspotRegions.length;
     const sunspotScore = sunspotCount >= 10 ? 4 : sunspotCount >= 7 ? 3 : sunspotCount >= 4 ? 2 : sunspotCount >= 1 ? 1 : 0;
@@ -1908,11 +1967,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     return {
       label,
-      maxFlareProbability,
+      overallCFlareProbability,
+      overallMFlareProbability,
+      overallXFlareProbability,
       sunspotCount,
-      explanation: `Based on X-ray class ${currentXraySummary.class || 'N/A'}, max flare probability ${maxFlareProbability.toFixed(0)}%, and ${sunspotCount} Earth-facing sunspot regions.`,
     };
-  }, [currentXraySummary.class, currentXraySummary.flux, displayedSunspotRegions]);
+  }, [currentXraySummary.flux, displayedSunspotRegions, noaaOverallFlareProbabilities]);
 
   // --- RENDER ---
   return (
@@ -1942,8 +2002,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   }`}>{solarStatus.label}</span>
                 </h3>
                 <p>X-ray Flux: <span className="font-mono text-cyan-300">{currentXraySummary.flux !== null ? currentXraySummary.flux.toExponential(2) : 'N/A'}</span> ({currentXraySummary.class || 'N/A'})</p>
-                <p>Max flare probability: <span className="font-mono text-amber-300">{solarStatus.maxFlareProbability.toFixed(0)}%</span> · Sunspots: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
-                <p className="text-[11px] text-neutral-400 mt-1">{solarStatus.explanation}</p>
+                <p>Overall C flare probability: <span className="font-mono text-yellow-300">{solarStatus.overallCFlareProbability.toFixed(0)}%</span> · Overall M flare probability: <span className="font-mono text-orange-300">{solarStatus.overallMFlareProbability.toFixed(0)}%</span> · Overall X flare probability: <span className="font-mono text-red-300">{solarStatus.overallXFlareProbability.toFixed(0)}%</span></p>
+                <p>Sunspot regions: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
               </div>
               <div className="flex-1 text-center sm:text-right">
                 <h3 className="text-neutral-200 font-semibold mb-1">Latest Event:</h3>
@@ -2196,11 +2256,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Classification</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.classification || '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Observed (NZ)</span><span className="text-neutral-100 font-semibold">{formatNZTimestamp(selectedSunspotRegion.observedTime)}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : '—'}</span></div>
