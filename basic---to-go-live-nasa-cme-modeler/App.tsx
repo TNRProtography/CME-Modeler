@@ -231,6 +231,9 @@ const App: React.FC = () => {
   const [isAndroidIab, setIsAndroidIab] = useState(false);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
 
+  const CME_TIMELINE_FUTURE_DAYS = 7;
+  const CME_SELECTION_FUTURE_DAYS = 7;
+
   const [isDashboardReady, setIsDashboardReady] = useState(false);
   const [isMinTimeElapsed, setIsMinTimeElapsed] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
@@ -646,7 +649,7 @@ const App: React.FC = () => {
     const startDate = new Date(endDate);
     const futureDate = new Date(endDate);
     startDate.setDate(endDate.getDate() - days);
-    futureDate.setDate(endDate.getDate() + 3);
+    futureDate.setDate(endDate.getDate() + CME_TIMELINE_FUTURE_DAYS);
     return {
       minDate: startDate.getTime(),
       maxDate: futureDate.getTime(),
@@ -805,12 +808,14 @@ const App: React.FC = () => {
       setTimelinePlaying(true);
       setTimelineScrubberValue(0);
       setTimelineMinDate(cme.startTime.getTime());
+      const minFutureDate = new Date(cme.startTime);
+      minFutureDate.setDate(minFutureDate.getDate() + CME_SELECTION_FUTURE_DAYS);
+
       if (cme.predictedArrivalTime) {
-        setTimelineMaxDate(cme.predictedArrivalTime.getTime() + (12 * 3600 * 1000));
+        const predictedWindowEnd = cme.predictedArrivalTime.getTime() + (12 * 3600 * 1000);
+        setTimelineMaxDate(Math.max(predictedWindowEnd, minFutureDate.getTime()));
       } else {
-        const futureDate = new Date(cme.startTime);
-        futureDate.setDate(futureDate.getDate() + 4);
-        setTimelineMaxDate(futureDate.getTime());
+        setTimelineMaxDate(minFutureDate.getTime());
       }
     } else {
       setTimelineActive(false);
