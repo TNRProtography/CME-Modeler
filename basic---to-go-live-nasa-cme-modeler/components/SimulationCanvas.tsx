@@ -893,13 +893,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Depth offset: random penetration behind the arc surface in -Y local space
         // More particles near 0 depth (front), fewer at full backDepth (tail tip)
         // sqrt distribution biases toward front — gives the "rounded bullet" feel
-        const depthFrac = Math.pow(Math.random(), 1.6); // bias toward front
-        const depthY    = -depthFrac * backDepthFrac * arcR; // negative = toward Sun
+        const depthFrac = Math.pow(Math.random(), 1.9); // stronger bias toward front
+        const depthCurve = Math.pow(depthFrac, 1.35);
+        const depthY    = -depthCurve * backDepthFrac * arcR; // negative = toward Sun
 
         // Tube radius at this depth also tapers — narrower deeper in the tail
         // and narrower toward arc tips (same taper as main arc)
         const arcTaper   = 0.35 + 0.65 * Math.pow(Math.cos((t / hs) * (Math.PI / 2)), 2);
-        const depthTaper = 1.0 - depthFrac * 0.65; // narrow toward tail tip
+        const depthTaper = Math.max(0.18, 1.0 - Math.pow(depthFrac, 0.78) * 0.82); // thinner, sculpted tail
         const tubeR      = baseTubeR * arcTaper * depthTaper;
         const rho        = Math.sqrt(Math.random()) * tubeR;
         const phi        = Math.random() * 2 * Math.PI;
@@ -1055,46 +1056,45 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const centerDiff = Math.abs(signedDiff);
 
           const earthAngularVelocity = (2 * Math.PI) / (ed.orbitalPeriodDays! * 24 * 3600);
-          const relativeAngularRateAbs = Math.max(1e-6, Math.abs(SUN_ANGULAR_VELOCITY - earthAngularVelocity));
+          const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - earthAngularVelocity;
+          const safeAngularRate = Math.abs(relativeAngularRateSigned) > 1e-6
+            ? relativeAngularRateSigned
+            : (relativeAngularRateSigned >= 0 ? 1e-6 : -1e-6);
 
-          const speedRampHours = 10;
-          const speedPlateauHours = 14;
-          const densityLeadHours = 10;
-          const densityDecayHours = 34;
-
-          const speedRampAngle = relativeAngularRateAbs * speedRampHours * 3600;
-          const speedPlateauAngle = relativeAngularRateAbs * speedPlateauHours * 3600;
-          const densityLeadAngle = relativeAngularRateAbs * densityLeadHours * 3600;
-          const densityDecayAngle = relativeAngularRateAbs * densityDecayHours * 3600;
-
-          const chHalfAngle = THREE.MathUtils.degToRad(Math.max(8, ch.expansionHalfAngleDeg ?? 10));
-          const speedPlateauHalfAngle = Math.max(chHalfAngle * 0.42, speedPlateauAngle * 0.5);
-          const speedEnvelopeHalfAngle = speedPlateauHalfAngle + speedRampAngle;
+          const hoursFromPeak = signedDiff / safeAngularRate / 3600;
 
           const smoothstep = (edge0: number, edge1: number, x: number) => {
             const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
             return t * t * (3 - 2 * t);
           };
 
-          // Speed: smooth rise -> broad top -> smooth fall (matching red trace shape)
+          // Speed profile: smoother shoulders + broad top around arrival.
+          const speedRiseHours = 8;
+          const speedPlateauHours = 14;
+          const speedFallHours = 10;
+          const speedPlateauHalf = speedPlateauHours / 2;
+          const speedStart = -speedRiseHours - speedPlateauHalf;
+          const speedEnd = speedPlateauHalf + speedFallHours;
+
           let speedProfile = 0;
-          if (centerDiff <= speedEnvelopeHalfAngle) {
-            const rise = 1 - smoothstep(speedPlateauHalfAngle, speedEnvelopeHalfAngle, centerDiff);
-            const flatness = centerDiff <= speedPlateauHalfAngle
-              ? 1
-              : 1 - smoothstep(speedPlateauHalfAngle * 0.65, speedPlateauHalfAngle, centerDiff);
-            speedProfile = Math.max(0, Math.min(1, 0.78 * rise + 0.22 * flatness));
+          if (hoursFromPeak >= speedStart && hoursFromPeak < -speedPlateauHalf) {
+            const riseT = (hoursFromPeak - speedStart) / speedRiseHours;
+            speedProfile = smoothstep(0, 1, riseT);
+          } else if (hoursFromPeak >= -speedPlateauHalf && hoursFromPeak <= speedPlateauHalf) {
+            speedProfile = 1;
+          } else if (hoursFromPeak > speedPlateauHalf && hoursFromPeak <= speedEnd) {
+            const fallT = (hoursFromPeak - speedPlateauHalf) / speedFallHours;
+            speedProfile = 1 - smoothstep(0, 1, fallT);
           }
 
-          // Density: smooth pre-arrival rise, then monotonic long decay after peak
-          const densityCenterShift = densityLeadAngle * 0.7;
-          const densitySigned = signedDiff + densityCenterShift;
+          // Density profile: pre-arrival rise constrained to <=12h, then smooth decay.
+          const densityLeadHours = 12;
+          const densityDecayHours = 16;
           let densityProfile = 0;
-          if (densitySigned < 0) {
-            const pre = 1 - (Math.abs(densitySigned) / Math.max(1e-6, densityLeadAngle));
-            densityProfile = smoothstep(0, 1, Math.max(0, pre));
-          } else {
-            densityProfile = Math.exp(-densitySigned / Math.max(1e-6, densityDecayAngle));
+          if (hoursFromPeak >= -densityLeadHours && hoursFromPeak < 0) {
+            densityProfile = smoothstep(-densityLeadHours, 0, hoursFromPeak);
+          } else if (hoursFromPeak >= 0) {
+            densityProfile = Math.exp(-hoursFromPeak / densityDecayHours);
           }
 
           if (speedProfile <= 0.002 && densityProfile <= 0.002) return;
