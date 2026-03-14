@@ -1,9 +1,9 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
-import React, { useRef, useEffect, useCallback, useImperativeHandle, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle, useState, useMemo } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
-  InteractionMode, SimulationCanvasHandle
+  InteractionMode, SimulationCanvasHandle, ImpactDataPoint
 } from '../types';
 import {
   PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
@@ -19,6 +19,12 @@ import {
   buildChOutlineLine,
   buildParkerSpiralMesh,
 } from '../utils/coronalHoleGeometry';
+import {
+  createPropagationEngine,
+  processedCMEToCMEInput,
+  coronalHoleToHSSInput,
+  type PropagationEngine,
+} from '../utils/heliosphericPropagation';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS
@@ -319,7 +325,7 @@ interface SimulationCanvasProps {
   showMoonL1: boolean;
   showFluxRope: boolean;
   /** true = southward Bz (RED — high storm risk), false = northward (BLUE — low risk) */
-  bzSouth: boolean;
+  bzSouth?: boolean;
   /** Whether the Parker-spiral HSS stream arms are visible */
   showHss: boolean;
   /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
@@ -327,6 +333,8 @@ interface SimulationCanvasProps {
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
+  /** Latest measured solar wind speed at L1 (km/s) for DBM drag model */
+  measuredWindSpeedKms?: number;
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -336,7 +344,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth, showHss, coronalHoles, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth = false, showHss, coronalHoles, dataVersion, interactionMode, onSunClick,
+    measuredWindSpeedKms,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -417,16 +426,58 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
   const MIN_CME_SPEED_KMS = 300;
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  HELIOSPHERIC PROPAGATION ENGINE (Vršnak DBM + Interactions)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  //  This replaces the old linear deceleration model with:
+  //    • Quadratic drag: a = −γ(v−w)|v−w|  (Vršnak et al. 2013)
+  //    • Variable ambient wind from coronal holes
+  //    • CME–CME preconditioning, compression, and cannibalism
+  //    • CME–HSS interaction (modified drag in fast-wind corridors)
+  //
+  //  The engine is rebuilt whenever CME data or coronal holes change.
+  //  Per-frame queries are O(1) via precomputed trajectory interpolation.
+
+  const propagationEngineRef = useRef<PropagationEngine | null>(null);
+
+  // Rebuild engine when data changes
+  useMemo(() => {
+    if (cmeData.length === 0) {
+      propagationEngineRef.current = null;
+      return;
+    }
+
+    const cmeInputs = cmeData.map(cme => processedCMEToCMEInput(cme));
+    const hssInputs = coronalHoles.map(ch => coronalHoleToHSSInput(ch));
+
+    propagationEngineRef.current = createPropagationEngine(
+      cmeInputs,
+      hssInputs,
+      measuredWindSpeedKms,
+    );
+  }, [cmeData, coronalHoles, measuredWindSpeedKms]);
+
+  // ── DBM-based distance calculation ─────────────────────────────────
+  // Drop-in replacement for the old calculateDistanceWithDeceleration.
+  // Falls back to simple linear propagation if the engine isn't ready.
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
+    const engine = propagationEngineRef.current;
+    if (engine) {
+      return engine.getSceneDistance(cme.id, timeSinceEventSeconds, SCENE_SCALE);
+    }
+
+    // Fallback: simple constant-speed propagation (better than nothing)
     const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
     if (u <= MIN_CME_SPEED_KMS) return (u * t / AU_IN_KM) * SCENE_SCALE;
-    const a = (1.41 - 0.0035 * u) / 1000;
-    if (a >= 0) return ((u * t + 0.5 * a * t * t) / AU_IN_KM) * SCENE_SCALE;
-    const tf = (MIN_CME_SPEED_KMS - u) / a;
-    const dk = t < tf
-      ? u * t + 0.5 * a * t * t
-      : u * tf + 0.5 * a * tf * tf + MIN_CME_SPEED_KMS * (t - tf);
-    return (dk / AU_IN_KM) * SCENE_SCALE;
+    // Use basic quadratic drag approximation as fallback
+    const w = 380;  // assumed ambient wind
+    const gamma = 0.5e-7;  // mid-range drag parameter
+    const dv = u - w;
+    const denom = 1 + gamma * Math.abs(dv) * t;
+    const v = w + dv / denom;
+    const dist = w * t + (dv > 0 ? 1 : -1) * Math.log(denom) / gamma;
+    return (dist / AU_IN_KM) * SCENE_SCALE;
   }, []);
 
   const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
@@ -455,14 +506,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
 
     // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
-    // Calculate the CME's current speed at this moment in time.
-    // As the CME decelerates, the colour shifts down through the speed key.
+    // Use the propagation engine's DBM speed, falling back to simple calc.
+    // As the CME decelerates via quadratic drag, colour shifts through the speed key.
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
-      const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-      const a = (1.41 - 0.0035 * u) / 1000;
-      const tf = a < 0 ? (300 - u) / a : Infinity;
-      const liveSpeed = u <= 300 ? u : t < tf ? Math.max(300, u + a * t) : 300;
-      cmeObject.material.color = getCmeCoreColor(liveSpeed);
+      const engine = propagationEngineRef.current;
+      let liveSpeed: number;
+      if (engine) {
+        liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
+      } else {
+        // Fallback: basic quadratic drag approximation
+        const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
+        const w = 380, gamma = 0.5e-7;
+        const dv = u - w;
+        liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
+      }
+      cmeObject.material.color = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
     }
   }, []);
 
@@ -735,7 +793,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
       }
 
-      cmeGroupRef.current.children.forEach((c: any) => { if (c.material) c.material.opacity = getCmeOpacity(c.userData.speed); });
+      cmeGroupRef.current.children.forEach((c: any) => {
+        if (c.material) {
+          // Hide cannibalized CMEs (absorbed by a faster following CME)
+          const engine = propagationEngineRef.current;
+          if (engine && engine.isCannibalized(c.userData.id)) {
+            c.material.opacity = Math.max(0, c.material.opacity - 0.02);  // Fade out
+            if (c.material.opacity <= 0.01) { c.visible = false; return; }
+          } else {
+            c.material.opacity = getCmeOpacity(c.userData.speed);
+          }
+        }
+      });
 
       if (timelineActive) {
         if (timelinePlaying) {
@@ -990,13 +1059,62 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (rendererRef.current && sceneRef.current && cameraRef.current) { rendererRef.current.render(sceneRef.current, cameraRef.current); return rendererRef.current.domElement.toDataURL('image/png'); }
       return null;
     },
-    calculateImpactProfile: () => {
+    calculateImpactProfile: (): ImpactDataPoint[] => {
       const THREE = (window as any).THREE;
       if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
-      const ed = PLANET_DATA_MAP.EARTH; if (timelineMinDate <= 0) return [];
+      if (timelineMinDate <= 0) return [];
+
+      const engine = propagationEngineRef.current;
       const timelineNow = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
-      const gStart = timelineNow, gEnd = gStart + 7 * 24 * 3600 * 1000, gDur = gEnd - gStart;
-      const graphData = []; const ns = 200, as = 350, ad = 5;
+      const gStart = timelineNow;
+      const gEnd = gStart + 7 * 24 * 3600 * 1000;
+
+      // ── Use the propagation engine if available ───────────────────────
+      if (engine) {
+        const engineProfile = engine.calculateImpactProfile(gStart, gEnd - gStart, 200);
+        return engineProfile.map(p => {
+          // Map engine disturbance types to the existing chart format
+          let distType: ImpactDataPoint['disturbanceType'] = undefined;
+          let distName: string | undefined = p.disturbanceId;
+          let interactionFlag: ImpactDataPoint['interactionFlag'] = undefined;
+
+          switch (p.disturbanceType) {
+            case 'CME_sheath':
+              distType = 'CME';
+              break;
+            case 'CME_ejecta':
+              distType = 'CME';
+              break;
+            case 'complex_ejecta':
+              distType = 'CME';
+              interactionFlag = 'cannibalism';
+              break;
+            case 'HSS':
+            case 'SIR':
+              distType = 'Coronal Hole';
+              distName = undefined;
+              break;
+            default:
+              break;
+          }
+
+          return {
+            time: p.timeMs,
+            speed: p.speedKms,
+            density: p.densityCm3,
+            bz: p.bzNt,
+            disturbanceType: distType,
+            disturbanceName: distName,
+            interactionFlag,
+          };
+        });
+      }
+
+      // ── FALLBACK: original geometry-based calculation ──────────────────
+      // (Used only if the propagation engine hasn't been built yet)
+      const ed = PLANET_DATA_MAP.EARTH;
+      const gDur = gEnd - gStart;
+      const graphData: ImpactDataPoint[] = []; const ns = 200, as = 350, ad = 5;
       const wrapPi = (a: number) => {
         let v = a;
         while (v > Math.PI) v -= Math.PI * 2;
@@ -1018,10 +1136,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(co.quaternion);
             if (cdir.angleTo(ep.clone().normalize()) < THREE.MathUtils.degToRad(cme.halfAngle)) {
               const de = ep.length(), cth = SCENE_SCALE * 0.3;
-              const a2 = (1.41 - 0.0035 * cme.speed) / 1000;
-              const cs = Math.max(MIN_CME_SPEED_KMS, cme.speed + a2 * tsc);
+              // Use engine speed if available, else basic estimate
+              const engineRef = propagationEngineRef.current;
+              const cs = engineRef
+                ? Math.max(MIN_CME_SPEED_KMS, engineRef.getCurrentSpeed(cme.id, tsc))
+                : Math.max(MIN_CME_SPEED_KMS, cme.speed * 0.7);  // rough decel estimate
 
-              // Main ejecta body: speed spike + density enhancement
               if (de < cd && de > cd - cth) {
                 const pen = cd - de, ct2 = cth * 0.25;
                 const inten = pen <= ct2 ? 1 : 0.5 * (1 + Math.cos(((pen - ct2) / (cth - ct2)) * Math.PI));
@@ -1036,17 +1156,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
                 }
               }
 
-              // Sheath / density bow wave: compressed solar wind AHEAD of the CME leading edge.
-              // Physically: fast CME pushes into slow solar wind, compressing it into a dense sheath.
-              // The density spike arrives BEFORE the main speed increase — a defining observational signature.
               const sheathThickness = cth * 0.4;
               if (de >= cd && de < cd + sheathThickness) {
-                // Bell-curve density across the sheath, peaking at the leading edge (de ≈ cd)
-                const sheathPos = (de - cd) / sheathThickness; // 0 at leading edge, 1 at sheath front
-                const sheathInten = Math.sin((1 - sheathPos) * Math.PI); // max at leading edge
-                // Sheath density scales with CME speed (faster = stronger compression)
+                const sheathPos = (de - cd) / sheathThickness;
+                const sheathInten = Math.sin((1 - sheathPos) * Math.PI);
                 td += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 6, 35) * sheathInten;
-                // Speed barely elevated in sheath — compressed slow wind, not fast ejecta
                 const sheathSpeed = as + (cs - as) * 0.15 * sheathInten;
                 ts = Math.max(ts, sheathSpeed);
                 const sheathContribution = Math.max(0, sheathSpeed - as);
@@ -1060,10 +1174,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         });
 
-        // CH/HSS contribution: smooth, single-event profiles.
-        // Density starts rising before speed arrival, then tapers smoothly.
+        // CH/HSS fallback — use corrected 1 AU speed range
         coronalHoles.forEach((ch) => {
-          const sourceSpeed = Math.max(700, Math.min(1200, ch.estimatedSpeedKms));
+          const sourceSpeed = Math.max(450, Math.min(780, ch.estimatedSpeedKms));
           const travelSec = AU_IN_KM / sourceSpeed;
           const emissionTime = ct - travelSec * 1000;
 
@@ -1073,7 +1186,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const earthCurrentAz = Math.atan2(ep.x, ep.z);
 
           const signedDiff = wrapPi(earthCurrentAz - sourceAzAtEmission);
-          const centerDiff = Math.abs(signedDiff);
 
           const EARTH_ANGULAR_VELOCITY = 0;
           const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - EARTH_ANGULAR_VELOCITY;
@@ -1088,28 +1200,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             return t * t * (3 - 2 * t);
           };
 
-          // Speed profile: smoother shoulders + broad top around arrival.
-          const speedRiseHours = 8;
-          const speedPlateauHours = 14;
-          const speedFallHours = 10;
+          const speedRiseHours = 8, speedPlateauHours = 14, speedFallHours = 10;
           const speedPlateauHalf = speedPlateauHours / 2;
           const speedStart = -speedRiseHours - speedPlateauHalf;
           const speedEnd = speedPlateauHalf + speedFallHours;
 
           let speedProfile = 0;
           if (hoursFromPeak >= speedStart && hoursFromPeak < -speedPlateauHalf) {
-            const riseT = (hoursFromPeak - speedStart) / speedRiseHours;
-            speedProfile = smoothstep(0, 1, riseT);
+            speedProfile = smoothstep(0, 1, (hoursFromPeak - speedStart) / speedRiseHours);
           } else if (hoursFromPeak >= -speedPlateauHalf && hoursFromPeak <= speedPlateauHalf) {
             speedProfile = 1;
           } else if (hoursFromPeak > speedPlateauHalf && hoursFromPeak <= speedEnd) {
-            const fallT = (hoursFromPeak - speedPlateauHalf) / speedFallHours;
-            speedProfile = 1 - smoothstep(0, 1, fallT);
+            speedProfile = 1 - smoothstep(0, 1, (hoursFromPeak - speedPlateauHalf) / speedFallHours);
           }
 
-          // Density profile: pre-arrival rise constrained to <=12h, then smooth decay.
-          const densityLeadHours = 12;
-          const densityDecayHours = 16;
+          const densityLeadHours = 12, densityDecayHours = 16;
           let densityProfile = 0;
           if (hoursFromPeak >= -densityLeadHours && hoursFromPeak < 0) {
             densityProfile = smoothstep(-densityLeadHours, 0, hoursFromPeak);
@@ -1121,12 +1226,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
           const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
           const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
+          // Corrected peak speeds for 1 AU (was 580–630, now properly scaled)
           const peakSpeed = THREE.MathUtils.clamp(
-            560
-              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 20, 50)
-              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 20),
-            580,
-            630,
+            500
+              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 30, 120)
+              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 60),
+            500,
+            750,
           );
 
           const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)

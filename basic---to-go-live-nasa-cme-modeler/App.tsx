@@ -225,6 +225,8 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
   const [ipsAlertData, setIpsAlertData] = useState<IpsAlertData | null>(null);
+  /** Latest measured solar wind speed at L1 (km/s) — fed to the propagation engine */
+  const [measuredWindSpeedKms, setMeasuredWindSpeedKms] = useState<number | undefined>(undefined);
 
   const [showIabBanner, setShowIabBanner] = useState(false);
   const [isIOSIab, setIsIOSIab] = useState(false);
@@ -1153,6 +1155,7 @@ const App: React.FC = () => {
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
+                        measuredWindSpeedKms={measuredWindSpeedKms}
                     />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
@@ -1225,6 +1228,7 @@ const App: React.FC = () => {
                         setCurrentAuroraScore={setCurrentAuroraScore}
                         setSubstormActivityStatus={setSubstormActivityStatus}
                         setIpsAlertData={setIpsAlertData}
+                        setMeasuredWindSpeedKms={setMeasuredWindSpeedKms}
                         navigationTarget={navigationTarget}
                         onInitialLoad={handleInitialLoad}
                         onInitialLoadProgress={handleForecastLoadPoint}

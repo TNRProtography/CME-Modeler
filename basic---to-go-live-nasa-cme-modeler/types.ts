@@ -142,8 +142,12 @@ export interface ImpactDataPoint {
   time: number;
   speed: number;
   density: number;
-  disturbanceType?: 'CME' | 'Coronal Hole';
+  /** Estimated Bz component in nT — negative = southward = storm risk */
+  bz?: number;
+  disturbanceType?: 'CME' | 'Coronal Hole' | 'CME_sheath' | 'CME_ejecta' | 'HSS' | 'SIR' | 'complex_ejecta';
   disturbanceName?: string;
+  /** Interaction flag from propagation engine */
+  interactionFlag?: 'none' | 'preconditioning' | 'compression' | 'cannibalism';
 }
 
 export type SightingStatus = 

@@ -68,6 +68,8 @@ interface ForecastDashboardProps {
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: SubstormActivity | null) => void;
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
+  /** Callback to report latest L1 solar wind speed to the propagation engine */
+  setMeasuredWindSpeedKms?: (speed: number | undefined) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
   onInitialLoad?: () => void;
   onInitialLoadProgress?: (task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => void;
@@ -236,7 +238,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summar
     );
 };
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -285,6 +287,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             setIpsAlertData(null);
         }
     }, [interplanetaryShockData, gaugeData, setIpsAlertData]);
+
+    // ── Report measured L1 solar wind speed to the propagation engine ──
+    useEffect(() => {
+      if (setMeasuredWindSpeedKms) {
+        const speedStr = gaugeData.speed.value;
+        const speedNum = parseFloat(speedStr);
+        setMeasuredWindSpeedKms(Number.isFinite(speedNum) && speedNum > 0 ? speedNum : undefined);
+      }
+    }, [gaugeData.speed.value, setMeasuredWindSpeedKms]);
 
     useEffect(() => {
         setEpamImageUrl(`${ACE_EPAM_URL}?_=${Date.now()}`);
