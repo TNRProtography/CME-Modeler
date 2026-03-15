@@ -521,25 +521,19 @@ export function buildParkerSpiralMesh(
   const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.18, speedT);
   const phiMax = turns * Math.PI * 2;
 
-  // ── HSS LONGITUDE OFFSET ──────────────────────────────────────────────────
+  // ── HSS LONGITUDE ALIGNMENT ────────────────────────────────────────────────
   //
-  // The HSS doesn't emerge from the CH centroid — it emerges from the
-  // CH's LEADING (western) edge. As the Sun rotates, the western limb
-  // of the CH is the part most recently facing Earth and actively
-  // feeding the Parker spiral toward the inner heliosphere.
+  // The backbone is built in a canonical frame with φ=0 at +Z.
+  // The vertex shader then rotates the entire mesh by uChLon radians
+  // about Y, placing the spiral root at the CH's longitude.
   //
-  // We shift the backbone forward (in the solar rotation direction)
-  // by half the CH width. This aligns the HSS stream body with the
-  // CH patch rather than appearing to lag behind it.
+  // The CH patches are also children of sunMesh, built via hgToVec()
+  // at the CH's longitude. So at t=0 (the sun surface), the backbone
+  // root and the CH centroid land at the same longitude — aligned.
   //
-  // Additionally, the Parker spiral itself has an inherent angular
-  // offset: wind emitted from a source at longitude θ arrives at
-  // Earth at a different azimuth due to the spiral geometry. For
-  // typical HSS speeds (600–800 km/s), this offset is ~20–30° at 1 AU.
-  // We apply a small forward shift at the root to account for this.
-  //
-  const chHalfWidthRad = THREE.MathUtils.degToRad((ch.widthDeg ?? 15) / 2);
-  const leadingEdgeShift = chHalfWidthRad * 0.7;  // shift toward leading edge
+  // The spiral then trails BACKWARD (negative azimuth) as plasma
+  // emitted earlier has been carried further by solar rotation.
+  // This is the correct Parker spiral geometry.
 
   // ── CH LATITUDE EXTENT ─────────────────────────────────────────────────────
   //
@@ -596,9 +590,9 @@ export function buildParkerSpiralMesh(
     // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
     const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Azimuth: starts AHEAD of the CH centroid (leading edge shift),
-    // then trails backward as the spiral winds out.
-    const az = leadingEdgeShift - phi;
+    // Azimuth: starts at 0 (aligned with CH centroid after shader rotation),
+    // then trails backward as the Parker spiral winds out.
+    const az = -phi;
 
     // Latitude: further relax toward ecliptic with distance.
     // Solar wind at 1 AU is concentrated near the heliospheric
