@@ -54,7 +54,7 @@ import { CoronalHole } from './coronalHoleData';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
-const SPIRAL_TURNS           = 0.32;   // ~1/3 of a revolution — looser, more open spiral
+const SPIRAL_TURNS           = 0.25;   // quarter revolution — open, sweeping arc
 // CH_OVEREMPHASIS: scaling factor for coronal hole visual patches on the Sun.
 //
 // Previously 1.22 (inflating CHs by 22%) to make them easier to see.
@@ -518,7 +518,7 @@ export function buildParkerSpiralMesh(
   // Parker spiral pitch angle: tan(ψ) = Ω·r / v_sw
   // At 600 km/s the spiral is tighter than at 900 km/s.
   const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 500) / 400, 0, 1);
-  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.14, speedT);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.10, speedT);
   const phiMax = turns * Math.PI * 2;
 
   // ── HSS LONGITUDE ALIGNMENT ────────────────────────────────────────────────
