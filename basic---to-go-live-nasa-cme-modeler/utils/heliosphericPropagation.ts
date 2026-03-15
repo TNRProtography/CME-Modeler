@@ -917,7 +917,7 @@ export function coronalHoleToHSSInput(ch: CoronalHole): HSSInput {
   return {
     longitude: ch.lon,
     latitude: ch.lat,
-    peakSpeedKms: Math.max(450, Math.min(800, ch.estimatedSpeedKms ?? 550)),
+    peakSpeedKms: Math.max(450, Math.min(900, ch.estimatedSpeedKms ?? 550)),
     widthDeg: ch.widthDeg ?? 20,
     // Approximate: CH faces Earth when its longitude ≈ 0
     // Use current time minus the rotational offset

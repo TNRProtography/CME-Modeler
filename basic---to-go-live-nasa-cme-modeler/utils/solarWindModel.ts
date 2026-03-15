@@ -7,44 +7,55 @@
 // expand less and the wind accelerates more efficiently.
 //
 // ═══════════════════════════════════════════════════════════════════════
-// IMPORTANT DISTINCTION: SOURCE SPEED vs SPEED AT 1 AU
+// HSS SPEED PHYSICS — CORRECTED BASED ON PSP + L1 OBSERVATIONS
 // ═══════════════════════════════════════════════════════════════════════
 //
-// Source speeds (near the Sun, <0.1 AU) can be very high (600–1200 km/s)
-// because the wind hasn't yet interacted much with the ambient medium.
+// KEY INSIGHT: HSS plasma barely decelerates between 0.2 AU and 1 AU.
+// The A&A 2022 study (Hofmeister et al.) showed the total velocity
+// increase from 0.2–1 AU is only ~15 km/s for a 650 km/s parcel.
+// The fast wind is already fast when it leaves the low corona.
 //
-// Speeds measured at 1 AU (DSCOVR/ACE at L1) are lower:
-//   Slow wind:  300–450 km/s  (from streamer belt / closed-field regions)
-//   Fast wind:  500–800 km/s  (from coronal holes)
-//   Extreme:    800–900 km/s  (rare, very large equatorial CH at solar min)
+// Source speeds near the Sun (Parker Solar Probe, <0.1 AU):
+//   Fast wind from CHs: 500–1000+ km/s (Berkeley/PSP data)
+//   The original model's 800–1400 km/s source range was reasonable
+//   for the acceleration region very close to the Sun (<10 R☉)
 //
-// This model now estimates the SPEED AT 1 AU, which is what matters for
-// forecasting CME transit times and geomagnetic storm intensity.
+// Speeds measured at 1 AU (DSCOVR/ACE at L1):
+//   Slow wind:     250–450 km/s  (streamer belt / closed-field regions)
+//   Moderate HSS:  500–650 km/s  (small/mid equatorial CH)
+//   Fast HSS:      650–800 km/s  (large equatorial or polar-extension CH)
+//   Extreme HSS:   800–900+ km/s (very large CH, declining phase of cycle)
 //
-// The previous version used source speeds (800–1400 km/s) which were
-// far too high for 1 AU forecasting. Those have been replaced with
-// empirically calibrated values consistent with OMNI/Wind observations.
+// Grandin et al. 2019 (JGR): "speed exceeds 500 km/s for 2–3 days
+// and may reach a maximum above 800 km/s"
+//
+// Neugebauer 1993 (NASA): "polar CH flows usually 700–800 km/s;
+// small equatorial CH flows generally lower, can be <400 km/s"
+//
+// The model estimates PEAK SPEED AT 1 AU. Since deceleration is
+// minimal, this is close to the coronal source speed for fast streams.
+// What matters is CH size, darkness, latitude, and flux-tube expansion.
 //
 // TUNING GUIDE
 // ─────────────
-//  HSS_SPEED_MIN_1AU     : minimum HSS speed at 1 AU for a narrow CH (km/s)
-//  HSS_SPEED_MAX_1AU     : maximum HSS speed at 1 AU for a very wide/dark CH
-//  HSS_CH_WIDTH_MIN_DEG  : CH width (degrees) that maps to speed floor
-//  HSS_CH_WIDTH_MAX_DEG  : CH width (degrees) that maps to speed ceiling
-//
-// The mapping uses a square-root curve (not linear) to match the
-// observed sublinear relationship between CH area and wind speed
-// (Rotter et al. 2012; Reiss et al. 2016).
+//  HSS_SPEED_MIN_1AU     : floor for tiniest CHs at 1 AU
+//  HSS_SPEED_MAX_1AU     : ceiling for monster polar-extension CHs
+//  HSS_CH_WIDTH_MIN_DEG  : CH width → speed floor
+//  HSS_CH_WIDTH_MAX_DEG  : CH width → speed ceiling
 
-const HSS_SPEED_MIN_1AU    = 450;   // km/s — narrow CH at 1 AU
-const HSS_SPEED_MAX_1AU    = 780;   // km/s — very dark, wide CH at 1 AU
+const HSS_SPEED_MIN_1AU    = 450;   // km/s — tiny equatorial CH at 1 AU
+const HSS_SPEED_MAX_1AU    = 900;   // km/s — very large/dark CH at 1 AU
 const HSS_CH_WIDTH_MIN_DEG = 5;     // degrees CH width -> speed floor
 const HSS_CH_WIDTH_MAX_DEG = 60;    // degrees CH width -> speed ceiling
 
-// Coronal source speed range (used only by the propagation engine's
-// inner boundary at 21.5 R☉, NOT for forecasting at 1 AU)
+// Coronal source speed range — used ONLY by the propagation engine
+// for the inner boundary condition at 21.5 R☉. These are higher
+// because the wind is still accelerating in the low corona.
+// PSP data shows fast wind at 500–1000+ km/s inside 0.1 AU,
+// and MHD models place peak source speeds up to ~1200–1500 km/s
+// at the base of open flux tubes in large dark coronal holes.
 const HSS_SOURCE_SPEED_MIN = 600;
-const HSS_SOURCE_SPEED_MAX = 1200;
+const HSS_SOURCE_SPEED_MAX = 1400;
 
 /**
  * Estimate the HSS solar-wind speed AT 1 AU from the coronal-hole
@@ -73,8 +84,9 @@ export function estimateHssSpeedFromChWidth(widthDeg: number): number {
 export function estimateHssSpeedFromChWidthAndDarkness(widthDeg: number, darknessFraction: number): number {
   const widthSpeed = estimateHssSpeedFromChWidth(widthDeg);
   const darkness = Math.max(0, Math.min(1, darknessFraction));
-  // Max boost ~80 km/s for the darkest holes (calibrated against OMNI data)
-  const boostKms = 80 * darkness;
+  // Max boost ~120 km/s for the darkest holes (calibrated against OMNI data)
+  // A very dark CH with strong open flux drives significantly faster wind
+  const boostKms = 120 * darkness;
   return Math.round(Math.max(HSS_SPEED_MIN_1AU, Math.min(HSS_SPEED_MAX_1AU, widthSpeed + boostKms)));
 }
 

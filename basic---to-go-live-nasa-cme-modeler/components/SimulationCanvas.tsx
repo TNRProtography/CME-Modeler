@@ -1176,7 +1176,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
         // CH/HSS fallback — use corrected 1 AU speed range
         coronalHoles.forEach((ch) => {
-          const sourceSpeed = Math.max(450, Math.min(780, ch.estimatedSpeedKms));
+          const sourceSpeed = Math.max(450, Math.min(900, ch.estimatedSpeedKms));
           const travelSec = AU_IN_KM / sourceSpeed;
           const emissionTime = ct - travelSec * 1000;
 
@@ -1226,13 +1226,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
           const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
           const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
-          // Corrected peak speeds for 1 AU (was 580–630, now properly scaled)
+          // Peak HSS speed at 1 AU: 500–900 km/s depending on CH size and darkness
+          // Large dark polar-extension CHs can drive 800+ km/s at Earth
           const peakSpeed = THREE.MathUtils.clamp(
             500
-              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 30, 120)
-              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 60),
+              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 30, 200)
+              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 120),
             500,
-            750,
+            900,
           );
 
           const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
