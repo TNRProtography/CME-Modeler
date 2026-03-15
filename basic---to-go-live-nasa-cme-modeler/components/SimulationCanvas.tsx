@@ -25,6 +25,10 @@ import {
   coronalHoleToHSSInput,
   type PropagationEngine,
 } from '../utils/heliosphericPropagation';
+import {
+  getCHAtTimelineTime,
+  type CHEvolution,
+} from '../utils/coronalHoleHistory';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS
@@ -330,6 +334,8 @@ interface SimulationCanvasProps {
   showHss: boolean;
   /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
   coronalHoles: CoronalHole[];
+  /** 72h CH evolution tracks from worker history */
+  chEvolutions?: CHEvolution[];
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
@@ -344,7 +350,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth = false, showHss, coronalHoles, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth = false, showHss, coronalHoles, chEvolutions, dataVersion, interactionMode, onSunClick,
     measuredWindSpeedKms,
   } = props;
 
@@ -1038,6 +1044,59 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
   }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── CH MORPHING: animate CH patches when timeline is scrubbed ────────────
+  //
+  // When the user scrubs the timeline backward, the CH patches on the Sun
+  // morph to show how they looked at that point in time — growing, shrinking,
+  // or shifting as the real SUVI observations recorded over 72 hours.
+  //
+  // This only fires when we have evolution data AND the timeline is active.
+  // Debounced to avoid rebuilding geometry every frame — only rebuilds when
+  // the scrubbed time changes by more than 1 hour.
+  const lastMorphTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
+    if (!timelineActive || !chEvolutions || chEvolutions.length === 0) return;
+    if (timelineMinDate <= 0 || timelineMaxDate <= timelineMinDate) return;
+
+    const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
+
+    // Only rebuild if the scrubbed time changed by > 1 hour
+    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 3600 * 1000) return;
+    lastMorphTimeRef.current = timelineNowMs;
+
+    // Build morphed CH array from evolution data at the scrubbed time
+    const morphedCHs: CoronalHole[] = chEvolutions.map(evo =>
+      getCHAtTimelineTime(evo, timelineNowMs)
+    );
+
+    if (morphedCHs.length === 0) return;
+
+    // Clear and rebuild CH patches with morphed shapes
+    const clearGroup = (group: any) => {
+      while (group.children.length > 0) {
+        const child = group.children[0];
+        group.remove(child);
+        child.geometry?.dispose?.();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
+          else child.material.dispose?.();
+        }
+      }
+    };
+
+    clearGroup(chGroupRef.current);
+    // Don't clear HSS group here — HSS spiral stays current, only CH patches morph
+
+    const sunR = PLANET_DATA_MAP.SUN.size;
+    morphedCHs.forEach(ch => {
+      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
+      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
+    });
+  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
