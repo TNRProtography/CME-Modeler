@@ -779,18 +779,44 @@ export function buildTimeVaryingSpiralMesh(
   sunRadius: number,
   maxReach: number,
   sunAngle0: number,
+  /** Optional: the absolute time (ms) to build the spiral for.
+   *  If provided, the spiral only extends as far as wind has had
+   *  time to travel from the Sun by this point. When scrubbing
+   *  backward, the spiral retracts; when scrubbing forward, it extends.
+   *  If omitted, uses Date.now() (full extent). */
+  referenceTimeMs?: number,
 ): any {
+  const refTime = referenceTimeMs ?? Date.now();
+
   // ── Speed-dependent spiral tightness (same as static version) ──────
   const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 500) / 400, 0, 1);
   const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.10, speedT);
   const phiMax = turns * Math.PI * 2;
 
   // ── Travel time: how many hours ago was each point's wind emitted? ─
-  // At the tip (t=1), wind has travelled ~1 AU at the CH's speed.
-  // Travel time in hours = AU_km / speed_kms / 3600
   const AU_KM = 149_597_870.7;
   const avgSpeed = Math.max(400, ch.estimatedSpeedKms);
   const maxTravelHours = (AU_KM / avgSpeed) / 3600;  // ~60–90 hours for typical HSS
+
+  // ── How far back does our reference time go? ──────────────────────
+  // At referenceTimeMs, the oldest wind that could have reached maxReach
+  // was emitted maxTravelHours ago. But if the reference time is in the
+  // PAST (timeline scrubbed backward), the spiral should only extend
+  // as far as wind has had time to travel since the earliest known
+  // emission.
+  //
+  // hoursFromNow: how many hours before real-now is the reference time
+  //   positive = scrubbed into the past
+  //   negative = scrubbed into the future (forecast)
+  const hoursFromNow = (Date.now() - refTime) / (3600 * 1000);
+  // The effective travel time available at the reference time is reduced
+  // when scrubbing backward. The oldest emission we can show is bounded
+  // by whichever is less: the max physical travel time, or how far back
+  // we have data + the time since that emission.
+  const effectiveMaxTravelHours = Math.max(0, maxTravelHours - hoursFromNow);
+  // Scale the spiral reach proportionally
+  const reachFraction = Math.min(1.0, effectiveMaxTravelHours / maxTravelHours);
+  const effectiveMaxReach = THREE.MathUtils.lerp(sunRadius * 1.5, maxReach, reachFraction);
 
   // ── Transequatorial damping (same as static version) ───────────────
   const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;
@@ -819,7 +845,7 @@ export function buildTimeVaryingSpiralMesh(
 
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
     const t = i / SPIRAL_POINTS;
-    const hoursAgo = t * maxTravelHours;
+    const hoursAgo = t * effectiveMaxTravelHours;
     const historical = interpolateCHAtTime(evolution, hoursAgo);
 
     if (historical) {
@@ -876,7 +902,7 @@ export function buildTimeVaryingSpiralMesh(
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
     const t   = i / SPIRAL_POINTS;
     const phi = t * phiMax;
-    const r   = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
+    const r   = THREE.MathUtils.lerp(sunRadius * 1.03, effectiveMaxReach, t);
     const sd  = smoothed[i];
 
     // Azimuth: Parker spiral trailing + smooth historical offset

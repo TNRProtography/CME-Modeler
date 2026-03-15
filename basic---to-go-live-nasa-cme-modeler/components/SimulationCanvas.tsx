@@ -1,1369 +1,1022 @@
-// --- START OF FILE SimulationCanvas.tsx ---
-
-import React, { useRef, useEffect, useCallback, useImperativeHandle, useState, useMemo } from 'react';
-import {
-  ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
-  InteractionMode, SimulationCanvasHandle, ImpactDataPoint
-} from '../types';
-import {
-  PLANET_DATA_MAP, POI_DATA_MAP, SCENE_SCALE, AU_IN_KM,
-  SUN_VERTEX_SHADER, SUN_FRAGMENT_SHADER,
-  EARTH_ATMOSPHERE_VERTEX_SHADER, EARTH_ATMOSPHERE_FRAGMENT_SHADER,
-  AURORA_VERTEX_SHADER, AURORA_FRAGMENT_SHADER,
-  FLUX_ROPE_VERTEX_SHADER, FLUX_ROPE_FRAGMENT_SHADER,
-  SUN_ANGULAR_VELOCITY,
-} from '../constants';
-import { CoronalHole } from '../utils/coronalHoleData';
-import {
-  buildChSurfaceMesh,
-  buildChOutlineLine,
-  buildParkerSpiralMesh,
-  buildTimeVaryingSpiralMesh,
-} from '../utils/coronalHoleGeometry';
-import {
-  createPropagationEngine,
-  processedCMEToCMEInput,
-  coronalHoleToHSSInput,
-  type PropagationEngine,
-} from '../utils/heliosphericPropagation';
-import {
-  getCHAtTimelineTime,
-  type CHEvolution,
-} from '../utils/coronalHoleHistory';
-
-/** =========================================================
- *  STABLE, HOTLINK-SAFE TEXTURE URLS
- *  ========================================================= */
-const TEX = {
-  EARTH_DAY:     "https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg",
-  EARTH_NORMAL:  "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_normal_2048.jpg",
-  EARTH_SPEC:    "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_specular_2048.jpg",
-  EARTH_CLOUDS:  "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/earth_clouds_2048.png",
-  MOON:          "https://cs.wellesley.edu/~cs307/threejs/r124/three.js-master/examples/textures/planets/moon_1024.jpg",
-  SUN_PHOTOSPHERE: "https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg",
-  MILKY_WAY:     "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
-};
-
-// ============================================================
-//  BZ FLUX ROPE SHADERS
+// --- START OF FILE utils/coronalHoleGeometry.ts ---
 //
-//  These draw animated helical magnetic field lines wrapping
-//  around the GCS croissant tube.
+// Three.js geometry for Coronal Hole surface patches and
+// Parker-spiral High-Speed Stream arms.
 //
-//  TWO VISUAL STATES driven by uBzSouth (0.0 = northward, 1.0 = southward):
+// ═══════════════════════════════════════════════════════════════
+// ARCHITECTURE OVERVIEW
+// ═══════════════════════════════════════════════════════════════
 //
-//  NORTHWARD Bz (uBzSouth = 0.0):
-//    • Color: BLUE  (#4488ff)
-//    • Flow arrows travel UPWARD (away from Sun)
-//    • Low geomagnetic storm potential
+//  1. CH SURFACE PATCHES  (buildChSurfaceMesh / buildChOutlineLine)
+//     ─────────────────────────────────────────────────────────────
+//     Live in *sunMesh local space* — chGroup is a child of sunMesh,
+//     so patches rotate automatically as sunMesh.rotation.y is driven
+//     each frame. No per-frame update needed.
 //
-//  SOUTHWARD Bz (uBzSouth = 1.0):
-//    • Color: RED   (#ff4422)
-//    • Flow arrows travel DOWNWARD (toward Sun / anti-parallel to Earth's field)
-//    • HIGH storm potential — magnetic reconnection drives aurora
+//     Heliographic coordinates from the SUVI detector are in
+//     *disk-centre-relative* space (what's facing Earth right now),
+//     NOT full Carrington longitude. We treat them as offsets from
+//     the Sun's current facing direction — which is correct because
+//     the SUVI image always shows the Earth-facing hemisphere.
 //
-//  Blue/red is standard heliophysics convention for Bz polarity.
-// ============================================================
+//  2. PARKER SPIRAL HSS ARMS  (buildParkerSpiralMesh)
+//     ─────────────────────────────────────────────────
+//     Live in *world space*. The arm backbone is built with φ=0
+//     pointing along +Z (the reference direction). The CH's Carrington
+//     longitude offset (heliographic lon from SUVI, in radians) and
+//     the accumulated solar rotation angle are combined in the vertex
+//     shader as a single Y-rotation:
+//
+//         totalAngle = uChLon + uSunAngle
+//
+//     where:
+//       uChLon    = ch.lon converted to radians (fixed at build time, updated as uniform)
+//       uSunAngle = accumulated solar rotation since scene init (updated every frame)
+//
+//     The Parker spiral formula: r(φ) = r₀ + k·φ
+//       k = v_sw / ω_sun  (scene-units per radian of solar rotation)
+//
+//     The arm bends backward (negative φ direction) because the solar
+//     wind outpaces the sun's rotation at 1 AU. Wider CHs → faster
+//     wind → tighter spiral pitch.
+//
+// ═══════════════════════════════════════════════════════════════
+// TUNING CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+//   SPIRAL_POINTS          backbone sample resolution
+//   SPIRAL_TUBE_SIDES      tube cross-section polygon sides
+//   SPIRAL_TUBE_RADIUS_FAC tube radius as fraction of SCENE_SCALE
+//   SPIRAL_TURNS           how many full wraps the arm makes before ending
 
-const BZ_FIELD_LINE_VERTEX_SHADER = `
-  uniform float uTime;
-  uniform float uBzSouth;
-  attribute float aAlong;
-  attribute float aAngle;
-  attribute float aPhase;
-  varying float vAlpha;
-  varying float vBzSouth;
-  varying float vArrow;
+import { CoronalHole } from './coronalHoleData';
+import { interpolateCHAtTime, type CHEvolution } from './coronalHoleHistory';
 
-  void main() {
-    // Flow direction: +1 northward, -1 southward
-    float flowDir = uBzSouth > 0.5 ? -1.0 : 1.0;
+// ─── Tuning ───────────────────────────────────────────────────────────────────
+const SPIRAL_POINTS          = 220;
+const SPIRAL_TUBE_SIDES      = 8;
+const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
+const SPIRAL_TURNS           = 0.25;   // quarter revolution — open, sweeping arc
+// CH_OVEREMPHASIS: scaling factor for coronal hole visual patches on the Sun.
+//
+// Previously 1.22 (inflating CHs by 22%) to make them easier to see.
+// This caused the HSS spiral to appear offset — launching from the "gap"
+// between the inflated CH edge rather than from the CH itself.
+//
+// Now set to 1.0 (true size). The CH patches show their actual detected
+// boundary from SUVI, and the HSS spiral root aligns correctly with the
+// CH centroid. If CHs look too small at full zoom-out, consider a subtle
+// outline glow rather than inflating the geometry.
+const CH_OVEREMPHASIS        = 1.0;
 
-    // Animate each point along the tube arc
-    float travel = mod(aAlong + aPhase + uTime * 0.18 * flowDir, 1.0);
+// Physical constants (replicated to avoid circular dep on constants.ts)
+const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
 
-    // Fade near the ends of the arc so lines don't hard-clip
-    float fade = smoothstep(0.0, 0.12, travel) * smoothstep(1.0, 0.88, travel);
-    vAlpha   = fade * 0.85;
-    vBzSouth = uBzSouth;
+// ─── Coordinate helper ────────────────────────────────────────────────────────
 
-    // Bright pulse that rides along the field line like a travelling wave
-    float arrowPos = mod(travel * 6.0, 1.0);
-    vArrow = pow(max(0.0, 1.0 - abs(arrowPos - 0.5) * 8.0), 2.0);
+/** Heliographic (lat, lon) degrees → unit Cartesian.
+ *  Scene: +Y = north pole, +Z = lon 0 toward Earth.
+ *  Positive lon = East on the solar disk = positive X in scene. */
+function hgToVec(THREE: any, lat: number, lon: number): any {
+  const phi   = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon);  // positive lon → East → +X
+  return new THREE.Vector3(
+    Math.sin(phi) * Math.sin(theta),
+    Math.cos(phi),
+    Math.sin(phi) * Math.cos(theta),
+  );
+}
 
-    gl_Position  = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = 3.5;
+// ─── CH footprint points ──────────────────────────────────────────────────────
+
+/** Boundary polygon on the solar sphere in sunMesh local space. */
+export function buildChFootprintPoints(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any[] {
+  const r = sunRadius * 1.003;
+  const cenVec = hgToVec(THREE, ch.lat, ch.lon).normalize();
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
+
+  if (ch.polygon && ch.polygon.length >= 3) {
+    const pts = ch.polygon.map((v: any) => {
+      const p = hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).normalize();
+      // Inflate each point slightly away from the CH centroid — do NOT re-sort.
+      // buildPolygon already sorts by angle in pixel space; re-sorting here from
+      // a different origin destroys all concavities and produces a convex hull
+      // that looks like a perfect circle for large irregular CHs.
+      return cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r);
+    });
+    pts.push(pts[0].clone()); // close the loop
+    return pts;
   }
-`;
 
-const BZ_FIELD_LINE_FRAGMENT_SHADER = `
-  uniform float uBzSouth;
-  varying float vAlpha;
-  varying float vArrow;
+  // Ellipse fallback
+  const N    = 24;
+  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
+  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
+  const cen  = hgToVec(THREE, ch.lat, ch.lon);
 
-  void main() {
-    vec3 northColor = vec3(0.27, 0.53, 1.0);   // #4488ff — blue
-    vec3 southColor = vec3(1.0,  0.27, 0.13);   // #ff4422 — red
-    vec3 col = mix(northColor, southColor, uBzSouth);
-
-    // Boost brightness at the animated pulse peak
-    col = mix(col, vec3(1.0), vArrow * 0.6);
-
-    // Soft circular billboard point
-    vec2 uv = gl_PointCoord - 0.5;
-    float disc = 1.0 - smoothstep(0.35, 0.5, length(uv));
-
-    gl_FragColor = vec4(col, vAlpha * disc);
-    if (gl_FragColor.a < 0.01) discard;
+  const pts: any[] = [];
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    pts.push(
+      cen.clone()
+        .addScaledVector(right, Math.cos(a) * hw)
+        .addScaledVector(up,    Math.sin(a) * hh)
+        .normalize().multiplyScalar(r)
+    );
   }
-`;
+  return pts;
+}
 
-// ── Bz INDICATOR DISC SHADERS ─────────────────────────────────────────────────
-// A camera-facing disc rendered at the front of the CME showing a bold up/down
-// arrow so the Bz direction is immediately legible to the user.
+// ─── CH surface mesh ──────────────────────────────────────────────────────────
 
-const BZ_INDICATOR_VERTEX_SHADER = `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+/**
+ * Project a 3D sphere-surface point to 2D tangent-plane coordinates
+ * centred on `cen` with basis vectors `right` and `up`.
+ */
+function projectTo2D(
+  p: any, cen: any, right: any, up: any
+): { x: number; y: number } {
+  const d = p.clone().sub(cen);
+  return { x: d.dot(right), y: d.dot(up) };
+}
+
+/**
+ * Ear-clipping triangulation of a 2D polygon (array of {x,y}).
+ * Returns flat array of triangle indices into the original vertex array.
+ * Handles concave polygons correctly — unlike a fan from centre.
+ */
+function earClip(poly: Array<{ x: number; y: number }>): number[] {
+  const n = poly.length;
+  if (n < 3) return [];
+
+  // Compute signed area to determine winding
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
   }
-`;
+  // Ensure counter-clockwise winding
+  const verts = area < 0 ? [...poly].reverse() : [...poly];
 
-const BZ_INDICATOR_FRAGMENT_SHADER = `
-  uniform float uBzSouth;
-  uniform float uTime;
-  varying vec2 vUv;
+  const indices: number[] = [];
+  const idx = Array.from({ length: n }, (_, i) => i);
 
-  void main() {
-    vec2 p = vUv * 2.0 - 1.0;
-    float dist = length(p);
-    if (dist > 0.92) discard;
+  const isEar = (prev: number, curr: number, next: number): boolean => {
+    const a = verts[prev], b = verts[curr], c = verts[next];
+    // Must be a left turn (convex at this vertex)
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (cross <= 0) return false;
+    // No other vertex inside this triangle
+    for (const i of idx) {
+      if (i === prev || i === curr || i === next) continue;
+      const p = verts[i];
+      // Point-in-triangle test
+      const d1 = (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+      const d2 = (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y);
+      const d3 = (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y);
+      const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+      const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+      if (!(hasNeg && hasPos)) return false; // point is inside
+    }
+    return true;
+  };
 
-    vec3 northColor = vec3(0.27, 0.53, 1.0);
-    vec3 southColor = vec3(1.0,  0.27, 0.13);
-    vec3 col = mix(northColor, southColor, uBzSouth);
-
-    // Arrow shaft (vertical centre strip)
-    float shaft = step(abs(p.x), 0.10) * step(abs(p.y), 0.58);
-
-    // Arrowhead — points UP for north (+Y), DOWN for south (-Y)
-    float arrowDir  = uBzSouth > 0.5 ? -1.0 : 1.0;
-    float headY     = arrowDir * 0.58;
-    float headDist  = arrowDir * (p.y - headY);
-    float headWidth = 0.30 * headDist;
-    float head = step(0.0, headDist) * step(abs(p.x), headWidth) * step(headDist, 0.38);
-
-    float arrow = clamp(shaft + head, 0.0, 1.0);
-    float pulse = 0.78 + 0.22 * sin(uTime * 2.5);
-
-    // NO dark disc background — arrow only, fully transparent elsewhere
-    // Soft glow halo just behind the arrow so it reads against the CME
-    float glow = smoothstep(0.5, 0.0, dist) * 0.18 * arrow;
-
-    float finalAlpha = (arrow * 0.90 + glow) * pulse;
-    finalAlpha *= 1.0 - smoothstep(0.80, 0.92, dist);
-
-    gl_FragColor = vec4(col * pulse, finalAlpha);
-    if (gl_FragColor.a < 0.01) discard;
+  let remaining = [...idx];
+  let safety = n * n * 2;
+  while (remaining.length > 3 && safety-- > 0) {
+    let clipped = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const prev = remaining[(i + remaining.length - 1) % remaining.length];
+      const curr = remaining[i];
+      const next = remaining[(i + 1) % remaining.length];
+      if (isEar(prev, curr, next)) {
+        // Map back to original (pre-reversal) indices if needed
+        const origPrev = area < 0 ? (n - 1 - prev) : prev;
+        const origCurr = area < 0 ? (n - 1 - curr) : curr;
+        const origNext = area < 0 ? (n - 1 - next) : next;
+        indices.push(origPrev, origCurr, origNext);
+        remaining.splice(i, 1);
+        clipped = true;
+        break;
+      }
+    }
+    if (!clipped) break; // degenerate polygon, abort
   }
-`;
-
-/** =========================================================
- *  HELPERS
- *  ========================================================= */
-
-let particleTextureCache: any = null;
-const createParticleTexture = (THREE: any) => {
-  if (particleTextureCache) return particleTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0,   'rgba(255,255,255,1)');
-  g.addColorStop(0.2, 'rgba(255,255,255,0.8)');
-  g.addColorStop(1,   'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  particleTextureCache = new THREE.CanvasTexture(canvas);
-  return particleTextureCache;
-};
-
-let arrowTextureCache: any = null;
-const createArrowTexture = (THREE: any) => {
-  if (arrowTextureCache) return arrowTextureCache;
-  if (!THREE || typeof document === 'undefined') return null;
-  const canvas = document.createElement('canvas');
-  const size = 256; canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  ctx.fillStyle = 'rgba(255,255,255,1)';
-  const aw = size / 6, ah = size / 4, sp = size / 3;
-  for (let x = -aw; x < size + sp; x += sp) {
-    ctx.beginPath(); ctx.moveTo(x, size * 0.5);
-    ctx.lineTo(x + aw, size * 0.5 - ah / 2); ctx.lineTo(x + aw, size * 0.5 + ah / 2);
-    ctx.closePath(); ctx.fill();
+  if (remaining.length === 3) {
+    const [a, b, c] = remaining;
+    const origA = area < 0 ? (n - 1 - a) : a;
+    const origB = area < 0 ? (n - 1 - b) : b;
+    const origC = area < 0 ? (n - 1 - c) : c;
+    indices.push(origA, origB, origC);
   }
-  arrowTextureCache = new THREE.CanvasTexture(canvas);
-  arrowTextureCache.wrapS = THREE.RepeatWrapping;
-  arrowTextureCache.wrapT = THREE.RepeatWrapping;
-  return arrowTextureCache;
-};
+  return indices;
+}
 
-// ============================================================
-//  GCS GEOMETRY CONSTANTS
-// ============================================================
-const GCS_ARC_RADIUS_FRAC  = 0.55;
-const GCS_ARC_SPAN         = Math.PI * 0.85;
-const GCS_TUBE_RADIUS_FRAC = 0.38;
-const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
+/**
+ * Smooth a closed polygon using a simple Gaussian-weighted moving average.
+ * Reduces jagged pixel-detection artifacts while preserving the overall shape.
+ * `passes` controls how many smoothing rounds to apply.
+ */
+function smoothPolygon(
+  pts: Array<{ x: number; y: number }>,
+  passes = 3,
+  sigma = 1.8
+): Array<{ x: number; y: number }> {
+  // Build a small Gaussian kernel (5-tap)
+  const ks = 5;
+  const half = Math.floor(ks / 2);
+  const kernel: number[] = [];
+  let ksum = 0;
+  for (let i = 0; i < ks; i++) {
+    const d = i - half;
+    const w = Math.exp(-(d * d) / (2 * sigma * sigma));
+    kernel.push(w);
+    ksum += w;
+  }
+  const k = kernel.map(w => w / ksum);
 
-// Number of helical field lines around the tube, and points per line
-const BZ_FIELD_LINE_COUNT  = 8;
-const BZ_FIELD_LINE_POINTS = 120;
+  let result = [...pts];
+  for (let p = 0; p < passes; p++) {
+    const n = result.length;
+    const next: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < n; i++) {
+      let sx = 0, sy = 0;
+      for (let j = 0; j < ks; j++) {
+        const idx = ((i + j - half) % n + n) % n;
+        sx += result[idx].x * k[j];
+        sy += result[idx].y * k[j];
+      }
+      next.push({ x: sx, y: sy });
+    }
+    result = next;
+  }
+  return result;
+}
 
-const getCmeOpacity      = (speed: number) => { const T = (window as any).THREE; if (!T) return 0.22; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.06, 0.65); };
-const getCmeParticleCount = (speed: number) => { const T = (window as any).THREE; if (!T) return 4000; return Math.floor(T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 1500, 7000)); };
-const getCmeParticleSize  = (speed: number, scale: number) => { const T = (window as any).THREE; if (!T) return 0.05 * scale; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.08 * scale); };
-const getCmeCoreColor     = (speed: number) => {
-  const T = (window as any).THREE; if (!T) return { setHex: () => {} };
-  if (speed >= 2500) return new T.Color(0xff69b4);
-  if (speed >= 1800) return new T.Color(0x9370db);
-  if (speed >= 1000) return new T.Color(0xff4500);
-  if (speed >= 800)  return new T.Color(0xffa500);
-  if (speed >= 500)  return new T.Color(0xffff00);
-  if (speed < 350)   return new T.Color(0x808080);
-  return new T.Color(0x808080).lerp(new T.Color(0xffff00), T.MathUtils.mapLinear(speed, 350, 500, 0, 1));
-};
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-// ============================================================
-//  BUILD BZ FIELD LINE GEOMETRY
-//
-//  Creates one helical Points object for field line `lineIndex`.
-//  The helix wraps around the GCS croissant arc tube in normalised
-//  local space — the same space as the CME particle geometry.
-//
-//  Each point carries custom attributes used by the vertex shader:
-//    aAlong — normalised arc position [0..1] (drives animation travel)
-//    aAngle — current angle around the tube cross-section
-//    aPhase — per-line phase offset (staggers the animated pulses)
-// ============================================================
-const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
-  const positions: number[] = [];
-  const aAlongArr: number[] = [];
-  const aAngleArr: number[] = [];
-  const aPhaseArr: number[] = [];
+/** Dark patch on the solar surface. Uses ear-clipping triangulation so concave
+ *  CH shapes (X, lightning-bolt, irregular blobs) render correctly without
+ *  filling their convex hull. Parented to sunMesh → rotates with the sun. */
+export function buildChSurfaceMesh(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any {
+  const fp = buildChFootprintPoints(THREE, ch, sunRadius);
+  // Drop the closing duplicate for triangulation
+  const pts = fp[fp.length - 1] &&
+    fp[0].distanceToSquared(fp[fp.length - 1]) < 1e-10
+    ? fp.slice(0, -1) : fp;
 
-  const arcR     = GCS_ARC_RADIUS_FRAC;
-  const tubeR    = GCS_TUBE_RADIUS_FRAC * arcR * 0.92; // sit just inside tube surface
-  const halfSpan = GCS_ARC_SPAN * 0.5;
+  if (pts.length < 3) return new THREE.Object3D();
 
-  const baseAngle  = (lineIndex / BZ_FIELD_LINE_COUNT) * Math.PI * 2;
-  const phase      = lineIndex / BZ_FIELD_LINE_COUNT;
-  const helixTurns = 1.5; // wraps around the tube 1.5 times along the arc
+  // Build tangent-plane basis at the CH centroid for 2D projection
+  const PATCH_R = sunRadius * 1.018;   // raised well above sun surface to avoid z-fight
+  const cenVec = new THREE.Vector3();
+  pts.forEach((p: any) => cenVec.add(p));
+  cenVec.divideScalar(pts.length).normalize();
+  const cen = cenVec.clone().multiplyScalar(PATCH_R);
 
-  for (let i = 0; i < BZ_FIELD_LINE_POINTS; i++) {
-    const s = i / (BZ_FIELD_LINE_POINTS - 1);           // [0..1] along arc
-    const t = (s * 2 - 1) * halfSpan;                   // arc parameter
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
 
-    // Arc centreline (identical formula to particle geometry — belly faces +Y)
-    const cx = arcR * Math.sin(t);
-    const cy = arcR * (Math.cos(t) - 1);
-    const cz = 0;
+  // Project polygon to 2D tangent plane, smooth, triangulate, unproject back to 3D
+  const poly2d_raw = pts.map((p: any) => projectTo2D(p, cen, right, up));
+  const poly2d = smoothPolygon(poly2d_raw, 1, 1.2);
+  const triIdx = earClip(poly2d);
 
-    // Frenet normal and binormal at t
-    // N = (-sin(t), -cos(t), 0),  B = (0, 0, 1)
-    const Nx = -Math.sin(t), Ny = -Math.cos(t);
+  if (triIdx.length === 0) return new THREE.Object3D();
 
-    // Helical angle advances with arc position
-    const helixAngle = baseAngle + s * helixTurns * Math.PI * 2;
+  // Unproject smoothed 2D points back onto the sphere surface at PATCH_R
+  const pts3d = poly2d.map(({ x, y }: { x: number; y: number }) =>
+    cen.clone()
+      .addScaledVector(right, x)
+      .addScaledVector(up, y)
+      .normalize()
+      .multiplyScalar(PATCH_R)
+  );
 
-    // Point on tube surface: centreline + tubeR*(cos*N + sin*B)
-    const px = cx + tubeR * (Math.cos(helixAngle) * Nx);
-    const py = cy + tubeR * (Math.cos(helixAngle) * Ny);
-    const pz = cz + tubeR * Math.sin(helixAngle);       // B = +Z
-
-    positions.push(px, py, pz);
-    aAlongArr.push(s);
-    aAngleArr.push(helixAngle);
-    aPhaseArr.push(phase);
+  const pos: number[] = [];
+  for (let i = 0; i < triIdx.length; i += 3) {
+    const a = pts3d[triIdx[i]], b = pts3d[triIdx[i + 1]], c = pts3d[triIdx[i + 2]];
+    pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
   }
 
   const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.setAttribute('aAlong',   new THREE.Float32BufferAttribute(aAlongArr,  1));
-  geom.setAttribute('aAngle',   new THREE.Float32BufferAttribute(aAngleArr,  1));
-  geom.setAttribute('aPhase',   new THREE.Float32BufferAttribute(aPhaseArr,  1));
-  return geom;
-};
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.computeVertexNormals();
 
-// ── CURRENT SPEED CALCULATOR ──────────────────────────────────────────────────
-// Returns the instantaneous CME speed (km/s) at a given elapsed time,
-// accounting for the same deceleration model used for distance.
-// Used each frame to drive the live colour transition.
-/** =========================================================
- *  COMPONENT
- *  ========================================================= */
-interface SimulationCanvasProps {
-  cmeData: ProcessedCME[];
-  activeView: ViewMode;
-  focusTarget: FocusTarget | null;
-  currentlyModeledCMEId: string | null;
-  onCMEClick: (cme: ProcessedCME) => void;
-  timelineActive: boolean;
-  timelinePlaying: boolean;
-  timelineSpeed: number;
-  timelineValue: number;
-  timelineMinDate: number;
-  timelineMaxDate: number;
-  setPlanetMeshesForLabels: (labels: PlanetLabelInfo[]) => void;
-  setRendererDomElement: (element: HTMLCanvasElement | null) => void;
-  onCameraReady: (camera: any) => void;
-  getClockElapsedTime: () => number;
-  resetClock: () => void;
-  onScrubberChangeByAnim: (value: number) => void;
-  onTimelineEnd: () => void;
-  showExtraPlanets: boolean;
-  showMoonL1: boolean;
-  showFluxRope: boolean;
-  /** true = southward Bz (RED — high storm risk), false = northward (BLUE — low risk) */
-  bzSouth?: boolean;
-  /** Whether the Parker-spiral HSS stream arms are visible */
-  showHss: boolean;
-  /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
-  coronalHoles: CoronalHole[];
-  /** 72h CH evolution tracks from worker history */
-  chEvolutions?: CHEvolution[];
-  dataVersion: number;
-  interactionMode: InteractionMode;
-  onSunClick?: () => void;
-  /** Latest measured solar wind speed at L1 (km/s) for DBM drag model */
-  measuredWindSpeedKms?: number;
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x020204, transparent: false, opacity: 1.0,
+    side: THREE.FrontSide, depthWrite: true, depthTest: true,
+    blending: THREE.NormalBlending,
+    polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -10,
+  });
+  const mesh    = new THREE.Mesh(geom, mat);
+  mesh.name     = `ch-surface-${ch.id}`;
+  mesh.userData = { coronalHoleId: ch.id };
+  mesh.renderOrder = 3;
+  return mesh;
 }
 
-const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
-  const {
-    cmeData, activeView, focusTarget, currentlyModeledCMEId,
-    timelineActive, timelinePlaying, timelineSpeed, timelineValue,
-    timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
-    setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
-    onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth = false, showHss, coronalHoles, chEvolutions, dataVersion, interactionMode, onSunClick,
-    measuredWindSpeedKms,
-  } = props;
+// ─── CH outline ───────────────────────────────────────────────────────────────
 
-  const mountRef           = useRef<HTMLDivElement>(null);
-  const rendererRef        = useRef<any>(null);
-  const sceneRef           = useRef<any>(null);
-  const cameraRef          = useRef<any>(null);
-  const controlsRef        = useRef<any>(null);
-  const cmeGroupRef        = useRef<any>(null);
-  const sceneCleanupRef    = useRef<(() => void) | null>(null);
-  const celestialBodiesRef = useRef<Record<string, CelestialBody>>({});
-  const orbitsRef          = useRef<Record<string, any>>({});
-  const predictionLineRef  = useRef<any>(null);
-  const fluxRopeRef        = useRef<any>(null);
+/** Bright border around the dark coronal hole patch. Also in sunMesh local space. */
+export function buildChOutlineLine(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any {
+  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.020);
 
-  // Bz field line group (Points objects) and front-face indicator disc
-  const bzFieldLinesRef = useRef<any>(null);
-  const bzIndicatorRef  = useRef<any>(null);
+  // Smooth the outline in 2D tangent space then unproject back to sphere
+  const cenVec = new THREE.Vector3();
+  fp.forEach((p: any) => cenVec.add(p));
+  cenVec.divideScalar(fp.length).normalize();
+  const cen = cenVec.clone().multiplyScalar(sunRadius * 1.020);
+  const north = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(north, cenVec);
+  if (right.lengthSq() < 1e-8) right = new THREE.Vector3(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
 
-  // ── Coronal Hole / HSS refs ───────────────────────────────────────────────
-  // chGroupRef  — parented to sunMesh; patches rotate with the sun for free
-  // hssGroupRef — world-space Parker spiral arms; vertex shader rotates per frame
-  const chGroupRef     = useRef<any>(null);
-  const hssGroupRef    = useRef<any>(null);
-  const hssAuRingsRef  = useRef<any>(null);
-  const sunMeshRef     = useRef<any>(null);
-  const sunRotationRef = useRef<number>(0);
+  const raw2d = fp.slice(0, -1).map((p: any) => projectTo2D(p, cen, right, up));
+  const smooth2d = smoothPolygon(raw2d, 1, 1.2);
+  const smoothPts = smooth2d.map(({ x, y }: { x: number; y: number }) =>
+    cen.clone().addScaledVector(right, x).addScaledVector(up, y)
+      .normalize().multiplyScalar(sunRadius * 1.020)
+  );
+  smoothPts.push(smoothPts[0].clone()); // close loop
 
-  const starsNearRef = useRef<any>(null);
-  const starsFarRef  = useRef<any>(null);
-
-  const timelineValueRef    = useRef(timelineValue);
-  const lastTimeRef         = useRef(0);
-  const raycasterRef        = useRef<any>(null);
-  const mouseRef            = useRef<any>(null);
-  const pointerDownTime     = useRef(0);
-  const pointerDownPosition = useRef({ x: 0, y: 0 });
-
-  const animPropsRef = useRef({
-    onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
-    timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope, bzSouth, showHss,
+  const geom = new THREE.BufferGeometry().setFromPoints(smoothPts);
+  const mat  = new THREE.LineBasicMaterial({
+    color: 0x55ddff, transparent: true, opacity: 0.90,
+    depthWrite: false, depthTest: true, blending: THREE.NormalBlending,
   });
-  useEffect(() => {
-    animPropsRef.current = {
-      onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
-      timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, bzSouth, showHss,
-    };
-  }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
-      timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, bzSouth, showHss]);
+  const line    = new THREE.Line(geom, mat);
+  line.name     = `ch-outline-${ch.id}`;
+  line.userData = { coronalHoleId: ch.id };
+  line.renderOrder = 4;
+  return line;
+}
 
-  // --- Dynamic loader: only fetches Three.js + deps when the modeler first mounts ---
-  const threeLoadedRef = useRef(false);
-  const [threeReady, setThreeReady] = useState(!!(window as any).THREE);
-  const loadThreeLibs = useCallback((): Promise<void> => {
-    if (threeLoadedRef.current && (window as any).THREE && (window as any).gsap) {
-      return Promise.resolve();
+/**
+ * Returns a tiny invisible Object3D positioned at the CH centroid on the solar
+ * surface (in sunMesh local space).  Used as the mesh anchor for PlanetLabel.
+ */
+export function buildChLabelAnchor(
+  THREE: any, ch: CoronalHole, sunRadius: number
+): any {
+  const pos = hgToVec(THREE, ch.lat, ch.lon).normalize().multiplyScalar(sunRadius * 1.012);
+  const obj = new THREE.Object3D();
+  obj.position.copy(pos);
+  obj.name = `ch-label-anchor-${ch.id}`;
+  return obj;
+}
+
+// ─── Parker Spiral Shaders ────────────────────────────────────────────────────
+//
+// KEY DESIGN DECISION
+// ────────────────────
+// The spiral backbone is built with φ=0 pointing along +Z.
+// uChLon (radians) = the CH's longitude from SUVI (disk-centre-relative).
+// uSunAngle (radians) = accumulated solar rotation since scene init.
+//
+// The vertex shader rotates every point by (uChLon + uSunAngle) about Y.
+// This means:
+//   - At t=0: arm starts at the CH's initial SUVI longitude.
+//   - As the sun rotates: uSunAngle increases, arm sweeps with it.
+//   - When SUVI refreshes and a new CH lon arrives: uChLon is updated,
+//     instantly re-anchoring the arm to the new detected position.
+
+const VERT = /* glsl */`
+  uniform float uChLon;    // CH longitude from SUVI (radians, updated on refresh)
+  uniform float uSunAngle; // Accumulated solar rotation (radians, updated each frame)
+  uniform float uTime;
+
+  attribute float aFlow;   // [0..1] = distance along spiral from Sun
+  attribute float aEdge;   // [0..1] = edge distance in tube cross-section
+
+  varying float vFlow;
+  varying float vEdge;
+
+  void main() {
+    vFlow = aFlow;
+    vEdge = aEdge;
+
+    // Total rotation = CH's Carrington longitude + how far the Sun has rotated
+    float angle = uChLon + uSunAngle;
+    float cosA  = cos(angle);
+    float sinA  = sin(angle);
+
+    vec3 p  = position;   // baked in +Z-reference frame
+    float x = p.x * cosA - p.z * sinA;
+    float z = p.x * sinA + p.z * cosA;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(x, p.y, z, 1.0);
+  }
+`;
+
+const FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform float uSourceSpeed;  // HSS speed at source (km/s), e.g. 800–1400
+
+  varying float vFlow;  // 0 = Sun surface, 1 = arm tip
+  varying float vEdge;  // 0 = centre, 1 = tube edge
+
+  // ── Same drag-model used by CME colour transitions ──────────────────────────
+  // a = (1.41 - 0.0035 * v0) / 1000  [km/s per second of travel time]
+  // The arm tip represents ~5 days of travel time to 1 AU.
+  // vFlow maps to travel-time: t = vFlow * TRAVEL_TIME_SECONDS
+  // liveSpeed = clamp( v0 + a * t, 300, v0 )
+  float deceleratedSpeed(float v0, float frac) {
+    float TRAVEL_SECONDS = 5.0 * 24.0 * 3600.0; // ~5 days to arm tip
+    float a = (1.41 - 0.0035 * v0) / 1000.0;   // negative → decelerates
+    float t = frac * TRAVEL_SECONDS;
+    float v = v0 + a * t;
+    return clamp(v, 300.0, v0);
+  }
+
+  // ── CME-matched speed-to-colour ramp ────────────────────────────────────────
+  // Breakpoints (km/s): 1800 purple | 1000 red-orange | 800 orange |
+  //                     500 yellow  | 350 grey-yellow lerp | <350 grey
+  vec3 speedToColor(float spd) {
+    if (spd >= 1800.0) return vec3(0.576, 0.439, 0.859); // medium purple
+    if (spd >= 1000.0) {
+      float t = (spd - 1000.0) / 800.0;
+      return mix(vec3(1.0, 0.271, 0.0), vec3(0.576, 0.439, 0.859), t); // orange-red → purple
     }
-    const loadScript = (src: string): Promise<void> =>
-      new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-        const s = document.createElement('script');
-        s.src = src;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error(`Failed to load ${src}`));
-        document.head.appendChild(s);
-      });
+    if (spd >= 800.0) {
+      float t = (spd - 800.0) / 200.0;
+      return mix(vec3(1.0, 0.647, 0.0), vec3(1.0, 0.271, 0.0), t); // orange → orange-red
+    }
+    if (spd >= 500.0) {
+      float t = (spd - 500.0) / 300.0;
+      return mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.647, 0.0), t); // yellow → orange
+    }
+    if (spd >= 350.0) {
+      float t = (spd - 350.0) / 150.0;
+      return mix(vec3(0.502, 0.502, 0.502), vec3(1.0, 1.0, 0.0), t); // grey → yellow
+    }
+    return vec3(0.502, 0.502, 0.502); // grey (ambient wind)
+  }
 
-    // OrbitControls must come after Three.js — load sequentially
-    return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
-      .then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'))
-      .then(() => loadScript('https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js'))
-      .then(() => { threeLoadedRef.current = true; setThreeReady(true); });
-  }, []);
+  void main() {
+    // Current speed at this point along the arm after deceleration
+    float liveSpeed = deceleratedSpeed(uSourceSpeed, vFlow);
+    vec3 col = speedToColor(liveSpeed);
 
-  useEffect(() => { timelineValueRef.current = timelineValue; }, [timelineValue]);
+    // Outward-travelling ripple (solar wind blowing away from Sun)
+    float ripple = fract(vFlow - uTime * 0.18);
+    float pulse  = pow(1.0 - abs(ripple - 0.5) * 2.0, 4.0);
 
-  const MIN_CME_SPEED_KMS = 300;
+    // Soft tube cross-section
+    float edgeFade = 1.0 - smoothstep(0.30, 1.00, vEdge);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  //  HELIOSPHERIC PROPAGATION ENGINE (Vršnak DBM + Interactions)
-  // ═══════════════════════════════════════════════════════════════════════
+    // Soft fade-in: stream organises gradually as it leaves the CH surface.
+    // No hard edge at the sun — onset over first 12% of arm length.
+    float fadeIn  = smoothstep(0.0, 0.12, vFlow);
+
+    // Taper to nothing at arm tip
+    float tipFade = 1.0 - smoothstep(0.68, 1.00, vFlow);
+
+    // Bright ridge highlight that pulses with the ripple
+    col = mix(col, vec3(1.00, 1.00, 0.95), pulse * 0.35 * edgeFade);
+
+    float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse);
+    alpha = clamp(alpha, 0.0, 0.88);
+
+    gl_FragColor = vec4(col, alpha);
+    if (gl_FragColor.a < 0.003) discard;
+  }
+`;
+
+// ─── Parker spiral mesh ───────────────────────────────────────────────────────
+
+/**
+ * Build a Parker-spiral tube arm for one coronal hole.
+ *
+ * The backbone is built in a canonical frame (φ=0 → +Z axis).
+ * The vertex shader rotates the arm by (uChLon + uSunAngle) every frame,
+ * so the arm root always tracks the CH's current rotated longitude.
+ *
+ * @param sunAngle0  Solar rotation angle at build time — used to initialise
+ *                   uSunAngle so the arm starts at the correct position immediately.
+ */
+export function buildParkerSpiralMesh(
+  THREE: any,
+  ch: CoronalHole,
+  sunRadius: number,
+  maxReach: number,
+  sunAngle0: number,
+): any {
+  // Faster wind → straighter spiral (less winding).
+  // Parker spiral pitch angle: tan(ψ) = Ω·r / v_sw
+  // At 600 km/s the spiral is tighter than at 900 km/s.
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 500) / 400, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.10, speedT);
+  const phiMax = turns * Math.PI * 2;
+
+  // ── HSS LONGITUDE ALIGNMENT ────────────────────────────────────────────────
   //
-  //  This replaces the old linear deceleration model with:
-  //    • Quadratic drag: a = −γ(v−w)|v−w|  (Vršnak et al. 2013)
-  //    • Variable ambient wind from coronal holes
-  //    • CME–CME preconditioning, compression, and cannibalism
-  //    • CME–HSS interaction (modified drag in fast-wind corridors)
+  // The backbone is built in a canonical frame with φ=0 at +Z.
+  // The vertex shader then rotates the entire mesh by uChLon radians
+  // about Y, placing the spiral root at the CH's longitude.
   //
-  //  The engine is rebuilt whenever CME data or coronal holes change.
-  //  Per-frame queries are O(1) via precomputed trajectory interpolation.
+  // The CH patches are also children of sunMesh, built via hgToVec()
+  // at the CH's longitude. So at t=0 (the sun surface), the backbone
+  // root and the CH centroid land at the same longitude — aligned.
+  //
+  // The spiral then trails BACKWARD (negative azimuth) as plasma
+  // emitted earlier has been carried further by solar rotation.
+  // This is the correct Parker spiral geometry.
 
-  const propagationEngineRef = useRef<PropagationEngine | null>(null);
+  // ── CH LATITUDE EXTENT ─────────────────────────────────────────────────────
+  //
+  // The CH's north-south extent (heightDeg) defines how tall the HSS
+  // stream is. The stream should maintain this full vertical extent
+  // well beyond the Sun — HSS plasma doesn't collapse to the ecliptic
+  // plane quickly. Ulysses showed fast wind filling ±30° latitude from
+  // polar CHs all the way to 5 AU.
+  //
+  // ── Backbone ───────────────────────────────────────────────────────────────
+  // Built in the canonical frame: φ=0 at +Z, arm curls in the -φ direction
+  // (Parker spiral bends backward opposite to solar rotation because the wind
+  //  travels faster than the sun rotates at 1 AU).
+  //
+  // CRITICAL: Backbone latitude handling for transequatorial CHs.
+  //
+  // A transequatorial coronal hole (one that spans the solar equator)
+  // launches wind from BOTH hemispheres. The centroid might sit at -10°
+  // or +8°, but the outflow fills the full latitude band from the CH's
+  // southern to northern edge. The ecliptic plane (lat ≈ 0°) runs
+  // right through the middle of the outflow — which is exactly where
+  // Earth is.
+  //
+  // The backbone latitude should therefore be DAMPED toward zero:
+  //   - If the CH spans the equator (|centroid lat| < half-height),
+  //     the backbone runs essentially in the ecliptic plane.
+  //   - If the CH is entirely in one hemisphere (small polar CH),
+  //     the backbone follows the centroid latitude.
+  //
+  // This ensures transequatorial CHs produce streams that HIT Earth
+  // rather than deflecting entirely to one hemisphere.
 
-  // Rebuild engine when data changes
-  useMemo(() => {
-    if (cmeData.length === 0) {
-      propagationEngineRef.current = null;
-      return;
-    }
+  const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;
+  const centroidLatDeg = ch.lat;
 
-    const cmeInputs = cmeData.map(cme => processedCMEToCMEInput(cme));
-    const hssInputs = coronalHoles.map(ch => coronalHoleToHSSInput(ch));
+  // How much of the CH extends across the equator?
+  // If |centroid| < halfHeight, the CH spans the equator → strong damping.
+  // If |centroid| >> halfHeight, it's entirely polar → minimal damping.
+  const equatorCoverage = THREE.MathUtils.clamp(
+    1.0 - Math.abs(centroidLatDeg) / Math.max(1, chHalfHeightDeg),
+    0, 1
+  );
+  // Blend: 0 = use full centroid lat, 1 = force to ecliptic (lat=0)
+  const eclipticDamping = equatorCoverage * 0.85 + 0.15;
+  // Effective backbone latitude at the Sun — damped toward ecliptic
+  const backboneLatDeg = centroidLatDeg * (1.0 - eclipticDamping);
+  const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
 
-    propagationEngineRef.current = createPropagationEngine(
-      cmeInputs,
-      hssInputs,
-      measuredWindSpeedKms,
+  const backbone: any[] = [];
+  for (let i = 0; i <= SPIRAL_POINTS; i++) {
+    const t   = i / SPIRAL_POINTS;
+    const phi = t * phiMax;
+
+    // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
+    const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
+
+    // Azimuth: starts at 0 (aligned with CH centroid after shader rotation),
+    // then trails backward as the Parker spiral winds out.
+    const az = -phi;
+
+    // Latitude: further relax toward ecliptic with distance.
+    // Solar wind at 1 AU is concentrated near the heliospheric
+    // current sheet (roughly the ecliptic during low-tilt periods).
+    const latDecay = 1.0 - t * 0.3;
+    const latEff = backboneLatRad * Math.max(0, latDecay);
+    const cosLat = Math.cos(latEff);
+
+    backbone.push(new THREE.Vector3(
+      r * cosLat * Math.sin(az),
+      r * Math.sin(latEff),
+      r * cosLat * Math.cos(az),
+    ));
+  }
+
+  const N = backbone.length;
+  if (N < 2) {
+    // Degenerate case — quiet Sun, arm too short
+    const dummy = new THREE.Points(
+      new THREE.BufferGeometry(),
+      new THREE.PointsMaterial({ visible: false })
     );
-  }, [cmeData, coronalHoles, measuredWindSpeedKms]);
+    dummy.name = `hss-spiral-${ch.id}`;
+    return dummy;
+  }
 
-  // ── DBM-based distance calculation ─────────────────────────────────
-  // Drop-in replacement for the old calculateDistanceWithDeceleration.
-  // Falls back to simple linear propagation if the engine isn't ready.
-  const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    const engine = propagationEngineRef.current;
-    if (engine) {
-      return engine.getSceneDistance(cme.id, timeSinceEventSeconds, SCENE_SCALE);
-    }
+  // ── Tube extrusion ─────────────────────────────────────────────────────────
+  //
+  // Base width is derived from the CH's actual angular half-width so the HSS
+  // stream boundary physically matches the coronal hole that launched it.
+  //
+  // Physical rationale:
+  //   The HSS is a 3D volume of fast plasma embedded in the Parker spiral.
+  //   Near the Sun it's confined to the CH angular extent. But as it
+  //   propagates outward:
+  //
+  //   1. The stream EXPANDS radially (super-radial expansion in the low
+  //      corona, then roughly radial beyond ~10 R☉).
+  //
+  //   2. The trailing edge of the stream interfaces with SLOW wind behind
+  //      it — this compression creates a broad transition region.
+  //
+  //   3. At 1 AU, a single HSS passage lasts 2–4 DAYS in L1 data.
+  //      At ~600 km/s that's a structure spanning ~0.7–1.4 AU in depth.
+  //      The cross-sectional width is comparable — it's a massive volume.
+  //
+  //   4. The SIR (Stream Interaction Region) at the leading edge is a
+  //      broad compression front, not a thin wall.
+  //
+  //   We use a strong flare factor: the tube radius grows by ~8–12× from
+  //   the Sun to Earth, producing the broad swathe visible in ENLIL runs.
+  //   Wider CHs produce wider streams (more open flux = broader outflow).
+  //
+  // Use the LARGER of width and height so the tube covers the CH's full
+  // north-south extent, not just its equatorial cross-section.
+  const chMaxExtentDeg = Math.max(ch.widthDeg ?? 15, ch.heightDeg ?? ch.widthDeg ?? 15);
+  const chHalfAngleRad = THREE.MathUtils.degToRad(chMaxExtentDeg / 2);
+  const tubeR0 = sunRadius * Math.sin(chHalfAngleRad);
 
-    // Fallback: simple constant-speed propagation (better than nothing)
-    const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-    if (u <= MIN_CME_SPEED_KMS) return (u * t / AU_IN_KM) * SCENE_SCALE;
-    // Use basic quadratic drag approximation as fallback
-    const w = 380;  // assumed ambient wind
-    const gamma = 0.5e-7;  // mid-range drag parameter
-    const dv = u - w;
-    const denom = 1 + gamma * Math.abs(dv) * t;
-    const v = w + dv / denom;
-    const dist = w * t + (dv > 0 ? 1 : -1) * Math.log(denom) / gamma;
-    return (dist / AU_IN_KM) * SCENE_SCALE;
-  }, []);
+  // Minimum base radius so even small CHs produce a visible stream
+  const tubeR0Clamped = Math.max(tubeR0, sunRadius * 0.15);
 
-  const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    if (!cme.predictedArrivalTime) return 0;
-    const total = (cme.predictedArrivalTime.getTime() - cme.startTime.getTime()) / 1000;
-    if (total <= 0) return 0;
-    return Math.min(1, timeSinceEventSeconds / total) * (PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE) * SCENE_SCALE;
-  }, []);
+  const sides  = SPIRAL_TUBE_SIDES;
+  const pos: number[]  = [];
+  const flow: number[] = [];
+  const edge: number[] = [];
+  const idx: number[]  = [];
 
-  // ── updateCMEShape — angular GCS expansion + live colour ─────────────────
-  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
-    const THREE = (window as any).THREE;
-    if (!THREE) return;
-    const sunRadius = PLANET_DATA_MAP.SUN.size;
-    if (distTraveledInSceneUnits < 0) {
-      cmeObject.visible = false;
-      return;
-    }
-    cmeObject.visible = true;
-    const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
-    const dist = Math.max(0, distTraveledInSceneUnits - sunRadius);
-    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + dist));
-    const cme: any = cmeObject.userData;
-    const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
-    cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+  // Wider CHs produce wider streams — scale the flare with CH extent
+  const widthFactor = THREE.MathUtils.clamp(chMaxExtentDeg / 30, 0.6, 1.8);
 
-    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
-    // Use the propagation engine's DBM speed, falling back to simple calc.
-    // As the CME decelerates via quadratic drag, colour shifts through the speed key.
-    if (timeSinceEventSeconds !== undefined && cmeObject.material) {
-      const engine = propagationEngineRef.current;
-      let liveSpeed: number;
-      if (engine) {
-        liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
-      } else {
-        // Fallback: basic quadratic drag approximation
-        const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-        const w = 380, gamma = 0.5e-7;
-        const dv = u - w;
-        liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
-      }
-      cmeObject.material.color = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
-    }
-  }, []);
+  for (let i = 0; i < N; i++) {
+    const t    = i / (N - 1);
+    const curr = backbone[i];
+    const prev = backbone[Math.max(0, i - 1)];
+    const next = backbone[Math.min(N - 1, i + 1)];
 
-  useEffect(() => {
-    if (!mountRef.current || rendererRef.current) return;
+    const tang = next.clone().sub(prev).normalize();
+    const up   = new THREE.Vector3(0, 1, 0);
+    let right  = new THREE.Vector3().crossVectors(tang, up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    const up2  = new THREE.Vector3().crossVectors(right, tang).normalize();
 
-    let cancelled = false;
-    loadThreeLibs().then(() => {
-      if (cancelled || !mountRef.current || rendererRef.current) return;
-      const THREE = (window as any).THREE;
-      if (!THREE) return;
+    for (let s = 0; s < sides; s++) {
+      const a  = (s / sides) * Math.PI * 2;
+      const cr = Math.cos(a), sr = Math.sin(a);
 
-    resetClock();
-    lastTimeRef.current = getClockElapsedTime();
-
-    const scene = new THREE.Scene();
-    sceneRef.current = scene;
-
-    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5); // Start at angled side view showing full inner solar system
-    cameraRef.current = camera; onCameraReady(camera);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    mountRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer; setRendererDomElement(renderer.domElement);
-
-    raycasterRef.current = new THREE.Raycaster();
-    mouseRef.current     = new THREE.Vector2();
-
-    const loader = new THREE.TextureLoader(); (loader as any).crossOrigin = "anonymous";
-    const wa = (t: any) => { if (renderer.capabilities?.getMaxAnisotropy) t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t; };
-    const tex = {
-      earthDay: wa(loader.load(TEX.EARTH_DAY)), earthNormal: wa(loader.load(TEX.EARTH_NORMAL)),
-      earthSpec: wa(loader.load(TEX.EARTH_SPEC)), earthClouds: wa(loader.load(TEX.EARTH_CLOUDS)),
-      moon: wa(loader.load(TEX.MOON)), sunPhoto: wa(loader.load(TEX.SUN_PHOTOSPHERE)),
-      milkyWay: wa(loader.load(TEX.MILKY_WAY)),
-    };
-    tex.milkyWay.mapping = THREE.EquirectangularReflectionMapping;
-    scene.background = tex.milkyWay;
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    scene.add(new THREE.PointLight(0xffffff, 2.4, 300 * SCENE_SCALE));
-
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.dampingFactor = 0.08;
-    controls.screenSpacePanning = false;
-    controls.minDistance = 0.12 * SCENE_SCALE; controls.maxDistance = 55 * SCENE_SCALE;
-    controlsRef.current = controls;
-
-    cmeGroupRef.current = new THREE.Group(); scene.add(cmeGroupRef.current);
-
-    // Legacy torus — kept for import compatibility, hidden by default
-    const fluxRopeMat = new THREE.ShaderMaterial({
-      vertexShader: FLUX_ROPE_VERTEX_SHADER, fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
-      uniforms: { uTime: { value: 0 }, uTexture: { value: createArrowTexture(THREE) }, uColor: { value: new THREE.Color(0xffffff) } },
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-    });
-    fluxRopeRef.current = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.05, 16, 100), fluxRopeMat);
-    fluxRopeRef.current.rotation.x = Math.PI / 2; fluxRopeRef.current.visible = false;
-    scene.add(fluxRopeRef.current);
-
-    // ── Bz field line group ──────────────────────────────────────────────────
-    // All BZ_FIELD_LINE_COUNT helical Points share one ShaderMaterial so
-    // updating uBzSouth on any child updates all of them simultaneously.
-    const bzGroup = new THREE.Group(); bzGroup.visible = false; scene.add(bzGroup);
-    bzFieldLinesRef.current = bzGroup;
-
-    const bzMat = new THREE.ShaderMaterial({
-      vertexShader:   BZ_FIELD_LINE_VERTEX_SHADER,
-      fragmentShader: BZ_FIELD_LINE_FRAGMENT_SHADER,
-      uniforms: { uTime: { value: 0 }, uBzSouth: { value: 0.0 } },
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    for (let i = 0; i < BZ_FIELD_LINE_COUNT; i++) {
-      bzGroup.add(new THREE.Points(buildBzFieldLineGeometry(THREE, i), bzMat));
-    }
-
-    // ── Bz indicator disc ────────────────────────────────────────────────────
-    const bzInd = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.ShaderMaterial({
-        vertexShader:   BZ_INDICATOR_VERTEX_SHADER,
-        fragmentShader: BZ_INDICATOR_FRAGMENT_SHADER,
-        uniforms: { uBzSouth: { value: 0.0 }, uTime: { value: 0 } },
-        transparent: true, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide,
-      })
-    );
-    bzInd.visible = false; scene.add(bzInd); bzIndicatorRef.current = bzInd;
-
-    // ── Stars ────────────────────────────────────────────────────────────────
-    const makeStars = (n: number, spread: number, sz: number) => {
-      const v: number[] = [];
-      for (let i = 0; i < n; i++) v.push(THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE), THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE), THREE.MathUtils.randFloatSpread(spread * SCENE_SCALE));
-      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
-      return new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: sz * SCENE_SCALE, sizeAttenuation: true, transparent: true, opacity: 0.95, depthWrite: false }));
-    };
-    const starsNear = makeStars(30000, 250, 0.012); const starsFar = makeStars(20000, 300, 0.006);
-    starsFar.rotation.y = Math.PI / 7; scene.add(starsNear); scene.add(starsFar);
-    starsNearRef.current = starsNear; starsFarRef.current = starsFar;
-
-    // ── Sun ──────────────────────────────────────────────────────────────────
-    const sunMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size, 64, 64),
-      new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: SUN_VERTEX_SHADER, fragmentShader: SUN_FRAGMENT_SHADER })
-    );
-    sunMesh.name = 'sun-shader';
-    scene.add(sunMesh);
-    sunMeshRef.current = sunMesh;
-    celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
-
-    // Photosphere overlay — child of sunMesh so it rotates with the sun
-    const sunPhoto = new THREE.Mesh(
-      new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64),
-      new THREE.MeshBasicMaterial({ map: tex.sunPhoto, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
-    );
-    sunPhoto.name = 'sun-photosphere';
-    sunMesh.add(sunPhoto);
-
-    // ── Coronal Holes & Parker Spiral HSS ──────────────────────────────────
-    // chGroup: child of sunMesh → patches rotate with the sun automatically
-    // hssGroup: child of sunMesh so HSS roots are locked to CH/source rotation.
-    const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  sunMesh.add(chGroup);
-    const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    sunMesh.add(hssGroup);
-    const hssAuRings = new THREE.Group(); hssAuRings.name = 'hss-au-rings'; scene.add(hssAuRings);
-    chGroupRef.current  = chGroup;
-    hssGroupRef.current = hssGroup;
-    hssAuRingsRef.current = hssAuRings;
-
-    // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
-    // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
-    [0.25, 0.5, 0.75, 1.0, 1.25, 1.5].forEach((au) => {
-      const ringPts = [];
-      const r = au * SCENE_SCALE;
-      for (let i = 0; i <= 192; i++) {
-        const a = (i / 192) * Math.PI * 2;
-        ringPts.push(new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r));
-      }
-      const color = Math.abs(au - 1.0) < 0.001 ? 0x6ec1ff : 0x315670;
-      const opacity = Math.abs(au - 1.0) < 0.001 ? 0.65 : 0.35;
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(ringPts),
-        new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
-      );
-      line.name = `hss-au-ring-${au.toFixed(2)}au`;
-      hssAuRings.add(line);
-    });
-    const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-    props.coronalHoles.forEach(ch => {
-      chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
-      chGroup.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
-    });
-
-    const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
-
-    // ── Planets ──────────────────────────────────────────────────────────────
-    Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
-      if (name === 'SUN' || data.orbits) return;
-      const pm = new THREE.Mesh(new THREE.SphereGeometry(data.size, 64, 64), new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 }));
-      pm.position.set(data.radius * Math.sin(data.angle), 0, data.radius * Math.cos(data.angle)); pm.userData = data;
-      scene.add(pm); celestialBodiesRef.current[name] = { mesh: pm, name: data.name, labelId: data.labelElementId, userData: data };
-      planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: pm });
-      if (name === 'EARTH') {
-        pm.material = new THREE.MeshPhongMaterial({ map: tex.earthDay, normalMap: tex.earthNormal, specularMap: tex.earthSpec, specular: new THREE.Color(0x111111), shininess: 6 });
-        const clouds = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.01, 48, 48), new THREE.MeshLambertMaterial({ map: tex.earthClouds, transparent: true, opacity: 0.7, depthWrite: false })); clouds.name = 'clouds'; pm.add(clouds);
-        const atmo = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0 }, uTime: { value: 0 } } })); atmo.name = 'atmosphere'; pm.add(atmo);
-        const aur = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0 }, uCmeSpeed: { value: 0 }, uImpactTime: { value: 0 }, uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, uAuroraIntensity: { value: 0 } } })); aur.name = 'aurora'; pm.add(aur);
-      }
-      const op = []; for (let i = 0; i <= 128; i++) op.push(new THREE.Vector3(Math.sin((i / 128) * Math.PI * 2) * data.radius, 0, Math.cos((i / 128) * Math.PI * 2) * data.radius));
-      const ot = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(op), 128, 0.005 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.6 }));
-      scene.add(ot); orbitsRef.current[name] = ot;
-    });
-    Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
-      if (!data.orbits) return;
-      const parent = celestialBodiesRef.current[data.orbits]; if (!parent) return;
-      const mm = new THREE.Mesh(new THREE.SphereGeometry(data.size, 16, 16), new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null }));
-      mm.position.set(data.radius * Math.sin(data.angle), 0, data.radius * Math.cos(data.angle)); mm.userData = data;
-      parent.mesh.add(mm); celestialBodiesRef.current[name] = { mesh: mm, name: data.name, labelId: data.labelElementId, userData: data };
-      if (name === 'MOON' && !planetLabelInfos.find(p => p.name === 'Moon')) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: mm });
-      const mp = []; for (let i = 0; i <= 64; i++) mp.push(new THREE.Vector3(Math.sin((i / 64) * Math.PI * 2) * data.radius, 0, Math.cos((i / 64) * Math.PI * 2) * data.radius));
-      const mo = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(mp), 64, 0.003 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.7 })); mo.name = 'moon-orbit'; parent.mesh.add(mo);
-    });
-    Object.entries(POI_DATA_MAP).forEach(([name, data]) => {
-      const pm = new THREE.Mesh(new THREE.TetrahedronGeometry(data.size, 0), new THREE.MeshBasicMaterial({ color: data.color })); pm.userData = data; scene.add(pm);
-      celestialBodiesRef.current[name] = { mesh: pm, name: data.name, labelId: data.labelElementId, userData: data };
-      planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: pm });
-    });
-    setPlanetMeshesForLabels(planetLabelInfos);
-
-    const handleResize = () => {
-      if (mountRef.current && cameraRef.current && rendererRef.current) {
-        cameraRef.current.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
-        cameraRef.current.updateProjectionMatrix();
-        rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-      }
-    };
-    window.addEventListener('resize', handleResize);
-
-    const handlePointerDown = (e: PointerEvent) => { pointerDownTime.current = Date.now(); pointerDownPosition.current = { x: e.clientX, y: e.clientY }; };
-    const handlePointerUp = (e: PointerEvent) => {
-      const dt = Date.now() - pointerDownTime.current;
-      const dx = e.clientX - pointerDownPosition.current.x, dy = e.clientY - pointerDownPosition.current.y;
-      if (dt < 200 && Math.sqrt(dx * dx + dy * dy) < 10) {
-        if (!mountRef.current || !cameraRef.current || !raycasterRef.current || !mouseRef.current || !sceneRef.current) return;
-        const rect = mountRef.current.getBoundingClientRect();
-        mouseRef.current.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-        const sun = celestialBodiesRef.current['SUN']?.mesh;
-        if (sun && raycasterRef.current.intersectObject(sun).length > 0 && onSunClick) onSunClick();
-      }
-    };
-    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
-    renderer.domElement.addEventListener('pointerup', handlePointerUp);
-
-    let animationFrameId: number;
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      const { currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd, showFluxRope, bzSouth, showHss } = animPropsRef.current;
-      const elapsedTime = getClockElapsedTime();
-      const delta = elapsedTime - lastTimeRef.current;
-      lastTimeRef.current = elapsedTime;
-
-      if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
-      if (starsFarRef.current)  starsFarRef.current.rotation.y  += 0.00009;
-
-      const OSS = 2000;
-      Object.values(celestialBodiesRef.current).forEach(body => {
-        const d = body.userData as PlanetData | undefined;
-        if (!d?.orbitalPeriodDays || body.name === 'EARTH') return;
-        const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * OSS) * elapsedTime;
-        body.mesh.position.set(d.radius * Math.sin(a), 0, d.radius * Math.cos(a));
-      });
-
-      const l1 = celestialBodiesRef.current['L1'], eb = celestialBodiesRef.current['EARTH'];
-      if (l1 && eb) { const p = new THREE.Vector3(); eb.mesh.getWorldPosition(p); const d = p.clone().normalize(); l1.mesh.position.copy(p.clone().sub(d.multiplyScalar((l1.userData as POIData).distanceFromParent))); l1.mesh.lookAt(p); }
-
-      if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
-
-      // ── Solar rotation / timeline sync ───────────────────────────────────
-      // Timeline mode: lock CH/HSS longitude to the scrubbed absolute time.
-      // The red "now" line corresponds to Date.now(); at that point angle=0.
-      if (timelineActive && timelineMaxDate > timelineMinDate) {
-        const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        const dtSecFromNow = (timelineNowMs - Date.now()) / 1000;
-        sunRotationRef.current = SUN_ANGULAR_VELOCITY * dtSecFromNow;
-      } else {
-        const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
-        sunRotationRef.current += sunAngularDelta;
-      }
-      if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
-
-      // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
-      if (hssGroupRef.current) {
-        hssGroupRef.current.visible = showHss;
-        hssGroupRef.current.children.forEach((child: any) => {
-          const u = child.material?.uniforms;
-          if (!u) return;
-          if (u.uSunAngle !== undefined) u.uSunAngle.value = 0;
-          if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
-        });
-      }
-      if (hssAuRingsRef.current) hssAuRingsRef.current.visible = showHss;
-
-      if (celestialBodiesRef.current.EARTH) {
-        const e = celestialBodiesRef.current.EARTH.mesh; e.rotation.y += 0.05 * delta;
-        const c = e.children.find((c: any) => c.name === 'clouds'); if (c) c.rotation.y += 0.01 * delta;
-        e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
-      }
-
-      cmeGroupRef.current.children.forEach((c: any) => {
-        if (c.material) {
-          // Hide cannibalized CMEs (absorbed by a faster following CME)
-          const engine = propagationEngineRef.current;
-          if (engine && engine.isCannibalized(c.userData.id)) {
-            c.material.opacity = Math.max(0, c.material.opacity - 0.02);  // Fade out
-            if (c.material.opacity <= 0.01) { c.visible = false; return; }
-          } else {
-            c.material.opacity = getCmeOpacity(c.userData.speed);
-          }
-        }
-      });
-
-      if (timelineActive) {
-        if (timelinePlaying) {
-          const r = timelineMaxDate - timelineMinDate;
-          if (r > 0 && timelineValueRef.current < 1000) {
-            const v = timelineValueRef.current + (delta * (3 * timelineSpeed * 3600 * 1000) / r) * 1000;
-            if (v >= 1000) { timelineValueRef.current = 1000; onTimelineEnd(); } else { timelineValueRef.current = v; }
-            onScrubberChangeByAnim(timelineValueRef.current);
-          }
-        }
-        const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
-      } else {
-        cmeGroupRef.current.children.forEach((c: any) => {
-          let d = 0; let tSec = 0;
-          if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
-            const cme = c.userData, t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
-            tSec = t < 0 ? 0 : t;
-            d = (cme.isEarthDirected && cme.predictedArrivalTime) ? calculateDistanceByInterpolation(cme, tSec) : calculateDistanceWithDeceleration(cme, tSec);
-          } else if (!currentlyModeledCMEId) {
-            const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
-            tSec = t < 0 ? 0 : t;
-            d = calculateDistanceWithDeceleration(c.userData, tSec);
-          } else { updateCMEShape(c, -1); return; }
-          updateCMEShape(c, d, tSec);
-        });
-      }
-
-      // Legacy torus hidden — superseded by Bz field lines
-      if (fluxRopeRef.current) { fluxRopeRef.current.visible = false; fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime; }
-
-      // ── Bz field lines ───────────────────────────────────────────────────────
-      const shouldShowBz = showFluxRope && !!currentlyModeledCMEId;
-      if (bzFieldLinesRef.current) {
-        bzFieldLinesRef.current.visible = shouldShowBz;
-        if (shouldShowBz) {
-          const cmeObj = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
-          if (cmeObj?.visible) {
-            bzFieldLinesRef.current.position.copy(cmeObj.position);
-            bzFieldLinesRef.current.quaternion.copy(cmeObj.quaternion);
-            bzFieldLinesRef.current.scale.copy(cmeObj.scale);
-            const bzVal = bzSouth ? 1.0 : 0.0;
-            bzFieldLinesRef.current.children.forEach((child: any) => {
-              if (child.material?.uniforms) {
-                child.material.uniforms.uTime.value    = elapsedTime;
-                child.material.uniforms.uBzSouth.value = bzVal;
-              }
-            });
-          }
-        }
-      }
-
-      // ── Bz indicator disc ────────────────────────────────────────────────────
-      if (bzIndicatorRef.current) {
-        bzIndicatorRef.current.visible = false;
-        if (shouldShowBz) {
-          const cmeObj = cmeGroupRef.current.children.find((c: any) => c.userData.id === currentlyModeledCMEId);
-          if (cmeObj?.visible) {
-            // Place disc at the front face of the croissant, offset slightly forward
-            const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObj.quaternion);
-            bzIndicatorRef.current.position.copy(cmeObj.position.clone().add(dir.multiplyScalar(cmeObj.scale.x * 0.18)));
-            // Always face the camera
-            bzIndicatorRef.current.quaternion.copy(cameraRef.current.quaternion);
-            // Scale proportional to CME lateral width
-            const ds = cmeObj.scale.x * 0.55;
-            bzIndicatorRef.current.scale.set(ds, ds, ds);
-            bzIndicatorRef.current.material.uniforms.uBzSouth.value = bzSouth ? 1.0 : 0.0;
-            bzIndicatorRef.current.material.uniforms.uTime.value    = elapsedTime;
-          }
-        }
-      }
-
-      const maxImpactSpeed = checkImpacts();
-      updateImpactEffects(maxImpactSpeed, elapsedTime);
-      controlsRef.current.update();
-      rendererRef.current.render(sceneRef.current, cameraRef.current);
-    };
-    animate();
-
-    sceneCleanupRef.current = () => {
-      window.removeEventListener('resize', handleResize);
-      if (rendererRef.current?.domElement) { rendererRef.current.domElement.removeEventListener('pointerdown', handlePointerDown); rendererRef.current.domElement.removeEventListener('pointerup', handlePointerUp); }
-      if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
-      if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
-      if (arrowTextureCache)    { arrowTextureCache.dispose?.();    arrowTextureCache    = null; }
-      try { rendererRef.current?.dispose(); } catch {}
-      cancelAnimationFrame(animationFrameId);
-      sceneRef.current?.traverse((o: any) => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) { if (Array.isArray(o.material)) o.material.forEach((m: any) => m.dispose()); else o.material.dispose(); }
-      });
-      rendererRef.current = null; setRendererDomElement(null); onCameraReady(null);
-    };
-    }); // end loadThreeLibs().then()
-
-    return () => {
-      cancelled = true;
-      sceneCleanupRef.current?.();
-      sceneCleanupRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadThreeLibs]);
-
-  // ── CME particle systems ──────────────────────────────────────────────────
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !cmeGroupRef.current || !sceneRef.current) return;
-    while (cmeGroupRef.current.children.length > 0) {
-      const c = cmeGroupRef.current.children[0]; cmeGroupRef.current.remove(c);
-      if ((c as any).geometry) (c as any).geometry.dispose();
-      if ((c as any).material) { const m = (c as any).material; if (Array.isArray(m)) m.forEach((x: any) => x.dispose()); else m.dispose(); }
-    }
-    const pt = createParticleTexture(THREE);
-    cmeData.forEach(cme => {
-      const pCount = getCmeParticleCount(cme.speed), pos: number[] = [];
-      const arcR = GCS_ARC_RADIUS_FRAC, baseTubeR = GCS_TUBE_RADIUS_FRAC * arcR, hs = GCS_ARC_SPAN * 0.5;
-
-      // ── TEARDROP SHAPE ────────────────────────────────────────────────────
-      // The leading edge (top of arc, t≈0) is fattest.
-      // Tube radius tapers toward the trailing legs (t→±halfSpan).
-      // taper(t) = 1.0 at t=0 (front), falls to ~0.35 at the tips.
+      // Tube radius: starts at the CH angular width at the sun,
+      // expands dramatically by Earth distance.
       //
-      // ── BACK DEPTH (60% extra) ───────────────────────────────────────────
-      // A second pass distributes particles behind the arc centrepoint,
-      // offset along the -Y (toward-Sun) axis.  This gives front-to-back
-      // depth without going all the way back to the Sun.
-      // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
-      // Density falls off toward the tail so it looks like a tear, not a box.
+      // Uses a power curve (t^0.7) so the expansion accelerates —
+      // the stream is still narrow near the Sun but really opens up
+      // in the outer heliosphere, matching ENLIL visualizations.
+      const tExpand = Math.pow(t, 0.7);
+      const flare   = 1.0 + tExpand * (8.0 * widthFactor);  // 1× at sun → ~9–15× at Earth
+      const rTube   = tubeR0Clamped * flare;
 
-      const backDepthFrac = 3.00; // how far back the tail extends as fraction of arcR
-      // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
-      const mainCount = Math.floor(pCount * 0.65);
-      const tailCount = pCount - mainCount;
-
-      // Main arc particles — rounded front cap for a teardrop head.
-      for (let i = 0; i < mainCount; i++) {
-        const t  = (Math.random() * 2 - 1) * hs;
-        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
-        const Nx = -Math.sin(t), Ny = -Math.cos(t);
-
-        // Keep the front broad/smooth; tips thinner to avoid crescent "horns".
-        const tNorm = Math.abs(t / hs);
-        const taper = 0.30 + 0.70 * Math.pow(1 - tNorm, 1.8);
-        const tubeR = baseTubeR * taper;
-        const rho   = Math.sqrt(Math.random()) * tubeR;
-        const phi   = Math.random() * 2 * Math.PI;
-        pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
-      }
-
-      // Tail particles — converge toward a single apex so whole CME reads teardrop.
-      for (let i = 0; i < tailCount; i++) {
-        const t  = (Math.random() * 2 - 1) * hs;
-        const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
-        const Nx = -Math.sin(t), Ny = -Math.cos(t);
-
-        const depthFrac = Math.pow(Math.random(), 2.1); // strong front bias
-        const depthCurve = Math.pow(depthFrac, 1.55);
-        const depthY = -depthCurve * backDepthFrac * arcR;
-
-        // As depth increases, collapse lateral span toward a centerline apex.
-        const toApex = Math.pow(depthFrac, 1.15);
-        const apexX = 0;
-        const apexY = -arcR * 1.10;
-        const tailCx = cx * (1 - toApex) + apexX * toApex;
-        const tailCy = cy * (1 - toApex) + apexY * toApex;
-
-        const arcTaper = 0.25 + 0.75 * Math.pow(1 - Math.abs(t / hs), 1.9);
-        const depthTaper = Math.max(0.10, 1.0 - Math.pow(depthFrac, 0.72) * 0.90);
-        const apexTaper = Math.max(0.08, 1.0 - toApex * 0.94);
-        const tubeR = baseTubeR * arcTaper * depthTaper * apexTaper;
-        const rho   = Math.sqrt(Math.random()) * tubeR;
-        const phi   = Math.random() * 2 * Math.PI;
-
-        pos.push(
-          tailCx + rho * Math.cos(phi) * Nx,
-          tailCy + rho * Math.cos(phi) * Ny + depthY,
-          rho * Math.sin(phi)
-        );
-      }
-      const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
-      const system = new THREE.Points(geom, mat); system.userData = cme;
-      const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
-      system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      cmeGroupRef.current.add(system);
-    });
-  }, [cmeData, getClockElapsedTime, threeReady]);
-
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!cmeGroupRef.current) return;
-    cmeGroupRef.current.children.forEach((cm: any) => {
-      cm.visible = !currentlyModeledCMEId || cm.userData.id === currentlyModeledCMEId;
-      if (cm.userData.id === currentlyModeledCMEId) cm.userData.simulationStartTime = getClockElapsedTime();
-    });
-    if (!THREE || !sceneRef.current) return;
-    if (predictionLineRef.current) { sceneRef.current.remove(predictionLineRef.current); predictionLineRef.current.geometry.dispose(); predictionLineRef.current.material.dispose(); predictionLineRef.current = null; }
-    const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
-    if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) {
-      const p = new THREE.Vector3(); celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p);
-      const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]), new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE }));
-      l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l;
+      pos.push(
+        curr.x + rTube * (cr * right.x + sr * up2.x),
+        curr.y + rTube * (cr * right.y + sr * up2.y),
+        curr.z + rTube * (cr * right.z + sr * up2.z),
+      );
+      flow.push(t);
+      edge.push(Math.abs(cr));   // 1.0 at sides of tube cross-section
     }
-  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady]);
+  }
 
-  // ── Rebuild CH/HSS geometry when fresh SUVI data arrives ─────────────────
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
+  for (let i = 0; i < N - 1; i++) {
+    for (let s = 0; s < sides; s++) {
+      const sn = (s + 1) % sides;
+      const a  = i * sides + s,  b  = i * sides + sn;
+      const c  = (i+1) * sides + s, d = (i+1) * sides + sn;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
 
-    const clearGroup = (group: any) => {
-      while (group.children.length > 0) {
-        const child = group.children[0];
-        group.remove(child);
-        child.geometry?.dispose?.();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
-          else child.material.dispose?.();
-        }
-      }
-    };
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('aFlow',    new THREE.Float32BufferAttribute(flow, 1));
+  geom.setAttribute('aEdge',    new THREE.Float32BufferAttribute(edge, 1));
+  geom.setIndex(idx);
+  geom.computeVertexNormals();
 
-    clearGroup(chGroupRef.current);
-    clearGroup(hssGroupRef.current);
+  // ── Longitude alignment ─────────────────────────────────────────────────────
+  // hgToVec places positive lon at +X via sin(theta).
+  // The vertex shader's Y-rotation with positive angle rotates +Z toward -X.
+  // To match, we NEGATE the longitude so the shader puts the backbone
+  // at the same +X position as hgToVec for positive ch.lon.
+  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
 
-    const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-    coronalHoles.forEach(ch => {
-      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
-      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-
-      // Use time-varying spiral if we have evolution data for this CH
-      const evo = chEvolutions?.find(e => e.trackId === ch.id);
-      if (evo && evo.snapshots.length >= 2) {
-        hssGroupRef.current.add(
-          buildTimeVaryingSpiralMesh(THREE, ch, evo, sunR, hssReach, 0)
-        );
-      } else {
-        // Fallback: static spiral from current detection only
-        hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
-      }
-    });
-  }, [coronalHoles, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── CH MORPHING: animate CH patches when timeline is scrubbed ────────────
-  //
-  // When the user scrubs the timeline backward, the CH patches on the Sun
-  // morph to show how they looked at that point in time — growing, shrinking,
-  // or shifting as the real SUVI observations recorded over 72 hours.
-  //
-  // This only fires when we have evolution data AND the timeline is active.
-  // Debounced to avoid rebuilding geometry every frame — only rebuilds when
-  // the scrubbed time changes by more than 1 hour.
-  const lastMorphTimeRef = useRef<number>(0);
-
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-    if (!timelineActive || !chEvolutions || chEvolutions.length === 0) return;
-    if (timelineMinDate <= 0 || timelineMaxDate <= timelineMinDate) return;
-
-    const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
-
-    // Only rebuild if the scrubbed time changed by > 15 minutes
-    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 15 * 60 * 1000) return;
-    lastMorphTimeRef.current = timelineNowMs;
-
-    // Build morphed CH array from evolution data at the scrubbed time
-    const morphedCHs: CoronalHole[] = chEvolutions.map(evo =>
-      getCHAtTimelineTime(evo, timelineNowMs)
-    );
-
-    if (morphedCHs.length === 0) return;
-
-    // Clear and rebuild CH patches with morphed shapes
-    const clearGroup = (group: any) => {
-      while (group.children.length > 0) {
-        const child = group.children[0];
-        group.remove(child);
-        child.geometry?.dispose?.();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
-          else child.material.dispose?.();
-        }
-      }
-    };
-
-    clearGroup(chGroupRef.current);
-    // HSS spiral is NOT rebuilt here — it uses the time-varying ribbon
-    // built from evolution data (see buildTimeVaryingSpiralMesh)
-
-    const sunR     = PLANET_DATA_MAP.SUN.size;
-    morphedCHs.forEach(ch => {
-      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
-      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-    });
-  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
-    const THREE = (window as any).THREE; const gsap = (window as any).gsap;
-    if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return;
-    const target = new THREE.Vector3(0, 0, 0);
-    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) celestialBodiesRef.current.EARTH.mesh.getWorldPosition(target);
-    const pos = view === ViewMode.TOP
-      ? new THREE.Vector3(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01)
-      : new THREE.Vector3(target.x + SCENE_SCALE * 1.9, target.y + SCENE_SCALE * 0.35, target.z);
-    gsap.to(cameraRef.current.position, { duration: 1.2, x: pos.x, y: pos.y, z: pos.z, ease: "power2.inOut" });
-    gsap.to(controlsRef.current.target, { duration: 1.2, x: target.x, y: target.y, z: target.z, ease: "power2.inOut", onUpdate: () => controlsRef.current.update() });
-  }, []);
-  useEffect(() => { moveCamera(activeView, focusTarget); }, [activeView, focusTarget, dataVersion, moveCamera]);
-
-  useImperativeHandle(ref, () => ({
-    resetView: () => moveCamera(ViewMode.TOP, FocusTarget.EARTH),
-    resetAnimationTimer: () => { lastTimeRef.current = getClockElapsedTime(); },
-    captureCanvasAsDataURL: () => {
-      if (rendererRef.current && sceneRef.current && cameraRef.current) { rendererRef.current.render(sceneRef.current, cameraRef.current); return rendererRef.current.domElement.toDataURL('image/png'); }
-      return null;
+  const mat = new THREE.ShaderMaterial({
+    vertexShader:   VERT,
+    fragmentShader: FRAG,
+    uniforms: {
+      uChLon:       { value: lonRad },
+      uSunAngle:    { value: sunAngle0 },
+      uTime:        { value: 0 },
+      uOpacity:     { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
+      uSourceSpeed: { value: ch.estimatedSpeedKms },  // km/s — drives gradient deceleration
     },
-    calculateImpactProfile: (): ImpactDataPoint[] => {
-      const THREE = (window as any).THREE;
-      if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
-      if (timelineMinDate <= 0) return [];
+    transparent: true,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
+  });
 
-      const engine = propagationEngineRef.current;
-      const timelineNow = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
-      const gStart = timelineNow;
-      const gEnd = gStart + 7 * 24 * 3600 * 1000;
+  const mesh    = new THREE.Mesh(geom, mat);
+  mesh.name     = `hss-spiral-${ch.id}`;
+  mesh.userData = { coronalHoleId: ch.id, isHssMesh: true };
+  return mesh;
+}
 
-      // ── Use the propagation engine if available ───────────────────────
-      if (engine) {
-        const engineProfile = engine.calculateImpactProfile(gStart, gEnd - gStart, 200);
-        return engineProfile.map(p => {
-          // Map engine disturbance types to the existing chart format
-          let distType: ImpactDataPoint['disturbanceType'] = undefined;
-          let distName: string | undefined = p.disturbanceId;
-          let interactionFlag: ImpactDataPoint['interactionFlag'] = undefined;
+// ═══════════════════════════════════════════════════════════════════════
+//  TIME-VARYING HSS SPIRAL
+// ═══════════════════════════════════════════════════════════════════════
+//
+//  Unlike buildParkerSpiralMesh (which uses the CURRENT CH for the
+//  entire spiral), this version queries the CH evolution history at
+//  each backbone point to determine what the CH looked like when that
+//  parcel of solar wind was emitted.
+//
+//  PHYSICAL PICTURE:
+//    - The spiral root (t=0, near the Sun) = wind leaving NOW
+//      → uses current CH properties (width, darkness, lat, speed)
+//    - Midway along the spiral (t=0.5, ~0.5 AU) = wind emitted ~2 days ago
+//      → uses the CH properties from 2 days ago
+//    - The tip (t=1, ~1 AU) = wind emitted ~3–4 days ago
+//      → uses the CH properties from 3–4 days ago
+//
+//  This means:
+//    - The tube WIDTH varies along its length (CH was wider/narrower then)
+//    - The tube POSITION shifts (CH was at a different longitude then)
+//    - The tube DARKNESS/SPEED varies (affecting the colour gradient)
+//
+//  The result is a ribbon that carries the imprint of the CH's evolution
+//  as the wind travelled outward — exactly what a forecaster would want.
 
-          switch (p.disturbanceType) {
-            case 'CME_sheath':
-              distType = 'CME';
-              break;
-            case 'CME_ejecta':
-              distType = 'CME';
-              break;
-            case 'complex_ejecta':
-              distType = 'CME';
-              interactionFlag = 'cannibalism';
-              break;
-            case 'HSS':
-            case 'SIR':
-              distType = 'Coronal Hole';
-              distName = undefined;
-              break;
-            default:
-              break;
-          }
+export function buildTimeVaryingSpiralMesh(
+  THREE: any,
+  ch: CoronalHole,
+  evolution: CHEvolution,
+  sunRadius: number,
+  maxReach: number,
+  sunAngle0: number,
+  /** Optional: the absolute time (ms) to build the spiral for.
+   *  If provided, the spiral only extends as far as wind has had
+   *  time to travel from the Sun by this point. When scrubbing
+   *  backward, the spiral retracts; when scrubbing forward, it extends.
+   *  If omitted, uses Date.now() (full extent). */
+  referenceTimeMs?: number,
+): any {
+  const refTime = referenceTimeMs ?? Date.now();
 
-          return {
-            time: p.timeMs,
-            speed: p.speedKms,
-            density: p.densityCm3,
-            bz: p.bzNt,
-            disturbanceType: distType,
-            disturbanceName: distName,
-            interactionFlag,
-          };
-        });
-      }
+  // ── Speed-dependent spiral tightness (same as static version) ──────
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 500) / 400, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.10, speedT);
+  const phiMax = turns * Math.PI * 2;
 
-      // ── FALLBACK: original geometry-based calculation ──────────────────
-      // (Used only if the propagation engine hasn't been built yet)
-      const ed = PLANET_DATA_MAP.EARTH;
-      const gDur = gEnd - gStart;
-      const graphData: ImpactDataPoint[] = []; const ns = 200, as = 350, ad = 5;
-      const wrapPi = (a: number) => {
-        let v = a;
-        while (v > Math.PI) v -= Math.PI * 2;
-        while (v < -Math.PI) v += Math.PI * 2;
-        return v;
-      };
-      for (let i = 0; i <= ns; i++) {
-        const ct = gStart + gDur * (i / ns);
-        const earthAz = ed.angle;
-        const ep = new THREE.Vector3(ed.radius * Math.sin(earthAz), 0, ed.radius * Math.cos(earthAz));
-        let ts = as, td = ad;
-        let dominantDisturbanceType: ImpactDataPoint['disturbanceType'] = undefined;
-        let dominantDisturbanceName: string | undefined;
-        let dominantContribution = 0;
-        cmeGroupRef.current.children.forEach((co: any) => {
-          const cme = co.userData as ProcessedCME, tsc = (ct - cme.startTime.getTime()) / 1000;
-          if (tsc > 0) {
-            const cd = calculateDistanceWithDeceleration(cme, tsc);
-            const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(co.quaternion);
-            if (cdir.angleTo(ep.clone().normalize()) < THREE.MathUtils.degToRad(cme.halfAngle)) {
-              const de = ep.length(), cth = SCENE_SCALE * 0.3;
-              // Use engine speed if available, else basic estimate
-              const engineRef = propagationEngineRef.current;
-              const cs = engineRef
-                ? Math.max(MIN_CME_SPEED_KMS, engineRef.getCurrentSpeed(cme.id, tsc))
-                : Math.max(MIN_CME_SPEED_KMS, cme.speed * 0.7);  // rough decel estimate
+  // ── Travel time: how many hours ago was each point's wind emitted? ─
+  const AU_KM = 149_597_870.7;
+  const avgSpeed = Math.max(400, ch.estimatedSpeedKms);
+  const maxTravelHours = (AU_KM / avgSpeed) / 3600;  // ~60–90 hours for typical HSS
 
-              if (de < cd && de > cd - cth) {
-                const pen = cd - de, ct2 = cth * 0.25;
-                const inten = pen <= ct2 ? 1 : 0.5 * (1 + Math.cos(((pen - ct2) / (cth - ct2)) * Math.PI));
-                const cmeSpeedAtEarth = as + (cs - as) * inten;
-                ts = Math.max(ts, cmeSpeedAtEarth);
-                td += (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ad) * inten;
-                const cmeContribution = Math.max(0, cmeSpeedAtEarth - as);
-                if (cmeContribution > dominantContribution) {
-                  dominantContribution = cmeContribution;
-                  dominantDisturbanceType = "CME";
-                  dominantDisturbanceName = cme.id;
-                }
-              }
+  // ── How far back does our reference time go? ──────────────────────
+  // At referenceTimeMs, the oldest wind that could have reached maxReach
+  // was emitted maxTravelHours ago. But if the reference time is in the
+  // PAST (timeline scrubbed backward), the spiral should only extend
+  // as far as wind has had time to travel since the earliest known
+  // emission.
+  //
+  // hoursFromNow: how many hours before real-now is the reference time
+  //   positive = scrubbed into the past
+  //   negative = scrubbed into the future (forecast)
+  const hoursFromNow = (Date.now() - refTime) / (3600 * 1000);
+  // The effective travel time available at the reference time is reduced
+  // when scrubbing backward. The oldest emission we can show is bounded
+  // by whichever is less: the max physical travel time, or how far back
+  // we have data + the time since that emission.
+  const effectiveMaxTravelHours = Math.max(0, maxTravelHours - hoursFromNow);
+  // Scale the spiral reach proportionally
+  const reachFraction = Math.min(1.0, effectiveMaxTravelHours / maxTravelHours);
+  const effectiveMaxReach = THREE.MathUtils.lerp(sunRadius * 1.5, maxReach, reachFraction);
 
-              const sheathThickness = cth * 0.4;
-              if (de >= cd && de < cd + sheathThickness) {
-                const sheathPos = (de - cd) / sheathThickness;
-                const sheathInten = Math.sin((1 - sheathPos) * Math.PI);
-                td += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 6, 35) * sheathInten;
-                const sheathSpeed = as + (cs - as) * 0.15 * sheathInten;
-                ts = Math.max(ts, sheathSpeed);
-                const sheathContribution = Math.max(0, sheathSpeed - as);
-                if (sheathContribution > dominantContribution) {
-                  dominantContribution = sheathContribution;
-                  dominantDisturbanceType = "CME";
-                  dominantDisturbanceName = cme.id;
-                }
-              }
-            }
-          }
-        });
+  // ── Transequatorial damping (same as static version) ───────────────
+  const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;
+  const centroidLatDeg = ch.lat;
+  const equatorCoverage = THREE.MathUtils.clamp(
+    1.0 - Math.abs(centroidLatDeg) / Math.max(1, chHalfHeightDeg), 0, 1
+  );
+  const eclipticDamping = equatorCoverage * 0.85 + 0.15;
+  const backboneLatDeg = centroidLatDeg * (1.0 - eclipticDamping);
 
-        // CH/HSS fallback — use corrected 1 AU speed range
-        coronalHoles.forEach((ch) => {
-          const sourceSpeed = Math.max(450, Math.min(900, ch.estimatedSpeedKms));
-          const travelSec = AU_IN_KM / sourceSpeed;
-          const emissionTime = ct - travelSec * 1000;
+  // ── Build backbone with per-point historical CH query ──────────────
+  //
+  // TWO-PASS APPROACH for smooth results:
+  //   Pass 1: Query evolution data at each backbone point → raw values
+  //   Pass 2: Smooth the raw values with a wide moving average
+  //           so there are no discontinuities. The wind is a continuous
+  //           stream — each parcel connects smoothly to the one behind it.
 
-          const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
-          const sourceAzAtTimelineNow = sourceLon0 + SUN_ANGULAR_VELOCITY * ((timelineNow - Date.now()) / 1000);
-          const sourceAzAtEmission = sourceAzAtTimelineNow + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineNow) / 1000);
-          const earthCurrentAz = Math.atan2(ep.x, ep.z);
+  // Pass 1: collect raw per-point data
+  const rawData: {
+    widthDeg: number;
+    heightDeg: number;
+    darkness: number;
+    lonOffsetDeg: number;
+  }[] = [];
 
-          const signedDiff = wrapPi(earthCurrentAz - sourceAzAtEmission);
+  for (let i = 0; i <= SPIRAL_POINTS; i++) {
+    const t = i / SPIRAL_POINTS;
+    const hoursAgo = t * effectiveMaxTravelHours;
+    const historical = interpolateCHAtTime(evolution, hoursAgo);
 
-          const EARTH_ANGULAR_VELOCITY = 0;
-          const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - EARTH_ANGULAR_VELOCITY;
-          const safeAngularRate = Math.abs(relativeAngularRateSigned) > 1e-6
-            ? relativeAngularRateSigned
-            : (relativeAngularRateSigned >= 0 ? 1e-6 : -1e-6);
-
-          const hoursFromPeak = signedDiff / safeAngularRate / 3600;
-
-          const smoothstep = (edge0: number, edge1: number, x: number) => {
-            const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
-            return t * t * (3 - 2 * t);
-          };
-
-          const speedRiseHours = 8, speedPlateauHours = 14, speedFallHours = 10;
-          const speedPlateauHalf = speedPlateauHours / 2;
-          const speedStart = -speedRiseHours - speedPlateauHalf;
-          const speedEnd = speedPlateauHalf + speedFallHours;
-
-          let speedProfile = 0;
-          if (hoursFromPeak >= speedStart && hoursFromPeak < -speedPlateauHalf) {
-            speedProfile = smoothstep(0, 1, (hoursFromPeak - speedStart) / speedRiseHours);
-          } else if (hoursFromPeak >= -speedPlateauHalf && hoursFromPeak <= speedPlateauHalf) {
-            speedProfile = 1;
-          } else if (hoursFromPeak > speedPlateauHalf && hoursFromPeak <= speedEnd) {
-            speedProfile = 1 - smoothstep(0, 1, (hoursFromPeak - speedPlateauHalf) / speedFallHours);
-          }
-
-          const densityLeadHours = 12, densityDecayHours = 16;
-          let densityProfile = 0;
-          if (hoursFromPeak >= -densityLeadHours && hoursFromPeak < 0) {
-            densityProfile = smoothstep(-densityLeadHours, 0, hoursFromPeak);
-          } else if (hoursFromPeak >= 0) {
-            densityProfile = Math.exp(-hoursFromPeak / densityDecayHours);
-          }
-
-          if (speedProfile <= 0.002 && densityProfile <= 0.002) return;
-
-          const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
-          const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
-          // Peak HSS speed at 1 AU: 500–900 km/s depending on CH size and darkness
-          // Large dark polar-extension CHs can drive 800+ km/s at Earth
-          const peakSpeed = THREE.MathUtils.clamp(
-            500
-              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 30, 200)
-              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 120),
-            500,
-            900,
-          );
-
-          const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
-            + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 6);
-
-          const chSpeedAtEarth = as + (peakSpeed - as) * speedProfile;
-          ts = Math.max(ts, chSpeedAtEarth);
-          td += Math.max(0, peakDensity - ad) * densityProfile;
-          const chContribution = Math.max(0, chSpeedAtEarth - as);
-          if (chContribution > dominantContribution) {
-            dominantContribution = chContribution;
-            dominantDisturbanceType = "Coronal Hole";
-            dominantDisturbanceName = undefined;
-          }
-        });
-
-        graphData.push({ time: ct, speed: ts, density: td, disturbanceType: dominantDisturbanceType, disturbanceName: dominantDisturbanceName });
-      }
-      return graphData;
+    if (historical) {
+      rawData.push({
+        widthDeg: historical.widthDeg,
+        heightDeg: historical.heightDeg,
+        darkness: historical.darkness,
+        lonOffsetDeg: historical.lon - ch.lon,
+      });
+    } else {
+      rawData.push({
+        widthDeg: ch.widthDeg ?? 15,
+        heightDeg: ch.heightDeg ?? ch.widthDeg ?? 15,
+        darkness: ch.darkness,
+        lonOffsetDeg: 0,
+      });
     }
-  }), [moveCamera, getClockElapsedTime, timelineMinDate, timelineMaxDate, timelineValue, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
+  }
 
-  useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
-  useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
-  useEffect(() => { if (!celestialBodiesRef.current) return; const m = celestialBodiesRef.current['MOON'], l = celestialBodiesRef.current['L1']; if (m) m.mesh.visible = showMoonL1; if (l) l.mesh.visible = showMoonL1; const e = celestialBodiesRef.current['EARTH']?.mesh; if (e) { const o = e.children.find((c: any) => c.name === 'moon-orbit'); if (o) o.visible = showMoonL1; } }, [showMoonL1]);
-
-  const checkImpacts = useCallback(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return 0;
-    let maxSpeed = 0;
-    const p = new THREE.Vector3(); celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p);
-    cmeGroupRef.current.children.forEach((c: any) => {
-      const d = c.userData; if (!d || !c.visible) return;
-      const tip = c.position.clone().add(new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion).multiplyScalar(c.scale.x * GCS_ARC_RADIUS_FRAC));
-      if (tip.distanceTo(p) < PLANET_DATA_MAP.EARTH.size * 2.2 && d.speed > maxSpeed) maxSpeed = d.speed;
-    });
-    return maxSpeed;
-  }, []);
-
-  const speedToLatBoundaryDeg = (s: number) => 70 - 25 * ((clamp(s, 300, 3000) - 300) / 2700);
-  const speedToIntensity      = (s: number) => 0.25 + ((clamp(s, 300, 3000) - 300) / 2700) * 0.95;
-
-  const updateImpactEffects = useCallback((maxImpactSpeed: number, elapsed: number) => {
-    const earth = celestialBodiesRef.current.EARTH?.mesh; if (!earth) return;
-    const aurora = earth.children.find((c: any) => c.name === 'aurora');
-    const atmo   = earth.children.find((c: any) => c.name === 'atmosphere');
-    const hit = clamp(maxImpactSpeed / 1500, 0, 1);
-    if (aurora?.material?.uniforms) {
-      aurora.material.uniforms.uCmeSpeed.value        = maxImpactSpeed;
-      aurora.material.uniforms.uImpactTime.value      = hit > 0 ? elapsed : 0;
-      aurora.material.uniforms.uAuroraMinY.value      = Math.sin(speedToLatBoundaryDeg(maxImpactSpeed || 0) * Math.PI / 180);
-      aurora.material.uniforms.uAuroraIntensity.value = speedToIntensity(maxImpactSpeed || 0);
-      (aurora.material as any).opacity = 0.12 + hit * (0.45 + 0.18 * Math.sin(elapsed * 2));
+  // Pass 2: smooth with a wide moving average (window = ~15% of points)
+  // This eliminates jumps between sparse snapshots and produces the
+  // "garden hose slowly curving" effect rather than zigzag.
+  const smoothWindow = Math.max(3, Math.floor(SPIRAL_POINTS * 0.15));
+  const smoothed = rawData.map((_, i) => {
+    const lo = Math.max(0, i - smoothWindow);
+    const hi = Math.min(rawData.length - 1, i + smoothWindow);
+    const count = hi - lo + 1;
+    let sumW = 0, sumH = 0, sumD = 0, sumL = 0;
+    for (let j = lo; j <= hi; j++) {
+      // Weight: points closer to i contribute more (triangular kernel)
+      const weight = 1.0 - Math.abs(j - i) / (smoothWindow + 1);
+      sumW += rawData[j].widthDeg * weight;
+      sumH += rawData[j].heightDeg * weight;
+      sumD += rawData[j].darkness * weight;
+      sumL += rawData[j].lonOffsetDeg * weight;
     }
-    if (atmo?.material?.uniforms) { (atmo.material as any).opacity = 0.12 + hit * 0.22; atmo.material.uniforms.uImpactTime.value = hit > 0 ? elapsed : 0; }
-  }, []);
+    // Normalise by total weight
+    let totalWeight = 0;
+    for (let j = lo; j <= hi; j++) {
+      totalWeight += 1.0 - Math.abs(j - i) / (smoothWindow + 1);
+    }
+    return {
+      widthDeg: sumW / totalWeight,
+      heightDeg: sumH / totalWeight,
+      darkness: sumD / totalWeight,
+      lonOffsetDeg: sumL / totalWeight,
+    };
+  });
 
-  return <div ref={mountRef} className="w-full h-full" />;
-};
+  // Pass 3: build backbone from smoothed data
+  const backbone: any[] = [];
+  const perPointData: typeof smoothed = [];
 
-export default React.forwardRef(SimulationCanvas);
-// --- END OF FILE SimulationCanvas.tsx ---
+  for (let i = 0; i <= SPIRAL_POINTS; i++) {
+    const t   = i / SPIRAL_POINTS;
+    const phi = t * phiMax;
+    const r   = THREE.MathUtils.lerp(sunRadius * 1.03, effectiveMaxReach, t);
+    const sd  = smoothed[i];
+
+    // Azimuth: Parker spiral trailing + smooth historical offset
+    const lonOffsetRad = THREE.MathUtils.degToRad(sd.lonOffsetDeg);
+    const az = -phi + lonOffsetRad;
+
+    // Latitude: backbone damping toward ecliptic
+    const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
+    const latDecay = 1.0 - t * 0.3;
+    const latEff = backboneLatRad * Math.max(0, latDecay);
+    const cosLat = Math.cos(latEff);
+
+    backbone.push(new THREE.Vector3(
+      r * cosLat * Math.sin(az),
+      r * Math.sin(latEff),
+      r * cosLat * Math.cos(az),
+    ));
+
+    perPointData.push(sd);
+  }
+
+  const N = backbone.length;
+  if (N < 2) {
+    const dummy = new THREE.Points(
+      new THREE.BufferGeometry(),
+      new THREE.PointsMaterial({ visible: false })
+    );
+    dummy.name = `hss-spiral-tv-${ch.id}`;
+    return dummy;
+  }
+
+  // ── Tube extrusion with per-point varying width ────────────────────
+  const sides  = SPIRAL_TUBE_SIDES;
+  const pos: number[]  = [];
+  const flow: number[] = [];
+  const edge: number[] = [];
+  const idx: number[]  = [];
+
+  for (let i = 0; i < N; i++) {
+    const t    = i / (N - 1);
+    const curr = backbone[i];
+    const prev = backbone[Math.max(0, i - 1)];
+    const next = backbone[Math.min(N - 1, i + 1)];
+
+    const tang = next.clone().sub(prev).normalize();
+    const up   = new THREE.Vector3(0, 1, 0);
+    let right  = new THREE.Vector3().crossVectors(tang, up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    const up2  = new THREE.Vector3().crossVectors(right, tang).normalize();
+
+    // Per-point CH properties from the emission time
+    const pd = perPointData[i];
+    const chMaxExtentDeg = Math.max(pd.widthDeg, pd.heightDeg);
+    const chHalfAngleRad = THREE.MathUtils.degToRad(chMaxExtentDeg / 2);
+    const tubeR0 = Math.max(sunRadius * Math.sin(chHalfAngleRad), sunRadius * 0.15);
+
+    const widthFactor = THREE.MathUtils.clamp(chMaxExtentDeg / 30, 0.6, 1.8);
+    const tExpand = Math.pow(t, 0.7);
+    const flare   = 1.0 + tExpand * (8.0 * widthFactor);
+    const rTube   = tubeR0 * flare;
+
+    for (let s = 0; s < sides; s++) {
+      const a  = (s / sides) * Math.PI * 2;
+      const cr = Math.cos(a), sr = Math.sin(a);
+      pos.push(
+        curr.x + rTube * (cr * right.x + sr * up2.x),
+        curr.y + rTube * (cr * right.y + sr * up2.y),
+        curr.z + rTube * (cr * right.z + sr * up2.z),
+      );
+      flow.push(t);
+      edge.push(Math.abs(cr));
+    }
+  }
+
+  for (let i = 0; i < N - 1; i++) {
+    for (let s = 0; s < sides; s++) {
+      const sn = (s + 1) % sides;
+      const a  = i * sides + s,  b  = i * sides + sn;
+      const c  = (i+1) * sides + s, d = (i+1) * sides + sn;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('aFlow',    new THREE.Float32BufferAttribute(flow, 1));
+  geom.setAttribute('aEdge',    new THREE.Float32BufferAttribute(edge, 1));
+  geom.setIndex(idx);
+  geom.computeVertexNormals();
+
+  // Same longitude sign fix as the static version
+  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader:   VERT,
+    fragmentShader: FRAG,
+    uniforms: {
+      uChLon:       { value: lonRad },
+      uSunAngle:    { value: sunAngle0 },
+      uTime:        { value: 0 },
+      uOpacity:     { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
+      uSourceSpeed: { value: ch.estimatedSpeedKms },
+    },
+    transparent: true,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
+  });
+
+  const mesh    = new THREE.Mesh(geom, mat);
+  mesh.name     = `hss-spiral-tv-${ch.id}`;
+  mesh.userData = { coronalHoleId: ch.id, isHssMesh: true, isTimeVarying: true };
+  return mesh;
+}
+
+// --- END OF FILE utils/coronalHoleGeometry.ts ---
