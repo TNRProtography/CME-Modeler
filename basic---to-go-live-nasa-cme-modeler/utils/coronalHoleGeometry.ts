@@ -54,7 +54,7 @@ import { CoronalHole } from './coronalHoleData';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
-const SPIRAL_TURNS           = 0.38;
+const SPIRAL_TURNS           = 0.42;   // slightly more than 1/3 of a revolution to ~1 AU
 const CH_OVEREMPHASIS        = 1.22;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
@@ -505,8 +505,11 @@ export function buildParkerSpiralMesh(
   sunAngle0: number,
 ): any {
   const latRad = THREE.MathUtils.degToRad(ch.lat);
-  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 800) / 600, 0, 1);
-  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.16, speedT);
+  // Faster wind → straighter spiral (less winding).
+  // Parker spiral pitch angle: tan(ψ) = Ω·r / v_sw
+  // At 600 km/s the spiral is tighter than at 900 km/s.
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 500) / 400, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.18, speedT);
   const phiMax = turns * Math.PI * 2;
 
   // ── Backbone ───────────────────────────────────────────────────────────────
@@ -552,17 +555,41 @@ export function buildParkerSpiralMesh(
   // stream boundary physically matches the coronal hole that launched it.
   //
   // Physical rationale:
-  //   widthDeg → half-angle (degrees) → arc length at sunRadius → scene units
-  //   Then flare linearly to 2× that width by the time t=1 (Earth distance),
-  //   matching the observed ~factor-2 radial expansion of HSS streams by 1 AU.
+  //   The HSS is a 3D volume of fast plasma embedded in the Parker spiral.
+  //   Near the Sun it's confined to the CH angular extent. But as it
+  //   propagates outward:
+  //
+  //   1. The stream EXPANDS radially (super-radial expansion in the low
+  //      corona, then roughly radial beyond ~10 R☉).
+  //
+  //   2. The trailing edge of the stream interfaces with SLOW wind behind
+  //      it — this compression creates a broad transition region.
+  //
+  //   3. At 1 AU, a single HSS passage lasts 2–4 DAYS in L1 data.
+  //      At ~600 km/s that's a structure spanning ~0.7–1.4 AU in depth.
+  //      The cross-sectional width is comparable — it's a massive volume.
+  //
+  //   4. The SIR (Stream Interaction Region) at the leading edge is a
+  //      broad compression front, not a thin wall.
+  //
+  //   We use a strong flare factor: the tube radius grows by ~8–12× from
+  //   the Sun to Earth, producing the broad swathe visible in ENLIL runs.
+  //   Wider CHs produce wider streams (more open flux = broader outflow).
   //
   const chHalfAngleRad = THREE.MathUtils.degToRad((ch.widthDeg ?? 15) / 2);
   const tubeR0 = sunRadius * Math.sin(chHalfAngleRad); // CH width → arc at sun surface
+
+  // Minimum base radius so even small CHs produce a visible stream
+  const tubeR0Clamped = Math.max(tubeR0, sunRadius * 0.12);
+
   const sides  = SPIRAL_TUBE_SIDES;
   const pos: number[]  = [];
   const flow: number[] = [];
   const edge: number[] = [];
   const idx: number[]  = [];
+
+  // Wider CHs produce wider streams — scale the flare with CH width
+  const widthFactor = THREE.MathUtils.clamp((ch.widthDeg ?? 15) / 30, 0.6, 1.8);
 
   for (let i = 0; i < N; i++) {
     const t    = i / (N - 1);
@@ -580,9 +607,17 @@ export function buildParkerSpiralMesh(
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
       const cr = Math.cos(a), sr = Math.sin(a);
-      // Tube radius: starts at the CH angular width at the sun, grows to 4× by Earth (t=1)
-      const flare  = 1.0 + t * 3.0;     // 1× at sun → 4× at Earth
-      const rTube  = tubeR0 * flare;
+
+      // Tube radius: starts at the CH angular width at the sun,
+      // expands dramatically by Earth distance.
+      //
+      // Uses a power curve (t^0.7) so the expansion accelerates —
+      // the stream is still narrow near the Sun but really opens up
+      // in the outer heliosphere, matching ENLIL visualizations.
+      const tExpand = Math.pow(t, 0.7);
+      const flare   = 1.0 + tExpand * (8.0 * widthFactor);  // 1× at sun → ~9–15× at Earth
+      const rTube   = tubeR0Clamped * flare;
+
       pos.push(
         curr.x + rTube * (cr * right.x + sr * up2.x),
         curr.y + rTube * (cr * right.y + sr * up2.y),
