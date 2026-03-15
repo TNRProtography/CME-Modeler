@@ -514,7 +514,6 @@ export function buildParkerSpiralMesh(
   maxReach: number,
   sunAngle0: number,
 ): any {
-  const latRad = THREE.MathUtils.degToRad(ch.lat);
   // Faster wind → straighter spiral (less winding).
   // Parker spiral pitch angle: tan(ψ) = Ω·r / v_sw
   // At 600 km/s the spiral is tighter than at 900 km/s.
@@ -550,14 +549,45 @@ export function buildParkerSpiralMesh(
   // plane quickly. Ulysses showed fast wind filling ±30° latitude from
   // polar CHs all the way to 5 AU.
   //
-  const chHalfHeightRad = THREE.MathUtils.degToRad(
-    (ch.heightDeg ?? ch.widthDeg ?? 20) / 2
-  );
-
   // ── Backbone ───────────────────────────────────────────────────────────────
   // Built in the canonical frame: φ=0 at +Z, arm curls in the -φ direction
   // (Parker spiral bends backward opposite to solar rotation because the wind
   //  travels faster than the sun rotates at 1 AU).
+  //
+  // CRITICAL: Backbone latitude handling for transequatorial CHs.
+  //
+  // A transequatorial coronal hole (one that spans the solar equator)
+  // launches wind from BOTH hemispheres. The centroid might sit at -10°
+  // or +8°, but the outflow fills the full latitude band from the CH's
+  // southern to northern edge. The ecliptic plane (lat ≈ 0°) runs
+  // right through the middle of the outflow — which is exactly where
+  // Earth is.
+  //
+  // The backbone latitude should therefore be DAMPED toward zero:
+  //   - If the CH spans the equator (|centroid lat| < half-height),
+  //     the backbone runs essentially in the ecliptic plane.
+  //   - If the CH is entirely in one hemisphere (small polar CH),
+  //     the backbone follows the centroid latitude.
+  //
+  // This ensures transequatorial CHs produce streams that HIT Earth
+  // rather than deflecting entirely to one hemisphere.
+
+  const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;
+  const centroidLatDeg = ch.lat;
+
+  // How much of the CH extends across the equator?
+  // If |centroid| < halfHeight, the CH spans the equator → strong damping.
+  // If |centroid| >> halfHeight, it's entirely polar → minimal damping.
+  const equatorCoverage = THREE.MathUtils.clamp(
+    1.0 - Math.abs(centroidLatDeg) / Math.max(1, chHalfHeightDeg),
+    0, 1
+  );
+  // Blend: 0 = use full centroid lat, 1 = force to ecliptic (lat=0)
+  const eclipticDamping = equatorCoverage * 0.85 + 0.15;
+  // Effective backbone latitude at the Sun — damped toward ecliptic
+  const backboneLatDeg = centroidLatDeg * (1.0 - eclipticDamping);
+  const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
+
   const backbone: any[] = [];
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
     const t   = i / SPIRAL_POINTS;
@@ -570,11 +600,11 @@ export function buildParkerSpiralMesh(
     // then trails backward as the spiral winds out.
     const az = leadingEdgeShift - phi;
 
-    // Latitude: preserve the CH's full N-S extent much further out.
-    // The decay is very gradual — HSS maintains its latitude structure
-    // to well beyond 1 AU. Only a mild relaxation toward the ecliptic.
-    const latDecay = 1.0 - t * 0.15;  // retains ~85% of latitude at Earth
-    const latEff = latRad * latDecay;
+    // Latitude: further relax toward ecliptic with distance.
+    // Solar wind at 1 AU is concentrated near the heliospheric
+    // current sheet (roughly the ecliptic during low-tilt periods).
+    const latDecay = 1.0 - t * 0.3;
+    const latEff = backboneLatRad * Math.max(0, latDecay);
     const cosLat = Math.cos(latEff);
 
     backbone.push(new THREE.Vector3(
