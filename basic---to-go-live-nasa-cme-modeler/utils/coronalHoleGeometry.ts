@@ -55,7 +55,17 @@ const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
 const SPIRAL_TURNS           = 0.42;   // slightly more than 1/3 of a revolution to ~1 AU
-const CH_OVEREMPHASIS        = 1.22;
+// CH_OVEREMPHASIS: scaling factor for coronal hole visual patches on the Sun.
+//
+// Previously 1.22 (inflating CHs by 22%) to make them easier to see.
+// This caused the HSS spiral to appear offset — launching from the "gap"
+// between the inflated CH edge rather than from the CH itself.
+//
+// Now set to 1.0 (true size). The CH patches show their actual detected
+// boundary from SUVI, and the HSS spiral root aligns correctly with the
+// CH centroid. If CHs look too small at full zoom-out, consider a subtle
+// outline glow rather than inflating the geometry.
+const CH_OVEREMPHASIS        = 1.0;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
 const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
