@@ -802,46 +802,88 @@ export function buildTimeVaryingSpiralMesh(
   const backboneLatDeg = centroidLatDeg * (1.0 - eclipticDamping);
 
   // ── Build backbone with per-point historical CH query ──────────────
-  const backbone: any[] = [];
-  const perPointData: {
+  //
+  // TWO-PASS APPROACH for smooth results:
+  //   Pass 1: Query evolution data at each backbone point → raw values
+  //   Pass 2: Smooth the raw values with a wide moving average
+  //           so there are no discontinuities. The wind is a continuous
+  //           stream — each parcel connects smoothly to the one behind it.
+
+  // Pass 1: collect raw per-point data
+  const rawData: {
     widthDeg: number;
     heightDeg: number;
     darkness: number;
-    lonOffsetRad: number;  // longitude shift relative to current CH
+    lonOffsetDeg: number;
   }[] = [];
+
+  for (let i = 0; i <= SPIRAL_POINTS; i++) {
+    const t = i / SPIRAL_POINTS;
+    const hoursAgo = t * maxTravelHours;
+    const historical = interpolateCHAtTime(evolution, hoursAgo);
+
+    if (historical) {
+      rawData.push({
+        widthDeg: historical.widthDeg,
+        heightDeg: historical.heightDeg,
+        darkness: historical.darkness,
+        lonOffsetDeg: historical.lon - ch.lon,
+      });
+    } else {
+      rawData.push({
+        widthDeg: ch.widthDeg ?? 15,
+        heightDeg: ch.heightDeg ?? ch.widthDeg ?? 15,
+        darkness: ch.darkness,
+        lonOffsetDeg: 0,
+      });
+    }
+  }
+
+  // Pass 2: smooth with a wide moving average (window = ~15% of points)
+  // This eliminates jumps between sparse snapshots and produces the
+  // "garden hose slowly curving" effect rather than zigzag.
+  const smoothWindow = Math.max(3, Math.floor(SPIRAL_POINTS * 0.15));
+  const smoothed = rawData.map((_, i) => {
+    const lo = Math.max(0, i - smoothWindow);
+    const hi = Math.min(rawData.length - 1, i + smoothWindow);
+    const count = hi - lo + 1;
+    let sumW = 0, sumH = 0, sumD = 0, sumL = 0;
+    for (let j = lo; j <= hi; j++) {
+      // Weight: points closer to i contribute more (triangular kernel)
+      const weight = 1.0 - Math.abs(j - i) / (smoothWindow + 1);
+      sumW += rawData[j].widthDeg * weight;
+      sumH += rawData[j].heightDeg * weight;
+      sumD += rawData[j].darkness * weight;
+      sumL += rawData[j].lonOffsetDeg * weight;
+    }
+    // Normalise by total weight
+    let totalWeight = 0;
+    for (let j = lo; j <= hi; j++) {
+      totalWeight += 1.0 - Math.abs(j - i) / (smoothWindow + 1);
+    }
+    return {
+      widthDeg: sumW / totalWeight,
+      heightDeg: sumH / totalWeight,
+      darkness: sumD / totalWeight,
+      lonOffsetDeg: sumL / totalWeight,
+    };
+  });
+
+  // Pass 3: build backbone from smoothed data
+  const backbone: any[] = [];
+  const perPointData: typeof smoothed = [];
 
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
     const t   = i / SPIRAL_POINTS;
     const phi = t * phiMax;
     const r   = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
+    const sd  = smoothed[i];
 
-    // How many hours ago was this parcel emitted?
-    const hoursAgo = t * maxTravelHours;
-
-    // Query the evolution data for CH properties at emission time
-    const historical = interpolateCHAtTime(evolution, hoursAgo);
-
-    let pointWidthDeg = ch.widthDeg ?? 15;
-    let pointHeightDeg = ch.heightDeg ?? ch.widthDeg ?? 15;
-    let pointDarkness = ch.darkness;
-    let lonOffsetRad = 0;
-
-    if (historical) {
-      pointWidthDeg = historical.widthDeg;
-      pointHeightDeg = historical.heightDeg;
-      pointDarkness = historical.darkness;
-
-      // The CH was at a different longitude when this wind left.
-      // Compute the offset from the current CH longitude.
-      // This shifts outer parts of the spiral to where the CH was then.
-      const lonDiffDeg = historical.lon - ch.lon;
-      lonOffsetRad = THREE.MathUtils.degToRad(lonDiffDeg);
-    }
-
-    // Azimuth: Parker spiral trailing + historical longitude offset
+    // Azimuth: Parker spiral trailing + smooth historical offset
+    const lonOffsetRad = THREE.MathUtils.degToRad(sd.lonOffsetDeg);
     const az = -phi + lonOffsetRad;
 
-    // Latitude: use backbone damping, further relax toward ecliptic
+    // Latitude: backbone damping toward ecliptic
     const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
     const latDecay = 1.0 - t * 0.3;
     const latEff = backboneLatRad * Math.max(0, latDecay);
@@ -853,12 +895,7 @@ export function buildTimeVaryingSpiralMesh(
       r * cosLat * Math.cos(az),
     ));
 
-    perPointData.push({
-      widthDeg: pointWidthDeg,
-      heightDeg: pointHeightDeg,
-      darkness: pointDarkness,
-      lonOffsetRad,
-    });
+    perPointData.push(sd);
   }
 
   const N = backbone.length;
