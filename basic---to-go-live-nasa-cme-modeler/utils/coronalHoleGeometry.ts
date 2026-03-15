@@ -522,6 +522,38 @@ export function buildParkerSpiralMesh(
   const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.18, speedT);
   const phiMax = turns * Math.PI * 2;
 
+  // ── HSS LONGITUDE OFFSET ──────────────────────────────────────────────────
+  //
+  // The HSS doesn't emerge from the CH centroid — it emerges from the
+  // CH's LEADING (western) edge. As the Sun rotates, the western limb
+  // of the CH is the part most recently facing Earth and actively
+  // feeding the Parker spiral toward the inner heliosphere.
+  //
+  // We shift the backbone forward (in the solar rotation direction)
+  // by half the CH width. This aligns the HSS stream body with the
+  // CH patch rather than appearing to lag behind it.
+  //
+  // Additionally, the Parker spiral itself has an inherent angular
+  // offset: wind emitted from a source at longitude θ arrives at
+  // Earth at a different azimuth due to the spiral geometry. For
+  // typical HSS speeds (600–800 km/s), this offset is ~20–30° at 1 AU.
+  // We apply a small forward shift at the root to account for this.
+  //
+  const chHalfWidthRad = THREE.MathUtils.degToRad((ch.widthDeg ?? 15) / 2);
+  const leadingEdgeShift = chHalfWidthRad * 0.7;  // shift toward leading edge
+
+  // ── CH LATITUDE EXTENT ─────────────────────────────────────────────────────
+  //
+  // The CH's north-south extent (heightDeg) defines how tall the HSS
+  // stream is. The stream should maintain this full vertical extent
+  // well beyond the Sun — HSS plasma doesn't collapse to the ecliptic
+  // plane quickly. Ulysses showed fast wind filling ±30° latitude from
+  // polar CHs all the way to 5 AU.
+  //
+  const chHalfHeightRad = THREE.MathUtils.degToRad(
+    (ch.heightDeg ?? ch.widthDeg ?? 20) / 2
+  );
+
   // ── Backbone ───────────────────────────────────────────────────────────────
   // Built in the canonical frame: φ=0 at +Z, arm curls in the -φ direction
   // (Parker spiral bends backward opposite to solar rotation because the wind
@@ -534,11 +566,15 @@ export function buildParkerSpiralMesh(
     // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
     const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Azimuth: starts at 0 (+Z), with tail trailing behind source rotation.
-    const az = -phi;
+    // Azimuth: starts AHEAD of the CH centroid (leading edge shift),
+    // then trails backward as the spiral winds out.
+    const az = leadingEdgeShift - phi;
 
-    // Latitude decays with distance (solar wind spreads toward equatorial plane)
-    const latEff = latRad * Math.exp(-phi / (phiMax * 0.60));
+    // Latitude: preserve the CH's full N-S extent much further out.
+    // The decay is very gradual — HSS maintains its latitude structure
+    // to well beyond 1 AU. Only a mild relaxation toward the ecliptic.
+    const latDecay = 1.0 - t * 0.15;  // retains ~85% of latitude at Earth
+    const latEff = latRad * latDecay;
     const cosLat = Math.cos(latEff);
 
     backbone.push(new THREE.Vector3(
@@ -586,11 +622,14 @@ export function buildParkerSpiralMesh(
   //   the Sun to Earth, producing the broad swathe visible in ENLIL runs.
   //   Wider CHs produce wider streams (more open flux = broader outflow).
   //
-  const chHalfAngleRad = THREE.MathUtils.degToRad((ch.widthDeg ?? 15) / 2);
-  const tubeR0 = sunRadius * Math.sin(chHalfAngleRad); // CH width → arc at sun surface
+  // Use the LARGER of width and height so the tube covers the CH's full
+  // north-south extent, not just its equatorial cross-section.
+  const chMaxExtentDeg = Math.max(ch.widthDeg ?? 15, ch.heightDeg ?? ch.widthDeg ?? 15);
+  const chHalfAngleRad = THREE.MathUtils.degToRad(chMaxExtentDeg / 2);
+  const tubeR0 = sunRadius * Math.sin(chHalfAngleRad);
 
   // Minimum base radius so even small CHs produce a visible stream
-  const tubeR0Clamped = Math.max(tubeR0, sunRadius * 0.12);
+  const tubeR0Clamped = Math.max(tubeR0, sunRadius * 0.15);
 
   const sides  = SPIRAL_TUBE_SIDES;
   const pos: number[]  = [];
@@ -598,8 +637,8 @@ export function buildParkerSpiralMesh(
   const edge: number[] = [];
   const idx: number[]  = [];
 
-  // Wider CHs produce wider streams — scale the flare with CH width
-  const widthFactor = THREE.MathUtils.clamp((ch.widthDeg ?? 15) / 30, 0.6, 1.8);
+  // Wider CHs produce wider streams — scale the flare with CH extent
+  const widthFactor = THREE.MathUtils.clamp(chMaxExtentDeg / 30, 0.6, 1.8);
 
   for (let i = 0; i < N; i++) {
     const t    = i / (N - 1);
