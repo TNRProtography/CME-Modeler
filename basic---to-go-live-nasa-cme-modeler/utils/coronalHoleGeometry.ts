@@ -49,6 +49,7 @@
 //   SPIRAL_TURNS           how many full wraps the arm makes before ending
 
 import { CoronalHole } from './coronalHoleData';
+import { interpolateCHAtTime, type CHEvolution } from './coronalHoleHistory';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const SPIRAL_POINTS          = 220;
@@ -746,4 +747,213 @@ export function buildParkerSpiralMesh(
   return mesh;
 }
 
-// --- END OF FILE utils/coronalHoleGeometry.ts --- 
+// ═══════════════════════════════════════════════════════════════════════
+//  TIME-VARYING HSS SPIRAL
+// ═══════════════════════════════════════════════════════════════════════
+//
+//  Unlike buildParkerSpiralMesh (which uses the CURRENT CH for the
+//  entire spiral), this version queries the CH evolution history at
+//  each backbone point to determine what the CH looked like when that
+//  parcel of solar wind was emitted.
+//
+//  PHYSICAL PICTURE:
+//    - The spiral root (t=0, near the Sun) = wind leaving NOW
+//      → uses current CH properties (width, darkness, lat, speed)
+//    - Midway along the spiral (t=0.5, ~0.5 AU) = wind emitted ~2 days ago
+//      → uses the CH properties from 2 days ago
+//    - The tip (t=1, ~1 AU) = wind emitted ~3–4 days ago
+//      → uses the CH properties from 3–4 days ago
+//
+//  This means:
+//    - The tube WIDTH varies along its length (CH was wider/narrower then)
+//    - The tube POSITION shifts (CH was at a different longitude then)
+//    - The tube DARKNESS/SPEED varies (affecting the colour gradient)
+//
+//  The result is a ribbon that carries the imprint of the CH's evolution
+//  as the wind travelled outward — exactly what a forecaster would want.
+
+export function buildTimeVaryingSpiralMesh(
+  THREE: any,
+  ch: CoronalHole,
+  evolution: CHEvolution,
+  sunRadius: number,
+  maxReach: number,
+  sunAngle0: number,
+): any {
+  // ── Speed-dependent spiral tightness (same as static version) ──────
+  const speedT = THREE.MathUtils.clamp((ch.estimatedSpeedKms - 500) / 400, 0, 1);
+  const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.10, speedT);
+  const phiMax = turns * Math.PI * 2;
+
+  // ── Travel time: how many hours ago was each point's wind emitted? ─
+  // At the tip (t=1), wind has travelled ~1 AU at the CH's speed.
+  // Travel time in hours = AU_km / speed_kms / 3600
+  const AU_KM = 149_597_870.7;
+  const avgSpeed = Math.max(400, ch.estimatedSpeedKms);
+  const maxTravelHours = (AU_KM / avgSpeed) / 3600;  // ~60–90 hours for typical HSS
+
+  // ── Transequatorial damping (same as static version) ───────────────
+  const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;
+  const centroidLatDeg = ch.lat;
+  const equatorCoverage = THREE.MathUtils.clamp(
+    1.0 - Math.abs(centroidLatDeg) / Math.max(1, chHalfHeightDeg), 0, 1
+  );
+  const eclipticDamping = equatorCoverage * 0.85 + 0.15;
+  const backboneLatDeg = centroidLatDeg * (1.0 - eclipticDamping);
+
+  // ── Build backbone with per-point historical CH query ──────────────
+  const backbone: any[] = [];
+  const perPointData: {
+    widthDeg: number;
+    heightDeg: number;
+    darkness: number;
+    lonOffsetRad: number;  // longitude shift relative to current CH
+  }[] = [];
+
+  for (let i = 0; i <= SPIRAL_POINTS; i++) {
+    const t   = i / SPIRAL_POINTS;
+    const phi = t * phiMax;
+    const r   = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
+
+    // How many hours ago was this parcel emitted?
+    const hoursAgo = t * maxTravelHours;
+
+    // Query the evolution data for CH properties at emission time
+    const historical = interpolateCHAtTime(evolution, hoursAgo);
+
+    let pointWidthDeg = ch.widthDeg ?? 15;
+    let pointHeightDeg = ch.heightDeg ?? ch.widthDeg ?? 15;
+    let pointDarkness = ch.darkness;
+    let lonOffsetRad = 0;
+
+    if (historical) {
+      pointWidthDeg = historical.widthDeg;
+      pointHeightDeg = historical.heightDeg;
+      pointDarkness = historical.darkness;
+
+      // The CH was at a different longitude when this wind left.
+      // Compute the offset from the current CH longitude.
+      // This shifts outer parts of the spiral to where the CH was then.
+      const lonDiffDeg = historical.lon - ch.lon;
+      lonOffsetRad = THREE.MathUtils.degToRad(lonDiffDeg);
+    }
+
+    // Azimuth: Parker spiral trailing + historical longitude offset
+    const az = -phi + lonOffsetRad;
+
+    // Latitude: use backbone damping, further relax toward ecliptic
+    const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
+    const latDecay = 1.0 - t * 0.3;
+    const latEff = backboneLatRad * Math.max(0, latDecay);
+    const cosLat = Math.cos(latEff);
+
+    backbone.push(new THREE.Vector3(
+      r * cosLat * Math.sin(az),
+      r * Math.sin(latEff),
+      r * cosLat * Math.cos(az),
+    ));
+
+    perPointData.push({
+      widthDeg: pointWidthDeg,
+      heightDeg: pointHeightDeg,
+      darkness: pointDarkness,
+      lonOffsetRad,
+    });
+  }
+
+  const N = backbone.length;
+  if (N < 2) {
+    const dummy = new THREE.Points(
+      new THREE.BufferGeometry(),
+      new THREE.PointsMaterial({ visible: false })
+    );
+    dummy.name = `hss-spiral-tv-${ch.id}`;
+    return dummy;
+  }
+
+  // ── Tube extrusion with per-point varying width ────────────────────
+  const sides  = SPIRAL_TUBE_SIDES;
+  const pos: number[]  = [];
+  const flow: number[] = [];
+  const edge: number[] = [];
+  const idx: number[]  = [];
+
+  for (let i = 0; i < N; i++) {
+    const t    = i / (N - 1);
+    const curr = backbone[i];
+    const prev = backbone[Math.max(0, i - 1)];
+    const next = backbone[Math.min(N - 1, i + 1)];
+
+    const tang = next.clone().sub(prev).normalize();
+    const up   = new THREE.Vector3(0, 1, 0);
+    let right  = new THREE.Vector3().crossVectors(tang, up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    const up2  = new THREE.Vector3().crossVectors(right, tang).normalize();
+
+    // Per-point CH properties from the emission time
+    const pd = perPointData[i];
+    const chMaxExtentDeg = Math.max(pd.widthDeg, pd.heightDeg);
+    const chHalfAngleRad = THREE.MathUtils.degToRad(chMaxExtentDeg / 2);
+    const tubeR0 = Math.max(sunRadius * Math.sin(chHalfAngleRad), sunRadius * 0.15);
+
+    const widthFactor = THREE.MathUtils.clamp(chMaxExtentDeg / 30, 0.6, 1.8);
+    const tExpand = Math.pow(t, 0.7);
+    const flare   = 1.0 + tExpand * (8.0 * widthFactor);
+    const rTube   = tubeR0 * flare;
+
+    for (let s = 0; s < sides; s++) {
+      const a  = (s / sides) * Math.PI * 2;
+      const cr = Math.cos(a), sr = Math.sin(a);
+      pos.push(
+        curr.x + rTube * (cr * right.x + sr * up2.x),
+        curr.y + rTube * (cr * right.y + sr * up2.y),
+        curr.z + rTube * (cr * right.z + sr * up2.z),
+      );
+      flow.push(t);
+      edge.push(Math.abs(cr));
+    }
+  }
+
+  for (let i = 0; i < N - 1; i++) {
+    for (let s = 0; s < sides; s++) {
+      const sn = (s + 1) % sides;
+      const a  = i * sides + s,  b  = i * sides + sn;
+      const c  = (i+1) * sides + s, d = (i+1) * sides + sn;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('aFlow',    new THREE.Float32BufferAttribute(flow, 1));
+  geom.setAttribute('aEdge',    new THREE.Float32BufferAttribute(edge, 1));
+  geom.setIndex(idx);
+  geom.computeVertexNormals();
+
+  // Same longitude sign fix as the static version
+  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader:   VERT,
+    fragmentShader: FRAG,
+    uniforms: {
+      uChLon:       { value: lonRad },
+      uSunAngle:    { value: sunAngle0 },
+      uTime:        { value: 0 },
+      uOpacity:     { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
+      uSourceSpeed: { value: ch.estimatedSpeedKms },
+    },
+    transparent: true,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
+  });
+
+  const mesh    = new THREE.Mesh(geom, mat);
+  mesh.name     = `hss-spiral-tv-${ch.id}`;
+  mesh.userData = { coronalHoleId: ch.id, isHssMesh: true, isTimeVarying: true };
+  return mesh;
+}
+
+// --- END OF FILE utils/coronalHoleGeometry.ts ---

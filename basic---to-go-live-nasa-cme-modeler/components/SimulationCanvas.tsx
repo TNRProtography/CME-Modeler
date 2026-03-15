@@ -18,6 +18,7 @@ import {
   buildChSurfaceMesh,
   buildChOutlineLine,
   buildParkerSpiralMesh,
+  buildTimeVaryingSpiralMesh,
 } from '../utils/coronalHoleGeometry';
 import {
   createPropagationEngine,
@@ -1041,9 +1042,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     coronalHoles.forEach(ch => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
+
+      // Use time-varying spiral if we have evolution data for this CH
+      const evo = chEvolutions?.find(e => e.trackId === ch.id);
+      if (evo && evo.snapshots.length >= 2) {
+        hssGroupRef.current.add(
+          buildTimeVaryingSpiralMesh(THREE, ch, evo, sunR, hssReach, 0)
+        );
+      } else {
+        // Fallback: static spiral from current detection only
+        hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
+      }
     });
-  }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coronalHoles, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── CH MORPHING: animate CH patches when timeline is scrubbed ────────────
   //
@@ -1089,14 +1100,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
 
     clearGroup(chGroupRef.current);
-    clearGroup(hssGroupRef.current);
+    // HSS spiral is NOT rebuilt here — it uses the time-varying ribbon
+    // built from evolution data (see buildTimeVaryingSpiralMesh)
 
     const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     morphedCHs.forEach(ch => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
   }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
