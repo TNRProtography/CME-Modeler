@@ -1064,8 +1064,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
 
-    // Only rebuild if the scrubbed time changed by > 1 hour
-    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 3600 * 1000) return;
+    // Only rebuild if the scrubbed time changed by > 15 minutes
+    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 15 * 60 * 1000) return;
     lastMorphTimeRef.current = timelineNowMs;
 
     // Build morphed CH array from evolution data at the scrubbed time
@@ -1089,12 +1089,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
 
     clearGroup(chGroupRef.current);
-    // Don't clear HSS group here — HSS spiral stays current, only CH patches morph
+    clearGroup(hssGroupRef.current);
 
-    const sunR = PLANET_DATA_MAP.SUN.size;
+    const sunR     = PLANET_DATA_MAP.SUN.size;
+    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     morphedCHs.forEach(ch => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
+      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
   }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
