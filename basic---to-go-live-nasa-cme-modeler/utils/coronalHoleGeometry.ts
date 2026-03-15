@@ -746,4 +746,4 @@ export function buildParkerSpiralMesh(
   return mesh;
 }
 
-// --- END OF FILE utils/coronalHoleGeometry.ts ---
+// --- END OF FILE utils/coronalHoleGeometry.ts --- 
