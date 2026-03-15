@@ -1075,8 +1075,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
 
-    // Only rebuild if the scrubbed time changed by > 15 minutes
-    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 15 * 60 * 1000) return;
+    // Only rebuild if the scrubbed time changed by > 2 minutes
+    // (geometry rebuild is fast; this just avoids unnecessary work every frame)
+    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 2 * 60 * 1000) return;
     lastMorphTimeRef.current = timelineNowMs;
 
     // Build morphed CH array from evolution data at the scrubbed time

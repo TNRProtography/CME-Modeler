@@ -793,30 +793,45 @@ export function buildTimeVaryingSpiralMesh(
   const turns = THREE.MathUtils.lerp(SPIRAL_TURNS, 0.10, speedT);
   const phiMax = turns * Math.PI * 2;
 
-  // ── Travel time: how many hours ago was each point's wind emitted? ─
-  const AU_KM = 149_597_870.7;
-  const avgSpeed = Math.max(400, ch.estimatedSpeedKms);
-  const maxTravelHours = (AU_KM / avgSpeed) / 3600;  // ~60–90 hours for typical HSS
-
-  // ── How far back does our reference time go? ──────────────────────
-  // At referenceTimeMs, the oldest wind that could have reached maxReach
-  // was emitted maxTravelHours ago. But if the reference time is in the
-  // PAST (timeline scrubbed backward), the spiral should only extend
-  // as far as wind has had time to travel since the earliest known
-  // emission.
+  // ── Travel time and per-parcel distance ─────────────────────────────
   //
-  // hoursFromNow: how many hours before real-now is the reference time
-  //   positive = scrubbed into the past
-  //   negative = scrubbed into the future (forecast)
-  const hoursFromNow = (Date.now() - refTime) / (3600 * 1000);
-  // The effective travel time available at the reference time is reduced
-  // when scrubbing backward. The oldest emission we can show is bounded
-  // by whichever is less: the max physical travel time, or how far back
-  // we have data + the time since that emission.
-  const effectiveMaxTravelHours = Math.max(0, maxTravelHours - hoursFromNow);
-  // Scale the spiral reach proportionally
-  const reachFraction = Math.min(1.0, effectiveMaxTravelHours / maxTravelHours);
-  const effectiveMaxReach = THREE.MathUtils.lerp(sunRadius * 1.5, maxReach, reachFraction);
+  // PHYSICAL MODEL: Each point on the spiral represents a parcel of wind
+  // emitted at a specific time in the past. At the reference time (now or
+  // the scrubbed timeline position), each parcel has been travelling for
+  // a known duration and has covered a specific distance:
+  //
+  //   emission_time = refTime - hoursAgo * 3600 * 1000
+  //   travel_time   = refTime - emission_time = hoursAgo * 3600 s
+  //   distance_km   = speed_kms × travel_time_seconds
+  //   distance_AU   = distance_km / AU_KM
+  //
+  // The backbone only extends as far as each parcel has actually travelled.
+  // This means:
+  //   - A newly appeared CH starts with a tiny spiral at the Sun
+  //   - The leading edge propagates outward at the wind speed (~3-4 days to 1 AU)
+  //   - Scrubbing backward retracts the outer parts smoothly
+  //   - Each parcel sits at its correct physical distance
+  //
+  const AU_KM = 149_597_870.7;
+  const speedKms = Math.max(400, ch.estimatedSpeedKms);
+
+  // The oldest parcel we can show: emitted at the earliest evolution snapshot
+  // or maxTravelHours ago, whichever is less
+  const maxTravelHours = (AU_KM / speedKms) / 3600;
+
+  // For each evolution snapshot, figure out how far that wind has gone
+  // by the reference time. The oldest snapshot with data determines
+  // the furthest the spiral extends.
+  let oldestEmissionMs = refTime;  // Start with "now" = no wind emitted yet
+  for (const snap of evolution.snapshots) {
+    if (snap.ch && snap.timestampMs < oldestEmissionMs) {
+      oldestEmissionMs = snap.timestampMs;
+    }
+  }
+  // How many hours of wind have been emitted up to the reference time?
+  const totalEmissionHours = Math.max(0, (refTime - oldestEmissionMs) / (3600 * 1000));
+  // Cap at the physical travel time to 1 AU
+  const effectiveMaxTravelHours = Math.min(maxTravelHours, totalEmissionHours);
 
   // ── Transequatorial damping (same as static version) ───────────────
   const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;
@@ -836,17 +851,31 @@ export function buildTimeVaryingSpiralMesh(
   //           stream — each parcel connects smoothly to the one behind it.
 
   // Pass 1: collect raw per-point data
+  // Each point represents a parcel emitted `hoursAgo` before refTime.
+  // The parcel has travelled distance = speed × time since emission.
   const rawData: {
     widthDeg: number;
     heightDeg: number;
     darkness: number;
     lonOffsetDeg: number;
+    distanceSceneUnits: number;  // how far this parcel has physically travelled
   }[] = [];
 
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
     const t = i / SPIRAL_POINTS;
+    // Map t to emission time: t=0 is most recently emitted (near Sun),
+    // t=1 is the oldest parcel (furthest out)
     const hoursAgo = t * effectiveMaxTravelHours;
     const historical = interpolateCHAtTime(evolution, hoursAgo);
+
+    // Physical distance this parcel has travelled (in scene units)
+    // distance_km = speed × travel_time_seconds
+    const travelTimeSec = hoursAgo * 3600;
+    const distanceKm = speedKms * travelTimeSec;
+    const distanceAU = distanceKm / AU_KM;
+    const distanceScene = distanceAU * SCENE_SCALE;
+    // Clamp to maxReach so we don't draw past the scene boundary
+    const clampedDistance = Math.min(distanceScene, maxReach);
 
     if (historical) {
       rawData.push({
@@ -854,6 +883,7 @@ export function buildTimeVaryingSpiralMesh(
         heightDeg: historical.heightDeg,
         darkness: historical.darkness,
         lonOffsetDeg: historical.lon - ch.lon,
+        distanceSceneUnits: clampedDistance,
       });
     } else {
       rawData.push({
@@ -861,49 +891,60 @@ export function buildTimeVaryingSpiralMesh(
         heightDeg: ch.heightDeg ?? ch.widthDeg ?? 15,
         darkness: ch.darkness,
         lonOffsetDeg: 0,
+        distanceSceneUnits: clampedDistance,
       });
     }
   }
 
   // Pass 2: smooth with a wide moving average (window = ~15% of points)
-  // This eliminates jumps between sparse snapshots and produces the
-  // "garden hose slowly curving" effect rather than zigzag.
   const smoothWindow = Math.max(3, Math.floor(SPIRAL_POINTS * 0.15));
   const smoothed = rawData.map((_, i) => {
     const lo = Math.max(0, i - smoothWindow);
     const hi = Math.min(rawData.length - 1, i + smoothWindow);
-    const count = hi - lo + 1;
     let sumW = 0, sumH = 0, sumD = 0, sumL = 0;
+    let totalWeight = 0;
     for (let j = lo; j <= hi; j++) {
-      // Weight: points closer to i contribute more (triangular kernel)
       const weight = 1.0 - Math.abs(j - i) / (smoothWindow + 1);
       sumW += rawData[j].widthDeg * weight;
       sumH += rawData[j].heightDeg * weight;
       sumD += rawData[j].darkness * weight;
       sumL += rawData[j].lonOffsetDeg * weight;
-    }
-    // Normalise by total weight
-    let totalWeight = 0;
-    for (let j = lo; j <= hi; j++) {
-      totalWeight += 1.0 - Math.abs(j - i) / (smoothWindow + 1);
+      totalWeight += weight;
     }
     return {
       widthDeg: sumW / totalWeight,
       heightDeg: sumH / totalWeight,
       darkness: sumD / totalWeight,
       lonOffsetDeg: sumL / totalWeight,
+      // Distance is NOT smoothed — it must be physically exact
+      distanceSceneUnits: rawData[i].distanceSceneUnits,
     };
   });
 
   // Pass 3: build backbone from smoothed data
+  // Each point sits at its physical distance from the Sun — not linearly
+  // interpolated to maxReach. This means a new CH starts with a tiny spiral
+  // that grows outward at the wind speed.
   const backbone: any[] = [];
   const perPointData: typeof smoothed = [];
 
+  // Skip points that haven't left the Sun yet (distance ≈ 0)
+  // and find the actual furthest point to scale phi properly
+  const maxDist = Math.max(sunRadius * 1.1, smoothed[smoothed.length - 1]?.distanceSceneUnits ?? 0);
+
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
-    const t   = i / SPIRAL_POINTS;
-    const phi = t * phiMax;
-    const r   = THREE.MathUtils.lerp(sunRadius * 1.03, effectiveMaxReach, t);
     const sd  = smoothed[i];
+    // This parcel's physical distance from the Sun
+    const r = Math.max(sunRadius * 1.03, sunRadius * 1.03 + sd.distanceSceneUnits);
+
+    // If this parcel hasn't really moved yet, collapse the remaining points
+    if (sd.distanceSceneUnits < sunRadius * 0.01 && i > 0) continue;
+
+    // Spiral azimuth scales with distance (not with t), so the spiral
+    // shape follows Parker geometry: az = -Omega * r / v_wind
+    // But we keep it simple: scale phi by the fraction of maxReach covered
+    const distFrac = Math.min(1.0, sd.distanceSceneUnits / maxReach);
+    const phi = distFrac * phiMax;
 
     // Azimuth: Parker spiral trailing + smooth historical offset
     const lonOffsetRad = THREE.MathUtils.degToRad(sd.lonOffsetDeg);
@@ -911,7 +952,7 @@ export function buildTimeVaryingSpiralMesh(
 
     // Latitude: backbone damping toward ecliptic
     const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
-    const latDecay = 1.0 - t * 0.3;
+    const latDecay = 1.0 - distFrac * 0.3;
     const latEff = backboneLatRad * Math.max(0, latDecay);
     const cosLat = Math.cos(latEff);
 
