@@ -717,7 +717,12 @@ export function buildParkerSpiralMesh(
   geom.setIndex(idx);
   geom.computeVertexNormals();
 
-  const lonRad = THREE.MathUtils.degToRad(ch.lon);
+  // ── Longitude alignment ─────────────────────────────────────────────────────
+  // hgToVec places positive lon at +X via sin(theta).
+  // The vertex shader's Y-rotation with positive angle rotates +Z toward -X.
+  // To match, we NEGATE the longitude so the shader puts the backbone
+  // at the same +X position as hgToVec for positive ch.lon.
+  const lonRad = THREE.MathUtils.degToRad(-ch.lon);
 
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
