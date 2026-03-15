@@ -1,419 +1,330 @@
 // --- START OF FILE utils/coronalHoleHistory.ts ---
 //
 // ═══════════════════════════════════════════════════════════════════════
-//  CORONAL HOLE HISTORY TRACKER
-//  3-day CH evolution for time-varying HSS simulation
+//  CORONAL HOLE HISTORY — Worker-backed 72h CH evolution tracker
 // ═══════════════════════════════════════════════════════════════════════
 //
-//  CONCEPT
-//  ───────
-//  The HSS at 1 AU right now was emitted ~3–4 days ago from a CH that
-//  may have looked very different. This module tracks how each CH has
-//  evolved over the past 3 days, enabling:
+//  Uses the ch-history-worker on Cloudflare to store and retrieve
+//  timestamped CH detection snapshots. The worker accumulates one
+//  snapshot every 2 hours, giving 36 data points over 72 hours.
 //
-//    1. A time-varying HSS ribbon where each radial slice carries the
-//       CH properties (width, darkness, lat extent) from the moment
-//       that slice of wind was actually emitted.
-//
-//    2. Animated CH patch morphing on the Sun when the timeline is
-//       scrubbed — the CH visually grows/shrinks/shifts as it was
-//       observed at different times.
-//
-//  DATA SOURCES
-//  ─────────────
-//  • SWPC animation directory: individual timestamped SUVI 195 frames
-//    at ~4-min cadence, retained for ~24 hours.
-//    URL: https://services.swpc.noaa.gov/images/animations/suvi/primary/195/
-//
-//  • For the 24–72h lookback, we use SOLAR ROTATION EXTRAPOLATION:
-//    the Sun rotates ~13.2°/day (synodic). A CH detected now at lon X
-//    was at lon (X + 13.2 * daysAgo) in the past. We adjust the CH's
-//    disk-centre-relative properties for foreshortening at that
-//    earlier longitude.
-//
-//  STRATEGY (6 snapshots, every 12 hours over 3 days)
-//  ──────────────────────────────────────────────────
-//  Snapshot 0: NOW            — current live SUVI detection (already have)
-//  Snapshot 1: -12h           — from SWPC animation directory
-//  Snapshot 2: -24h           — from SWPC animation directory (edge of retention)
-//  Snapshot 3: -36h           — rotation-extrapolated from snapshot 2
-//  Snapshot 4: -48h           — rotation-extrapolated from snapshot 1
-//  Snapshot 5: -60h (~2.5d)   — rotation-extrapolated from snapshot 0
-//
-//  Each snapshot produces a CoronalHole[] array. We match CHs across
-//  snapshots by proximity (centroid distance < threshold) to track
-//  the same physical CH over time.
+//  CLIENT RESPONSIBILITIES:
+//    1. After each live SUVI detection, POST results to the worker
+//    2. Fetch the full 72h history from the worker
+//    3. Optionally analyse historical SWPC frames for backfill
+//    4. Interpolate CH properties for the time-varying HSS ribbon
 //
 // ═══════════════════════════════════════════════════════════════════════
 
 import { CoronalHole } from './coronalHoleData';
 import { detectCoronalHolesFromSuvi195 } from './suviCoronalHoleDetector';
 
-// ─── Constants ────────────────────────────────────────────────────────
-const SUVI_ANIM_BASE = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
-const SUN_SYNODIC_DEG_PER_DAY = 13.2;  // degrees/day (synodic rotation)
-const SUN_SYNODIC_DEG_PER_HOUR = SUN_SYNODIC_DEG_PER_DAY / 24;
-const SNAPSHOT_COUNT = 6;
-const SNAPSHOT_INTERVAL_HOURS = 12;
-const CH_MATCH_THRESHOLD_DEG = 20;  // max centroid distance to consider same CH
+// ─── Worker endpoint ──────────────────────────────────────────────────
+const CH_WORKER_BASE = 'https://ch-history-worker.thenamesrock.workers.dev';
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-/** A single snapshot of CH state at a specific time */
-export interface CHSnapshot {
-  /** When this observation was taken (ms since epoch) */
+export interface CHSnapshotRecord {
+  timestamp: string;
   timestampMs: number;
-  /** Hours before present (0 = now, 12, 24, 36, 48, 60) */
-  hoursAgo: number;
-  /** Detected coronal holes at this time */
-  coronalHoles: CoronalHole[];
-  /** Whether this was from real imagery or rotation-extrapolated */
-  source: 'live' | 'historical_image' | 'rotation_extrapolated';
+  coronalHoles: CHSnapshotData[];
+  source: 'live' | 'historical_frame';
+  imageUrl: string;
 }
 
-/** Time-resolved evolution of a single physical coronal hole */
+export interface CHSnapshotData {
+  id: string;
+  lat: number;
+  lon: number;
+  widthDeg: number;
+  heightDeg?: number;
+  darkness: number;
+  estimatedSpeedKms: number;
+  polygon?: Array<{ lat: number; lon: number }>;
+}
+
+export interface CHHistoryResult {
+  snapshots: CHSnapshotRecord[];
+  count: number;
+  oldestMs: number | null;
+  newestMs: number | null;
+  maxHours: number;
+}
+
 export interface CHEvolution {
-  /** Stable ID for this physical CH across snapshots */
   trackId: string;
-  /** The CH's properties at each snapshot time (oldest first) */
   snapshots: {
     timestampMs: number;
     hoursAgo: number;
-    /** The CH data at this time — null if not detected (behind limb, etc.) */
     ch: CoronalHole | null;
   }[];
-  /** The current (latest) detection */
   current: CoronalHole;
 }
 
-/** Full history result */
-export interface CHHistoryResult {
-  /** Individual snapshots (newest first) */
-  snapshots: CHSnapshot[];
-  /** Per-CH evolution tracks (matched across snapshots) */
-  evolutions: CHEvolution[];
-  /** When history was built */
-  builtAt: Date;
-  /** Loading progress (0–1) */
-  progress: number;
+export interface SuviFrameInfo {
+  url: string;
+  timestamp: string;
+  timestampMs: number;
 }
 
-// ─── SWPC Directory Parser ────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────
+const SUN_SYNODIC_DEG_PER_HOUR = 13.2 / 24;
+const CH_MATCH_THRESHOLD_DEG = 25;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  WORKER API FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Parse the SWPC animation directory listing to find SUVI 195 frame URLs
- * with timestamps. Returns sorted by time (newest first).
+ * Post a CH detection result to the worker for storage.
+ * Called after each successful live SUVI detection.
  */
-async function fetchSuviFrameList(): Promise<{ url: string; timestamp: Date }[]> {
+export async function postSnapshotToWorker(
+  coronalHoles: CoronalHole[],
+  imageUrl: string,
+): Promise<boolean> {
   try {
-    const resp = await fetch(SUVI_ANIM_BASE);
-    if (!resp.ok) return [];
-    const html = await resp.text();
+    const record: CHSnapshotRecord = {
+      timestamp: new Date().toISOString(),
+      timestampMs: Date.now(),
+      coronalHoles: coronalHoles.map(ch => ({
+        id: ch.id,
+        lat: ch.lat,
+        lon: ch.lon,
+        widthDeg: ch.widthDeg,
+        heightDeg: ch.heightDeg,
+        darkness: ch.darkness,
+        estimatedSpeedKms: ch.estimatedSpeedKms,
+        polygon: ch.polygon,
+      })),
+      source: 'live',
+      imageUrl,
+    };
 
-    // Parse filenames like: or_suvi-l2-ci195_g19_s20260106T154000Z_e...
-    const frameRegex = /href="(or_suvi-l2-ci195_g\d+_s(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z_[^"]+\.png)"/g;
-    const frames: { url: string; timestamp: Date }[] = [];
-    let match;
+    const resp = await fetch(`${CH_WORKER_BASE}/ch-history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
 
-    while ((match = frameRegex.exec(html)) !== null) {
-      const [, filename, yr, mo, dy, hr, mi, sc] = match;
-      const timestamp = new Date(`${yr}-${mo}-${dy}T${hr}:${mi}:${sc}Z`);
-      if (!isNaN(timestamp.getTime())) {
-        frames.push({
-          url: SUVI_ANIM_BASE + filename,
-          timestamp,
-        });
-      }
+    if (!resp.ok) {
+      console.warn('[CH History] Failed to post snapshot:', resp.status);
+      return false;
     }
 
-    // Sort newest first
-    frames.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    return frames;
+    const result = await resp.json();
+    console.log('[CH History] Snapshot stored:', (result as any).stored);
+    return true;
   } catch (err) {
-    console.warn('[CH History] Failed to fetch SUVI frame list:', err);
+    console.warn('[CH History] Failed to post snapshot:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch the full 72h CH history from the worker.
+ */
+export async function fetchHistoryFromWorker(): Promise<CHHistoryResult | null> {
+  try {
+    const resp = await fetch(`${CH_WORKER_BASE}/ch-history`);
+    if (!resp.ok) {
+      console.warn('[CH History] Failed to fetch history:', resp.status);
+      return null;
+    }
+    return await resp.json() as CHHistoryResult;
+  } catch (err) {
+    console.warn('[CH History] Failed to fetch history:', err);
+    return null;
+  }
+}
+
+/**
+ * Fetch available SUVI frame URLs from the worker.
+ * These are historical frames the client can analyse for backfill.
+ */
+export async function fetchAvailableFrames(): Promise<SuviFrameInfo[]> {
+  try {
+    const resp = await fetch(`${CH_WORKER_BASE}/ch-history/frames`);
+    if (!resp.ok) return [];
+    const data = await resp.json() as { frames: SuviFrameInfo[] };
+    return data.frames ?? [];
+  } catch {
     return [];
   }
 }
 
-/**
- * Find the SUVI frame closest to a target time.
- */
-function findClosestFrame(
-  frames: { url: string; timestamp: Date }[],
-  targetMs: number,
-  maxDeltaMs: number = 4 * 3600 * 1000,  // max 4h tolerance
-): { url: string; timestamp: Date } | null {
-  let best: (typeof frames)[0] | null = null;
-  let bestDelta = Infinity;
-
-  for (const frame of frames) {
-    const delta = Math.abs(frame.timestamp.getTime() - targetMs);
-    if (delta < bestDelta) {
-      bestDelta = delta;
-      best = frame;
-    }
-  }
-
-  return best && bestDelta <= maxDeltaMs ? best : null;
-}
-
-// ─── Rotation Extrapolation ───────────────────────────────────────────
-
-/**
- * Extrapolate a CH backward in time by applying solar rotation.
- *
- * A CH currently at disk-centre-relative longitude X was at
- * longitude (X + rotation_rate * hours_ago) in the past.
- *
- * We also adjust the apparent width for foreshortening:
- * a CH near the limb (|lon| > 60°) appears narrower due to
- * projection effects.
- */
-function extrapolateCH(
-  ch: CoronalHole,
-  hoursAgo: number,
-): CoronalHole | null {
-  const rotationDeg = SUN_SYNODIC_DEG_PER_HOUR * hoursAgo;
-  const pastLon = ch.lon + rotationDeg;
-
-  // If the CH was behind the limb at that time, it wasn't emitting
-  // Earth-directed wind — return null
-  if (Math.abs(pastLon) > 80) return null;
-
-  // Foreshortening: apparent width shrinks as cos(lon)
-  const foreshortenCurrent = Math.cos(ch.lon * Math.PI / 180);
-  const foreshortenPast = Math.cos(pastLon * Math.PI / 180);
-  const foreshortenRatio = foreshortenCurrent > 0.01
-    ? foreshortenPast / foreshortenCurrent
-    : 1.0;
-
-  // Reconstruct the CH at its past position
-  const pastCh: CoronalHole = {
-    ...ch,
-    id: `${ch.id}_t-${hoursAgo}h`,
-    lon: pastLon,
-    // Width: de-foreshorten the current measurement, then re-foreshorten at past lon
-    widthDeg: Math.max(3, (ch.widthDeg ?? 15) * Math.abs(foreshortenRatio)),
-    // Height doesn't change much with longitude
-    heightDeg: ch.heightDeg,
-    // Darkness might vary slightly — CHs can evolve over 3 days
-    // Apply a mild uncertainty factor
-    darkness: ch.darkness * (1.0 - 0.05 * hoursAgo / 12),
-    // Speed estimate follows from width
-    estimatedSpeedKms: ch.estimatedSpeedKms,
-    // Polygon: shift each point by the rotation amount
-    polygon: ch.polygon?.map(p => ({
-      lat: p.lat,
-      lon: p.lon,  // relative to centroid — stays the same
-    })),
-  };
-
-  return pastCh;
-}
-
-// ─── CH Matching Across Snapshots ─────────────────────────────────────
-
-/**
- * Match coronal holes between two snapshots based on centroid proximity,
- * accounting for solar rotation between the timestamps.
- */
-function matchCHs(
-  chsNow: CoronalHole[],
-  chsPast: CoronalHole[],
-  hoursBetween: number,
-): Map<string, string> {
-  // Map: current CH id → past CH id
-  const matches = new Map<string, string>();
-  const rotationDeg = SUN_SYNODIC_DEG_PER_HOUR * hoursBetween;
-  const usedPast = new Set<string>();
-
-  for (const chNow of chsNow) {
-    let bestMatch: string | null = null;
-    let bestDist = CH_MATCH_THRESHOLD_DEG;
-
-    for (const chPast of chsPast) {
-      if (usedPast.has(chPast.id)) continue;
-
-      // The past CH should be at lon + rotation relative to current
-      const expectedPastLon = chNow.lon + rotationDeg;
-      const dLon = Math.abs(chPast.lon - expectedPastLon);
-      const dLat = Math.abs(chPast.lat - chNow.lat);
-      const dist = Math.sqrt(dLon * dLon + dLat * dLat);
-
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestMatch = chPast.id;
-      }
-    }
-
-    if (bestMatch) {
-      matches.set(chNow.id, bestMatch);
-      usedPast.add(bestMatch);
-    }
-  }
-
-  return matches;
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-//  PUBLIC API
+//  BACKFILL — Analyse historical SWPC frames client-side
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Build a 3-day CH evolution history.
- *
- * @param currentCHs  The current live detection (from useCoronalHoles)
- * @param onProgress  Callback for loading progress (0–1)
- * @returns           CHHistoryResult with snapshots and evolution tracks
+ * Analyse a historical SUVI frame and post the result to the worker.
+ * This runs the CH detector in the browser on an older SWPC PNG.
  */
-export async function buildCHHistory(
-  currentCHs: CoronalHole[],
-  onProgress?: (progress: number) => void,
-): Promise<CHHistoryResult> {
-  const now = Date.now();
-  const snapshots: CHSnapshot[] = [];
+export async function analyseAndPostHistoricalFrame(
+  frame: SuviFrameInfo,
+): Promise<boolean> {
+  try {
+    const result = await detectCoronalHolesFromSuvi195(frame.url);
+    if (!result.succeeded || result.coronalHoles.length === 0) return false;
 
-  // Snapshot 0: NOW (already have detection)
-  snapshots.push({
-    timestampMs: now,
-    hoursAgo: 0,
-    coronalHoles: currentCHs,
-    source: 'live',
-  });
-  onProgress?.(0.1);
-
-  // ── Fetch historical SUVI frames from SWPC directory ──────────────
-  const frames = await fetchSuviFrameList();
-  onProgress?.(0.2);
-
-  // Snapshot 1: -12h (from SWPC directory if available)
-  const target12h = now - 12 * 3600 * 1000;
-  const frame12h = findClosestFrame(frames, target12h);
-  if (frame12h) {
-    try {
-      const result = await detectCoronalHolesFromSuvi195(frame12h.url);
-      if (result.succeeded && result.coronalHoles.length > 0) {
-        snapshots.push({
-          timestampMs: frame12h.timestamp.getTime(),
-          hoursAgo: 12,
-          coronalHoles: result.coronalHoles,
-          source: 'historical_image',
-        });
-      }
-    } catch (err) {
-      console.warn('[CH History] Failed to analyse -12h frame:', err);
-    }
-  }
-  onProgress?.(0.4);
-
-  // Snapshot 2: -24h (from SWPC directory — edge of retention)
-  const target24h = now - 24 * 3600 * 1000;
-  const frame24h = findClosestFrame(frames, target24h);
-  if (frame24h) {
-    try {
-      const result = await detectCoronalHolesFromSuvi195(frame24h.url);
-      if (result.succeeded && result.coronalHoles.length > 0) {
-        snapshots.push({
-          timestampMs: frame24h.timestamp.getTime(),
-          hoursAgo: 24,
-          coronalHoles: result.coronalHoles,
-          source: 'historical_image',
-        });
-      }
-    } catch (err) {
-      console.warn('[CH History] Failed to analyse -24h frame:', err);
-    }
-  }
-  onProgress?.(0.6);
-
-  // Snapshots 3–5: Rotation-extrapolated from current detection
-  // These cover the -36h to -60h range where SWPC frames aren't retained
-  for (let i = 3; i < SNAPSHOT_COUNT; i++) {
-    const hoursAgo = i * SNAPSHOT_INTERVAL_HOURS;
-    const extrapolated = currentCHs
-      .map(ch => extrapolateCH(ch, hoursAgo))
-      .filter((ch): ch is CoronalHole => ch !== null);
-
-    if (extrapolated.length > 0) {
-      snapshots.push({
-        timestampMs: now - hoursAgo * 3600 * 1000,
-        hoursAgo,
-        coronalHoles: extrapolated,
-        source: 'rotation_extrapolated',
-      });
-    }
-  }
-  onProgress?.(0.8);
-
-  // ── Sort snapshots oldest first ────────────────────────────────────
-  snapshots.sort((a, b) => a.timestampMs - b.timestampMs);
-
-  // ── Build evolution tracks ─────────────────────────────────────────
-  // Start from the current detection and trace each CH backward
-  const evolutions: CHEvolution[] = currentCHs.map(ch => {
-    const track: CHEvolution = {
-      trackId: ch.id,
-      snapshots: [],
-      current: ch,
+    const record: CHSnapshotRecord = {
+      timestamp: frame.timestamp,
+      timestampMs: frame.timestampMs,
+      coronalHoles: result.coronalHoles.map(ch => ({
+        id: ch.id,
+        lat: ch.lat,
+        lon: ch.lon,
+        widthDeg: ch.widthDeg,
+        heightDeg: ch.heightDeg,
+        darkness: ch.darkness,
+        estimatedSpeedKms: ch.estimatedSpeedKms,
+        polygon: ch.polygon,
+      })),
+      source: 'historical_frame',
+      imageUrl: frame.url,
     };
 
-    // For each snapshot, find the matching CH
-    for (const snap of snapshots) {
-      if (snap.hoursAgo === 0) {
-        // Current — direct match
-        track.snapshots.push({
-          timestampMs: snap.timestampMs,
-          hoursAgo: snap.hoursAgo,
-          ch: ch,
-        });
-      } else {
-        // Historical — find by proximity with rotation correction
-        const matches = matchCHs([ch], snap.coronalHoles, snap.hoursAgo);
-        const matchedId = matches.get(ch.id);
-        const matchedCH = matchedId
-          ? snap.coronalHoles.find(c => c.id === matchedId) ?? null
-          : null;
-        track.snapshots.push({
-          timestampMs: snap.timestampMs,
-          hoursAgo: snap.hoursAgo,
-          ch: matchedCH,
-        });
-      }
-    }
+    const resp = await fetch(`${CH_WORKER_BASE}/ch-history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
 
-    return track;
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Backfill: analyse available SWPC frames that aren't yet in the history.
+ * Runs sequentially to avoid hammering the network.
+ *
+ * @param existingTimestamps  Set of timestamps (ms) already in history
+ * @param onProgress          Progress callback (0–1)
+ * @returns                   Number of frames successfully backfilled
+ */
+export async function backfillFromAvailableFrames(
+  existingTimestamps: Set<number>,
+  onProgress?: (progress: number) => void,
+): Promise<number> {
+  const frames = await fetchAvailableFrames();
+  if (frames.length === 0) return 0;
+
+  // Filter to frames not already stored (within 30 min tolerance)
+  const TOLERANCE_MS = 30 * 60 * 1000;
+  const needsBackfill = frames.filter(f => {
+    for (const existing of existingTimestamps) {
+      if (Math.abs(f.timestampMs - existing) < TOLERANCE_MS) return false;
+    }
+    return true;
   });
 
-  onProgress?.(1.0);
+  let filled = 0;
+  for (let i = 0; i < needsBackfill.length; i++) {
+    onProgress?.((i + 1) / needsBackfill.length);
+    const ok = await analyseAndPostHistoricalFrame(needsBackfill[i]);
+    if (ok) filled++;
+    // Small delay between frames to avoid overwhelming the browser
+    await new Promise(r => setTimeout(r, 500));
+  }
 
-  return {
-    snapshots,
-    evolutions,
-    builtAt: new Date(),
-    progress: 1.0,
-  };
+  return filled;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  HSS PROPERTY INTERPOLATION
+//  CH MATCHING & EVOLUTION TRACKING
 // ═══════════════════════════════════════════════════════════════════════
-//
-//  Given a CHEvolution and a "time ago" value (how long ago the wind
-//  at a given radial distance was emitted), return the interpolated
-//  CH properties (width, darkness, lat extent) for that emission time.
-//
-//  This is used by the spiral geometry builder: each radial slice of
-//  the HSS tube is sized according to what the CH looked like when
-//  that slice of wind was actually emitted.
 
 /**
- * Get interpolated CH properties for wind emitted `hoursAgo` hours
- * before present.
- *
- * @param evolution   The CH's tracked evolution
- * @param hoursAgo    How many hours before present this wind was emitted
- * @returns           Interpolated CH properties, or null if CH wasn't
- *                    visible at that time
+ * Convert worker snapshot data to CoronalHole objects.
+ */
+function snapshotDataToCH(data: CHSnapshotData): CoronalHole {
+  return {
+    id: data.id,
+    lat: data.lat,
+    lon: data.lon,
+    widthDeg: data.widthDeg,
+    heightDeg: data.heightDeg,
+    darkness: data.darkness,
+    estimatedSpeedKms: data.estimatedSpeedKms,
+    polygon: data.polygon,
+    sourceDirectionDeg: { lat: data.lat, lon: data.lon },
+    expansionHalfAngleDeg: (data.widthDeg ?? 15) * 0.6,
+    opacity: 0.5 + data.darkness * 0.3,
+    hssVisible: true,
+    animPhase: 0,
+  };
+}
+
+/**
+ * Build evolution tracks from worker history, matching CHs across
+ * snapshots by proximity + solar rotation correction.
+ */
+export function buildEvolutionTracks(
+  history: CHHistoryResult,
+  currentCHs: CoronalHole[],
+): CHEvolution[] {
+  if (history.snapshots.length === 0) return [];
+
+  const now = Date.now();
+
+  return currentCHs.map(currentCH => {
+    const evolution: CHEvolution = {
+      trackId: currentCH.id,
+      snapshots: [],
+      current: currentCH,
+    };
+
+    // For each historical snapshot, find the matching CH
+    for (const snap of history.snapshots) {
+      const hoursAgo = (now - snap.timestampMs) / (3600 * 1000);
+      const rotationDeg = SUN_SYNODIC_DEG_PER_HOUR * hoursAgo;
+
+      // Expected longitude of the current CH at the snapshot time
+      const expectedLon = currentCH.lon + rotationDeg;
+
+      let bestMatch: CoronalHole | null = null;
+      let bestDist = CH_MATCH_THRESHOLD_DEG;
+
+      for (const chData of snap.coronalHoles) {
+        const dLon = Math.abs(chData.lon - expectedLon);
+        const dLat = Math.abs(chData.lat - currentCH.lat);
+        const dist = Math.sqrt(dLon * dLon + dLat * dLat);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestMatch = snapshotDataToCH(chData);
+        }
+      }
+
+      evolution.snapshots.push({
+        timestampMs: snap.timestampMs,
+        hoursAgo,
+        ch: bestMatch,
+      });
+    }
+
+    // Add the current detection as the latest snapshot
+    evolution.snapshots.push({
+      timestampMs: now,
+      hoursAgo: 0,
+      ch: currentCH,
+    });
+
+    // Sort oldest first
+    evolution.snapshots.sort((a, b) => a.timestampMs - b.timestampMs);
+
+    return evolution;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  INTERPOLATION — for time-varying HSS and CH animation
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Get interpolated CH properties for wind emitted `hoursAgo` before now.
  */
 export function interpolateCHAtTime(
   evolution: CHEvolution,
@@ -429,20 +340,15 @@ export function interpolateCHAtTime(
   const snaps = evolution.snapshots;
   if (snaps.length === 0) return null;
 
-  // Find the two bracketing snapshots
+  // Find bracketing snapshots
   let before: typeof snaps[0] | null = null;
   let after: typeof snaps[0] | null = null;
 
-  for (let i = 0; i < snaps.length; i++) {
-    if (snaps[i].hoursAgo <= hoursAgo) {
-      after = snaps[i];
-    }
-    if (snaps[i].hoursAgo >= hoursAgo && !before) {
-      before = snaps[i];
-    }
+  for (const snap of snaps) {
+    if (snap.hoursAgo <= hoursAgo) after = snap;
+    if (snap.hoursAgo >= hoursAgo && !before) before = snap;
   }
 
-  // If hoursAgo is beyond our history range, use the nearest
   if (!before && !after) return null;
   if (!before) before = after;
   if (!after) after = before;
@@ -450,67 +356,51 @@ export function interpolateCHAtTime(
 
   const chBefore = before.ch;
   const chAfter = after.ch;
-
-  // If neither bracket has a detection, the CH wasn't visible
   if (!chBefore && !chAfter) return null;
 
-  // If only one bracket has data, use it directly
-  if (!chBefore && chAfter) return {
-    widthDeg: chAfter.widthDeg ?? 15,
-    heightDeg: chAfter.heightDeg ?? chAfter.widthDeg ?? 15,
-    darkness: chAfter.darkness,
-    lat: chAfter.lat,
-    lon: chAfter.lon,
-    estimatedSpeedKms: chAfter.estimatedSpeedKms,
-  };
-  if (chBefore && !chAfter) return {
-    widthDeg: chBefore.widthDeg ?? 15,
-    heightDeg: chBefore.heightDeg ?? chBefore.widthDeg ?? 15,
-    darkness: chBefore.darkness,
-    lat: chBefore.lat,
-    lon: chBefore.lon,
-    estimatedSpeedKms: chBefore.estimatedSpeedKms,
-  };
+  // Single bracket available
+  const single = chBefore ?? chAfter;
+  if (!chBefore || !chAfter) {
+    return {
+      widthDeg: single!.widthDeg ?? 15,
+      heightDeg: single!.heightDeg ?? single!.widthDeg ?? 15,
+      darkness: single!.darkness,
+      lat: single!.lat,
+      lon: single!.lon,
+      estimatedSpeedKms: single!.estimatedSpeedKms,
+    };
+  }
 
-  // Both brackets have data — interpolate
+  // Interpolate between brackets
   const range = after.hoursAgo - before.hoursAgo;
   const t = range > 0 ? (hoursAgo - before.hoursAgo) / range : 0;
-
   const lerp = (a: number, b: number) => a + t * (b - a);
 
   return {
-    widthDeg: lerp(chBefore!.widthDeg ?? 15, chAfter!.widthDeg ?? 15),
+    widthDeg: lerp(chBefore.widthDeg ?? 15, chAfter.widthDeg ?? 15),
     heightDeg: lerp(
-      chBefore!.heightDeg ?? chBefore!.widthDeg ?? 15,
-      chAfter!.heightDeg ?? chAfter!.widthDeg ?? 15,
+      chBefore.heightDeg ?? chBefore.widthDeg ?? 15,
+      chAfter.heightDeg ?? chAfter.widthDeg ?? 15,
     ),
-    darkness: lerp(chBefore!.darkness, chAfter!.darkness),
-    lat: lerp(chBefore!.lat, chAfter!.lat),
-    lon: lerp(chBefore!.lon, chAfter!.lon),
-    estimatedSpeedKms: lerp(chBefore!.estimatedSpeedKms, chAfter!.estimatedSpeedKms),
+    darkness: lerp(chBefore.darkness, chAfter.darkness),
+    lat: lerp(chBefore.lat, chAfter.lat),
+    lon: lerp(chBefore.lon, chAfter.lon),
+    estimatedSpeedKms: lerp(chBefore.estimatedSpeedKms, chAfter.estimatedSpeedKms),
   };
 }
 
 /**
- * Get the CH shape (polygon or ellipse params) at a specific timeline
- * time, for animating the CH patch on the Sun surface.
- *
- * @param evolution    The CH's tracked evolution
- * @param absoluteMs   The absolute time to show
- * @returns            A CoronalHole with interpolated properties
+ * Get a morphed CoronalHole for animating the patch on the Sun
+ * at a specific timeline time.
  */
 export function getCHAtTimelineTime(
   evolution: CHEvolution,
   absoluteMs: number,
 ): CoronalHole {
-  const hoursAgo = (Date.now() - absoluteMs) / (3600 * 1000);
-  const interpolated = interpolateCHAtTime(evolution, Math.max(0, hoursAgo));
-
+  const hoursAgo = Math.max(0, (Date.now() - absoluteMs) / (3600 * 1000));
+  const interpolated = interpolateCHAtTime(evolution, hoursAgo);
   if (!interpolated) return evolution.current;
 
-  // Build a synthetic CoronalHole with interpolated properties
-  // but preserve the polygon shape (morphing the polygon would require
-  // point-by-point interpolation which is expensive; instead we scale)
   const current = evolution.current;
   const widthScale = interpolated.widthDeg / (current.widthDeg ?? 15);
   const heightScale = interpolated.heightDeg / (current.heightDeg ?? current.widthDeg ?? 15);
@@ -522,7 +412,6 @@ export function getCHAtTimelineTime(
     darkness: interpolated.darkness,
     lat: interpolated.lat,
     estimatedSpeedKms: interpolated.estimatedSpeedKms,
-    // Scale the polygon if present
     polygon: current.polygon?.map(p => ({
       lat: p.lat * heightScale,
       lon: p.lon * widthScale,
