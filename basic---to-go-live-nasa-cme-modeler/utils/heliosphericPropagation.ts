@@ -759,7 +759,7 @@ export function createPropagationEngine(
           const ejectaSpeed = speedKms * (1.0 - 0.15 * ejectaPhase);
 
           // Ejecta density: enhanced relative to ambient, but lower than sheath
-          const ejectaDensity = density * (1 + 2 * (1 - ejectaPhase))
+          let ejectaDensity = density * (1 + 2 * (1 - ejectaPhase))
             * traj.compressionDensityBoost;
 
           // Ejecta Bz: COHERENT rotation through the flux rope
