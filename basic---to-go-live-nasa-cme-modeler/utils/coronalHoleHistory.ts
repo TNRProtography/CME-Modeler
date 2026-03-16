@@ -277,19 +277,23 @@ export function buildEvolutionTracks(
       current: currentCH,
     };
 
-    // For each historical snapshot, find the matching CH
+    let matchCount = 0;
+
+    // For each historical snapshot, find the matching CH.
+    //
+    // IMPORTANT: SUVI detector outputs Carrington coordinates which are
+    // fixed to the Sun's surface. A CH at lon=45° stays near lon=45°
+    // across snapshots (with small drift from physical evolution).
+    // NO solar rotation correction is needed.
     for (const snap of history.snapshots) {
       const hoursAgo = (now - snap.timestampMs) / (3600 * 1000);
-      const rotationDeg = SUN_SYNODIC_DEG_PER_HOUR * hoursAgo;
-
-      // Expected longitude of the current CH at the snapshot time
-      const expectedLon = currentCH.lon + rotationDeg;
 
       let bestMatch: CoronalHole | null = null;
       let bestDist = CH_MATCH_THRESHOLD_DEG;
 
       for (const chData of snap.coronalHoles) {
-        const dLon = Math.abs(chData.lon - expectedLon);
+        // Simple proximity match in Carrington coordinates
+        const dLon = Math.abs(chData.lon - currentCH.lon);
         const dLat = Math.abs(chData.lat - currentCH.lat);
         const dist = Math.sqrt(dLon * dLon + dLat * dLat);
         if (dist < bestDist) {
@@ -297,6 +301,8 @@ export function buildEvolutionTracks(
           bestMatch = snapshotDataToCH(chData);
         }
       }
+
+      if (bestMatch) matchCount++;
 
       evolution.snapshots.push({
         timestampMs: snap.timestampMs,
@@ -314,6 +320,11 @@ export function buildEvolutionTracks(
 
     // Sort oldest first
     evolution.snapshots.sort((a, b) => a.timestampMs - b.timestampMs);
+
+    console.log(
+      `[CH History] Track ${currentCH.id}: matched ${matchCount}/${history.snapshots.length} snapshots, ` +
+      `${evolution.snapshots.length} total points`
+    );
 
     return evolution;
   });
@@ -440,6 +451,7 @@ export function getCHAtTimelineTime(
     heightDeg: interpolated.heightDeg,
     darkness: interpolated.darkness,
     lat: interpolated.lat,
+    lon: interpolated.lon,
     estimatedSpeedKms: interpolated.estimatedSpeedKms,
     polygon: current.polygon?.map(p => ({
       lat: p.lat,
