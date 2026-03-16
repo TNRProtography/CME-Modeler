@@ -49,7 +49,7 @@
 //   SPIRAL_TURNS           how many full wraps the arm makes before ending
 
 import { CoronalHole } from './coronalHoleData';
-import { interpolateCHAtTime, type CHEvolution } from './coronalHoleHistory';
+import { interpolateCHAtTimeMs, type CHEvolution } from './coronalHoleHistory';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const SPIRAL_POINTS          = 220;
@@ -827,9 +827,11 @@ export function buildTimeVaryingSpiralMesh(
     // t=0 = wind leaving the Sun right now (root of spiral)
     // t=1 = wind that left maxTravelHours ago (tip at ~1 AU)
     const hoursAgo = t * maxTravelHours;
+    // Convert to absolute emission timestamp
+    const emissionTimeMs = refTime - hoursAgo * 3600 * 1000;
 
     // What was the CH doing when this parcel left the Sun?
-    const historical = interpolateCHAtTime(evolution, hoursAgo);
+    const historical = interpolateCHAtTimeMs(evolution, emissionTimeMs);
 
     if (historical) {
       rawWidths.push(historical.widthDeg);

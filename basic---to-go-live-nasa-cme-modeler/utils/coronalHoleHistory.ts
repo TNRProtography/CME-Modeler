@@ -324,11 +324,17 @@ export function buildEvolutionTracks(
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Get interpolated CH properties for wind emitted `hoursAgo` before now.
+ * Get interpolated CH properties at a specific absolute time (ms since epoch).
+ *
+ * Searches the evolution snapshots for the two that bracket the target time,
+ * then linearly interpolates all CH properties between them.
+ *
+ * This replaces the old hoursAgo-based interpolation which was broken because
+ * hoursAgo was relative to when buildEvolutionTracks ran, not to the query time.
  */
-export function interpolateCHAtTime(
+export function interpolateCHAtTimeMs(
   evolution: CHEvolution,
-  hoursAgo: number,
+  targetTimeMs: number,
 ): {
   widthDeg: number;
   heightDeg: number;
@@ -340,25 +346,38 @@ export function interpolateCHAtTime(
   const snaps = evolution.snapshots;
   if (snaps.length === 0) return null;
 
-  // Find bracketing snapshots
-  let before: typeof snaps[0] | null = null;
-  let after: typeof snaps[0] | null = null;
+  // Snapshots are sorted oldest-first (ascending timestampMs).
+  // Find the two that bracket targetTimeMs.
+  //
+  //   [snap0]---[snap1]---[snap2]---*target*---[snap3]---[snap4]
+  //                        ^before              ^after
 
-  for (const snap of snaps) {
-    if (snap.hoursAgo <= hoursAgo) after = snap;
-    if (snap.hoursAgo >= hoursAgo && !before) before = snap;
+  let beforeIdx = -1;
+  let afterIdx  = -1;
+
+  for (let i = 0; i < snaps.length; i++) {
+    if (snaps[i].timestampMs <= targetTimeMs) {
+      beforeIdx = i;  // Keep updating — we want the latest one before target
+    }
+    if (snaps[i].timestampMs >= targetTimeMs && afterIdx === -1) {
+      afterIdx = i;   // First one after target
+    }
   }
 
-  if (!before && !after) return null;
-  if (!before) before = after;
-  if (!after) after = before;
-  if (!before || !after) return null;
+  // Edge cases: target is before all snapshots or after all
+  if (beforeIdx === -1 && afterIdx === -1) return null;
+  if (beforeIdx === -1) beforeIdx = afterIdx;
+  if (afterIdx === -1)  afterIdx = beforeIdx;
 
-  const chBefore = before.ch;
-  const chAfter = after.ch;
+  const snapBefore = snaps[beforeIdx];
+  const snapAfter  = snaps[afterIdx];
+  const chBefore = snapBefore.ch;
+  const chAfter  = snapAfter.ch;
+
+  // Both brackets have no CH data
   if (!chBefore && !chAfter) return null;
 
-  // Single bracket available
+  // Only one bracket has data — use it directly
   const single = chBefore ?? chAfter;
   if (!chBefore || !chAfter) {
     return {
@@ -371,10 +390,11 @@ export function interpolateCHAtTime(
     };
   }
 
-  // Interpolate between brackets
-  const range = after.hoursAgo - before.hoursAgo;
-  const t = range > 0 ? (hoursAgo - before.hoursAgo) / range : 0;
-  const lerp = (a: number, b: number) => a + t * (b - a);
+  // Both brackets have CH data — interpolate
+  const range = snapAfter.timestampMs - snapBefore.timestampMs;
+  const t = range > 0 ? (targetTimeMs - snapBefore.timestampMs) / range : 0;
+  const tClamped = Math.max(0, Math.min(1, t));
+  const lerp = (a: number, b: number) => a + tClamped * (b - a);
 
   return {
     widthDeg: lerp(chBefore.widthDeg ?? 15, chAfter.widthDeg ?? 15),
@@ -390,6 +410,18 @@ export function interpolateCHAtTime(
 }
 
 /**
+ * Legacy wrapper — converts hoursAgo to absolute timestamp and calls
+ * interpolateCHAtTimeMs. Used by any code still passing hoursAgo.
+ */
+export function interpolateCHAtTime(
+  evolution: CHEvolution,
+  hoursAgo: number,
+): ReturnType<typeof interpolateCHAtTimeMs> {
+  const targetMs = Date.now() - hoursAgo * 3600 * 1000;
+  return interpolateCHAtTimeMs(evolution, targetMs);
+}
+
+/**
  * Get a morphed CoronalHole for animating the patch on the Sun
  * at a specific timeline time.
  */
@@ -397,13 +429,10 @@ export function getCHAtTimelineTime(
   evolution: CHEvolution,
   absoluteMs: number,
 ): CoronalHole {
-  const hoursAgo = Math.max(0, (Date.now() - absoluteMs) / (3600 * 1000));
-  const interpolated = interpolateCHAtTime(evolution, hoursAgo);
+  const interpolated = interpolateCHAtTimeMs(evolution, absoluteMs);
   if (!interpolated) return evolution.current;
 
   const current = evolution.current;
-  const widthScale = interpolated.widthDeg / (current.widthDeg ?? 15);
-  const heightScale = interpolated.heightDeg / (current.heightDeg ?? current.widthDeg ?? 15);
 
   return {
     ...current,
@@ -413,8 +442,8 @@ export function getCHAtTimelineTime(
     lat: interpolated.lat,
     estimatedSpeedKms: interpolated.estimatedSpeedKms,
     polygon: current.polygon?.map(p => ({
-      lat: p.lat * heightScale,
-      lon: p.lon * widthScale,
+      lat: p.lat,
+      lon: p.lon,
     })),
   };
 }
