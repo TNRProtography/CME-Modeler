@@ -818,7 +818,7 @@ export function buildTimeVaryingSpiralMesh(
   //   - The azimuth has a small OFFSET per-point (CH was at different lon)
   // ═════════════════════════════════════════════════════════════════════
 
-  const rawLonOffsets: number[] = [];
+  const rawAbsLon: number[] = [];
   const rawWidths: number[] = [];
   const rawHeights: number[] = [];
 
@@ -836,12 +836,12 @@ export function buildTimeVaryingSpiralMesh(
     if (historical) {
       rawWidths.push(historical.widthDeg);
       rawHeights.push(historical.heightDeg);
-      rawLonOffsets.push(historical.lon - ch.lon);
+      rawAbsLon.push(historical.lon);
     } else {
       // No history that far back — use current CH properties
       rawWidths.push(ch.widthDeg ?? 15);
       rawHeights.push(ch.heightDeg ?? ch.widthDeg ?? 15);
-      rawLonOffsets.push(0);
+      rawAbsLon.push(ch.lon);
     }
   }
 
@@ -869,27 +869,36 @@ export function buildTimeVaryingSpiralMesh(
     });
   };
 
-  const sLonOff = smooth(rawLonOffsets);
+  const sAbsLon = smooth(rawAbsLon);
   const sWidths = smooth(rawWidths);
   const sHeights = smooth(rawHeights);
 
   // ═════════════════════════════════════════════════════════════════════
-  // PASS 3: Build backbone — IDENTICAL to the static spiral shape,
-  // plus a small per-point azimuth offset from the smoothed lon data.
+  // PASS 3: Build backbone
   //
-  // NO skipping, NO per-parcel distance gating, NO `continue`.
-  // Every point from i=0 to SPIRAL_POINTS is always present.
+  // The root (t=0) sits at the current CH longitude.
+  // Each subsequent point sits at the longitude where the CH was when
+  // that parcel was emitted. The DIFFERENCE between each point's lon
+  // and the root lon creates the gradual curve — old parcels are offset
+  // from where the CH is now because the CH has moved since they left.
   // ═════════════════════════════════════════════════════════════════════
 
   const backbone: any[] = [];
+
+  // Root longitude = the smoothed lon at t=0 (most recently emitted parcel)
+  const rootLon = sAbsLon[0];
 
   for (let i = 0; i <= SPIRAL_POINTS; i++) {
     const t   = i / SPIRAL_POINTS;
     const phi = t * phiMax;
     const r   = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
 
-    // Parker spiral trailing azimuth + historical CH longitude shift
-    const lonOffsetRad = THREE.MathUtils.degToRad(sLonOff[i]);
+    // Per-parcel offset: how far has the CH moved since this parcel left?
+    // Positive = CH has moved east since emission, so parcel is west of root.
+    const lonDiffDeg = sAbsLon[i] - rootLon;
+    const lonOffsetRad = THREE.MathUtils.degToRad(lonDiffDeg);
+
+    // Parker spiral trailing azimuth + historical longitude offset
     const az = -phi + lonOffsetRad;
 
     // Latitude: backbone damping toward ecliptic (same as static)
