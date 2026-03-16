@@ -1076,14 +1076,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
 
     // Only rebuild if the scrubbed time changed by > 2 minutes
-    // (geometry rebuild is fast; this just avoids unnecessary work every frame)
     if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 2 * 60 * 1000) return;
     lastMorphTimeRef.current = timelineNowMs;
 
     // Build morphed CH array from evolution data at the scrubbed time
-    const morphedCHs: CoronalHole[] = chEvolutions.map(evo =>
-      getCHAtTimelineTime(evo, timelineNowMs)
-    );
+    const morphedCHs: CoronalHole[] = chEvolutions.map(evo => {
+      const morphed = getCHAtTimelineTime(evo, timelineNowMs);
+      console.log(`[CH Morph] ${evo.trackId}: timeline=${new Date(timelineNowMs).toISOString()}, ` +
+        `lat=${morphed.lat.toFixed(1)} lon=${morphed.lon?.toFixed(1) ?? '?'} ` +
+        `w=${(morphed.widthDeg ?? 0).toFixed(1)} snapshots=${evo.snapshots.length}`);
+      return morphed;
+    });
 
     if (morphedCHs.length === 0) return;
 
