@@ -1,25 +1,10 @@
 //--- START OF FILE src/components/VisibilityForecastPanel.tsx ---
-//
-// VisibilityForecastPanel
-//
-// Shows a "What to expect" timeline from Now → 15 min → 30 min → 1 hour
-// in plain English anchored to what the user would physically see outside.
-// Each slot uses the same language as the sighting report options:
-//   eye / phone / dslr / nothing — so the forecast and report UI speak
-//   the same language.
-//
-// Data sources:
-//   • Now        — auroraScore (current ground truth)
-//   • 15 / 30m   — substormForecast (L1 solar wind, highest confidence)
-//   • 1 hr       — substormForecast p60 + trend (lower confidence)
-//   • Sightings  — recent SightingReport array to ground each slot in
-//                  what real people are actually seeing right now
 
 import React, { useMemo } from 'react';
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SlotConfig {
   label: string;
@@ -37,16 +22,6 @@ interface VisibilityForecastPanelProps {
   isDaylight: boolean;
 }
 
-// ─── Visibility phrase logic ──────────────────────────────────────────────────
-//
-// Everything is expressed as "what would I see if I walked outside right now?"
-// using the same categories as the sighting report buttons.
-//
-// Inputs:
-//   projectedScore  — estimated score at that time window
-//   confidence      — 'high' | 'medium' | 'low'
-//   sightingContext — optional real-report context to blend in
-
 type ConfidenceLevel = 'high' | 'medium' | 'low';
 
 interface VisibilityResult {
@@ -55,21 +30,18 @@ interface VisibilityResult {
   subtext: string | null;
 }
 
+// ─── Visibility phrase logic ──────────────────────────────────────────────────
+
 function getVisibilityPhrase(
   projectedScore: number,
   confidence: ConfidenceLevel,
   sightingContext?: { eyeCount: number; phoneCount: number; nothingCount: number; total: number }
 ): VisibilityResult {
-
-  // If real reports exist, they take priority over the forecast phrase
-  // for the NOW slot (confidence = 'ground'). For forecast slots we
-  // blend reports into the subtext only.
   const hasSightings = sightingContext && sightingContext.total > 0;
-  const eyeConfirmed  = hasSightings && sightingContext!.eyeCount > 0;
-  const phoneConfirmed = hasSightings && sightingContext!.phoneCount > 0 && !eyeConfirmed;
+  const eyeConfirmed    = hasSightings && sightingContext!.eyeCount > 0;
+  const phoneConfirmed  = hasSightings && sightingContext!.phoneCount > 0 && !eyeConfirmed;
   const nothingReported = hasSightings && sightingContext!.nothingCount >= 3 && !eyeConfirmed && !phoneConfirmed;
 
-  // Subtext from real reports — plain language, no jargon
   let subtext: string | null = null;
   if (eyeConfirmed) {
     subtext = `${sightingContext!.eyeCount} ${sightingContext!.eyeCount === 1 ? 'person nearby is' : 'people nearby are'} seeing it with their own eyes right now`;
@@ -81,8 +53,6 @@ function getVisibilityPhrase(
     subtext = `${sightingContext!.total} report${sightingContext!.total > 1 ? 's' : ''} coming in from people nearby`;
   }
 
-  // Score → visibility tier
-  // Tuned for NZ aurora (~Kp 6-7 needed for comfortable naked-eye)
   if (projectedScore >= 80) {
     const phrase = confidence === 'high'
       ? 'Go outside now — this could be one of the best displays in years'
@@ -91,7 +61,6 @@ function getVisibilityPhrase(
       : 'Could turn into something special — keep a close eye on this';
     return { phrase, icon: '👁️', subtext };
   }
-
   if (projectedScore >= 65) {
     const phrase = confidence === 'high'
       ? 'You should be able to see it with your own eyes — look south'
@@ -100,7 +69,6 @@ function getVisibilityPhrase(
       : 'Might be visible with your own eyes if conditions stay this way';
     return { phrase, icon: '👁️', subtext };
   }
-
   if (projectedScore >= 50) {
     const phrase = confidence === 'high'
       ? 'A faint green glow should be visible to the south — find somewhere dark'
@@ -109,7 +77,6 @@ function getVisibilityPhrase(
       : 'Might just be visible to the eye if you find somewhere dark enough';
     return { phrase, icon: '👁️', subtext };
   }
-
   if (projectedScore >= 35) {
     const phrase = confidence === 'high'
       ? 'Your phone camera will pick it up — point it south and take a photo'
@@ -118,7 +85,6 @@ function getVisibilityPhrase(
       : 'Your phone camera might pick something up if conditions improve';
     return { phrase, icon: '📱', subtext };
   }
-
   if (projectedScore >= 20) {
     const phrase = confidence === 'high'
       ? 'Very faint — only a long-exposure camera shot would show anything'
@@ -128,43 +94,43 @@ function getVisibilityPhrase(
     return { phrase, icon: '📷', subtext };
   }
 
-  // Nothing / very quiet
   const phrase = confidence === 'high'
-    ? 'Nothing to see tonight — the sky will look completely normal'
+    ? 'Activity just picked up — aurora may be starting right now'
     : confidence === 'medium'
     ? 'Very quiet — not worth going out at the moment'
-    : 'Quiet tonight — set an alert and check back later';
-  return { phrase, icon: '😴', subtext: nothingReported ? subtext : null };
+    : 'Quiet — set an alert and check back later';
+  return { phrase: confidence === 'high' && projectedScore < 5 ? 'Nothing to see — the sky will look completely normal' : phrase, icon: '😴', subtext: nothingReported ? subtext : null };
 }
 
-// ─── Score projection helpers ─────────────────────────────────────────────────
+// ─── Score projection — substorm worker only ─────────────────────────────────
 //
-// Projects current score forward using the substorm forecast's status and
-// probability values, sharpened by the worker's risk_trend and Newell data
-// when available.
+// All projected scores derive exclusively from the substorm worker's current
+// score and its own physics-based trend signals. The SpotTheAurora composite
+// is NOT used here — it's a visibility estimate, not a substorm measurement.
 
-function projectScores(
-  currentScore: number,
+function projectSubstormScores(
+  workerScore: number,
   forecast: SubstormForecast,
   workerTrend?: string,
   newellNow?: number,
   newellAvg30?: number,
+  confidence?: number | null,
 ): { score15: number; score30: number; score60: number } {
   const { status, p30, p60 } = forecast;
 
-  // If the worker gives us a trend that overrides the substorm forecast status,
-  // use it to modulate the projections. Rapidly Increasing → boost; Rapidly
-  // Decreasing → decay faster than the base model.
-  const trendMultiplier =
-    workerTrend === 'Rapidly Increasing' ? 1.15 :
-    workerTrend === 'Increasing'         ? 1.07 :
-    workerTrend === 'Decreasing'         ? 0.90 :
-    workerTrend === 'Rapidly Decreasing' ? 0.75 : 1.0;
+  // Trend from the worker's own risk_trend field
+  const trendMult =
+    workerTrend === 'Rapidly Increasing' ? 1.18 :
+    workerTrend === 'Increasing'         ? 1.08 :
+    workerTrend === 'Decreasing'         ? 0.88 :
+    workerTrend === 'Rapidly Decreasing' ? 0.72 : 1.0;
 
-  // If Newell coupling is accelerating (now > 30m avg), conditions are
-  // building faster than the substorm status alone suggests.
-  const newellAccelerating = newellNow && newellAvg30 && newellNow > newellAvg30 * 1.2;
-  const newellBoost = newellAccelerating ? 1.08 : 1.0;
+  // Newell acceleration — if coupling is intensifying right now, boost near-term
+  const newellAccel = newellNow && newellAvg30 && newellNow > newellAvg30 * 1.2;
+  const newellBoost = newellAccel ? 1.08 : 1.0;
+
+  // Confidence-based dampening — low confidence = wider uncertainty, cap projections
+  const confMult = confidence != null ? (0.7 + (confidence / 100) * 0.3) : 1.0;
 
   const boostFromP = (p: number, base: number) =>
     Math.min(100, base + p * (100 - base) * 0.75);
@@ -173,70 +139,61 @@ function projectScores(
 
   switch (status) {
     case 'ONSET':
-      score15 = Math.min(100, currentScore * 1.05);
-      score30 = currentScore * 0.90;
-      score60 = currentScore * 0.65;
+      // Already happening — near-term stays high, 60 min starts to decay
+      score15 = Math.min(100, workerScore * 1.05);
+      score30 = workerScore * 0.90;
+      score60 = workerScore * 0.62;
       break;
     case 'IMMINENT_30':
-      score15 = boostFromP(p30, currentScore);
-      score30 = boostFromP(p30, currentScore) * 1.05;
-      score60 = boostFromP(p60, currentScore) * 0.80;
+      // Substorm expected within 30 min — peaks around 30 min mark
+      score15 = boostFromP(p30, workerScore);
+      score30 = boostFromP(p30, workerScore) * 1.05;
+      score60 = boostFromP(p60, workerScore) * 0.78;
       break;
     case 'LIKELY_60':
-      score15 = currentScore * 1.10;
-      score30 = boostFromP(p30 * 0.7, currentScore);
-      score60 = boostFromP(p60, currentScore);
+      // Gradual build toward 60 min
+      score15 = workerScore * 1.08;
+      score30 = boostFromP(p30 * 0.65, workerScore);
+      score60 = boostFromP(p60, workerScore);
       break;
     case 'WATCH':
-      score15 = currentScore * 1.05;
-      score30 = currentScore * 1.15;
-      score60 = boostFromP(p60 * 0.5, currentScore);
+      // Building but uncertain
+      score15 = workerScore * 1.04;
+      score30 = workerScore * 1.12;
+      score60 = boostFromP(p60 * 0.45, workerScore);
       break;
     case 'QUIET':
     default:
-      score15 = currentScore * 0.95;
-      score30 = currentScore * 0.85;
-      score60 = currentScore * 0.70;
+      // Stable or decaying
+      score15 = workerScore * 0.94;
+      score30 = workerScore * 0.83;
+      score60 = workerScore * 0.68;
       break;
   }
 
-  // Apply worker trend and Newell modulation to forecast slots only
-  // (not Now — that's ground truth)
-  const applyModifiers = (s: number) =>
-    Math.min(100, Math.max(0, s * trendMultiplier * newellBoost));
+  const applyAll = (s: number) =>
+    Math.min(100, Math.max(0, s * trendMult * newellBoost * confMult));
 
   return {
-    score15: applyModifiers(score15),
-    score30: applyModifiers(score30),
-    score60: applyModifiers(score60),
+    score15: applyAll(score15),
+    score30: applyAll(score30),
+    score60: applyAll(score60),
   };
 }
 
-// Map forecast status to per-slot confidence levels
 function getSlotConfidence(
   status: SubstormForecast['status'],
   slot: '15m' | '30m' | '1h'
 ): ConfidenceLevel {
-  if (status === 'ONSET') {
-    return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
-  }
-  if (status === 'IMMINENT_30') {
-    return slot === '15m' ? 'high' : slot === '30m' ? 'high' : 'medium';
-  }
-  if (status === 'LIKELY_60') {
-    return slot === '15m' ? 'medium' : slot === '30m' ? 'medium' : 'high';
-  }
-  if (status === 'WATCH') {
-    return slot === '15m' ? 'medium' : slot === '30m' ? 'low' : 'low';
-  }
-  // QUIET
+  if (status === 'ONSET')       return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
+  if (status === 'IMMINENT_30') return slot === '1h'  ? 'medium' : 'high';
+  if (status === 'LIKELY_60')   return slot === '1h'  ? 'high'   : 'medium';
+  if (status === 'WATCH')       return slot === '15m' ? 'medium' : 'low';
   return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
 }
 
-// ─── Sighting summariser ──────────────────────────────────────────────────────
-
 function summariseSightings(sightings: SightingReport[]) {
-  const cutoff = Date.now() - 30 * 60 * 1000; // last 30 min
+  const cutoff = Date.now() - 30 * 60 * 1000;
   const recent = sightings.filter(s => s.timestamp >= cutoff);
   return {
     eyeCount:     recent.filter(s => s.status === 'eye').length,
@@ -246,24 +203,39 @@ function summariseSightings(sightings: SightingReport[]) {
   };
 }
 
-// ─── Confidence badge ─────────────────────────────────────────────────────────
+// ─── Score colour helper ──────────────────────────────────────────────────────
+
+function scoreColour(score: number): string {
+  if (score >= 65) return '#34d399'; // green
+  if (score >= 40) return '#fbbf24'; // amber
+  if (score >= 20) return '#38bdf8'; // sky
+  return '#525252';                  // grey
+}
+
+// ─── Confidence dot ───────────────────────────────────────────────────────────
 
 const ConfidenceDot: React.FC<{ level: SlotConfig['confidence'] }> = ({ level }) => {
   const map: Record<SlotConfig['confidence'], { color: string; title: string }> = {
-    ground:  { color: 'bg-emerald-400',  title: 'Ground truth — real sensor data' },
-    high:    { color: 'bg-emerald-400',  title: 'High confidence forecast' },
-    medium:  { color: 'bg-amber-400',    title: 'Moderate confidence forecast' },
-    low:     { color: 'bg-neutral-500',  title: 'Low confidence — treat as rough guide' },
-    hidden:  { color: 'bg-transparent',  title: '' },
+    ground: { color: 'bg-emerald-400', title: 'Ground truth — real sensor data' },
+    high:   { color: 'bg-emerald-400', title: 'High confidence forecast' },
+    medium: { color: 'bg-amber-400',   title: 'Moderate confidence forecast' },
+    low:    { color: 'bg-neutral-500', title: 'Low confidence — treat as rough guide' },
+    hidden: { color: 'bg-transparent', title: '' },
   };
   const { color, title } = map[level];
   if (level === 'hidden') return null;
-  return (
-    <span
-      className={`inline-block w-2 h-2 rounded-full ${color} flex-shrink-0 mt-0.5`}
-      title={title}
-    />
-  );
+  return <span className={`inline-block w-2 h-2 rounded-full ${color} flex-shrink-0 mt-0.5`} title={title} />;
+};
+
+// ─── Trend arrow ─────────────────────────────────────────────────────────────
+
+const TrendArrow: React.FC<{ trend?: string }> = ({ trend }) => {
+  if (!trend || trend === 'Stable') return <span className="text-xs text-neutral-600">→</span>;
+  if (trend === 'Rapidly Increasing') return <span className="text-xs text-emerald-400 font-bold">↑↑</span>;
+  if (trend === 'Increasing')         return <span className="text-xs text-emerald-500">↑</span>;
+  if (trend === 'Rapidly Decreasing') return <span className="text-xs text-red-400 font-bold">↓↓</span>;
+  if (trend === 'Decreasing')         return <span className="text-xs text-red-500">↓</span>;
+  return null;
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -275,40 +247,42 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   recentSightings,
   isDaylight,
 }) => {
-  // Use the worker's score for Now if available — it's more physics-grounded
-  // than the SpotTheAurora composite. Fall back to auroraScore if not yet loaded.
-  const workerScore   = substormRiskData?.current?.score ?? null;
+  // All scores derive from the substorm worker — the physics-based measurement
+  const workerScore   = substormRiskData?.current?.score   ?? null;
   const workerTrend   = substormRiskData?.current?.risk_trend;
-  const bayOnset      = substormRiskData?.current?.bay_onset_flag ?? false;
-  const cmeSheath     = substormRiskData?.current?.cme_sheath_flag ?? false;
+  const workerLevel   = substormRiskData?.current?.level;
+  const bayOnset      = substormRiskData?.current?.bay_onset_flag   ?? false;
+  const cmeSheath     = substormRiskData?.current?.cme_sheath_flag  ?? false;
   const newellNow     = substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
   const newellAvg30   = substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
   const workerConf    = substormRiskData?.current?.confidence;
+  const bz            = substormRiskData?.metrics?.solar_wind?.bz;
+  const southMin30    = substormRiskData?.metrics?.solar_wind?.southward_minutes_30m;
 
-  // For the Now slot: prefer worker score; for forecast slots use auroraScore
-  // as the starting point (it blends SpotTheAurora + location adjustment)
-  const nowScore      = workerScore ?? auroraScore ?? 0;
-  const forecastBase  = auroraScore ?? workerScore ?? 0;
+  // Now slot: worker score is ground truth. Fall back to auroraScore only if
+  // the worker hasn't loaded yet.
+  const nowScore    = workerScore ?? auroraScore ?? 0;
+
+  // Forecast slots: projected from the substorm worker score exclusively
+  const base = workerScore ?? 0;
 
   const sightingContext = useMemo(() => summariseSightings(recentSightings), [recentSightings]);
 
   const { score15, score30, score60 } = useMemo(
-    () => projectScores(forecastBase, substormForecast, workerTrend, newellNow, newellAvg30),
-    [forecastBase, substormForecast, workerTrend, newellNow, newellAvg30]
+    () => projectSubstormScores(base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf),
+    [base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf]
   );
 
   const conf15 = getSlotConfidence(substormForecast.status, '15m');
   const conf30 = getSlotConfidence(substormForecast.status, '30m');
   const conf60 = getSlotConfidence(substormForecast.status, '1h');
 
-  // NOW slot — worker score + real sightings + bay/CME flags in subtext
   const nowVisibility = useMemo(() => {
     const base = getVisibilityPhrase(nowScore, 'high', sightingContext);
-    // Append bay onset or CME sheath note to subtext if applicable
     const extraNotes: string[] = [];
-    if (bayOnset) extraNotes.push('Activity just picked up — aurora may be starting right now');
+    if (bayOnset)  extraNotes.push('Activity just picked up — aurora may be starting right now');
     if (cmeSheath) extraNotes.push('A solar storm is passing Earth right now — conditions could change fast');
-    if (workerConf !== null && workerConf !== undefined && nowScore >= 30) {
+    if (workerConf != null && nowScore >= 30) {
       extraNotes.push(`${workerConf}% chance of a display based on current solar conditions`);
     }
     return {
@@ -321,39 +295,76 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const vis30 = useMemo(() => getVisibilityPhrase(score30, conf30), [score30, conf30]);
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
 
-  const showForecast = forecastBase >= 20 || substormForecast.status !== 'QUIET';
+  const showForecast = base >= 15 || substormForecast.status !== 'QUIET';
 
-  // Special daylight override
   if (isDaylight) {
     return (
       <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-5">
         <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
         <div className="flex items-center gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
-          <span>It's still daylight — aurora is only visible after dark. Set an alert and we'll let you know if something develops tonight.</span>
+          <span>It's still daylight — aurora is only visible after dark. Set an alert and we'll let you know if something develops.</span>
         </div>
       </div>
     );
   }
 
-  const slots: { time: string; vis: VisibilityResult; conf: SlotConfig['confidence']; projScore: number }[] = [
-    { time: 'Now',    vis: nowVisibility, conf: 'ground', projScore: nowScore },
+  const slots: {
+    time: string;
+    vis: VisibilityResult;
+    conf: SlotConfig['confidence'];
+    substormScore: number;
+  }[] = [
+    { time: 'Now',    vis: nowVisibility, conf: 'ground', substormScore: Math.round(nowScore)  },
     ...(showForecast ? [
-      { time: '15 min', vis: vis15, conf: conf15 as SlotConfig['confidence'], projScore: Math.round(score15) },
-      { time: '30 min', vis: vis30, conf: conf30 as SlotConfig['confidence'], projScore: Math.round(score30) },
-      { time: '1 hour', vis: vis60, conf: conf60 as SlotConfig['confidence'], projScore: Math.round(score60) },
+      { time: '15 min', vis: vis15, conf: conf15 as SlotConfig['confidence'], substormScore: Math.round(score15) },
+      { time: '30 min', vis: vis30, conf: conf30 as SlotConfig['confidence'], substormScore: Math.round(score30) },
+      { time: '1 hour', vis: vis60, conf: conf60 as SlotConfig['confidence'], substormScore: Math.round(score60) },
     ] : []),
   ];
 
   return (
     <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-5">
-      <div className="flex items-center justify-between mb-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-1">
         <h3 className="text-lg font-semibold text-white">What to expect</h3>
         <span className="text-xs text-neutral-500">Based on current conditions</span>
       </div>
 
+      {/* Substorm context bar — just below the header */}
+      {workerScore != null && (
+        <div className="flex items-center gap-3 mb-4 py-2 border-b border-neutral-800/60">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-neutral-500">Substorm index</span>
+            <span className="text-sm font-bold tabular-nums" style={{ color: scoreColour(workerScore) }}>
+              {workerScore}
+            </span>
+            <span className="text-xs font-medium text-neutral-400">{workerLevel}</span>
+            <TrendArrow trend={workerTrend} />
+          </div>
+          {workerConf != null && nowScore >= 30 && (
+            <div className="flex items-center gap-1 ml-2">
+              <span className="text-xs text-neutral-600">·</span>
+              <span className="text-xs text-neutral-500">{workerConf}% confidence</span>
+            </div>
+          )}
+          {bz != null && (
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="text-xs text-neutral-600">Bz</span>
+              <span className="text-xs font-bold tabular-nums" style={{ color: bz < -5 ? '#34d399' : bz > 3 ? '#f87171' : '#d4d4d4' }}>
+                {bz > 0 ? '+' : ''}{bz.toFixed(1)} nT
+              </span>
+              {southMin30 != null && southMin30 > 5 && (
+                <span className="text-xs text-neutral-600">· south {southMin30}m</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Slots */}
       <div className="space-y-0 divide-y divide-neutral-800/60">
-        {slots.map(({ time, vis, conf, projScore }) => (
+        {slots.map(({ time, vis, conf, substormScore }) => (
           <div key={time} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
 
             {/* Time label */}
@@ -378,45 +389,51 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
                   {vis.subtext}
                 </p>
               )}
-              {/* Low confidence disclaimer */}
               {conf === 'low' && (
                 <p className="text-xs text-neutral-600 mt-0.5">Rough guide only</p>
               )}
             </div>
 
-            {/* Confidence dot + projected score */}
+            {/* Score + confidence dot */}
             <div className="flex items-center gap-1.5 flex-shrink-0 pt-1">
               <ConfidenceDot level={conf} />
-              {time !== 'Now' && (
-                <span className="text-xs text-neutral-600 tabular-nums">{projScore}</span>
-              )}
+              <span
+                className="text-xs font-bold tabular-nums"
+                style={{ color: scoreColour(substormScore) }}
+                title="Substorm index score"
+              >
+                {substormScore}
+              </span>
             </div>
           </div>
         ))}
       </div>
 
       {/* Legend */}
-      <div className="mt-4 pt-3 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm">👁️</span>
-          <span className="text-xs text-neutral-500">Naked eye</span>
+      <div className="mt-4 pt-3 border-t border-neutral-800/60">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">👁️</span>
+            <span className="text-xs text-neutral-500">Naked eye</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">📱</span>
+            <span className="text-xs text-neutral-500">Phone camera</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">📷</span>
+            <span className="text-xs text-neutral-500">DSLR only</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">😴</span>
+            <span className="text-xs text-neutral-500">Nothing expected</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm">📱</span>
-          <span className="text-xs text-neutral-500">Phone camera</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm">📷</span>
-          <span className="text-xs text-neutral-500">DSLR only</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm">😴</span>
-          <span className="text-xs text-neutral-500">Nothing expected</span>
-        </div>
-        <div className="flex items-center gap-x-3 gap-y-1 ml-auto">
+        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+          <span className="text-xs text-neutral-600">Confidence:</span>
           <div className="flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-xs text-neutral-500">High confidence</span>
+            <span className="text-xs text-neutral-500">High</span>
           </div>
           <div className="flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
@@ -426,6 +443,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
             <span className="inline-block w-2 h-2 rounded-full bg-neutral-500" />
             <span className="text-xs text-neutral-500">Low</span>
           </div>
+          <span className="text-xs text-neutral-600 ml-auto">Score = substorm index 0–100</span>
         </div>
       </div>
     </div>
