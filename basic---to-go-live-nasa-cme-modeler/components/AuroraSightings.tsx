@@ -28,7 +28,7 @@ const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 
-const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
+const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-47.5, 165], [-34, 180]];
 const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
 
@@ -656,7 +656,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 rounded-lg border border-neutral-700 overflow-hidden flex flex-col">
+                <div className="lg:col-span-2 rounded-lg border border-neutral-700 overflow-hidden flex flex-col" style={{height: '540px'}}>
                     {/* Legend bar — sits above the map, never obscures it */}
                     <div className="flex items-center gap-5 px-3 py-2 bg-neutral-900/90 border-b border-neutral-700 flex-shrink-0 flex-wrap">
                         <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 flex-shrink-0">Aurora Oval</span>
@@ -678,7 +678,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                             <span className="text-[10px] text-neutral-400">Visibility horizon — expands during storms</span>
                         </div>
                     </div>
-                    <div className="flex-1 min-h-0" style={{height: '500px'}}>
+                    <div className="flex-1 min-h-0">
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
                         zoom={MAP_ZOOM}
@@ -688,6 +688,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         minZoom={MAP_ZOOM}
                         maxBounds={NZ_BOUNDS}
                         className="h-full w-full bg-neutral-800"
+                        style={{height: '100%'}}
                     >
                         <SightingMapController
                             selectedSightingId={selectedSightingIdForMap}
