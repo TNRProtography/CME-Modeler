@@ -28,8 +28,8 @@ const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 
-const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-47.5, 165], [-34, 180]];
-const MAP_ZOOM = 5;
+const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-52, 160], [-29, 185]];
+const MAP_ZOOM = 4;
 const HIGHLIGHT_MAP_ZOOM = 10;
 
 const computeSunsetWindowStart = () => {
@@ -680,7 +680,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     </div>
                     <div className="flex-1 min-h-0">
                     <MapContainer
-                        center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
+                        center={[-41, 172]}
                         zoom={MAP_ZOOM}
                         scrollWheelZoom={false}
                         dragging={!L.Browser.mobile}
