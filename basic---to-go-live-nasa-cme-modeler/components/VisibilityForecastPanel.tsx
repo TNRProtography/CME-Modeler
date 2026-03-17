@@ -17,13 +17,14 @@
 
 import React, { useMemo } from 'react';
 import { SubstormForecast, SightingReport } from '../types';
+import type { SubstormRiskData } from '../hooks/useForecastData';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SlotConfig {
   label: string;
   phrase: string;
-  icon: string;         // emoji representing visibility method
+  icon: string;
   subtext: string | null;
   confidence: 'ground' | 'high' | 'medium' | 'low' | 'hidden';
 }
@@ -31,7 +32,8 @@ interface SlotConfig {
 interface VisibilityForecastPanelProps {
   auroraScore: number | null;
   substormForecast: SubstormForecast;
-  recentSightings: SightingReport[];   // last ~30 min of reports
+  substormRiskData: SubstormRiskData | null;
+  recentSightings: SightingReport[];
   isDaylight: boolean;
 }
 
@@ -67,132 +69,147 @@ function getVisibilityPhrase(
   const phoneConfirmed = hasSightings && sightingContext!.phoneCount > 0 && !eyeConfirmed;
   const nothingReported = hasSightings && sightingContext!.nothingCount >= 3 && !eyeConfirmed && !phoneConfirmed;
 
-  // Subtext from real reports
+  // Subtext from real reports — plain language, no jargon
   let subtext: string | null = null;
   if (eyeConfirmed) {
-    subtext = `${sightingContext!.eyeCount} ${sightingContext!.eyeCount === 1 ? 'person' : 'people'} seeing it with the naked eye nearby`;
+    subtext = `${sightingContext!.eyeCount} ${sightingContext!.eyeCount === 1 ? 'person nearby is' : 'people nearby are'} seeing it with their own eyes right now`;
   } else if (phoneConfirmed) {
-    subtext = `${sightingContext!.phoneCount} ${sightingContext!.phoneCount === 1 ? 'person' : 'people'} picking it up on camera nearby`;
+    subtext = `${sightingContext!.phoneCount} ${sightingContext!.phoneCount === 1 ? 'person nearby has' : 'people nearby have'} spotted it on their phone camera`;
   } else if (nothingReported) {
-    subtext = `${sightingContext!.nothingCount} nearby reports — nothing visible yet`;
+    subtext = `${sightingContext!.nothingCount} people nearby have checked — nothing visible yet`;
   } else if (hasSightings && sightingContext!.total > 0) {
-    subtext = `${sightingContext!.total} report${sightingContext!.total > 1 ? 's' : ''} coming in nearby`;
+    subtext = `${sightingContext!.total} report${sightingContext!.total > 1 ? 's' : ''} coming in from people nearby`;
   }
 
   // Score → visibility tier
   // Tuned for NZ aurora (~Kp 6-7 needed for comfortable naked-eye)
   if (projectedScore >= 80) {
     const phrase = confidence === 'high'
-      ? 'Bright aurora filling the sky — unmissable'
+      ? 'Go outside now — this could be one of the best displays in years'
       : confidence === 'medium'
-      ? 'Could be bright and active overhead'
-      : 'Possibly exceptional if conditions hold';
+      ? 'Conditions look exceptional — well worth heading out to have a look'
+      : 'Could turn into something special — keep a close eye on this';
     return { phrase, icon: '👁️', subtext };
   }
 
   if (projectedScore >= 65) {
     const phrase = confidence === 'high'
-      ? 'Clearly visible to the naked eye — colours likely'
+      ? 'You should be able to see it with your own eyes — look south'
       : confidence === 'medium'
-      ? 'Should be visible to the naked eye'
-      : 'Naked-eye sighting possible if conditions hold';
+      ? 'Good chance of seeing it with your own eyes in a dark spot'
+      : 'Might be visible with your own eyes if conditions stay this way';
     return { phrase, icon: '👁️', subtext };
   }
 
   if (projectedScore >= 50) {
     const phrase = confidence === 'high'
-      ? 'Visible to the naked eye — faint glow on the horizon'
+      ? 'A faint green glow should be visible to the south — find somewhere dark'
       : confidence === 'medium'
-      ? 'Faint naked-eye glow likely in a dark location'
-      : 'Could become visible to the naked eye';
+      ? 'A faint glow to the south is possible — get away from street lights'
+      : 'Might just be visible to the eye if you find somewhere dark enough';
     return { phrase, icon: '👁️', subtext };
   }
 
   if (projectedScore >= 35) {
     const phrase = confidence === 'high'
-      ? 'Showing clearly on phone cameras — eye sightings unlikely'
+      ? 'Your phone camera will pick it up — point it south and take a photo'
       : confidence === 'medium'
-      ? 'Starting to show on phone cameras'
-      : 'Camera sightings possible if conditions develop';
+      ? 'Worth taking a photo to the south — your phone may surprise you'
+      : 'Your phone camera might pick something up if conditions improve';
     return { phrase, icon: '📱', subtext };
   }
 
   if (projectedScore >= 20) {
     const phrase = confidence === 'high'
-      ? 'A faint glow — visible on phone camera in a dark spot'
+      ? 'Very faint — only a long-exposure camera shot would show anything'
       : confidence === 'medium'
-      ? 'May show a faint glow on camera'
-      : 'Camera sighting unlikely but possible';
+      ? 'Very faint if anything — not worth going out specially'
+      : 'Unlikely to show up even on camera at this stage';
     return { phrase, icon: '📷', subtext };
   }
 
-  // Low / nothing
+  // Nothing / very quiet
   const phrase = confidence === 'high'
-    ? 'Nothing to see — sky would look completely normal'
+    ? 'Nothing to see tonight — the sky will look completely normal'
     : confidence === 'medium'
-    ? 'Probably nothing visible tonight'
-    : 'Very unlikely to change';
+    ? 'Very quiet — not worth going out at the moment'
+    : 'Quiet tonight — set an alert and check back later';
   return { phrase, icon: '😴', subtext: nothingReported ? subtext : null };
 }
 
 // ─── Score projection helpers ─────────────────────────────────────────────────
 //
 // Projects current score forward using the substorm forecast's status and
-// probability values.  Returns { score15, score30, score60 }.
+// probability values, sharpened by the worker's risk_trend and Newell data
+// when available.
 
 function projectScores(
   currentScore: number,
-  forecast: SubstormForecast
+  forecast: SubstormForecast,
+  workerTrend?: string,
+  newellNow?: number,
+  newellAvg30?: number,
 ): { score15: number; score30: number; score60: number } {
   const { status, p30, p60 } = forecast;
 
-  // Map substorm probability (0-1) to a rough score boost
-  // A P30 of 0.8 with current score 40 should push score30 toward 70-80
+  // If the worker gives us a trend that overrides the substorm forecast status,
+  // use it to modulate the projections. Rapidly Increasing → boost; Rapidly
+  // Decreasing → decay faster than the base model.
+  const trendMultiplier =
+    workerTrend === 'Rapidly Increasing' ? 1.15 :
+    workerTrend === 'Increasing'         ? 1.07 :
+    workerTrend === 'Decreasing'         ? 0.90 :
+    workerTrend === 'Rapidly Decreasing' ? 0.75 : 1.0;
+
+  // If Newell coupling is accelerating (now > 30m avg), conditions are
+  // building faster than the substorm status alone suggests.
+  const newellAccelerating = newellNow && newellAvg30 && newellNow > newellAvg30 * 1.2;
+  const newellBoost = newellAccelerating ? 1.08 : 1.0;
+
   const boostFromP = (p: number, base: number) =>
     Math.min(100, base + p * (100 - base) * 0.75);
 
+  let score15: number, score30: number, score60: number;
+
   switch (status) {
     case 'ONSET':
-      // Already happening — scores peak now, start to decay over 60 min
-      return {
-        score15: Math.min(100, currentScore * 1.05),
-        score30: currentScore * 0.90,
-        score60: currentScore * 0.65,
-      };
-
+      score15 = Math.min(100, currentScore * 1.05);
+      score30 = currentScore * 0.90;
+      score60 = currentScore * 0.65;
+      break;
     case 'IMMINENT_30':
-      // Substorm expected within 30 min — score rises fast then decays
-      return {
-        score15: boostFromP(p30, currentScore),
-        score30: boostFromP(p30, currentScore) * 1.05,
-        score60: boostFromP(p60, currentScore) * 0.80,
-      };
-
+      score15 = boostFromP(p30, currentScore);
+      score30 = boostFromP(p30, currentScore) * 1.05;
+      score60 = boostFromP(p60, currentScore) * 0.80;
+      break;
     case 'LIKELY_60':
-      // Substorm expected within 60 min — gradual rise
-      return {
-        score15: currentScore * 1.10,
-        score30: boostFromP(p30 * 0.7, currentScore),
-        score60: boostFromP(p60, currentScore),
-      };
-
+      score15 = currentScore * 1.10;
+      score30 = boostFromP(p30 * 0.7, currentScore);
+      score60 = boostFromP(p60, currentScore);
+      break;
     case 'WATCH':
-      // Building but uncertain — modest rise
-      return {
-        score15: currentScore * 1.05,
-        score30: currentScore * 1.15,
-        score60: boostFromP(p60 * 0.5, currentScore),
-      };
-
+      score15 = currentScore * 1.05;
+      score30 = currentScore * 1.15;
+      score60 = boostFromP(p60 * 0.5, currentScore);
+      break;
     case 'QUIET':
     default:
-      // Stable or decaying
-      return {
-        score15: currentScore * 0.95,
-        score30: currentScore * 0.85,
-        score60: currentScore * 0.70,
-      };
+      score15 = currentScore * 0.95;
+      score30 = currentScore * 0.85;
+      score60 = currentScore * 0.70;
+      break;
   }
+
+  // Apply worker trend and Newell modulation to forecast slots only
+  // (not Now — that's ground truth)
+  const applyModifiers = (s: number) =>
+    Math.min(100, Math.max(0, s * trendMultiplier * newellBoost));
+
+  return {
+    score15: applyModifiers(score15),
+    score30: applyModifiers(score30),
+    score60: applyModifiers(score60),
+  };
 }
 
 // Map forecast status to per-slot confidence levels
@@ -254,36 +271,57 @@ const ConfidenceDot: React.FC<{ level: SlotConfig['confidence'] }> = ({ level })
 export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = ({
   auroraScore,
   substormForecast,
+  substormRiskData,
   recentSightings,
   isDaylight,
 }) => {
-  const score = auroraScore ?? 0;
+  // Use the worker's score for Now if available — it's more physics-grounded
+  // than the SpotTheAurora composite. Fall back to auroraScore if not yet loaded.
+  const workerScore   = substormRiskData?.current?.score ?? null;
+  const workerTrend   = substormRiskData?.current?.risk_trend;
+  const bayOnset      = substormRiskData?.current?.bay_onset_flag ?? false;
+  const cmeSheath     = substormRiskData?.current?.cme_sheath_flag ?? false;
+  const newellNow     = substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
+  const newellAvg30   = substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
+  const workerConf    = substormRiskData?.current?.confidence;
+
+  // For the Now slot: prefer worker score; for forecast slots use auroraScore
+  // as the starting point (it blends SpotTheAurora + location adjustment)
+  const nowScore      = workerScore ?? auroraScore ?? 0;
+  const forecastBase  = auroraScore ?? workerScore ?? 0;
+
   const sightingContext = useMemo(() => summariseSightings(recentSightings), [recentSightings]);
 
   const { score15, score30, score60 } = useMemo(
-    () => projectScores(score, substormForecast),
-    [score, substormForecast]
+    () => projectScores(forecastBase, substormForecast, workerTrend, newellNow, newellAvg30),
+    [forecastBase, substormForecast, workerTrend, newellNow, newellAvg30]
   );
 
   const conf15 = getSlotConfidence(substormForecast.status, '15m');
   const conf30 = getSlotConfidence(substormForecast.status, '30m');
   const conf60 = getSlotConfidence(substormForecast.status, '1h');
 
-  // NOW slot — driven purely by current score + real sightings
-  const nowVisibility = useMemo(
-    () => getVisibilityPhrase(score, 'high', sightingContext),
-    [score, sightingContext]
-  );
+  // NOW slot — worker score + real sightings + bay/CME flags in subtext
+  const nowVisibility = useMemo(() => {
+    const base = getVisibilityPhrase(nowScore, 'high', sightingContext);
+    // Append bay onset or CME sheath note to subtext if applicable
+    const extraNotes: string[] = [];
+    if (bayOnset) extraNotes.push('Activity just picked up — aurora may be starting right now');
+    if (cmeSheath) extraNotes.push('A solar storm is passing Earth right now — conditions could change fast');
+    if (workerConf !== null && workerConf !== undefined && nowScore >= 30) {
+      extraNotes.push(`${workerConf}% chance of a display based on current solar conditions`);
+    }
+    return {
+      ...base,
+      subtext: [base.subtext, ...extraNotes].filter(Boolean).join(' · ') || null,
+    };
+  }, [nowScore, sightingContext, bayOnset, cmeSheath, workerConf]);
 
-  // Forecast slots — no sighting context blended in (those are "now" truth)
-  // but subtext will note if reports are already ahead of forecast
   const vis15 = useMemo(() => getVisibilityPhrase(score15, conf15), [score15, conf15]);
   const vis30 = useMemo(() => getVisibilityPhrase(score30, conf30), [score30, conf30]);
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
 
-  // Only show forecast slots when there's something worth saying
-  // (hides low-confidence "probably nothing" noise during quiet periods)
-  const showForecast = score >= 20 || substormForecast.status !== 'QUIET';
+  const showForecast = forecastBase >= 20 || substormForecast.status !== 'QUIET';
 
   // Special daylight override
   if (isDaylight) {
@@ -292,14 +330,14 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
         <div className="flex items-center gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
-          <span>Aurora viewing isn't possible while the sun is up. Check back after dark.</span>
+          <span>It's still daylight — aurora is only visible after dark. Set an alert and we'll let you know if something develops tonight.</span>
         </div>
       </div>
     );
   }
 
   const slots: { time: string; vis: VisibilityResult; conf: SlotConfig['confidence']; projScore: number }[] = [
-    { time: 'Now',    vis: nowVisibility, conf: 'ground', projScore: score },
+    { time: 'Now',    vis: nowVisibility, conf: 'ground', projScore: nowScore },
     ...(showForecast ? [
       { time: '15 min', vis: vis15, conf: conf15 as SlotConfig['confidence'], projScore: Math.round(score15) },
       { time: '30 min', vis: vis30, conf: conf30 as SlotConfig['confidence'], projScore: Math.round(score30) },
