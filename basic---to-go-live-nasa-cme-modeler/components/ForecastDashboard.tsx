@@ -29,6 +29,9 @@ import {
     MagneticFieldChart,
     HemisphericPowerChart,
     MoonArcChart,
+    SubstormIndexChart,
+    NewellCouplingChart,
+    DynamicPressureChart,
 } from './ForecastCharts';
 import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 
@@ -705,6 +708,33 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <SolarWindTemperatureChart data={allTempData} />
                             </ForecastChartPanel>
                             <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}><MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} /></ForecastChartPanel>
+
+                            <ForecastChartPanel
+                                title="Substorm Index"
+                                currentValue={substormRiskData ? `${substormRiskData.current.score} <span class='text-base'>${substormRiskData.current.level}</span><span class='text-xs block text-neutral-400'>${substormRiskData.current.risk_trend}${substormRiskData.current.confidence != null ? ` · ${substormRiskData.current.confidence}% confidence` : ''}</span>` : '—'}
+                                emoji={substormRiskData?.current?.bay_onset_flag ? '⚡' : substormRiskData?.current && substormRiskData.current.score >= 50 ? '🌌' : '📊'}
+                                onOpenModal={() => openModal('unified-forecast')}
+                            >
+                                <SubstormIndexChart history={substormRiskData?.history_24h ?? []} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel
+                                title="Newell Coupling Function"
+                                currentValue={substormRiskData ? `${substormRiskData.metrics.solar_wind.newell_coupling_now.toFixed(0)} <span class='text-base'>Wb/s</span><span class='text-xs block text-neutral-400'>30m avg: ${substormRiskData.metrics.solar_wind.newell_avg_30m.toFixed(0)} · 60m avg: ${substormRiskData.metrics.solar_wind.newell_avg_60m.toFixed(0)}</span>` : '—'}
+                                emoji="🔗"
+                                onOpenModal={() => openModal('bz')}
+                            >
+                                <NewellCouplingChart history={substormRiskData?.history_24h ?? []} />
+                            </ForecastChartPanel>
+
+                            <ForecastChartPanel
+                                title="Dynamic Pressure"
+                                currentValue={substormRiskData ? `${substormRiskData.metrics.solar_wind.dynamic_pressure_nPa.toFixed(2)} <span class='text-base'>nPa</span><span class='text-xs block text-neutral-400'>30m avg: ${substormRiskData.metrics.solar_wind.avg_30m_pressure_nPa.toFixed(2)} nPa · density ${substormRiskData.metrics.solar_wind.density.toFixed(1)} p/cm³</span>` : '—'}
+                                emoji="💨"
+                                onOpenModal={() => openModal('speed')}
+                            >
+                                <DynamicPressureChart history={substormRiskData?.history_24h ?? []} />
+                            </ForecastChartPanel>
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3><button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>

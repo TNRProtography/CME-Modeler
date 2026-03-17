@@ -162,7 +162,7 @@ const createDynamicChartOptions = (
     rangeMs: number,
     yLabel: string,
     datasets: { data: { y: number }[] }[],
-    scaleConfig: { type: 'speed' | 'density' | 'temp' | 'imf' | 'power' | 'substorm' | 'nzmag' },
+    scaleConfig: { type: 'speed' | 'density' | 'temp' | 'imf' | 'power' | 'substorm' | 'nzmag' | 'newell' | 'pressure' | 'substorm_score' },
     extraAnnotations?: any,
 ): ChartOptions<'line'> => {
     const now = Date.now();
@@ -212,6 +212,21 @@ const createDynamicChartOptions = (
             const low = Math.min(...allYValues);
             if (high > 100) max = high;
             if (low < -20) min = low;
+            break;
+        case 'newell':
+            // Newell coupling — 0 baseline, auto-scale to data max (no artificial cap)
+            min = 0;
+            max = Math.ceil(Math.max(5000, ...allYValues) / 1000) * 1000;
+            break;
+        case 'pressure':
+            // Dynamic pressure in nPa — 0 baseline, auto-scale
+            min = 0;
+            max = Math.ceil(Math.max(5, ...allYValues) / 1) * 1;
+            break;
+        case 'substorm_score':
+            // Substorm index — 0 baseline, NOT clamped to 100
+            min = 0;
+            max = Math.ceil(Math.max(20, ...allYValues) / 10) * 10;
             break;
         case 'nzmag':
             const dataMax = Math.max(...allYValues);
@@ -977,6 +992,262 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
             </div>
             <div className="flex-grow relative mt-2">
                 {auroraScoreHistory.length > 0 ? <Line data={chartData} options={chartOptions} /> : <p className="text-center pt-10 text-neutral-400 italic">No historical data.</p>}
+            </div>
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────
+// SUBSTORM INDEX CHART
+// Score from the substorm worker — NOT clamped to 100.
+// The Y axis auto-scales to the actual data max so extreme
+// events are shown in full without artificial ceiling.
+// ─────────────────────────────────────────────────────────────
+
+export const SubstormIndexChart: React.FC<{ history: { timestamp_utc: string; score: number; bay_onset_flag: boolean }[] }> = ({ history }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+
+    const data = useMemo(() =>
+        history.map(h => ({ x: new Date(h.timestamp_utc).getTime(), y: h.score }))
+            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)),
+        [history]
+    );
+
+    // Mark bay onset events as point annotations
+    const onsetPoints = useMemo(() =>
+        history
+            .filter(h => h.bay_onset_flag)
+            .map(h => ({ x: new Date(h.timestamp_utc).getTime(), y: h.score }))
+            .filter(p => Number.isFinite(p.x)),
+        [history]
+    );
+
+    const latestScore = data.at(-1)?.y ?? 0;
+    const lineColor = latestScore >= 65 ? '#34d399' : latestScore >= 40 ? '#fbbf24' : latestScore >= 20 ? '#38bdf8' : '#808080';
+
+    const chartData = useMemo(() => ({
+        datasets: [
+            {
+                label: 'Substorm Index',
+                data,
+                yAxisID: 'y',
+                fill: 'origin',
+                borderWidth: 1.8,
+                pointRadius: 0,
+                tension: 0.25,
+                borderColor: lineColor,
+                backgroundColor: (ctx: ScriptableContext<'line'>) => {
+                    const chart = ctx.chart;
+                    const { ctx: c, chartArea } = chart;
+                    if (!chartArea) return 'rgba(52,211,153,0.08)';
+                    const grad = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                    grad.addColorStop(0, 'rgba(52,211,153,0.25)');
+                    grad.addColorStop(1, 'rgba(52,211,153,0.02)');
+                    return grad;
+                },
+                spanGaps: true,
+            },
+            // Onset events as a scatter overlay
+            ...(onsetPoints.length > 0 ? [{
+                label: 'Bay Onset',
+                data: onsetPoints,
+                yAxisID: 'y',
+                fill: false,
+                borderWidth: 0,
+                pointRadius: 5,
+                pointStyle: 'triangle',
+                pointBackgroundColor: '#fbbf24',
+                tension: 0,
+                showLine: false,
+            }] : []),
+        ]
+    }), [data, onsetPoints, lineColor]);
+
+    const chartOptions = useMemo(() => {
+        const opts = createDynamicChartOptions(timeRange, 'Substorm Index', chartData.datasets, { type: 'substorm_score' });
+        // Add a dashed reference line at 100 so users can see when the score exceeds the "standard" max
+        if (opts.plugins) {
+            (opts.plugins as any).annotation = {
+                annotations: {
+                    ref100: {
+                        type: 'line',
+                        yMin: 100, yMax: 100,
+                        borderColor: 'rgba(255,255,255,0.15)',
+                        borderWidth: 1,
+                        borderDash: [4, 4],
+                        label: { content: '100', display: true, position: 'end', color: 'rgba(255,255,255,0.25)', font: { size: 10 } },
+                    }
+                }
+            };
+        }
+        return opts;
+    }, [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0
+                    ? <Line data={chartData} options={chartOptions} />
+                    : <p className="text-center pt-10 text-neutral-400 italic">No substorm data available.</p>}
+            </div>
+            {onsetPoints.length > 0 && (
+                <p className="text-xs text-amber-400/70 text-center mt-1">▲ Bay onset events detected</p>
+            )}
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────
+// NEWELL COUPLING CHART
+// v^(4/3) · Bt^(2/3) · sin^(8/3)(θ/2) — the primary
+// magnetosphere coupling function. Higher = more aurora energy
+// being pumped in. Typical range 0–15,000 Wb/s.
+// ─────────────────────────────────────────────────────────────
+
+export const NewellCouplingChart: React.FC<{ history: { timestamp_utc: string; metrics: { solar_wind: { newell_coupling_now: number } } }[] }> = ({ history }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+
+    const data = useMemo(() =>
+        history.map(h => ({
+            x: new Date(h.timestamp_utc).getTime(),
+            y: h.metrics?.solar_wind?.newell_coupling_now ?? 0,
+        })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)),
+        [history]
+    );
+
+    const latestVal = data.at(-1)?.y ?? 0;
+    const lineColor = latestVal >= 8000 ? '#34d399' : latestVal >= 4000 ? '#fbbf24' : latestVal >= 1500 ? '#38bdf8' : '#808080';
+
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Newell Coupling (Wb/s)',
+            data,
+            yAxisID: 'y',
+            fill: 'origin',
+            borderWidth: 1.8,
+            pointRadius: 0,
+            tension: 0.25,
+            borderColor: lineColor,
+            backgroundColor: (ctx: ScriptableContext<'line'>) => {
+                const chart = ctx.chart;
+                const { ctx: c, chartArea } = chart;
+                if (!chartArea) return 'rgba(56,189,248,0.08)';
+                const grad = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                grad.addColorStop(0, 'rgba(56,189,248,0.22)');
+                grad.addColorStop(1, 'rgba(56,189,248,0.02)');
+                return grad;
+            },
+            spanGaps: true,
+        }]
+    }), [data, lineColor]);
+
+    const chartOptions = useMemo(() => {
+        const opts = createDynamicChartOptions(timeRange, 'Newell Coupling (Wb/s)', chartData.datasets, { type: 'newell' });
+        // Threshold lines for context
+        if (opts.plugins) {
+            (opts.plugins as any).annotation = {
+                annotations: {
+                    moderate: {
+                        type: 'line', yMin: 4000, yMax: 4000,
+                        borderColor: 'rgba(251,191,36,0.2)', borderWidth: 1, borderDash: [4, 4],
+                        label: { content: 'Moderate', display: true, position: 'end', color: 'rgba(251,191,36,0.5)', font: { size: 10 } },
+                    },
+                    strong: {
+                        type: 'line', yMin: 8000, yMax: 8000,
+                        borderColor: 'rgba(52,211,153,0.2)', borderWidth: 1, borderDash: [4, 4],
+                        label: { content: 'Strong', display: true, position: 'end', color: 'rgba(52,211,153,0.5)', font: { size: 10 } },
+                    },
+                }
+            };
+        }
+        return opts;
+    }, [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0
+                    ? <Line data={chartData} options={chartOptions} />
+                    : <p className="text-center pt-10 text-neutral-400 italic">No coupling data available.</p>}
+            </div>
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────
+// DYNAMIC PRESSURE CHART
+// P = 1.6726×10⁻⁶ · n · v²  (nPa)
+// Pressure pulses can trigger substorm onset by compressing
+// the magnetopause and enhancing reconnection.
+// ─────────────────────────────────────────────────────────────
+
+export const DynamicPressureChart: React.FC<{ history: { timestamp_utc: string; metrics: { solar_wind: { dynamic_pressure_nPa: number } } }[] }> = ({ history }) => {
+    const [timeRange, setTimeRange] = useState(6 * 3600000);
+
+    const data = useMemo(() =>
+        history.map(h => ({
+            x: new Date(h.timestamp_utc).getTime(),
+            y: h.metrics?.solar_wind?.dynamic_pressure_nPa ?? 0,
+        })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && p.y >= 0),
+        [history]
+    );
+
+    const latestVal = data.at(-1)?.y ?? 0;
+    const lineColor = latestVal >= 10 ? '#f87171' : latestVal >= 4 ? '#fbbf24' : latestVal >= 1.5 ? '#38bdf8' : '#808080';
+
+    const chartData = useMemo(() => ({
+        datasets: [{
+            label: 'Dynamic Pressure (nPa)',
+            data,
+            yAxisID: 'y',
+            fill: 'origin',
+            borderWidth: 1.8,
+            pointRadius: 0,
+            tension: 0.25,
+            borderColor: lineColor,
+            backgroundColor: (ctx: ScriptableContext<'line'>) => {
+                const chart = ctx.chart;
+                const { ctx: c, chartArea } = chart;
+                if (!chartArea) return 'rgba(248,113,113,0.08)';
+                const grad = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                grad.addColorStop(0, 'rgba(248,113,113,0.20)');
+                grad.addColorStop(1, 'rgba(248,113,113,0.02)');
+                return grad;
+            },
+            spanGaps: true,
+        }]
+    }), [data, lineColor]);
+
+    const chartOptions = useMemo(() => {
+        const opts = createDynamicChartOptions(timeRange, 'Pressure (nPa)', chartData.datasets, { type: 'pressure' });
+        if (opts.plugins) {
+            (opts.plugins as any).annotation = {
+                annotations: {
+                    elevated: {
+                        type: 'line', yMin: 4, yMax: 4,
+                        borderColor: 'rgba(251,191,36,0.2)', borderWidth: 1, borderDash: [4, 4],
+                        label: { content: 'Elevated', display: true, position: 'end', color: 'rgba(251,191,36,0.5)', font: { size: 10 } },
+                    },
+                    high: {
+                        type: 'line', yMin: 10, yMax: 10,
+                        borderColor: 'rgba(248,113,113,0.2)', borderWidth: 1, borderDash: [4, 4],
+                        label: { content: 'High', display: true, position: 'end', color: 'rgba(248,113,113,0.5)', font: { size: 10 } },
+                    },
+                }
+            };
+        }
+        return opts;
+    }, [timeRange, chartData]);
+
+    return (
+        <div className="h-full flex flex-col">
+            <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
+            <div className="flex-grow relative mt-2 min-h-[250px]">
+                {data.length > 0
+                    ? <Line data={chartData} options={chartOptions} />
+                    : <p className="text-center pt-10 text-neutral-400 italic">No pressure data available.</p>}
             </div>
         </div>
     );
