@@ -98,7 +98,7 @@ function getVisibilityPhrase(
     ? 'Activity just picked up — aurora may be starting right now'
     : confidence === 'medium'
     ? 'Very quiet — not worth going out at the moment'
-    : 'Quiet — set an alert and check back later';
+    : 'Quiet — come back later';
   return { phrase: confidence === 'high' && projectedScore < 5 ? 'Nothing to see — the sky will look completely normal' : phrase, icon: '😴', subtext: nothingReported ? subtext : null };
 }
 
@@ -303,7 +303,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
         <div className="flex items-center gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
-          <span>It's still daylight — aurora is only visible after dark. Set an alert and we'll let you know if something develops.</span>
+          <span>It's still daylight — aurora is only visible after dark. Come back after dark.</span>
         </div>
       </div>
     );

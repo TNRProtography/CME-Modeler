@@ -526,7 +526,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 icon: '😴',
                 phrase: confidence === 'high' ? `Nothing to see — the sky will look completely normal ${timeRef}`
                       : confidence === 'medium' ? `Very quiet ${timeRef} — not worth going out`
-                      : `Quiet ${timeRef} — set an alert and check back later`
+                      : `Quiet ${timeRef} — come back later`
             };
         };
 
@@ -619,7 +619,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     {isDaylight ? (
                                         <div className="flex items-center gap-3 px-4 py-5 text-neutral-400 text-sm">
                                             <span className="text-2xl flex-shrink-0">☀️</span>
-                                            <span>It's still daylight — aurora is only visible after dark. Set an alert and we'll let you know if something develops.</span>
+                                            <span>It's still daylight — aurora is only visible after dark. Come back after dark.</span>
                                         </div>
                                     ) : (
                                         <>
