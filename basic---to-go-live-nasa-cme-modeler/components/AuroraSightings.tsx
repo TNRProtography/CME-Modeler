@@ -616,7 +616,38 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700">
+                <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700 relative">
+                    {/* Mini legend overlay */}
+                    <div className="absolute bottom-3 left-3 z-[500] bg-black/75 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2.5 pointer-events-none select-none">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 mb-2">Aurora Oval</p>
+                        <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#f59e0b" strokeWidth="2.5"/></svg>
+                                <span className="text-[10px] text-neutral-300">Equatorward boundary</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#f59e0b" strokeWidth="1.2" strokeDasharray="4 4" opacity="0.45"/></svg>
+                                <span className="text-[10px] text-neutral-300">Poleward boundary</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <svg width="24" height="8">
+                                    <defs><linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity="0.1"/><stop offset="50%" stopColor="#34d399" stopOpacity="0.5"/><stop offset="100%" stopColor="#34d399" stopOpacity="0.1"/></linearGradient></defs>
+                                    <rect x="0" y="0" width="24" height="8" fill="url(#bandGrad)" rx="1"/>
+                                </svg>
+                                <span className="text-[10px] text-neutral-300">Aurora probability</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="2 6" opacity="0.6"/></svg>
+                                <span className="text-[10px] text-neutral-300">Visibility horizon</span>
+                            </div>
+                            <div className="flex items-center gap-0.5 pt-1.5 border-t border-white/5 mt-0.5">
+                                {['#38bdf8','#34d399','#a3e635','#f59e0b','#fb923c','#f87171'].map((c, i) => (
+                                    <div key={i} style={{background: c, width: '4px', height: '10px', borderRadius: '1px'}}/>
+                                ))}
+                                <span className="text-[10px] text-neutral-300 ml-1.5">Quiet → Storm</span>
+                            </div>
+                        </div>
+                    </div>
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
                         zoom={MAP_ZOOM}
