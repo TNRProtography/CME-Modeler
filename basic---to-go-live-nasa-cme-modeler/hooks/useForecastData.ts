@@ -604,11 +604,20 @@ export const useForecastData = (
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 15000);
+          console.log('[SubstormWorker] Fetching:', SUBSTORM_RISK_URL);
           const res = await fetch(`${SUBSTORM_RISK_URL}&_=${Date.now()}`, { signal: controller.signal });
           clearTimeout(timer);
-          if (!res.ok) return null;
-          return await res.json();
-        } catch {
+          console.log('[SubstormWorker] HTTP status:', res.status, res.ok);
+          if (!res.ok) {
+            console.warn('[SubstormWorker] Non-OK response:', res.status);
+            return null;
+          }
+          const json = await res.json();
+          console.log('[SubstormWorker] Keys:', json ? Object.keys(json) : 'null');
+          console.log('[SubstormWorker] ok:', json?.ok, '| current:', !!json?.current, '| history_24h:', Array.isArray(json?.history_24h) ? json.history_24h.length + ' entries' : 'NOT ARRAY');
+          return json;
+        } catch (err) {
+          console.error('[SubstormWorker] Error:', err);
           return null;
         }
       })(),
@@ -647,6 +656,16 @@ export const useForecastData = (
         ? substormRiskResult.value
         : null;
 
+    console.log('[SubstormWorker] substormRiskResult status:', substormRiskResult?.status);
+    console.log('[SubstormWorker] substormRiskValue:', substormRiskValue === null ? 'null' : substormRiskValue === undefined ? 'undefined' : 'object with keys: ' + Object.keys(substormRiskValue));
+    console.log('[SubstormWorker] Validation:', {
+      notNull: substormRiskValue !== null && substormRiskValue !== undefined,
+      okTrue: substormRiskValue?.ok === true,
+      hasCurrents: substormRiskValue?.current != null,
+      historyIsArray: Array.isArray(substormRiskValue?.history_24h),
+      historyLength: Array.isArray(substormRiskValue?.history_24h) ? substormRiskValue.history_24h.length : 'n/a',
+    });
+
     if (
       substormRiskValue !== null &&
       substormRiskValue !== undefined &&
@@ -654,7 +673,10 @@ export const useForecastData = (
       substormRiskValue?.current != null &&
       Array.isArray(substormRiskValue?.history_24h)
     ) {
+      console.log('[SubstormWorker] ✅ Setting substormRiskData');
       setSubstormRiskData(substormRiskValue as SubstormRiskData);
+    } else {
+      console.warn('[SubstormWorker] ❌ Validation failed — substormRiskData NOT set');
     }
 
     if (solarWindResult.status === 'fulfilled') {
