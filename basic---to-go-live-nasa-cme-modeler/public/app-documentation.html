@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spot The Aurora — App Documentation</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #171717;
+    --surf:    rgba(10,14,26,0.85);
+    --surf2:   rgba(255,255,255,0.04);
+    --border:  rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.13);
+    --text:    #d4d4d4;
+    --muted:   #737373;
+    --muted2:  #525252;
+    --accent:  #38bdf8;
+    --accent2: #818cf8;
+    --green:   #34d399;
+    --amber:   #fbbf24;
+    --aurora:  #6ee7b7;
+    --sky:     #7dd3fc;
+  }
+
+  html { height: 100%; overflow-x: hidden; }
+
+  body {
+    min-height: 100%;
+    background-color: var(--bg);
+    background-image: url('/background-aurora.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,10,0.75);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper { position: relative; z-index: 1; display: flex; min-height: 100vh; }
+
+  /* ── Nav ── */
+  nav {
+    width: 230px;
+    flex-shrink: 0;
+    background: rgba(8,8,12,0.92);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem 0 2rem;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    backdrop-filter: blur(16px);
+  }
+  nav::-webkit-scrollbar { width: 3px; }
+  nav::-webkit-scrollbar-thumb { background: var(--muted2); border-radius: 3px; }
+
+  .nl { padding: 0 1.2rem 1.2rem; border-bottom: 1px solid var(--border); margin-bottom: 0.6rem; }
+  .nl h1 { font-size: 0.9rem; font-weight: 700; color: var(--aurora); }
+  .nl p  { font-size: 0.7rem; color: var(--muted); margin-top: 0.1rem; }
+
+  nav ul { list-style: none; }
+  nav ul li a {
+    display: block;
+    padding: 0.3rem 1.2rem;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    border-left: 2px solid transparent;
+    transition: color 0.1s, background 0.1s;
+  }
+  nav ul li a:hover { color: var(--text); background: var(--surf2); }
+  nav ul li.cat > a {
+    color: rgba(56,189,248,0.7);
+    font-size: 0.67rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.5rem;
+    pointer-events: none;
+  }
+
+  /* ── Main ── */
+  main { flex: 1; padding: 2.5rem 2.75rem; max-width: 860px; }
+
+  .pt { font-size: 1.65rem; font-weight: 800; color: var(--aurora); letter-spacing: -0.03em; margin-bottom: 0.3rem; }
+  .ps { font-size: 0.875rem; color: var(--muted); margin-bottom: 1.75rem; }
+
+  h2 { font-size: 1.1rem; font-weight: 700; color: var(--sky); margin: 2rem 0 0.8rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 0.9rem; font-weight: 600; color: var(--text); margin: 1.1rem 0 0.35rem; }
+  h4 { font-size: 0.72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 0.9rem 0 0.3rem; }
+  p  { font-size: 0.84rem; color: #a3a3a3; margin-bottom: 0.55rem; }
+
+  /* ── Card ── */
+  .card { background: var(--surf); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem 1.4rem; margin-bottom: 0.85rem; backdrop-filter: blur(8px); }
+
+  /* ── Worker card ── */
+  .wname { font-size: 0.95rem; font-weight: 700; color: var(--text); margin: 0 0 0.25rem; }
+  .wurl {
+    display: block; font-family: 'Courier New', monospace; font-size: 0.74rem;
+    color: var(--accent); background: rgba(0,0,0,0.55); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.35rem 0.7rem; margin: 0.35rem 0 0.65rem;
+    word-break: break-all; text-decoration: none;
+  }
+  .wurl:hover { border-color: var(--accent); }
+
+  /* ── Table ── */
+  .tbl { width: 100%; border-collapse: collapse; margin: 0.4rem 0 0.85rem; font-size: 0.8rem; }
+  .tbl th { text-align: left; padding: 0.4rem 0.65rem; color: var(--muted); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  .tbl td { padding: 0.45rem 0.65rem; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; color: #a3a3a3; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: var(--surf2); }
+  .tbl a { color: var(--accent); text-decoration: none; }
+  .tbl a:hover { text-decoration: underline; }
+  .tbl strong { color: var(--text); font-weight: 600; }
+
+  /* ── Tags ── */
+  .tag { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 700; white-space: nowrap; vertical-align: middle; }
+  .to { background: rgba(56,189,248,0.12); color: var(--accent);  border: 1px solid rgba(56,189,248,0.22); }
+  .tn { background: rgba(125,211,252,0.08); color: var(--sky);    border: 1px solid rgba(125,211,252,0.18); }
+  .ta { background: rgba(129,140,248,0.08); color: var(--accent2);border: 1px solid rgba(129,140,248,0.18); }
+  .tg { background: rgba(52,211,153,0.08);  color: var(--green);  border: 1px solid rgba(52,211,153,0.18); }
+  .tt { background: rgba(251,191,36,0.08);  color: var(--amber);  border: 1px solid rgba(251,191,36,0.18); }
+
+  /* ── Callout ── */
+  .co { background: rgba(56,189,248,0.05); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 0.6rem 0.9rem; margin: 0.6rem 0; font-size: 0.8rem; color: #94a3b8; }
+  .co strong { color: var(--accent); }
+  .co-a { border-left-color: var(--amber); background: rgba(251,191,36,0.05); }
+  .co-a strong { color: var(--amber); }
+  .co-g { border-left-color: var(--green); background: rgba(52,211,153,0.05); }
+  .co-g strong { color: var(--green); }
+
+  /* ── Feature grid ── */
+  .fg { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.5rem 0 0.8rem; }
+  .fi { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.85rem; }
+  .fi-t { font-size: 0.79rem; font-weight: 600; color: var(--text); margin-bottom: 0.15rem; }
+  .fi-d { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+
+  /* ── Score flow ── */
+  .sf { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; margin: 0.65rem 0; }
+  .sn { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.8rem; font-size: 0.78rem; font-weight: 600; text-align: center; }
+  .sn small { display: block; font-size: 0.67rem; opacity: 0.65; font-weight: 400; margin-top: 0.05rem; }
+  .sn.sw { border-color: rgba(56,189,248,0.3); color: var(--accent); }
+  .sn.sg { border-color: rgba(52,211,153,0.3); color: var(--green); }
+  .sn.sf2{ border-color: rgba(251,191,36,0.3); color: var(--amber); }
+  .ar { color: var(--muted); }
+
+  /* ── List ── */
+  ul.dl { list-style: none; margin: 0.4rem 0 0.65rem 0; }
+  ul.dl li { padding: 0.22rem 0 0.22rem 1rem; position: relative; color: #a3a3a3; font-size: 0.82rem; }
+  ul.dl li::before { content: '·'; position: absolute; left: 0; color: var(--muted); }
+
+  /* ── Interval ── */
+  .ir { display: flex; justify-content: space-between; align-items: center; padding: 0.42rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.8rem; }
+  .ir:last-child { border-bottom: none; }
+  .iv { color: var(--accent); font-weight: 600; font-family: monospace; font-size: 0.78rem; }
+
+  /* ── Notif ── */
+  .ni { display: flex; gap: 0.8rem; padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.8rem; }
+  .ni:last-child { border-bottom: none; }
+  .ne { font-size: 1.15rem; flex-shrink: 0; line-height: 1; margin-top: 0.1rem; }
+  .nn { font-weight: 600; color: var(--text); min-width: 150px; font-size: 0.8rem; }
+  .nd { color: var(--muted); font-size: 0.78rem; }
+
+  .badge { display: inline-flex; align-items: center; background: var(--surf2); border: 1px solid var(--border2); border-radius: 5px; padding: 0.15rem 0.55rem; font-size: 0.7rem; font-weight: 600; color: var(--accent2); margin-left: 0.5rem; vertical-align: middle; }
+  code { font-family: 'Courier New', monospace; font-size: 0.76rem; background: rgba(0,0,0,0.45); border: 1px solid var(--border); padding: 0.08rem 0.32rem; border-radius: 4px; color: var(--aurora); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 1.75rem 0; }
+
+  @media (max-width: 780px) {
+    nav { display: none; }
+    main { padding: 1.25rem; max-width: 100%; }
+    .fg { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+<nav>
+  <div class="nl">
+    <h1>🌌 Spot The Aurora</h1>
+    <p>App Documentation</p>
+  </div>
+  <ul>
+    <li class="cat"><a>Overview</a></li>
+    <li><a href="#overview">Pages</a></li>
+    <li><a href="#workers">Workers overview</a></li>
+    <li class="cat"><a>Forecast Page</a></li>
+    <li><a href="#simple">Simple view</a></li>
+    <li><a href="#advanced">Advanced view</a></li>
+    <li><a href="#sightings">Sightings</a></li>
+    <li class="cat"><a>CME Modeller</a></li>
+    <li><a href="#simulation">3D Simulation</a></li>
+    <li><a href="#cme-list">CME List</a></li>
+    <li class="cat"><a>Solar Activity</a></li>
+    <li><a href="#imagery">Solar Imagery</a></li>
+    <li><a href="#solar-panels">Data Panels</a></li>
+    <li class="cat"><a>Worker Details</a></li>
+    <li><a href="#w-forecast">Forecast API</a></li>
+    <li><a href="#w-substorm">Substorm Risk</a></li>
+    <li><a href="#w-imap">IMAP Solar Wind</a></li>
+    <li><a href="#w-donki">NASA DONKI Proxy</a></li>
+    <li><a href="#w-push">Push Notifications</a></li>
+    <li><a href="#w-sightings">Sightings API</a></li>
+    <li><a href="#w-ch">Coronal Hole History</a></li>
+    <li class="cat"><a>Reference</a></li>
+    <li><a href="#data-sources">All Data Sources</a></li>
+    <li><a href="#scoring">Scoring System</a></li>
+    <li><a href="#notifications">Notifications</a></li>
+    <li><a href="#intervals">Update Intervals</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<!-- OVERVIEW -->
+<section id="overview">
+  <h1 class="pt">Spot The Aurora</h1>
+  <p class="ps">Technical documentation — pages, backend workers, data sources, and scoring algorithms.</p>
+
+  <div class="co">
+    <strong>Stack:</strong> React 18 + Vite PWA on Cloudflare Pages. Seven Cloudflare Workers handle scoring, data processing, push notifications, and sightings. Three.js (CME modeller), Leaflet (sightings map), Chart.js (charts), Tailwind CSS. Font: Inter variable.
+  </div>
+
+  <h2 id="pages">Pages & Navigation</h2>
+  <table class="tbl">
+    <thead><tr><th>Page</th><th>URL</th><th>Audience</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Forecast</strong></td><td><code>/</code> or <code>/?view=simple</code></td><td>Everyone — casual aurora watchers to enthusiasts</td></tr>
+      <tr><td><strong>CME Modeller</strong></td><td><code>/modeller</code></td><td>Enthusiasts modelling coronal mass ejections in 3D</td></tr>
+      <tr><td><strong>Solar Activity</strong></td><td><code>/solar-activity</code></td><td>Advanced users tracking flares, X-ray flux, sunspots</td></tr>
+    </tbody>
+  </table>
+  <p>All pages lazy-loaded. Last-visited page and view mode persisted to localStorage and reflected in the URL for shareable links.</p>
+
+  <h2 id="workers">Backend Workers</h2>
+  <table class="tbl">
+    <thead><tr><th>Worker</th><th>URL</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag to">Own</span> SpotTheAurora Forecast API</td><td><a href="https://spottheaurora.thenamesrock.workers.dev/" target="_blank">spottheaurora.thenamesrock…</a></td><td>Main aurora score — cron every 5 min, KV cached</td></tr>
+      <tr><td><span class="tag to">Own</span> Substorm Risk Worker</td><td><a href="https://aurora-index-sta.thenamesrock.workers.dev/" target="_blank">aurora-index-sta.thenamesrock…</a></td><td>Physics-based substorm score — per request, 60s cache</td></tr>
+      <tr><td><span class="tag to">Own</span> IMAP Solar Wind Proxy</td><td><a href="https://imap-solar-data-test.thenamesrock.workers.dev/" target="_blank">imap-solar-data-test.thenamesrock…</a></td><td>Merged IMAP+DSCOVR solar wind — per request, 60s cache</td></tr>
+      <tr><td><span class="tag to">Own</span> NASA DONKI Proxy</td><td><a href="https://nasa-donki-api.thenamesrock.workers.dev/" target="_blank">nasa-donki-api.thenamesrock…</a></td><td>CME, flare, storm data — cron cached from NASA</td></tr>
+      <tr><td><span class="tag to">Own</span> Push Notifications Worker</td><td>Internal (no public URL)</td><td>Subscription management + scheduled push alerts</td></tr>
+      <tr><td><span class="tag to">Own</span> Aurora Sightings API</td><td><a href="https://aurora-sightings.thenamesrock.workers.dev/" target="_blank">aurora-sightings.thenamesrock…</a></td><td>User sighting reports — GET all, POST submit</td></tr>
+      <tr><td><span class="tag to">Own</span> Coronal Hole History</td><td>Internal</td><td>Stores CH snapshots + SUVI frame index for CME modeller</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<hr />
+
+<!-- FORECAST PAGE -->
+<section id="page-forecast">
+  <h2>📡 Forecast Page</h2>
+  <p>Primary page with Simple and Advanced modes, switchable via tabs.</p>
+
+  <div class="card" id="simple">
+    <h3>🌿 Simple View <span class="badge">All users</span></h3>
+    <p>No jargon. Designed for casual and older users. Every piece of information answers: <em>"what would I see if I walked outside right now?"</em></p>
+
+    <h4>Score & Status</h4>
+    <p>Large percentage (0–100%) from SpotTheAurora score, one-word status, plain-english summary. Latitude-adjusted relative to Greymouth (±0.2% per 10 km from reference).</p>
+
+    <h4>What to Expect — Timeline</h4>
+    <table class="tbl">
+      <thead><tr><th>Slot</th><th>Driven by</th><th>Confidence</th></tr></thead>
+      <tbody>
+        <tr><td><strong>15 min</strong></td><td>Substorm Risk Worker + P30 projection + Newell trend</td><td>High</td></tr>
+        <tr><td><strong>30 min</strong></td><td>Same with moderate decay</td><td>Medium</td></tr>
+        <tr><td><strong>1 hour</strong></td><td>P60 probability projection</td><td>Low</td></tr>
+        <tr><td><strong>2 hours</strong></td><td>SpotTheAurora composite score (rough guide only)</td><td>Low</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Visibility phrase scale</h4>
+    <table class="tbl">
+      <thead><tr><th>Score</th><th>Icon</th><th>Phrase</th></tr></thead>
+      <tbody>
+        <tr><td>80–100</td><td>👁️</td><td>Go outside now — possibly one of the best displays in years</td></tr>
+        <tr><td>65–79</td><td>👁️</td><td>Visible to the naked eye — look south</td></tr>
+        <tr><td>50–64</td><td>👁️</td><td>Faint green glow possible to the south in a dark spot</td></tr>
+        <tr><td>35–49</td><td>📱</td><td>Phone camera will pick it up — point it south</td></tr>
+        <tr><td>20–34</td><td>📷</td><td>Very faint — long-exposure camera only</td></tr>
+        <tr><td>0–19</td><td>😴</td><td>Nothing to see tonight</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Other panels</h4>
+    <ul class="dl">
+      <li><strong>Aurora Sightings Map</strong> — live NZ user reports on Leaflet map</li>
+      <li><strong>Activity Summary</strong> — 24h peak score and detected substorm events</li>
+      <li><strong>Score Trend Chart</strong> — sparkline of recent score history</li>
+      <li><strong>Live Cloud Cover</strong> — Windy.com ECMWF cloud overlay (iframe)</li>
+      <li><strong>Live Cameras</strong> — 7 NZ camera feeds (Oban, Queenstown, Twizel, Taylors Mistake, Opiki, Rangitikei, New Plymouth)</li>
+    </ul>
+  </div>
+
+  <div class="card" id="advanced">
+    <h3>🔬 Advanced View <span class="badge">Enthusiasts</span></h3>
+    <p>Full data dashboard. All panels have info modals (?) explaining each metric.</p>
+    <div class="fg">
+      <div class="fi"><div class="fi-t">Unified Forecast Panel</div><div class="fi-d">SpotTheAurora composite score with substorm status, all gauges (Bz, Bt, speed, density, power, moon). Location-adjusted.</div></div>
+      <div class="fi"><div class="fi-t">Visibility Forecast Panel</div><div class="fi-d">Now / 15 / 30 / 60 min plain-english forecast from Substorm Risk Worker. Sighting reports blended into Now slot.</div></div>
+      <div class="fi"><div class="fi-t">Activity Summary</div><div class="fi-d">24h peak score and substorm events with timestamps.</div></div>
+      <div class="fi"><div class="fi-t">Forecast Trend Chart</div><div class="fi-d">Score history with celestial overlays (sunset, moonrise) and OWM multi-day outlook.</div></div>
+      <div class="fi"><div class="fi-t">IMF Chart (Bz/Bt/Bx/By)</div><div class="fi-d">From IMAP/NOAA RTSW. Bx/By toggleable. Source labelled per field (IMAP or DSCOVR).</div></div>
+      <div class="fi"><div class="fi-t">IMF Clock Chart</div><div class="fi-d">Clock-angle view of IMF orientation — shows how southward Bz is coupling to the magnetosphere.</div></div>
+      <div class="fi"><div class="fi-t">Hemispheric Power</div><div class="fi-d">NOAA GOES-18/19 auroral power in GW. Direct proxy for auroral oval brightness.</div></div>
+      <div class="fi"><div class="fi-t">Solar Wind Charts</div><div class="fi-d">24h time series for speed, density, temperature from merged IMAP/DSCOVR dataset.</div></div>
+      <div class="fi"><div class="fi-t">NZ Magnetometer</div><div class="fi-d">EY2M (Eyrewell, Canterbury) dH from GeoNet Tilde API. Real-time local geomagnetic activity.</div></div>
+      <div class="fi"><div class="fi-t">Moon Arc Chart</div><div class="fi-d">Moon altitude through the night showing moonlight interference windows.</div></div>
+      <div class="fi"><div class="fi-t">Disturbance Index Panel</div><div class="fi-d">Historical NZ substorm index data for comparison with past events.</div></div>
+      <div class="fi"><div class="fi-t">IPS Alert Banner</div><div class="fi-d">Global banner on all pages when an interplanetary shockwave is detected in DONKI GST data.</div></div>
+    </div>
+  </div>
+
+  <div class="card" id="sightings">
+    <h3>📍 Aurora Sightings <span class="badge">Both views</span></h3>
+    <p>Leaflet.js map with real-time NZ user reports. Polls every 2 minutes. Users submit one report per 5 minutes (localStorage cooldown).</p>
+    <table class="tbl">
+      <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>👁️ Naked Eye</td><td>Distinct shapes or colour visible without camera</td></tr>
+        <tr><td>📱 Phone Camera</td><td>Visible in modern smartphone photo, not to naked eye</td></tr>
+        <tr><td>📷 DSLR/Mirrorless</td><td>Only on dedicated camera, long exposure >5 sec</td></tr>
+        <tr><td>👁️ Nothing — Eye / 📱 Phone / 📷 DSLR</td><td>Clear sky, nothing visible — very helpful calibration data</td></tr>
+        <tr><td>☁️ Cloudy</td><td>Sky obscured — cannot report</td></tr>
+      </tbody>
+    </table>
+    <p>Reports feed the Visibility Forecast Panel — if nearby eye sightings exist, the Now slot shows <em>"3 people nearby are seeing it with their own eyes right now"</em> as subtext.</p>
+  </div>
+</section>
+
+<hr />
+
+<!-- CME MODELLER -->
+<section id="page-modeller">
+  <h2>🌌 CME Modeller Page</h2>
+  <p>3D solar system simulation with real NASA DONKI CMEs modelled using the Drag-Based Model. Built with Three.js r128.</p>
+
+  <div class="card" id="simulation">
+    <h3>🔭 3D Simulation</h3>
+    <p>Top-down and side views of the inner solar system. CMEs are expanding arc meshes. Coronal holes overlaid from NOAA SUVI 195Å analysis.</p>
+    <h4>Propagation Model (DBM)</h4>
+    <ul class="dl">
+      <li>Inner boundary: 21.5 solar radii (~0.1 AU)</li>
+      <li>Background slow solar wind: 380 km/s default</li>
+      <li>Drag parameter γ estimated from CME speed and half-angle</li>
+      <li>Solar rotation at synodic velocity 2.618×10⁻⁶ rad/s</li>
+      <li>CME–CME interactions flagged: preconditioning, compression, cannibalism</li>
+      <li>Coronal hole HSS and SIR streams modelled separately</li>
+    </ul>
+    <h4>Coronal Hole Detection</h4>
+    <p>Client-side SUVI 195Å brightness thresholding detects coronal holes (dark = open field lines = fast solar wind). Snapshots stored in the CH History Worker for evolution tracking up to 72 hours.</p>
+    <div class="fg">
+      <div class="fi"><div class="fi-t">View / Interaction modes</div><div class="fi-d">Top-down + side view. Orbit/select modes. Click CME for impact profile.</div></div>
+      <div class="fi"><div class="fi-t">Timeline playback</div><div class="fi-d">Play/pause/step with configurable speed. Real CME timestamps.</div></div>
+      <div class="fi"><div class="fi-t">Filters</div><div class="fi-d">Time range 24h/3d/7d. Earth-directed vs all CMEs.</div></div>
+      <div class="fi"><div class="fi-t">🎮 Solar Surfer</div><div class="fi-d">Easter egg mini-game — click the Sun. Lazy-loaded, zero weight on initial bundle.</div></div>
+    </div>
+  </div>
+
+  <div class="card" id="cme-list">
+    <h3>📋 CME List Panel</h3>
+    <p>Collapsible sidebar listing all fetched CMEs with speed, half-angle, Earth-directed status, predicted arrival time, NASA DONKI link, and WSA-ENLIL simulation results (predicted Kp, arrival) when available.</p>
+  </div>
+</section>
+
+<hr />
+
+<!-- SOLAR ACTIVITY -->
+<section id="page-solar">
+  <h2>☀️ Solar Activity Dashboard</h2>
+
+  <div class="card" id="imagery">
+    <h3>🔭 Solar Imagery</h3>
+    <table class="tbl">
+      <thead><tr><th>Mode</th><th>What it shows</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SUVI 131Å</strong></td><td>Hot flare plasma ~10MK — best for early flare detection</td><td><a href="https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png" target="_blank">NOAA SWPC</a></td></tr>
+        <tr><td><strong>SUVI 304Å</strong></td><td>Chromosphere ~50,000K — filaments and prominences</td><td><a href="https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png" target="_blank">NOAA SWPC</a></td></tr>
+        <tr><td><strong>SUVI 195Å</strong></td><td>Coronal ~1.5MK — best for coronal hole identification</td><td><a href="https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png" target="_blank">NOAA SWPC</a></td></tr>
+        <tr><td><strong>SDO HMI Magnetogram</strong></td><td>Line-of-sight magnetic field — active region polarity</td><td><a href="https://jsoc1.stanford.edu/data/hmi/images/latest/" target="_blank">JSOC / Stanford</a></td></tr>
+        <tr><td><strong>SDO HMI Intensitygram</strong></td><td>Solar photosphere — sunspots and granulation</td><td><a href="https://jsoc1.stanford.edu/data/hmi/images/latest/" target="_blank">JSOC / Stanford</a></td></tr>
+      </tbody>
+    </table>
+    <div class="co"><strong>Animation:</strong> All SUVI modes support a client-generated 6-hour animation by fetching the NOAA directory index and stitching frames. CCOR1 coronagraph last-24h mp4 also available. 1024px and 4096px resolutions.</div>
+  </div>
+
+  <div class="card" id="solar-panels">
+    <h3>📊 Data Panels</h3>
+    <table class="tbl">
+      <thead><tr><th>Panel</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td><strong>24h Solar Summary</strong> — peak X-ray class, flare count, peak proton flux</td><td>Computed from NOAA GOES data below</td></tr>
+        <tr><td><strong>Active Sunspot Tracker</strong> — NOAA number, magnetic class, flare probability</td><td><a href="https://services.swpc.noaa.gov/json/sunspot_report.json" target="_blank">NOAA sunspot_report.json</a></td></tr>
+        <tr><td><strong>GOES X-ray Flux</strong> — 1-min W/m², 7-day history</td><td><a href="https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json" target="_blank">NOAA GOES xrays-7-day</a></td></tr>
+        <tr><td><strong>Solar Flares List</strong> — 7 days, class, peak time, linked CMEs</td><td>NASA DONKI proxy → /FLR</td></tr>
+        <tr><td><strong>Proton Flux</strong> — ≥10, ≥100 MeV, 7-day</td><td><a href="https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-7-day.json" target="_blank">NOAA GOES protons</a></td></tr>
+        <tr><td><strong>CCOR1 Coronagraph</strong> — last 24h mp4</td><td><a href="https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4" target="_blank">NOAA CCOR1</a></td></tr>
+        <tr><td><strong>Geomagnetic Storms / WSA-ENLIL</strong></td><td>NASA DONKI proxy → /GST, /WSAEnlilSimulations</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr />
+
+<!-- WORKER DETAILS -->
+<section id="worker-detail">
+  <h2>⚙️ Worker Details</h2>
+
+  <!-- FORECAST WORKER -->
+  <div class="card" id="w-forecast">
+    <h3 class="wname">🌐 SpotTheAurora Forecast API</h3>
+    <a class="wurl" href="https://spottheaurora.thenamesrock.workers.dev/" target="_blank">https://spottheaurora.thenamesrock.workers.dev/</a>
+    <p>Main scoring engine. <strong>Cron trigger every 5 minutes</strong>. Results stored in KV and served from Cloudflare edge cache (4-minute TTL). Fetch requests are near-instant — no computation on each request.</p>
+
+    <h4>Data sources</h4>
+    <table class="tbl">
+      <thead><tr><th>Source</th><th>What it fetches</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://services.swpc.noaa.gov/text/ovation_latest_aurora_s.txt" target="_blank">NOAA OVATION</a></td><td>Southern hemispheric auroral power in GW — primary scoring input</td></tr>
+        <tr><td><a href="https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json" target="_blank">NOAA RTSW mag 1m</a></td><td>Real-time Bt and Bz — used for Bz score boost calculation</td></tr>
+        <tr><td><a href="https://api.openweathermap.org/data/3.0/onecall" target="_blank">OpenWeatherMap One Call v3</a></td><td>Sunrise, sunset, moonrise, moonset, moon phase — KV cached 6 hours</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Scoring algorithm (v25)</h4>
+    <ul class="dl">
+      <li><strong>Latitude-adjusted threshold:</strong> <code>hpFor100 = 200 + (userLat − −42.45) × 35</code>, clamped 120–450 GW. Power score = <code>(HP / hpFor100) × 100</code></li>
+      <li><strong>Bz boost:</strong> Linear 0–40 point bonus as Bz goes from 0 to −20 nT southward. Zero for northward Bz.</li>
+      <li><strong>Base score:</strong> <code>clamp(powerScore + bzBoost, 0, 100)</code></li>
+      <li><strong>Moon reduction:</strong> 0.75 GW per 1% illumination when moon is up (with 10-minute rise/set ramps). Score deduction = <code>moonReductionGW × 0.5</code></li>
+      <li><strong>Time-of-day ramp:</strong> Ramps in 30 min before sunset, ramps out 40 min before sunrise. Zero during daytime.</li>
+      <li><strong>South bright-moon clamp:</strong> Locations south of Greymouth + moon >60% illumination + moon up → score forced to 0.</li>
+      <li><strong>Rolling average:</strong> 30-minute rolling average of raw and final scores stored to smooth short-term spikes.</li>
+    </ul>
+
+    <h4>KV storage keys</h4>
+    <ul class="dl">
+      <li><code>v1_api_payload</code> — full API response object</li>
+      <li><code>raw_history</code> — 24h of per-5-min raw score records</li>
+      <li><code>averaged_history</code> — 24h of 30-min rolling averaged scores</li>
+      <li><code>daily_sun_moon_history</code> — last 4 days of sun/moon data</li>
+      <li><code>latest_scores</code> — current scores snapshot for push worker</li>
+      <li><code>cached_owm_data_v1</code> — OWM response, refreshed every 6 hours</li>
+    </ul>
+  </div>
+
+  <!-- SUBSTORM RISK -->
+  <div class="card" id="w-substorm">
+    <h3 class="wname">⚡ Substorm Risk Worker</h3>
+    <a class="wurl" href="https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=1m" target="_blank">https://aurora-index-sta.thenamesrock.workers.dev/api/substorm</a>
+    <p>Real-time substorm scoring engine based on space physics. Fetches live data on each request, caches response 60 seconds. Available at <code>?resolution=1m</code> (full 24h history) or <code>5m</code>, <code>10m</code>, <code>15m</code> (downsampled).</p>
+
+    <h4>Data sources</h4>
+    <table class="tbl">
+      <thead><tr><th>Source</th><th>What it fetches</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://tilde.geonet.org.nz/v4/data/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d" target="_blank">GeoNet Tilde — EY2M</a></td><td>Signed dH (nT/min) at Eyrewell magnetometer, Canterbury. 1-minute resolution, last 24h.</td></tr>
+        <tr><td><a href="https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json" target="_blank">NOAA solar-wind mag-1-day</a></td><td>Bz (GSM) and Bt from DSCOVR at L1, 1-minute resolution</td></tr>
+        <tr><td><a href="https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json" target="_blank">NOAA solar-wind plasma-1-day</a></td><td>Solar wind density, speed, temperature from DSCOVR at L1</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Processing pipeline</h4>
+    <ul class="dl">
+      <li><strong>Signed dH integration:</strong> Cumulative sum of signed dH reconstructs relative H-component trace (de-meaned over 24h) for bay-depth detection — no separate H endpoint needed</li>
+      <li><strong>Sq baseline subtraction:</strong> 60-minute rolling median of |dH| computed; half subtracted from each point to remove the regular diurnal Sq variation that peaks near local magnetic noon</li>
+      <li><strong>Timeline merge:</strong> All three streams aligned to GeoNet 1-minute timeline by forward-filling NOAA data to each GeoNet minute</li>
+      <li><strong>Score per minute:</strong> Computed across the full 24h merged series and downsampled to requested resolution</li>
+    </ul>
+
+    <h4>Scoring formula</h4>
+    <div class="sf">
+      <div class="sn sw">Solar Wind Driving<small>70% weight</small></div>
+      <span class="ar">+</span>
+      <div class="sn sg">Geomag Confirmation<small>30% weight</small></div>
+      <span class="ar">=</span>
+      <div class="sn sf2">Final Score<small>0 – 100</small></div>
+    </div>
+
+    <table class="tbl">
+      <thead><tr><th>Solar wind term (70%)</th><th>Weight within solar score</th></tr></thead>
+      <tbody>
+        <tr><td>Newell coupling now: <code>v^(4/3) · Bt^(2/3) · sin^(8/3)(θ/2)</code></td><td>28%</td></tr>
+        <tr><td>Newell coupling 30m average</td><td>20%</td></tr>
+        <tr><td>Newell coupling 60m average</td><td>12%</td></tr>
+        <tr><td>Bz southward now (scaled to −25 nT)</td><td>12%</td></tr>
+        <tr><td>Bz southward 30m average</td><td>10%</td></tr>
+        <tr><td>Southward persistence (30m minutes count)</td><td>6%</td></tr>
+        <tr><td>Solar wind speed (300–800 km/s)</td><td>6%</td></tr>
+        <tr><td>Dynamic pressure (0.5–20 nPa)</td><td>4%</td></tr>
+        <tr><td>Total field Bt (3–25 nT)</td><td>2%</td></tr>
+      </tbody>
+    </table>
+
+    <table class="tbl">
+      <thead><tr><th>Geomag term (30%)</th><th>Weight within geomag score</th></tr></thead>
+      <tbody>
+        <tr><td>Latest Sq-corrected dH (scaled 0–80 nT/min)</td><td>35%</td></tr>
+        <tr><td>15-minute average dH (scaled 0–50 nT/min)</td><td>30%</td></tr>
+        <tr><td>15-minute peak dH (scaled 0–100 nT/min)</td><td>20%</td></tr>
+        <tr><td>Bay onset detection (H excursion >30 nT in 30m vs 60m mean)</td><td>15%</td></tr>
+      </tbody>
+    </table>
+
+    <div class="co co-a"><strong>CME/sheath flag:</strong> Richardson-Paularena temperature ratio (observed/expected). If ratio &lt;0.5 (cold ejecta) or &gt;4.0 (sheath turbulence), a 10% solar score boost is applied — these intervals commonly produce the strongest substorms.</div>
+    <div class="co"><strong>L1 propagation:</strong> DSCOVR at L1 leads Earth by ~45 min at typical solar wind speeds. Exposed in response as <code>l1_propagation_minutes: 45</code> so the UI can frame solar wind data as a leading forecast indicator.</div>
+  </div>
+
+  <!-- IMAP SOLAR WIND -->
+  <div class="card" id="w-imap">
+    <h3 class="wname">🛰️ IMAP Solar Wind Proxy</h3>
+    <a class="wurl" href="https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h" target="_blank">https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h</a>
+    <p>Merges two solar wind data sources into a unified 24-hour per-minute grid. Each field independently prefers DSCOVR RTSW, falling back to IMAP I-ALiRT on gaps or sentinel values.</p>
+
+    <h4>Sources (priority order)</h4>
+    <table class="tbl">
+      <thead><tr><th>Source</th><th>Fields</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DSCOVR RTSW Operational</strong> (primary)</td><td>speed, density, temp, Bx, By, Bz, Bt, angle</td><td>NOAA <code>plasma-1-day</code> + <code>mag-1-day</code></td></tr>
+        <tr><td><strong>IMAP I-ALiRT</strong> (fallback)</td><td>speed, density, temp (SWAPI), Bx, By, Bz, Bt, angle (MAG)</td><td>Adaptive chunk fetching. Optional API key via env var.</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Key features</h4>
+    <ul class="dl">
+      <li><strong>Per-field fallback:</strong> Bz, speed, etc. each independently pick their best available source minute-by-minute</li>
+      <li><strong>Sentinel filtering:</strong> Both sources filter −9999.9, −999.9, −1×10⁵, ≤−1×10³⁰ to <code>null</code> before fallback — sentinel values never block the other source</li>
+      <li><strong>IMAP lookback:</strong> 1–10 minute configurable lookback allows a slightly delayed IMAP reading to fill a RTSW gap</li>
+      <li><strong>IMF clock angle:</strong> Computed as <code>atan2(By, Bz)</code> in degrees (0–360)</li>
+      <li><strong>NZ timezone:</strong> Every minute includes <code>time_nz</code> with DST-correct Pacific/Auckland offset via <code>Intl.DateTimeFormat</code></li>
+      <li><strong>Source attribution:</strong> Each field carries a <code>src</code> label so the UI can show which satellite provided each data point</li>
+    </ul>
+  </div>
+
+  <!-- NASA DONKI PROXY -->
+  <div class="card" id="w-donki">
+    <h3 class="wname">🚀 NASA DONKI Proxy</h3>
+    <a class="wurl" href="https://nasa-donki-api.thenamesrock.workers.dev/" target="_blank">https://nasa-donki-api.thenamesrock.workers.dev/</a>
+    <p>Caches NASA DONKI data in KV and serves it to the browser. Required because NASA DONKI doesn't support CORS for browser requests directly. Also provides a human-readable HTML dashboard at the root URL.</p>
+
+    <h4>How it works</h4>
+    <ul class="dl">
+      <li><strong>Cron trigger</strong> fetches all 9 DONKI categories for the last 7 days, writes to KV with 24h TTL safety net</li>
+      <li><strong>Blank write protection:</strong> If all categories return empty (NASA API blip), the cron skips the write — last good data remains</li>
+      <li><strong>Date normalisation:</strong> All DONKI date strings (vary in format) normalised to ISO 8601 before storage</li>
+    </ul>
+
+    <h4>Endpoints and usage in app</h4>
+    <table class="tbl">
+      <thead><tr><th>Endpoint</th><th>Data</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td><code>/CME</code></td><td>CMEs — speed, angle, half-angle, predicted arrival</td><td>CME Modeller 3D simulation + CME list</td></tr>
+        <tr><td><code>/FLR</code></td><td>Solar flares — class, peak time, source, linked CMEs</td><td>Solar Activity flare list + push notifications</td></tr>
+        <tr><td><code>/GST</code></td><td>Geomagnetic storms and IPS events</td><td>IPS detection for push alerts + Solar Activity</td></tr>
+        <tr><td><code>/WSAEnlilSimulations</code></td><td>ENLIL model — predicted arrival times, Kp</td><td>CME list arrival predictions</td></tr>
+        <tr><td><code>/HSS</code></td><td>High speed solar wind streams</td><td>CME Modeller HSS propagation</td></tr>
+        <tr><td><code>/SEP</code>, <code>/MPC</code>, <code>/RBE</code>, <code>/Notifications</code></td><td>Other DONKI categories</td><td>Stored, available for future use</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PUSH NOTIFICATIONS -->
+  <div class="card" id="w-push">
+    <h3 class="wname">🔔 Push Notifications Worker</h3>
+    <p>Manages push subscriptions, monitors forecast data, and sends Web Push notifications using VAPID authentication and AES-128-GCM encryption — all implemented natively without any third-party push library.</p>
+
+    <h4>Subscription flow</h4>
+    <ul class="dl">
+      <li>User grants notification permission → browser creates a push subscription</li>
+      <li>App POSTs subscription + preferences + timezone to <code>/save-subscription</code></li>
+      <li>Stored in KV keyed by SHA-256 hash of endpoint</li>
+      <li>Cloudflare request metadata (<code>cf.latitude</code>, <code>cf.longitude</code>) stored for location-aware filtering</li>
+    </ul>
+
+    <h4>Scheduled checks (cron)</h4>
+    <ul class="dl">
+      <li><strong>Aurora forecast:</strong> Score from Forecast API via service binding. Fires when score crosses 40%, 50%, 60%, 80% thresholds.</li>
+      <li><strong>Substorm activity:</strong> Status escalation QUIET → WATCH → LIKELY_60 → IMMINENT_30 → ONSET triggers increasingly urgent alerts.</li>
+      <li><strong>X-ray flux:</strong> State machine (inactive → rising → peaked) tracking NOAA GOES X-ray data. Fires at M1, M5, X1, X5, X10 class thresholds and on confirmed peak.</li>
+      <li><strong>IPS detection:</strong> Polls DONKI /GST. Fires when a new interplanetary shock event time is more recent than last known shock.</li>
+    </ul>
+
+    <h4>Broadcast system</h4>
+    <p>Sends in batches of 40 subscriptions to stay within CPU time limits. Chains itself via self-fetch for large subscriber counts (up to 50 hops = 2,000 subscribers per event). Expired subscriptions (HTTP 410/404) automatically deleted.</p>
+
+    <h4>Location-aware filtering</h4>
+    <ul class="dl">
+      <li>Aurora alerts apply the same latitude adjustment as the app — users further north only get notified if their adjusted score still crosses the threshold</li>
+      <li>Implausible latitudes (|lat| &lt;30°) skipped for aurora/substorm alerts</li>
+      <li>Per-category opt-out stored per subscription</li>
+    </ul>
+
+    <div class="co co-a"><strong>Crypto:</strong> Full VAPID JWT + AES-128-GCM web push encryption from scratch using the Web Crypto API. No external dependencies.</div>
+  </div>
+
+  <!-- SIGHTINGS WORKER -->
+  <div class="card" id="w-sightings">
+    <h3 class="wname">🌟 Aurora Sightings API</h3>
+    <a class="wurl" href="https://aurora-sightings.thenamesrock.workers.dev/" target="_blank">https://aurora-sightings.thenamesrock.workers.dev/</a>
+    <p>Stores and retrieves user aurora sighting reports. Entire sightings array stored as a single KV key — each GET or POST is just 1 KV read + 1 write.</p>
+
+    <h4>GET — read all reports</h4>
+    <ul class="dl">
+      <li>Checks Cloudflare cache first — KV only read on cache miss</li>
+      <li>Response cached <code>max-age=60</code></li>
+    </ul>
+
+    <h4>POST — submit a report</h4>
+    <ul class="dl">
+      <li>Validates: lat (number), lng (number), name (string, non-empty), status (8 valid values)</li>
+      <li>Name sanitised: trimmed to 50 chars, HTML tags stripped</li>
+      <li>Reads array → appends → prunes entries older than 24h → writes back</li>
+      <li>Invalidates Cloudflare cache for GET endpoint immediately after write</li>
+    </ul>
+
+    <h4>Cron cleanup</h4>
+    <p>Daily cron writes an empty array to reset all sightings. Backup safety net — the POST pruning already handles continuous cleanup.</p>
+
+    <div class="co co-g"><strong>Rate limiting:</strong> Enforced client-side via localStorage (5-minute cooldown). Simple by design so offline-then-online scenarios still work.</div>
+  </div>
+
+  <!-- CORONAL HOLE HISTORY -->
+  <div class="card" id="w-ch">
+    <h3 class="wname">🕳️ Coronal Hole History Worker</h3>
+    <p>Stores coronal hole detection snapshots from the CME Modeller's client-side SUVI 195Å analysis. Maintains a SUVI frame index for the solar imagery animation viewer.</p>
+
+    <h4>Endpoints</h4>
+    <table class="tbl">
+      <thead><tr><th>Path</th><th>Method</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>/ch-history</code></td><td>GET</td><td>All snapshots in last 72 hours, sorted by timestamp</td></tr>
+        <tr><td><code>/ch-history</code></td><td>POST</td><td>Store a coronal hole snapshot. Deduplicates within 10-minute windows.</td></tr>
+        <tr><td><code>/ch-history/frames</code></td><td>GET</td><td>SUVI 195Å frame URLs picked every 2 hours. Cached 30 min in KV.</td></tr>
+        <tr><td><code>/ch-history/status</code></td><td>GET</td><td>Debug: index size, coverage hours, config values</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Storage design</h4>
+    <ul class="dl">
+      <li>Each snapshot: <code>ch-snapshot:{timestamp}</code> with 96h TTL</li>
+      <li><code>ch-snapshot-index</code> — sorted array of snapshot keys for fast retrieval</li>
+      <li>Max 144 snapshots (72h at 30-min intervals). Oldest evicted when limit exceeded.</li>
+      <li>Deduplication: new snapshot rejected if existing snapshot is within 10 minutes</li>
+      <li>Cron trigger refreshes SUVI frame index hourly by scraping NOAA 195Å directory</li>
+    </ul>
+  </div>
+</section>
+
+<hr />
+
+<!-- DATA SOURCES -->
+<section id="data-sources">
+  <h2>🗂️ All External Data Sources</h2>
+
+  <h3>NOAA Space Weather Prediction Center</h3>
+  <table class="tbl">
+    <thead><tr><th>Dataset</th><th>URL</th><th>Cadence</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tn">NOAA</span> OVATION Southern HP</td><td><a href="https://services.swpc.noaa.gov/text/ovation_latest_aurora_s.txt" target="_blank">ovation_latest_aurora_s.txt</a></td><td>~5 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> RTSW mag 1-minute</td><td><a href="https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json" target="_blank">rtsw_mag_1m.json</a></td><td>1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> Solar wind mag 1-day</td><td><a href="https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json" target="_blank">solar-wind/mag-1-day.json</a></td><td>~1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> Solar wind plasma 1-day</td><td><a href="https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json" target="_blank">solar-wind/plasma-1-day.json</a></td><td>~1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> GOES-18 magnetometers</td><td><a href="https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json" target="_blank">goes/primary/magnetometers-1-day.json</a></td><td>1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> GOES-19 magnetometers</td><td><a href="https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json" target="_blank">goes/secondary/magnetometers-1-day.json</a></td><td>1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> GOES X-ray flux 7-day</td><td><a href="https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json" target="_blank">goes/primary/xrays-7-day.json</a></td><td>1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> GOES X-ray flux 1-day</td><td><a href="https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json" target="_blank">goes/primary/xrays-1-day.json</a></td><td>1 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> Integral proton flux 7-day</td><td><a href="https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-7-day.json" target="_blank">goes/primary/integral-protons-plot-7-day.json</a></td><td>5 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> Solar probabilities</td><td><a href="https://services.swpc.noaa.gov/json/solar_probabilities.json" target="_blank">solar_probabilities.json</a></td><td>Daily</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> Sunspot report</td><td><a href="https://services.swpc.noaa.gov/json/sunspot_report.json" target="_blank">sunspot_report.json</a></td><td>Daily</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> Solar regions text</td><td><a href="https://services.swpc.noaa.gov/text/solar-regions.txt" target="_blank">solar-regions.txt</a></td><td>Daily</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> SUVI 131/195/304Å imagery</td><td><a href="https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png" target="_blank">suvi/primary/{band}/latest.png</a></td><td>~4 min</td></tr>
+      <tr><td><span class="tag tn">NOAA</span> CCOR1 coronagraph video</td><td><a href="https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4" target="_blank">ccor1/mp4s/ccor1_last_24hrs.mp4</a></td><td>~15 min</td></tr>
+    </tbody>
+  </table>
+
+  <h3>NASA</h3>
+  <table class="tbl">
+    <thead><tr><th>Dataset</th><th>Access</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag ta">NASA</span> DONKI — CME, FLR, GST, SEP, HSS, ENLIL</td><td>Via own NASA DONKI proxy worker (CORS bypass required)</td></tr>
+      <tr><td><span class="tag ta">NASA</span> SDO HMI magnetogram + intensitygram</td><td><a href="https://jsoc1.stanford.edu/data/hmi/images/latest/" target="_blank">JSOC / Stanford</a> direct — 1024px and 4096px</td></tr>
+    </tbody>
+  </table>
+
+  <h3>GeoNet & Third-party</h3>
+  <table class="tbl">
+    <thead><tr><th>Source</th><th>URL</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tg">GeoNet</span> EY2M dH</td><td><a href="https://tilde.geonet.org.nz/v4/data" target="_blank">tilde.geonet.org.nz/v4/data</a></td><td>NZ magnetometer — Substorm Worker + Advanced chart</td></tr>
+      <tr><td><span class="tag tt">3rd</span> OpenWeatherMap</td><td><a href="https://openweathermap.org" target="_blank">OWM One Call API v3</a></td><td>Sun/moon times — via Forecast Worker, KV cached 6h</td></tr>
+      <tr><td><span class="tag tt">3rd</span> IMAP I-ALiRT</td><td><a href="https://ialirt.imap-mission.com/space-weather" target="_blank">ialirt.imap-mission.com</a></td><td>Next-gen L1 solar wind — fallback in IMAP Worker</td></tr>
+      <tr><td><span class="tag tt">3rd</span> Windy.com</td><td><a href="https://embed.windy.com" target="_blank">embed.windy.com</a></td><td>ECMWF cloud cover map (iframe)</td></tr>
+      <tr><td><span class="tag tt">3rd</span> Queenstown Roundshot</td><td><a href="https://queenstown.roundshot.com" target="_blank">queenstown.roundshot.com</a></td><td>Live camera (iframe)</td></tr>
+      <tr><td><span class="tag tt">3rd</span> TrafficNZ, Horizons, MetData, Primo, SouthLoop</td><td>Various NZ sources</td><td>Twizel, Opiki, Rangitikei, Taylors Mistake, New Plymouth, Oban cameras</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<hr />
+
+<!-- SCORING REFERENCE -->
+<section id="scoring">
+  <h2>🧮 Scoring System Reference</h2>
+
+  <h3>SpotTheAurora Score</h3>
+  <table class="tbl">
+    <thead><tr><th>Score</th><th>Visibility at NZ ~45°S</th></tr></thead>
+    <tbody>
+      <tr><td>80–100%</td><td>Significant display, possibly high in southern sky</td></tr>
+      <tr><td>50–80%</td><td>Good chance of naked-eye colour in a dark location</td></tr>
+      <tr><td>40–50%</td><td>Faint naked-eye glow possible, possibly with some colour</td></tr>
+      <tr><td>25–40%</td><td>Visible on phone/camera, possibly naked eye in ideal conditions</td></tr>
+      <tr><td>10–25%</td><td>Minimal — faint glow detectable by camera only</td></tr>
+      <tr><td>&lt;10%</td><td>Little to no auroral activity expected</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Substorm Risk Score</h3>
+  <table class="tbl">
+    <thead><tr><th>Score</th><th>Level</th><th>Visibility (NZ)</th></tr></thead>
+    <tbody>
+      <tr><td>0–9</td><td>Very Quiet</td><td>Nothing</td></tr>
+      <tr><td>10–19</td><td>Quiet</td><td>Nothing</td></tr>
+      <tr><td>20–29</td><td>Unsettled</td><td>Camera only in ideal conditions</td></tr>
+      <tr><td>30–39</td><td>Disturbed</td><td>Long-exposure camera may show something</td></tr>
+      <tr><td>40–49</td><td>Developing</td><td>Phone camera likely, faint eye possible</td></tr>
+      <tr><td>50–59</td><td>Active</td><td>Faint naked-eye glow in dark location</td></tr>
+      <tr><td>60–69</td><td>Strong</td><td>Clearly visible naked eye</td></tr>
+      <tr><td>70–79</td><td>Severe</td><td>Colours likely</td></tr>
+      <tr><td>80–89</td><td>Intense</td><td>Significant display high in southern sky</td></tr>
+      <tr><td>90–100</td><td>Extreme</td><td>Exceptional — once in years</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<hr />
+
+<!-- NOTIFICATIONS -->
+<section id="notifications">
+  <h2>🔔 Push Notification Categories</h2>
+  <div class="card">
+    <div class="ni"><span class="ne">🌌</span><span class="nn">Aurora 40 / 50 / 60 / 80%</span><span class="nd">Fires when SpotTheAurora score crosses each threshold. Score is latitude-adjusted before comparing — users in Auckland need a higher base score than Invercargill.</span></div>
+    <div class="ni"><span class="ne">💥</span><span class="nn">Substorm Forecast</span><span class="nd">Fires on status escalation: QUIET → WATCH → LIKELY_60 → IMMINENT_30 → ONSET. Title and urgency vary by level.</span></div>
+    <div class="ni"><span class="ne">⚡</span><span class="nn">Interplanetary Shock</span><span class="nd">Fires when a new IPS event in DONKI GST is more recent than the last known shock. Solar shockwave has arrived — conditions can change rapidly.</span></div>
+    <div class="ni"><span class="ne">☀️</span><span class="nn">Solar Flare M1/M5/X1/X5/X10</span><span class="nd">Fires when GOES X-ray flux crosses each class threshold. Separate notification when the flare is confirmed to have peaked and is declining.</span></div>
+  </div>
+</section>
+
+<hr />
+
+<!-- UPDATE INTERVALS -->
+<section id="intervals">
+  <h2>⏱️ Update Intervals</h2>
+  <div class="card">
+    <div class="ir"><span>Forecast page full refresh</span><span class="iv">60 sec</span></div>
+    <div class="ir"><span>SpotTheAurora Forecast Worker (cron)</span><span class="iv">5 min</span></div>
+    <div class="ir"><span>SpotTheAurora API cache TTL</span><span class="iv">4 min</span></div>
+    <div class="ir"><span>Substorm Risk Worker (request + cache)</span><span class="iv">60 sec</span></div>
+    <div class="ir"><span>IMAP Solar Wind Worker cache</span><span class="iv">60 sec</span></div>
+    <div class="ir"><span>Aurora sightings poll</span><span class="iv">2 min</span></div>
+    <div class="ir"><span>Solar activity dashboard data</span><span class="iv">5 min</span></div>
+    <div class="ir"><span>NOAA solar wind (mag + plasma)</span><span class="iv">~1 min</span></div>
+    <div class="ir"><span>NOAA GOES magnetometers</span><span class="iv">1 min</span></div>
+    <div class="ir"><span>NOAA OVATION hemispheric power</span><span class="iv">~5 min</span></div>
+    <div class="ir"><span>NOAA SUVI imagery</span><span class="iv">~4 min</span></div>
+    <div class="ir"><span>NASA DONKI proxy cache (cron)</span><span class="iv">~15 min</span></div>
+    <div class="ir"><span>SDO HMI imagery (JSOC/Stanford)</span><span class="iv">~45 min</span></div>
+    <div class="ir"><span>OpenWeatherMap (moon/sun times)</span><span class="iv">6 hours</span></div>
+    <div class="ir"><span>Coronal hole frame index (cron)</span><span class="iv">1 hour</span></div>
+    <div class="ir"><span>Live cameras</span><span class="iv">30 sec – 5 min per source</span></div>
+  </div>
+
+  <p style="margin-top:1rem; font-size:0.72rem; color:var(--muted2);">Spot The Aurora · TNR Protography · <a href="https://spottheaurora.co.nz" style="color:var(--accent); text-decoration:none;">spottheaurora.co.nz</a></p>
+</section>
+
+</main>
+</div>
+</body>
+</html>
