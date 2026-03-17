@@ -656,29 +656,29 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700 relative">
-                    {/* Mini legend overlay */}
-                    <div className="absolute bottom-3 left-3 z-[500] bg-black/70 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2 pointer-events-none select-none">
-                        <div className="space-y-1.5">
-                            <div className="flex items-center gap-2">
-                                <svg width="32" height="10">
-                                    <defs>
-                                        <linearGradient id="ovalGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%"   stopColor="#34d399" stopOpacity="0.15"/>
-                                            <stop offset="50%"  stopColor="#f87171" stopOpacity="0.7"/>
-                                            <stop offset="100%" stopColor="#34d399" stopOpacity="0.15"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <rect x="0" y="0" width="32" height="10" fill="url(#ovalGrad)" rx="2"/>
-                                </svg>
-                                <span className="text-[10px] text-neutral-400">Aurora oval · green→red = quiet→storm</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <svg width="32" height="6"><line x1="0" y1="3" x2="32" y2="3" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="2 5" opacity="0.65"/></svg>
-                                <span className="text-[10px] text-neutral-400">Visibility horizon · expands during storms</span>
-                            </div>
+                <div className="lg:col-span-2 rounded-lg border border-neutral-700 overflow-hidden flex flex-col">
+                    {/* Legend bar — sits above the map, never obscures it */}
+                    <div className="flex items-center gap-5 px-3 py-2 bg-neutral-900/90 border-b border-neutral-700 flex-shrink-0 flex-wrap">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 flex-shrink-0">Aurora Oval</span>
+                        <div className="flex items-center gap-2">
+                            <svg width="36" height="10">
+                                <defs>
+                                    <linearGradient id="ovalGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%"   stopColor="#34d399" stopOpacity="0.2"/>
+                                        <stop offset="50%"  stopColor="#f87171" stopOpacity="0.8"/>
+                                        <stop offset="100%" stopColor="#34d399" stopOpacity="0.2"/>
+                                    </linearGradient>
+                                </defs>
+                                <rect x="0" y="0" width="36" height="10" fill="url(#ovalGrad)" rx="2"/>
+                            </svg>
+                            <span className="text-[10px] text-neutral-400">Aurora oval — green (quiet) → red (storm)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <svg width="32" height="6"><line x1="0" y1="3" x2="32" y2="3" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="2 5" opacity="0.7"/></svg>
+                            <span className="text-[10px] text-neutral-400">Visibility horizon — expands during storms</span>
                         </div>
                     </div>
+                    <div className="flex-1 min-h-0" style={{height: '500px'}}>
                     <MapContainer
                         center={[(NZ_BOUNDS[0][0] + NZ_BOUNDS[1][0]) / 2, (NZ_BOUNDS[0][1] + NZ_BOUNDS[1][1]) / 2]}
                         zoom={MAP_ZOOM}
@@ -725,6 +725,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         </>
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
                     </MapContainer>
+                    </div>
                 </div>
 
                 <div className="lg:col-span-1 space-y-3">
