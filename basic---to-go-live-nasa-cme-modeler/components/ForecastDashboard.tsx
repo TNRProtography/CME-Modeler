@@ -482,7 +482,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // ─────────────────────────────────────────────────────────────────────────
 
     const simpleTimelineSlots = useMemo(() => {
-        const getPhrase = (score: number, confidence: 'high' | 'medium' | 'low'): { phrase: string; icon: string } => {
+        const getPhrase = (score: number, confidence: 'high' | 'medium' | 'low', label: string): { phrase: string; icon: string } => {
+            const timeRef = label === 'Now' ? 'right now'
+                          : label === '15 min' ? 'in the next 15 minutes'
+                          : label === '30 min' ? 'in the next 30 minutes'
+                          : label === '1 hour' ? 'over the next hour'
+                          : 'over the next two hours';
+
             if (score >= 80) return {
                 icon: '👁️',
                 phrase: confidence === 'high' ? 'Go outside now — this could be one of the best displays in years'
@@ -515,9 +521,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             };
             return {
                 icon: '😴',
-                phrase: confidence === 'high' ? 'Nothing to see tonight — the sky will look completely normal'
-                      : confidence === 'medium' ? 'Very quiet — not worth going out at the moment'
-                      : 'Quiet tonight — set an alert and check back later'
+                phrase: confidence === 'high' ? `Nothing to see — the sky will look completely normal ${timeRef}`
+                      : confidence === 'medium' ? `Very quiet ${timeRef} — not worth going out`
+                      : `Quiet ${timeRef} — set an alert and check back later`
             };
         };
 
@@ -557,11 +563,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
         };
 
+        const s15 = Math.round(applyMods(raw15));
+        const s30 = Math.round(applyMods(raw30));
+        const s60 = Math.round(applyMods(raw60));
+        const s2h = Math.round(spotScore);
+        const sNow = Math.round(workerScore ?? auroraScore ?? 0);
+
         return [
-            { label: '15 min',  ...getPhrase(Math.round(applyMods(raw15)), slotConf('15m')) },
-            { label: '30 min',  ...getPhrase(Math.round(applyMods(raw30)), slotConf('30m')) },
-            { label: '1 hour',  ...getPhrase(Math.round(applyMods(raw60)), slotConf('1h')) },
-            { label: '2 hours', ...getPhrase(Math.round(spotScore), 'low') },
+            { label: 'Now',     score: sNow, ...getPhrase(sNow, 'high',          'Now'),     isNow: true  },
+            { label: '15 min',  score: s15,  ...getPhrase(s15,  slotConf('15m'), '15 min'),  isNow: false },
+            { label: '30 min',  score: s30,  ...getPhrase(s30,  slotConf('30m'), '30 min'),  isNow: false },
+            { label: '1 hour',  score: s60,  ...getPhrase(s60,  slotConf('1h'),  '1 hour'),  isNow: false },
+            { label: '2 hours', score: s2h,  ...getPhrase(s2h,  'low',           '2 hours'), isNow: false },
         ];
     }, [auroraScore, substormForecast, substormRiskData]);
 
@@ -600,20 +613,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                                 <div className="mt-4 bg-neutral-900/70 rounded-lg border border-neutral-700/60 max-w-lg mx-auto overflow-hidden">
-                                    <div className="px-4 pt-4 pb-2 text-sm font-semibold text-amber-300">What to expect</div>
+                                    <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                                        <span className="text-sm font-semibold text-amber-300">What to expect</span>
+                                        <span className="text-xs text-neutral-600">Based on current conditions</span>
+                                    </div>
                                     <div className="divide-y divide-neutral-800/60">
                                         {simpleTimelineSlots.map((slot) => (
-                                            <div key={slot.label} className="flex items-start gap-3 px-4 py-3">
-                                                <span className="text-lg flex-shrink-0 leading-none mt-0.5">{slot.icon}</span>
-                                                <div className="flex-1 min-w-0">
-                                                    <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide block mb-0.5">{slot.label}</span>
-                                                    <span className="text-sm text-neutral-200 leading-snug">{slot.phrase}</span>
-                                                </div>
+                                            <div key={slot.label} className={`flex items-center gap-3 px-4 py-2.5 ${slot.isNow ? 'bg-neutral-800/40' : ''}`}>
+                                                <span className={`text-xs font-bold w-12 flex-shrink-0 ${slot.isNow ? 'text-emerald-400' : 'text-neutral-500'}`}>{slot.label}</span>
+                                                <span className="text-base flex-shrink-0 leading-none">{slot.icon}</span>
+                                                <span className={`flex-1 text-sm leading-snug min-w-0 ${slot.isNow ? 'text-white font-medium' : 'text-neutral-200'}`}>{slot.phrase}</span>
+                                                {(slot.label !== '1 hour' && slot.label !== '2 hours') && (
+                                                    <span className={`text-xs font-bold tabular-nums flex-shrink-0 px-1.5 py-0.5 rounded ${slot.isNow ? 'bg-emerald-500/20 text-emerald-400' : 'text-neutral-600'}`}>{slot.score}%</span>
+                                                )}
                                             </div>
                                         ))}
-                                    </div>
-                                    <div className="px-4 py-2 text-xs text-neutral-600 border-t border-neutral-800/60">
-                                        15–60 min based on current conditions · 2 hour outlook based on Spot The Aurora forecast
                                     </div>
                                 </div>
                             </div>
