@@ -63,6 +63,7 @@ const getEmojiForStatus = (status: SightingStatus) => {
 interface AuroraSightingsProps {
   isDaylight: boolean;
   refreshSignal?: number;
+  onSightingsLoaded?: (sightings: SightingReport[]) => void;
 }
 
 interface SightingMapControllerProps {
@@ -156,7 +157,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
     );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -205,7 +206,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             const response = await fetch(API_URL);
             if (!response.ok) throw new Error('Failed to fetch sightings data.');
             const data: SightingReport[] = await response.json();
-            setSightings(data.sort((a, b) => b.timestamp - a.timestamp));
+            const sorted = data.sort((a, b) => b.timestamp - a.timestamp);
+            setSightings(sorted);
+            onSightingsLoaded?.(sorted);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An unknown error occurred.');
         } finally {
