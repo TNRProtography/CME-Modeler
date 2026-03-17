@@ -14,6 +14,7 @@ const LoadingOverlay = lazy(() => import('./components/LoadingOverlay'));
 // so lazy-loading it is safe and removes it from the critical path.
 const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
+import { refreshLocationOnServer } from './utils/notifications';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock, ImpactDataPoint } from './types';
 
 // Icon Imports
@@ -499,6 +500,13 @@ const App: React.FC = () => {
       setIsFirstVisitTutorialOpen(true);
     }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
+  }, []);
+
+  // Silently refresh GPS location for push notification worker on every app load.
+  // Non-blocking — if GPS is denied or there's no subscription, this is a no-op.
+  useEffect(() => {
+    const t = setTimeout(() => refreshLocationOnServer(), 3000);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {

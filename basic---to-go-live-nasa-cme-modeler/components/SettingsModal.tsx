@@ -26,19 +26,40 @@ interface SettingsModalProps {
   pageViewStorageMode: 'server' | 'local';
 }
 
-const NOTIFICATION_CATEGORIES = [
-  { id: 'aurora-40percent', label: 'Aurora Forecast ≥ 40% (Phone Visible)' },
-  { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50% (Faint Eye Visible)' },
-  { id: 'aurora-60percent', label: 'Aurora Forecast ≥ 60% (Eye Visible)' },
-  { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80% (Strong Display)' },
-  { id: 'flare-M1', label: 'Solar Flare ≥ M1-Class' },
-  { id: 'flare-M5', label: 'Solar Flare ≥ M5-Class' },
-  { id: 'flare-X1', label: 'Solar Flare ≥ X1-Class' },
-  { id: 'flare-X5', label: 'Solar Flare ≥ X5-Class' },
-  { id: 'flare-X10', label: 'Solar Flare ≥ X10-Class (Historic)' },
-  { id: 'flare-peak', label: 'Solar Flare Peak & Decline Alerts' },
-  { id: 'substorm-forecast', label: 'Substorm Forecast Issued' },
+// Notification categories shown in the UI — grouped for clarity.
+// Legacy topic IDs (aurora-Xpercent, substorm-forecast etc) are intentionally
+// NOT shown here — they still run on the worker but users manage them by
+// turning off the new equivalent notifications instead.
+const NOTIFICATION_GROUPS = [
+  {
+    group: 'Aurora Visibility',
+    description: 'Alerts based on your precise location. Sent when aurora becomes visible from where you are.',
+    items: [
+      { id: 'visibility-dslr',  label: 'DSLR camera visible',  description: 'Aurora detectable with a DSLR on a tripod — furthest early warning.' },
+      { id: 'visibility-phone', label: 'Phone camera visible',  description: 'Aurora bright enough for a modern smartphone night mode.' },
+      { id: 'visibility-naked', label: 'Naked eye visible',     description: 'Aurora visible to the naked eye from your location.' },
+    ],
+  },
+  {
+    group: 'Forecast',
+    description: 'Advance planning alerts.',
+    items: [
+      { id: 'overnight-watch', label: 'Worth watching tonight', description: 'Sent around sunset when solar wind conditions are elevated and worth monitoring.' },
+    ],
+  },
+  {
+    group: 'Solar Events',
+    description: 'Space weather events that may affect aurora conditions.',
+    items: [
+      { id: 'flare-event',     label: 'Solar flare',           description: 'Notification when a solar flare peaks, including its class.' },
+      { id: 'shock-detection', label: 'Solar wind shock',      description: 'Sudden jump in solar wind speed, density and pressure detected at L1.' },
+      { id: 'cme-sheath',      label: 'CME arrival',           description: 'A coronal mass ejection structure is passing Earth — conditions may change rapidly.' },
+    ],
+  },
 ];
+
+// Flat list for preference loading
+const ALL_NOTIFICATION_IDS = NOTIFICATION_GROUPS.flatMap(g => g.items.map(i => i.id));
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
 
@@ -99,8 +120,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setNotificationStatus(Notification.permission);
       }
       const loadedNotificationSettings: Record<string, boolean> = {};
-      NOTIFICATION_CATEGORIES.forEach(category => {
-        loadedNotificationSettings[category.id] = getNotificationPreference(category.id);
+      ALL_NOTIFICATION_IDS.forEach(id => {
+        loadedNotificationSettings[id] = getNotificationPreference(id);
       });
       setNotificationSettings(loadedNotificationSettings);
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
@@ -179,44 +200,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleTestCategory = useCallback((categoryId: string) => {
     let title = 'Test Notification';
     let body = 'This is a sample alert for your selected category.';
-
     switch (categoryId) {
-        case 'aurora-40percent':
-            title = 'Aurora Alert: Phone Visible!';
-            body = 'Forecast has reached 42%. Good chance to capture with a phone camera.';
-            break;
-        case 'aurora-50percent':
-            title = 'Aurora Alert: Faint Eye Visibility!';
-            body = 'Forecast has reached 51%. A faint glow may be visible to the naked eye.';
-            break;
-        case 'aurora-60percent':
-            title = 'Aurora Alert: Eye Visible!';
-            body = 'Forecast has reached 65%. Good chance of naked-eye visibility.';
-            break;
-        case 'aurora-80percent':
-            title = 'Major Aurora Alert!';
-            body = 'Forecast has reached 82%! A significant display is likely!';
-            break;
-        case 'flare-M1':
-            title = 'Solar Flare: ≥M1-Class';
-            body = 'An M1.3 flare is in progress. Minor radio blackouts possible.';
-            break;
-        case 'flare-M5':
-            title = 'Major Flare: ≥M5-Class';
-            body = 'A strong M5.8 flare is in progress. Moderate radio blackouts likely.';
-            break;
-        case 'flare-X1':
-            title = 'Significant Flare: ≥X1-Class';
-            body = 'A powerful X1.2 flare is in progress. Strong, widespread radio blackouts expected.';
-            break;
-        case 'flare-X5':
-            title = 'Extreme Flare: ≥X5-Class';
-            body = 'An extreme X5.1 flare is in progress. Severe radio blackouts and radiation storms possible.';
-            break;
-        case 'substorm-forecast':
-            title = 'Substorm Forecast Issued';
-            body = 'Forecast: ~75% chance of activity between 11:30pm and 12:00am. Expected visibility: Faint Eye Visible.';
-            break;
+      case 'visibility-dslr':
+        title = '📷 Aurora — DSLR Camera Visible';
+        body = 'Aurora is detectable from your location with a camera on a tripod. Point south and try a long exposure.';
+        break;
+      case 'visibility-phone':
+        title = '📱 Aurora — Phone Camera Visible';
+        body = 'Aurora is bright enough to appear on your phone camera. Point south and try night mode.';
+        break;
+      case 'visibility-naked':
+        title = '👁️ Aurora — Naked Eye Visible';
+        body = 'Aurora should be visible to the naked eye from your location. Head outside and look south.';
+        break;
+      case 'overnight-watch':
+        title = '🌌 Worth watching tonight';
+        body = 'Solar wind conditions are elevated heading into tonight.\n\nNow: Bz −7.2 nT · Speed 510 km/s\n\nTrend: Bz has been southward for 22 minutes and conditions are building.\n\nMoon: 18% — good dark sky conditions.';
+        break;
+      case 'flare-event':
+        title = '☀️ M4.7 Solar Flare';
+        body = 'A solar flare peaked at M4.7 at 11:34pm NZST.';
+        break;
+      case 'shock-detection':
+        title = '💥 Solar Wind Shock Detected';
+        body = 'A sudden jump in solar wind was detected.\n\nSpeed: 420 → 580 km/s (+160)\nDensity: 6.2 → 31.4 p/cm³\nPressure: 1.8 → 14.2 nPa\nBt: 8.1 → 22.4 nT · Bz: +2.1 → −14.3 nT\n\nThis shock is likely already interacting with the magnetosphere.';
+        break;
+      case 'cme-sheath':
+        title = '🌞 Solar Storm Arriving';
+        body = 'Solar wind conditions have changed significantly — a coronal mass ejection is passing Earth. Geomagnetic activity may increase over the next few hours.';
+        break;
     }
     sendTestNotification(title, body);
   }, []);
@@ -377,20 +389,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="bg-green-900/30 border border-green-700/50 rounded-md p-3 text-sm">
                     <p className="text-green-300">Push notifications are enabled! You can now customize your alerts below.</p>
                 </div>
-                <div className="space-y-3 bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
-                  {NOTIFICATION_CATEGORIES.map(category => (
-                    <div key={category.id} className="flex items-center justify-between gap-4">
-                      <ToggleSwitch
-                        label={category.label}
-                        checked={notificationSettings[category.id] ?? true}
-                        onChange={(checked) => handleNotificationToggle(category.id, checked)}
-                      />
-                      <button
-                        onClick={() => handleTestCategory(category.id)}
-                        className={chipActionClass}
-                      >
-                        Test
-                      </button>
+                <div className="space-y-4">
+                  {NOTIFICATION_GROUPS.map(group => (
+                    <div key={group.group} className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-neutral-300 mb-1">{group.group}</h4>
+                      <p className="text-xs text-neutral-500 mb-3">{group.description}</p>
+                      <div className="space-y-3">
+                        {group.items.map(item => (
+                          <div key={item.id}>
+                            <div className="flex items-center justify-between gap-4">
+                              <ToggleSwitch
+                                label={item.label}
+                                checked={notificationSettings[item.id] ?? true}
+                                onChange={(checked) => handleNotificationToggle(item.id, checked)}
+                              />
+                              <button
+                                onClick={() => handleTestCategory(item.id)}
+                                className={chipActionClass}
+                              >
+                                Test
+                              </button>
+                            </div>
+                            <p className="text-xs text-neutral-600 mt-1 ml-1">{item.description}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>

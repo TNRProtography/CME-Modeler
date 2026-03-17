@@ -9,7 +9,23 @@
  * - Returns subscription id (hash of endpoint) for easier single-device testing
  */
 
+// All notification topic keys — kept in sync with the worker.
+// Existing topics are preserved for backwards compatibility.
+// New topics added here are opt-out by default (undefined = send).
 const NOTIFICATION_CATEGORIES = [
+  // Aurora visibility — new location-aware notifications
+  'visibility-dslr',
+  'visibility-phone',
+  'visibility-naked',
+  // Overnight watch
+  'overnight-watch',
+  // Solar flare event (replaces flare-peak in UI — old topic still runs on worker)
+  'flare-event',
+  // Shock detection
+  'shock-detection',
+  // CME sheath arrival
+  'cme-sheath',
+  // Legacy topics — kept for backwards compat, hidden from UI but still respected
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
   'substorm-forecast',
@@ -216,7 +232,23 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
       console.log('DIAGNOSTIC: New push subscription created successfully.');
     }
 
-    await sendPushSubscriptionToServer(subscription, preferences);
+    // Try to get GPS position to store precise location for visibility notifications
+    let coords: { latitude: number; longitude: number } | null = null;
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 8000,
+          maximumAge: 3600000,
+        })
+      );
+      coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      console.log('DIAGNOSTIC: GPS position obtained for subscription:', coords);
+    } catch {
+      console.warn('DIAGNOSTIC: GPS unavailable, will use Cloudflare IP geolocation');
+    }
+
+    await sendPushSubscriptionToServer(subscription, preferences, coords);
 
     const id = await computeSubscriptionId(subscription.endpoint);
     try { localStorage.setItem('push_subscription_id', id); } catch {}
@@ -229,15 +261,19 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
   }
 };
 
-// MODIFIED: This function now sends the user's timezone to the server.
-const sendPushSubscriptionToServer = async (subscription: PushSubscription, preferences: Record<string, boolean>) => {
+const sendPushSubscriptionToServer = async (
+  subscription: PushSubscription,
+  preferences: Record<string, boolean>,
+  coords?: { latitude: number; longitude: number } | null
+) => {
   console.log("DIAGNOSTIC: Sending subscription to server...");
-  
-  // NEW: Get the user's IANA timezone name from the browser (e.g., "Pacific/Auckland").
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  // MODIFIED: Include the timezone in the request body.
-  const body = JSON.stringify({ subscription, preferences, timezone });
+  const body = JSON.stringify({
+    subscription,
+    preferences,
+    timezone,
+    ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
+  });
   console.log("DIAGNOSTIC: Request Body being sent:", body);
 
   try {
@@ -293,6 +329,45 @@ export const updatePushSubscriptionPreferences = async () => {
   
   console.log("DIAGNOSTIC: Preferences changed, sending update to server...", updatedPreferences);
   await sendPushSubscriptionToServer(subscription, updatedPreferences);
+};
+
+// --- Location refresh on app load ---
+
+const PUSH_WORKER_URL = 'https://push-notification-worker.thenamesrock.workers.dev';
+
+/**
+ * Called on every app load. If the user has an active push subscription,
+ * silently refreshes their GPS location in the worker KV record so that
+ * visibility-based notifications use their current precise location.
+ * Completely non-blocking — failures are silent.
+ */
+export const refreshLocationOnServer = async (): Promise<void> => {
+  try {
+    const reg = await waitForServiceWorkerReady(3000);
+    if (!reg) return;
+    const subscription = await reg.pushManager.getSubscription();
+    if (!subscription) return; // not subscribed, nothing to do
+
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 3600000, // use cached fix if <1hr old — no GPS hardware needed
+      })
+    );
+
+    await fetch(`${PUSH_WORKER_URL}/update-location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      }),
+    });
+  } catch {
+    // Silent — GPS denied, no subscription, or network failure. All fine.
+  }
 };
 
 // --- Cooldown management ---
@@ -383,4 +458,4 @@ export const getLocalSubscriptionId = (): string | null => {
   try { return localStorage.getItem('push_subscription_id'); } catch { return null; }
 };
 
-// --- END OF FILE src/utils/notifications.ts --- 
+// --- END OF FILE src/utils/notifications.ts ---
