@@ -274,15 +274,18 @@
     <p>Large percentage (0–100%) from SpotTheAurora score, one-word status, plain-english summary. Latitude-adjusted relative to Greymouth (±0.2% per 10 km from reference).</p>
 
     <h4>What to Expect — Timeline</h4>
+    <p>During daylight hours the block shows a ☀️ message instead of the timeline. After dark, five slots are shown:</p>
     <table class="tbl">
-      <thead><tr><th>Slot</th><th>Driven by</th><th>Confidence</th></tr></thead>
+      <thead><tr><th>Slot</th><th>Driven by</th><th>Shows score?</th></tr></thead>
       <tbody>
-        <tr><td><strong>15 min</strong></td><td>Substorm Risk Worker + P30 projection + Newell trend</td><td>High</td></tr>
-        <tr><td><strong>30 min</strong></td><td>Same with moderate decay</td><td>Medium</td></tr>
-        <tr><td><strong>1 hour</strong></td><td>P60 probability projection</td><td>Low</td></tr>
-        <tr><td><strong>2 hours</strong></td><td>SpotTheAurora composite score (rough guide only)</td><td>Low</td></tr>
+        <tr><td><strong>Now</strong></td><td>Substorm Risk Worker current score</td><td>✓ green pill</td></tr>
+        <tr><td><strong>15 min</strong></td><td>Substorm Worker + P30 + Newell trend</td><td>✓</td></tr>
+        <tr><td><strong>30 min</strong></td><td>Same with moderate decay</td><td>✓</td></tr>
+        <tr><td><strong>1 hour</strong></td><td>P60 probability projection</td><td>Text only</td></tr>
+        <tr><td><strong>2 hours</strong></td><td>SpotTheAurora composite (rough guide)</td><td>Text only</td></tr>
       </tbody>
     </table>
+    <p>Phrases use time-relative wording ("over the next hour") — no "tonight" wording. No sources footer.</p>
 
     <h4>Visibility phrase scale</h4>
     <table class="tbl">
@@ -293,7 +296,7 @@
         <tr><td>50–64</td><td>👁️</td><td>Faint green glow possible to the south in a dark spot</td></tr>
         <tr><td>35–49</td><td>📱</td><td>Phone camera will pick it up — point it south</td></tr>
         <tr><td>20–34</td><td>📷</td><td>Very faint — long-exposure camera only</td></tr>
-        <tr><td>0–19</td><td>😴</td><td>Nothing to see tonight</td></tr>
+        <tr><td>0–19</td><td>😴</td><td>Nothing to see — the sky will look completely normal</td></tr>
       </tbody>
     </table>
 
@@ -321,6 +324,9 @@
       <div class="fi"><div class="fi-t">Solar Wind Charts</div><div class="fi-d">24h time series for speed, density, temperature from merged IMAP/DSCOVR dataset.</div></div>
       <div class="fi"><div class="fi-t">NZ Magnetometer</div><div class="fi-d">EY2M (Eyrewell, Canterbury) dH from GeoNet Tilde API. Real-time local geomagnetic activity.</div></div>
       <div class="fi"><div class="fi-t">Moon Arc Chart</div><div class="fi-d">Moon altitude through the night showing moonlight interference windows.</div></div>
+      <div class="fi"><div class="fi-t">Substorm Index Chart</div><div class="fi-d">24h history of the substorm worker score. Y-axis unclamped — exceeds 100 during extreme events. Bay onset events shown as amber triangles. Colour codes: green ≥70, amber ≥50, sky ≥30.</div></div>
+      <div class="fi"><div class="fi-t">Newell Coupling Function Chart</div><div class="fi-d">24h history of v⁴/³·Bt²/³·sin⁸/³(θ/2) in Wb/s. Threshold lines at 10,000 (Moderate NZ) and 20,000 (Strong NZ). NZ-calibrated — not global generic thresholds.</div></div>
+      <div class="fi"><div class="fi-t">Dynamic Pressure Chart</div><div class="fi-d">Solar wind dynamic pressure (1.6726×10⁻⁶·n·v²) in nPa. Threshold lines at 6 nPa (Elevated) and 15 nPa (High). Pressure spikes can trigger substorm onset by compressing the magnetopause.</div></div>
       <div class="fi"><div class="fi-t">Disturbance Index Panel</div><div class="fi-d">Historical NZ substorm index data for comparison with past events.</div></div>
       <div class="fi"><div class="fi-t">IPS Alert Banner</div><div class="fi-d">Global banner on all pages when an interplanetary shockwave is detected in DONKI GST data.</div></div>
     </div>
@@ -340,6 +346,16 @@
       </tbody>
     </table>
     <p>Reports feed the Visibility Forecast Panel — if nearby eye sightings exist, the Now slot shows <em>"3 people nearby are seeing it with their own eyes right now"</em> as subtext.</p>
+
+    <h4>Aurora Oval Overlay</h4>
+    <p>An OVATION-style aurora oval is rendered directly on the sightings map using real substorm worker data:</p>
+    <ul class="dl">
+      <li><strong>Oval boundary:</strong> Computed from Newell coupling 60-min average via Holzworth-Meng parameterisation. Clamped to -47.2° geomagnetic if bay onset detected (Eyrewell confirmed).</li>
+      <li><strong>Geomagnetic projection:</strong> IGRF-13 dipole conversion — oval is drawn as a genuine irregular curve in geographic coordinates, not a simple latitude line. Antimeridian-safe (extends past 180°).</li>
+      <li><strong>Colour scale:</strong> Green (quiet) → lime → amber → orange → red (storm) based on substorm index score. Gaussian probability band — brightest at oval centre, fading at edges.</li>
+      <li><strong>Visibility horizon line:</strong> Dotted sky-blue line showing the furthest geographic distance from which aurora is geometrically visible. Baseline 9° equatorward of boundary (150km emission, ~1,000km range). Linearly expands to 25° at score 100 — during storms the high-altitude red emission (200–600km) dramatically extends the line-of-sight range.</li>
+    </ul>
+    <p>Legend bar sits above the map showing the green→red colour scale and the dotted visibility horizon explanation.</p>
   </div>
 </section>
 
@@ -583,30 +599,58 @@
     <h4>Subscription flow</h4>
     <ul class="dl">
       <li>User grants notification permission → browser creates a push subscription</li>
-      <li>App POSTs subscription + preferences + timezone to <code>/save-subscription</code></li>
-      <li>Stored in KV keyed by SHA-256 hash of endpoint</li>
-      <li>Cloudflare request metadata (<code>cf.latitude</code>, <code>cf.longitude</code>) stored for location-aware filtering</li>
+      <li>App requests GPS position at subscribe time — stored as precise latitude/longitude</li>
+      <li>POSTs subscription + preferences + timezone + GPS coords to <code>/save-subscription</code></li>
+      <li>Stored in KV keyed by SHA-256 hash of endpoint. Falls back to Cloudflare IP geolocation (<code>cf.latitude</code>) if GPS unavailable.</li>
+      <li>On every subsequent app load, GPS coords silently refreshed via <code>POST /update-location</code> — non-blocking, silent fail if GPS denied</li>
     </ul>
 
-    <h4>Scheduled checks (cron)</h4>
+    <h4>New endpoints</h4>
+    <table class="tbl">
+      <thead><tr><th>Path</th><th>Method</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>/save-subscription</code></td><td>POST</td><td>Subscribe + store GPS coords + preferences. Existing endpoint, now accepts latitude/longitude fields.</td></tr>
+        <tr><td><code>/update-location</code></td><td>POST</td><td>New — upserts GPS coords on existing subscription. Called silently on every app load.</td></tr>
+        <tr><td><code>/broadcast-batch</code></td><td>POST</td><td>Internal chaining endpoint for large subscriber batches.</td></tr>
+        <tr><td><code>/trigger-test-push</code></td><td>GET</td><td>Admin — broadcast a test push for any topic type.</td></tr>
+        <tr><td><code>/trigger-test-push-for-me</code></td><td>POST</td><td>Self-test — send a push to a specific subscription object.</td></tr>
+        <tr><td><code>/health</code></td><td>GET</td><td>Returns ok:true if cron ran within last 10 minutes.</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Scheduled checks (cron every 5 min)</h4>
+    <p><strong>Preserved (unchanged, backwards compatible):</strong></p>
     <ul class="dl">
-      <li><strong>Aurora forecast:</strong> Score from Forecast API via service binding. Fires when score crosses 40%, 50%, 60%, 80% thresholds.</li>
-      <li><strong>Substorm activity:</strong> Status escalation QUIET → WATCH → LIKELY_60 → IMMINENT_30 → ONSET triggers increasingly urgent alerts.</li>
-      <li><strong>X-ray flux:</strong> State machine (inactive → rising → peaked) tracking NOAA GOES X-ray data. Fires at M1, M5, X1, X5, X10 class thresholds and on confirmed peak.</li>
-      <li><strong>IPS detection:</strong> Polls DONKI /GST. Fires when a new interplanetary shock event time is more recent than last known shock.</li>
+      <li><strong>Aurora forecast:</strong> Score from Forecast API. Fires when score crosses 40%, 50%, 60%, 80%. Latitude-adjusted per subscriber.</li>
+      <li><strong>Substorm activity:</strong> Status escalation QUIET → WATCH → LIKELY_60 → IMMINENT_30 → ONSET.</li>
+      <li><strong>X-ray flux:</strong> State machine tracking NOAA GOES data. Fires at M1/M5/X1/X5/X10 and on confirmed peak.</li>
+      <li><strong>IPS detection (DONKI):</strong> Legacy — polls DONKI /GST for interplanetary shock events.</li>
     </ul>
+    <p><strong>New checks added:</strong></p>
+    <ul class="dl">
+      <li><strong>Shock detection (raw):</strong> Directly analyses NOAA solar wind data for simultaneous jumps in speed (>50 km/s), density (>2.5× baseline), pressure (>2× baseline) and Bt (>5 nT). Requires 3 of 4 signals. Notification includes all stats before/after. 4-hour cooldown.</li>
+      <li><strong>CME sheath:</strong> Fires once when the substorm worker's <code>cme_sheath_flag</code> first trips. "Solar storm arriving — conditions may change rapidly." 6-hour cooldown.</li>
+      <li><strong>Flare event:</strong> Clean peak notification — just class and time, no aurora mention. Topic <code>flare-event</code>, separate from legacy <code>flare-peak</code>. 1-hour cooldown.</li>
+      <li><strong>Overnight watch:</strong> Fires once per day at sunset (18–21 NZST) if Bz has been southward ≥10 min, score ≥30, and trend not decreasing. Body includes Bz, speed, trend text, and moon illumination. Uses substorm worker data — not SpotTheAurora score.</li>
+      <li><strong>Visibility horizon (DSLR/phone/naked):</strong> Per-subscriber check. Converts stored GPS coordinates to IGRF-13 geomagnetic latitude. Computes oval boundary from Newell coupling. Compares subscriber's geomagnetic latitude to visibility horizon (9–25°, boosted by activity). Moon illumination shifts thresholds — suppresses DSLR and phone entirely above 80% moon. Only escalates (never re-notifies at lower tier). 2-hour per-subscriber cooldown stored as <code>COOLDOWN_vis_{tier}_{subId}</code>.</li>
+    </ul>
+
+    <h4>Visibility tier moon thresholds</h4>
+    <table class="tbl">
+      <thead><tr><th>Moon illumination</th><th>DSLR trigger</th><th>Phone trigger</th><th>Naked eye trigger</th></tr></thead>
+      <tbody>
+        <tr><td>&lt;20% or below horizon</td><td>3° past vis horizon</td><td>1° past vis horizon</td><td>Boundary within 5°</td></tr>
+        <tr><td>20–40%</td><td>3° (unchanged)</td><td>3° (DSLR position)</td><td>Boundary within 7°</td></tr>
+        <tr><td>40–60%</td><td>8° past vis horizon</td><td>5° past vis horizon</td><td>Boundary within 8°</td></tr>
+        <tr><td>60–80%</td><td>Suppressed</td><td>8° (original naked pos)</td><td>Boundary within 10°</td></tr>
+        <tr><td>80–100%</td><td>Suppressed</td><td>Suppressed</td><td>Boundary within 12°</td></tr>
+      </tbody>
+    </table>
 
     <h4>Broadcast system</h4>
-    <p>Sends in batches of 40 subscriptions to stay within CPU time limits. Chains itself via self-fetch for large subscriber counts (up to 50 hops = 2,000 subscribers per event). Expired subscriptions (HTTP 410/404) automatically deleted.</p>
+    <p>Batches of 40 subscriptions. Self-fetch chaining up to 50 hops (2,000 subscribers per event). Expired subscriptions (HTTP 410/404) auto-deleted. Visibility notifications sent directly per-subscriber (bypass broadcast system — each subscriber gets individual calculation).</p>
 
-    <h4>Location-aware filtering</h4>
-    <ul class="dl">
-      <li>Aurora alerts apply the same latitude adjustment as the app — users further north only get notified if their adjusted score still crosses the threshold</li>
-      <li>Implausible latitudes (|lat| &lt;30°) skipped for aurora/substorm alerts</li>
-      <li>Per-category opt-out stored per subscription</li>
-    </ul>
-
-    <div class="co co-a"><strong>Crypto:</strong> Full VAPID JWT + AES-128-GCM web push encryption from scratch using the Web Crypto API. No external dependencies.</div>
+    <div class="co co-a"><strong>Crypto:</strong> Full VAPID JWT + AES-128-GCM web push encryption using native Web Crypto API. No external dependencies. TypeScript type assertions on <code>CryptoKeyPair</code> and <code>ArrayBuffer</code> fix editor errors without runtime changes.</div>
   </div>
 
   <!-- SIGHTINGS WORKER -->
@@ -754,11 +798,74 @@
 <!-- NOTIFICATIONS -->
 <section id="notifications">
   <h2>🔔 Push Notification Categories</h2>
+
   <div class="card">
-    <div class="ni"><span class="ne">🌌</span><span class="nn">Aurora 40 / 50 / 60 / 80%</span><span class="nd">Fires when SpotTheAurora score crosses each threshold. Score is latitude-adjusted before comparing — users in Auckland need a higher base score than Invercargill.</span></div>
-    <div class="ni"><span class="ne">💥</span><span class="nn">Substorm Forecast</span><span class="nd">Fires on status escalation: QUIET → WATCH → LIKELY_60 → IMMINENT_30 → ONSET. Title and urgency vary by level.</span></div>
-    <div class="ni"><span class="ne">⚡</span><span class="nn">Interplanetary Shock</span><span class="nd">Fires when a new IPS event in DONKI GST is more recent than the last known shock. Solar shockwave has arrived — conditions can change rapidly.</span></div>
-    <div class="ni"><span class="ne">☀️</span><span class="nn">Solar Flare M1/M5/X1/X5/X10</span><span class="nd">Fires when GOES X-ray flux crosses each class threshold. Separate notification when the flare is confirmed to have peaked and is declining.</span></div>
+    <h4 style="color:var(--aurora);margin-bottom:0.6rem">Aurora Visibility — shown in Settings UI</h4>
+    <div class="ni"><span class="ne">📷</span><span class="nn">DSLR Camera Visible <code style="font-size:0.7rem">visibility-dslr</code></span><span class="nd">Aurora detectable from subscriber's GPS location with a DSLR on a tripod. Fires first — most sensitive. Moon-filtered: suppressed above 60% illumination. Expands with activity (high-altitude emission extends range).</span></div>
+    <div class="ni"><span class="ne">📱</span><span class="nn">Phone Camera Visible <code style="font-size:0.7rem">visibility-phone</code></span><span class="nd">Aurora bright enough for phone night mode. Threshold shifts equatorward as moon brightens. Suppressed above 80% moon.</span></div>
+    <div class="ni"><span class="ne">👁️</span><span class="nn">Naked Eye Visible <code style="font-size:0.7rem">visibility-naked</code></span><span class="nd">Aurora visible without a camera. Requires oval equatorward boundary within threshold of subscriber's geomagnetic latitude. Only fires if no higher tier is already active.</span></div>
+
+    <h4 style="color:var(--aurora);margin:1rem 0 0.6rem">Forecast — shown in Settings UI</h4>
+    <div class="ni"><span class="ne">🌌</span><span class="nn">Worth Watching Tonight <code style="font-size:0.7rem">overnight-watch</code></span><span class="nd">Once per day at sunset (18–21 NZST) when conditions are elevated. Includes Bz, speed, trend, moon. Only fires if Bz southward ≥10 min, score ≥30, not already decreasing. Uses substorm worker data.</span></div>
+
+    <h4 style="color:var(--aurora);margin:1rem 0 0.6rem">Solar Events — shown in Settings UI</h4>
+    <div class="ni"><span class="ne">☀️</span><span class="nn">Solar Flare <code style="font-size:0.7rem">flare-event</code></span><span class="nd">Clean notification when a flare peaks. Just class and time — no aurora mention. "☀️ M4.7 Solar Flare — peaked at M4.7 at 11:34pm NZST." 1-hour cooldown.</span></div>
+    <div class="ni"><span class="ne">💥</span><span class="nn">Solar Wind Shock <code style="font-size:0.7rem">shock-detection</code></span><span class="nd">Raw solar wind detection — simultaneous jumps in speed, density, pressure and Bt. Requires 3 of 4 signals. Notification includes before/after stats for all parameters. 4-hour cooldown.</span></div>
+    <div class="ni"><span class="ne">🌞</span><span class="nn">CME Arrival <code style="font-size:0.7rem">cme-sheath</code></span><span class="nd">Fires once when substorm worker's CME sheath flag first trips. "Solar storm arriving — conditions may change rapidly." 6-hour cooldown.</span></div>
+
+    <h4 style="color:var(--muted);margin:1rem 0 0.6rem">Legacy (worker still runs — hidden from Settings UI)</h4>
+    <div class="ni"><span class="ne">🌌</span><span class="nn">Aurora 40/50/60/80% <code style="font-size:0.7rem">aurora-Xpercent</code></span><span class="nd">SpotTheAurora score threshold crossings. Latitude-adjusted. Still fires — users manage via new visibility notifications instead.</span></div>
+    <div class="ni"><span class="ne">💥</span><span class="nn">Substorm Forecast <code style="font-size:0.7rem">substorm-forecast</code></span><span class="nd">QUIET → ONSET escalation. Still fires on worker. Hidden from UI.</span></div>
+    <div class="ni"><span class="ne">⚡</span><span class="nn">IPS Shock (DONKI) <code style="font-size:0.7rem">ips-shock</code></span><span class="nd">Legacy DONKI GST polling. Still runs but replaced by real-time shock-detection for new subscribers.</span></div>
+    <div class="ni"><span class="ne">☀️</span><span class="nn">Flare Peak <code style="font-size:0.7rem">flare-peak</code></span><span class="nd">Legacy flare decline notification. Still runs. Replaced in UI by cleaner flare-event.</span></div>
+    <div class="ni"><span class="ne">☀️</span><span class="nn">Flare M1/M5/X1/X5/X10 <code style="font-size:0.7rem">flare-M1 etc</code></span><span class="nd">GOES X-ray flux thresholds. Still fire on worker.</span></div>
+  </div>
+</section>
+
+<hr />
+
+<!-- FORECASTER GAME -->
+<section id="game">
+  <h2>🎮 Spot The Aurora — Forecaster Game</h2>
+  <div class="card">
+    <p>Easter egg game accessible by clicking the Sun in the CME Modeller. Teaches aurora forecasting through auto-generated scenarios.</p>
+
+    <h4>Concept</h4>
+    <p>Player reads a real-looking space weather dashboard and decides what aurora would be visible outside right now. The sky above a procedural NZ landscape (Mackenzie Basin hills, lake reflection, tussock foreground) changes based on the generated conditions. Answer four options: Nothing / DSLR only / Phone camera / Naked eye.</p>
+
+    <h4>Scenario generation</h4>
+    <table class="tbl">
+      <thead><tr><th>Type</th><th>What it tests</th></tr></thead>
+      <tbody>
+        <tr><td>Quiet</td><td>Northward or flat Bz — easy baseline</td></tr>
+        <tr><td>Building</td><td>Bz trending south, not yet sustained</td></tr>
+        <tr><td>Active</td><td>Sustained southward Bz, speed elevated</td></tr>
+        <tr><td>Substorm</td><td>Bay onset detected, score high</td></tr>
+        <tr><td>Trick: moon</td><td>Good solar wind but bright moon washes it out</td></tr>
+        <tr><td>Trick: northward</td><td>Fast solar wind but Bz northward — no coupling</td></tr>
+        <tr><td>Trick: speed/no-Bz</td><td>High speed, flat Bz — speed alone does nothing</td></tr>
+        <tr><td>Trick: CME sheath</td><td>Chaotic conditions, hard to call</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Dashboard metrics shown</h4>
+    <p>Same metrics as the app: Bz (with 10-min sparkline trend), speed, Bt, density, pressure, hemispheric power, moon illumination, southward minutes, bay onset / CME sheath flags. No Kp anywhere.</p>
+
+    <h4>Scoring</h4>
+    <p>Uses the same Newell coupling formula as the Substorm Risk Worker to compute each scenario's aurora score. Correct answer derived from that score. Streak multiplier (15 pts per streak level). High score and best streak saved to localStorage.</p>
+
+    <h4>Difficulty levels</h4>
+    <table class="tbl">
+      <thead><tr><th>Level</th><th>What changes</th></tr></thead>
+      <tbody>
+        <tr><td>Rookie</td><td>Clear-cut scenarios only — obvious Bz and speed</td></tr>
+        <tr><td>Observer</td><td>Moon and HP factors added</td></tr>
+        <tr><td>Forecaster</td><td>Trick scenarios introduced</td></tr>
+        <tr><td>Expert</td><td>Full chaos — all 8 scenario types</td></tr>
+      </tbody>
+    </table>
+
+    <p>Each wrong answer includes a plain-English explanation of why — teaching the physics without jargon.</p>
   </div>
 </section>
 
