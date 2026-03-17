@@ -29,7 +29,7 @@ const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
 const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-52, 160], [-29, 185]];
-const MAP_ZOOM = 4;
+const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
 
 const computeSunsetWindowStart = () => {
@@ -186,22 +186,25 @@ function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
   return (lo + hi) / 2;
 }
 
-function buildOvalRing(gmagLat: number, lonStep = 2): [number, number][] {
+function buildOvalRing(gmagLat: number, lonStep = 1.5): [number, number][] {
   const pts: [number, number][] = [];
-  for (let lon = -180; lon <= 180; lon += lonStep) {
-    const geoLat = gmagToGeoLat(gmagLat, lon);
+  // Loop -180 → 180 then append a few extra degrees past 180 to avoid
+  // the hard cutoff at the antimeridian. Leaflet renders >180° correctly.
+  for (let lon = -180; lon <= 182; lon += lonStep) {
+    const normLon = ((lon + 180) % 360) - 180; // normalise for gmagToGeoLat calc
+    const geoLat = gmagToGeoLat(gmagLat, normLon);
     if (geoLat >= -85 && geoLat <= 85) pts.push([geoLat, lon]);
   }
-  if (pts.length) pts.push(pts[0]); // close
   return pts;
 }
 
-function buildBandPolygon(gmagInner: number, gmagOuter: number, lonStep = 3): [number, number][] {
+function buildBandPolygon(gmagInner: number, gmagOuter: number, lonStep = 2): [number, number][] {
   const outer: [number, number][] = [];
   const inner: [number, number][] = [];
-  for (let lon = -180; lon <= 180; lon += lonStep) {
-    outer.push([gmagToGeoLat(gmagOuter, lon), lon]);
-    inner.push([gmagToGeoLat(gmagInner, lon), lon]);
+  for (let lon = -180; lon <= 182; lon += lonStep) {
+    const normLon = ((lon + 180) % 360) - 180;
+    outer.push([gmagToGeoLat(gmagOuter, normLon), lon]);
+    inner.push([gmagToGeoLat(gmagInner, normLon), lon]);
   }
   inner.reverse();
   return [...outer, ...inner];
@@ -685,7 +688,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         scrollWheelZoom={false}
                         dragging={!L.Browser.mobile}
                         touchZoom={true}
-                        minZoom={MAP_ZOOM}
+                        minZoom={4}
                         maxBounds={NZ_BOUNDS}
                         className="h-full w-full bg-neutral-800"
                         style={{height: '100%'}}
