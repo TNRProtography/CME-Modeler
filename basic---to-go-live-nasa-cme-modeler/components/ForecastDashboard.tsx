@@ -616,22 +616,31 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                                 <div className="mt-4 bg-neutral-900/70 rounded-lg border border-neutral-700/60 max-w-lg mx-auto overflow-hidden">
-                                    <div className="flex items-center justify-between px-4 pt-4 pb-2">
-                                        <span className="text-sm font-semibold text-amber-300">What to expect</span>
-                                        <span className="text-xs text-neutral-600">Based on current conditions</span>
-                                    </div>
-                                    <div className="divide-y divide-neutral-800/60">
-                                        {simpleTimelineSlots.map((slot) => (
-                                            <div key={slot.label} className={`flex items-center gap-3 px-4 py-2.5 ${slot.isNow ? 'bg-neutral-800/40' : ''}`}>
-                                                <span className={`text-xs font-bold w-12 flex-shrink-0 ${slot.isNow ? 'text-emerald-400' : 'text-neutral-500'}`}>{slot.label}</span>
-                                                <span className="text-base flex-shrink-0 leading-none">{slot.icon}</span>
-                                                <span className={`flex-1 text-sm leading-snug min-w-0 ${slot.isNow ? 'text-white font-medium' : 'text-neutral-200'}`}>{slot.phrase}</span>
-                                                {(slot.label !== '1 hour' && slot.label !== '2 hours') && (
-                                                    <span className={`text-xs font-bold tabular-nums flex-shrink-0 px-1.5 py-0.5 rounded ${slot.isNow ? 'bg-emerald-500/20 text-emerald-400' : 'text-neutral-600'}`}>{slot.score}%</span>
-                                                )}
+                                    {isDaylight ? (
+                                        <div className="flex items-center gap-3 px-4 py-5 text-neutral-400 text-sm">
+                                            <span className="text-2xl flex-shrink-0">☀️</span>
+                                            <span>It's still daylight — aurora is only visible after dark. Set an alert and we'll let you know if something develops.</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                                                <span className="text-sm font-semibold text-amber-300">What to expect</span>
+                                                <span className="text-xs text-neutral-600">Based on current conditions</span>
                                             </div>
-                                        ))}
-                                    </div>
+                                            <div className="divide-y divide-neutral-800/60">
+                                                {simpleTimelineSlots.map((slot) => (
+                                                    <div key={slot.label} className={`flex items-center gap-3 px-4 py-2.5 ${slot.isNow ? 'bg-neutral-800/40' : ''}`}>
+                                                        <span className={`text-xs font-bold w-12 flex-shrink-0 ${slot.isNow ? 'text-emerald-400' : 'text-neutral-500'}`}>{slot.label}</span>
+                                                        <span className="text-base flex-shrink-0 leading-none">{slot.icon}</span>
+                                                        <span className={`flex-1 text-sm leading-snug min-w-0 ${slot.isNow ? 'text-white font-medium' : 'text-neutral-200'}`}>{slot.phrase}</span>
+                                                        {(slot.label !== '1 hour' && slot.label !== '2 hours') && (
+                                                            <span className={`text-xs font-bold tabular-nums flex-shrink-0 px-1.5 py-0.5 rounded ${slot.isNow ? 'bg-emerald-500/20 text-emerald-400' : 'text-neutral-600'}`}>{slot.score}%</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
