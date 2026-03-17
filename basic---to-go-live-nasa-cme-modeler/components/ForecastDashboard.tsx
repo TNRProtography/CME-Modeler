@@ -244,7 +244,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
-        substormForecast, activitySummary, interplanetaryShockData
+        substormForecast, substormRiskData, activitySummary, interplanetaryShockData
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
@@ -476,6 +476,95 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ];
     }, [auroraScore, celestialTimes, isDaylight, substormForecast.status]);
 
+    // ── Simple view timeline slots ────────────────────────────────────────────
+    // 15 / 30 / 60 min — same plain-english phrases as VisibilityForecastPanel
+    // 2 hr              — SpotTheAurora score, lower confidence phrasing
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const simpleTimelineSlots = useMemo(() => {
+        const getPhrase = (score: number, confidence: 'high' | 'medium' | 'low'): { phrase: string; icon: string } => {
+            if (score >= 80) return {
+                icon: '👁️',
+                phrase: confidence === 'high' ? 'Go outside now — this could be one of the best displays in years'
+                      : confidence === 'medium' ? 'Conditions look exceptional — well worth heading out to have a look'
+                      : 'Could turn into something special — keep a close eye on this'
+            };
+            if (score >= 65) return {
+                icon: '👁️',
+                phrase: confidence === 'high' ? 'You should be able to see it with your own eyes — look south'
+                      : confidence === 'medium' ? 'Good chance of seeing it with your own eyes in a dark spot'
+                      : 'Might be visible with your own eyes if conditions stay this way'
+            };
+            if (score >= 50) return {
+                icon: '👁️',
+                phrase: confidence === 'high' ? 'A faint green glow should be visible to the south — find somewhere dark'
+                      : confidence === 'medium' ? 'A faint glow to the south is possible — get away from street lights'
+                      : 'Might just be visible to the eye if you find somewhere dark enough'
+            };
+            if (score >= 35) return {
+                icon: '📱',
+                phrase: confidence === 'high' ? 'Your phone camera will pick it up — point it south and take a photo'
+                      : confidence === 'medium' ? 'Worth taking a photo to the south — your phone may surprise you'
+                      : 'Your phone camera might pick something up if conditions improve'
+            };
+            if (score >= 20) return {
+                icon: '📷',
+                phrase: confidence === 'high' ? 'Very faint — only a long-exposure camera shot would show anything'
+                      : confidence === 'medium' ? 'Very faint if anything — not worth going out specially'
+                      : 'Unlikely to show up even on camera at this stage'
+            };
+            return {
+                icon: '😴',
+                phrase: confidence === 'high' ? 'Nothing to see tonight — the sky will look completely normal'
+                      : confidence === 'medium' ? 'Very quiet — not worth going out at the moment'
+                      : 'Quiet tonight — set an alert and check back later'
+            };
+        };
+
+        const workerScore = substormRiskData?.current?.score ?? null;
+        const workerTrend = substormRiskData?.current?.risk_trend;
+        const newellNow   = substormRiskData?.metrics?.solar_wind?.newell_coupling_now ?? 0;
+        const newellAvg30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
+        const base        = workerScore ?? auroraScore ?? 0;
+        const spotScore   = auroraScore ?? 0;
+
+        const trendMult =
+            workerTrend === 'Rapidly Increasing' ? 1.15 :
+            workerTrend === 'Increasing'         ? 1.07 :
+            workerTrend === 'Decreasing'         ? 0.90 :
+            workerTrend === 'Rapidly Decreasing' ? 0.75 : 1.0;
+
+        const newellBoost = newellNow > 0 && newellAvg30 > 0 && newellNow > newellAvg30 * 1.2 ? 1.08 : 1.0;
+        const applyMods = (s: number) => Math.min(100, Math.max(0, s * trendMult * newellBoost));
+
+        const { status, p30, p60 } = substormForecast;
+        const boostFromP = (p: number, b: number) => Math.min(100, b + p * (100 - b) * 0.75);
+
+        let raw15: number, raw30: number, raw60: number;
+        switch (status) {
+            case 'ONSET':      raw15 = Math.min(100, base * 1.05); raw30 = base * 0.90; raw60 = base * 0.65; break;
+            case 'IMMINENT_30': raw15 = boostFromP(p30, base); raw30 = boostFromP(p30, base) * 1.05; raw60 = boostFromP(p60, base) * 0.80; break;
+            case 'LIKELY_60':  raw15 = base * 1.10; raw30 = boostFromP(p30 * 0.7, base); raw60 = boostFromP(p60, base); break;
+            case 'WATCH':      raw15 = base * 1.05; raw30 = base * 1.15; raw60 = boostFromP(p60 * 0.5, base); break;
+            default:           raw15 = base * 0.95; raw30 = base * 0.85; raw60 = base * 0.70;
+        }
+
+        const slotConf = (slot: '15m' | '30m' | '1h'): 'high' | 'medium' | 'low' => {
+            if (status === 'ONSET')       return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
+            if (status === 'IMMINENT_30') return slot === '1h' ? 'medium' : 'high';
+            if (status === 'LIKELY_60')   return slot === '1h' ? 'high' : 'medium';
+            if (status === 'WATCH')       return slot === '15m' ? 'medium' : 'low';
+            return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
+        };
+
+        return [
+            { label: '15 min',  ...getPhrase(Math.round(applyMods(raw15)), slotConf('15m')) },
+            { label: '30 min',  ...getPhrase(Math.round(applyMods(raw30)), slotConf('30m')) },
+            { label: '1 hour',  ...getPhrase(Math.round(applyMods(raw60)), slotConf('1h')) },
+            { label: '2 hours', ...getPhrase(Math.round(spotScore), 'low') },
+        ];
+    }, [auroraScore, substormForecast, substormRiskData]);
+
     if (isLoading) return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
 
     const faqContent = `...`; // Keep original FAQ content
@@ -510,6 +599,23 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                         ))}
                                     </div>
                                 </div>
+                                <div className="mt-4 bg-neutral-900/70 rounded-lg border border-neutral-700/60 max-w-lg mx-auto overflow-hidden">
+                                    <div className="px-4 pt-4 pb-2 text-sm font-semibold text-amber-300">What to expect</div>
+                                    <div className="divide-y divide-neutral-800/60">
+                                        {simpleTimelineSlots.map((slot) => (
+                                            <div key={slot.label} className="flex items-start gap-3 px-4 py-3">
+                                                <span className="text-lg flex-shrink-0 leading-none mt-0.5">{slot.icon}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide block mb-0.5">{slot.label}</span>
+                                                    <span className="text-sm text-neutral-200 leading-snug">{slot.phrase}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="px-4 py-2 text-xs text-neutral-600 border-t border-neutral-800/60">
+                                        15–60 min based on current conditions · 2 hour outlook based on Spot The Aurora forecast
+                                    </div>
+                                </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} />
                             <ActivitySummaryDisplay summary={activitySummary} />
@@ -525,6 +631,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <VisibilityForecastPanel
                                 auroraScore={auroraScore}
                                 substormForecast={substormForecast}
+                                substormRiskData={substormRiskData}
                                 recentSightings={recentSightings}
                                 isDaylight={isDaylight}
                             />
