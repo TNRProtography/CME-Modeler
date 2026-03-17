@@ -634,7 +634,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             </div>
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
@@ -654,7 +654,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
                             
                             <ForecastChartPanel
                                 title="Interplanetary Magnetic Field"

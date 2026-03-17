@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { SightingReport, SightingStatus } from '../types';
+import type { SubstormRiskData } from '../hooks/useForecastData';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
@@ -64,6 +65,7 @@ interface AuroraSightingsProps {
   isDaylight: boolean;
   refreshSignal?: number;
   onSightingsLoaded?: (sightings: SightingReport[]) => void;
+  substormRiskData?: SubstormRiskData | null;
 }
 
 interface SightingMapControllerProps {
@@ -157,7 +159,147 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
     );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded }) => {
+
+// ─────────────────────────────────────────────────────────────
+// Aurora Oval Overlay — IGRF-13 dipole geomagnetic projection
+// ─────────────────────────────────────────────────────────────
+
+// IGRF-13 north magnetic dipole pole (geographic)
+const POLE_LAT_RAD =  80.65 * Math.PI / 180;
+const POLE_LON_RAD = -72.68 * Math.PI / 180;
+
+function geoToGmag(latDeg: number, lonDeg: number): number {
+  const φ = latDeg * Math.PI / 180;
+  const λ = lonDeg * Math.PI / 180;
+  const sin = Math.sin(φ) * Math.sin(POLE_LAT_RAD) +
+              Math.cos(φ) * Math.cos(POLE_LAT_RAD) * Math.cos(λ - POLE_LON_RAD);
+  return Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
+}
+
+function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
+  // Numerical inversion via bisection
+  let lo = -90, hi = 90;
+  for (let i = 0; i < 48; i++) {
+    const mid = (lo + hi) / 2;
+    if (geoToGmag(mid, lonDeg) < gmagLat) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function buildOvalRing(gmagLat: number, lonStep = 2): [number, number][] {
+  const pts: [number, number][] = [];
+  for (let lon = -180; lon <= 180; lon += lonStep) {
+    const geoLat = gmagToGeoLat(gmagLat, lon);
+    if (geoLat >= -85 && geoLat <= 85) pts.push([geoLat, lon]);
+  }
+  if (pts.length) pts.push(pts[0]); // close
+  return pts;
+}
+
+function buildBandPolygon(gmagInner: number, gmagOuter: number, lonStep = 3): [number, number][] {
+  const outer: [number, number][] = [];
+  const inner: [number, number][] = [];
+  for (let lon = -180; lon <= 180; lon += lonStep) {
+    outer.push([gmagToGeoLat(gmagOuter, lon), lon]);
+    inner.push([gmagToGeoLat(gmagInner, lon), lon]);
+  }
+  inner.reverse();
+  return [...outer, ...inner];
+}
+
+// Activity → colour scale: grey → sky → green → amber → orange → red
+function ovalColour(score: number): { line: string; fill: string; fillOpacity: number } {
+  if (score >= 80) return { line: '#f87171', fill: '#f87171', fillOpacity: 0.22 };
+  if (score >= 65) return { line: '#fb923c', fill: '#fb923c', fillOpacity: 0.20 };
+  if (score >= 50) return { line: '#f59e0b', fill: '#f59e0b', fillOpacity: 0.18 };
+  if (score >= 35) return { line: '#a3e635', fill: '#a3e635', fillOpacity: 0.15 };
+  if (score >= 20) return { line: '#34d399', fill: '#34d399', fillOpacity: 0.12 };
+  return             { line: '#38bdf8', fill: '#38bdf8', fillOpacity: 0.08 };
+}
+
+function computeOvalParams(metrics: SubstormRiskData['metrics'], bayOnset: boolean, score: number) {
+  const newell60 = metrics?.solar_wind?.newell_avg_60m ?? 0;
+  const newell30 = metrics?.solar_wind?.newell_avg_30m ?? 0;
+  const newell   = Math.max(newell60, newell30 * 0.85);
+
+  // Holzworth-Meng parameterisation via Newell coupling
+  let boundary = -(65.5 - newell / 1800);
+  boundary = Math.max(boundary, -76);
+  boundary = Math.min(boundary, -44);
+  if (bayOnset) boundary = Math.min(boundary, -47.2);
+
+  // Band half-width: widens with activity
+  const halfWidth = 3.5 + (score / 100) * 5.0;
+
+  return { boundary, halfWidth };
+}
+
+// ── React overlay component ───────────────────────────────────
+interface OvalOverlayProps {
+  substormRiskData: SubstormRiskData | null | undefined;
+}
+
+const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => {
+  const score    = substormRiskData?.current?.score     ?? 0;
+  const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
+  const metrics  = substormRiskData?.metrics;
+
+  if (!metrics) return null;
+
+  const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score);
+  const poleward    = boundary - halfWidth;
+  const equatorward = boundary;
+  const { line, fill, fillOpacity } = ovalColour(score);
+
+  // Build rings — only for southern hemisphere / NZ-visible longitudes
+  // Use full global ring so the curve looks natural at all zoom levels
+  const eqRing = buildOvalRing(equatorward, 1.5);
+  const pwRing = buildOvalRing(poleward, 1.5);
+
+  // Band split into 6 layers with decreasing opacity toward edges (Gaussian-like)
+  const bandLayers = 6;
+  const bandPolygons = Array.from({ length: bandLayers }, (_, i) => {
+    const t0 = i / bandLayers;
+    const t1 = (i + 1) / bandLayers;
+    const g0 = poleward + t0 * halfWidth;
+    const g1 = poleward + t1 * halfWidth;
+    const midT = (t0 + t1) / 2;
+    // Gaussian intensity — peak at centre of band
+    const intensity = Math.exp(-Math.pow((midT - 0.5) / 0.28, 2));
+    const alpha = intensity * fillOpacity * Math.min(score / 20, 1);
+    return { poly: buildBandPolygon(g0, g1, 3), alpha };
+  });
+
+  return (
+    <>
+      {/* Probability fill band — layered polygons */}
+      {bandPolygons.map((layer, i) => (
+        <Polygon
+          key={`band-${i}`}
+          positions={layer.poly}
+          pathOptions={{ color: 'transparent', fillColor: fill, fillOpacity: layer.alpha, weight: 0 }}
+          smoothFactor={2}
+        />
+      ))}
+
+      {/* Poleward boundary — dashed, dimmer */}
+      <Polyline
+        positions={pwRing}
+        pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }}
+        smoothFactor={2}
+      />
+
+      {/* Equatorward boundary — solid, main indicator */}
+      <Polyline
+        positions={eqRing}
+        pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }}
+        smoothFactor={2}
+      />
+    </>
+  );
+};
+
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -469,6 +611,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
+        <AuroraOvalOverlay substormRiskData={substormRiskData} />
                         <LocationFinder onLocationSelect={(latlng) => { if (gpsFailed) setUserPosition(latlng); }} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>{hasGpsLock ? 'Your GPS location.' : 'Your manually placed pin.'}</Popup></Marker>}
                         <>
