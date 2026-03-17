@@ -255,15 +255,22 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   const eqRing  = buildOvalRing(equatorward, 1.5);
   const pwRing  = buildOvalRing(poleward, 1.5);
 
-  // Visibility horizon line:
-  // Aurora at 110km altitude is geometrically visible on the horizon from
-  // ~1,000km away (arctan(110/1000) ≈ 6.3°). With atmospheric refraction
-  // a practical limit is ~9° of geomagnetic latitude equatorward of the boundary.
-  // Beyond this line, aurora is completely below the geometric horizon.
-  // Users between this line and the equatorward boundary may see a southern glow.
-  const VISIBILITY_DEG = 9.0;
-  const visHorizonGmag = equatorward + VISIBILITY_DEG; // less negative = more equatorward
+  // Visibility horizon line — gradient boosted by activity level:
+  // Quiet (score 0):   emission top ~150km → ~9°  visibility (~1,000km)
+  // Extreme (score 100): emission top ~600km → ~25° visibility (~2,760km)
+  // During storms the high-altitude red oxygen emission (200-600km) dramatically
+  // extends the geometric line-of-sight range — this is physically real.
+  // Linear interpolation gives a smooth gradient as activity builds.
+  const MIN_VIS_DEG = 9.0;
+  const MAX_VIS_DEG = 25.0;
+  const VISIBILITY_DEG = MIN_VIS_DEG + (Math.max(0, Math.min(score, 100)) / 100) * (MAX_VIS_DEG - MIN_VIS_DEG);
+  const visHorizonGmag = equatorward + VISIBILITY_DEG;
   const visRing = buildOvalRing(visHorizonGmag, 1.5);
+
+  // Opacity and colour of the visibility line also scales with activity
+  // so it becomes more prominent when it actually matters
+  const visOpacity = 0.3 + (score / 100) * 0.45;
+  const visWeight  = 1.0 + (score / 100) * 1.0;
 
   // Band split into 6 layers with Gaussian opacity profile
   const bandLayers = 6;
@@ -304,11 +311,11 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
         smoothFactor={2}
       />
 
-      {/* Visibility horizon — beyond this line aurora is below the horizon even with clear sky.
-          Shown as a faint dotted sky-blue line with a tooltip explaining what it means. */}
+      {/* Visibility horizon — faint dotted line showing how far aurora is geometrically visible.
+          Moves further equatorward as activity increases (higher emission altitude during storms). */}
       <Polyline
         positions={visRing}
-        pathOptions={{ color: '#38bdf8', weight: 1.2, opacity: 0.5, dashArray: '2 8' }}
+        pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }}
         smoothFactor={2}
       />
     </>
