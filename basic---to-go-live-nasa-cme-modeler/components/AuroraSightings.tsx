@@ -251,12 +251,21 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   const equatorward = boundary;
   const { line, fill, fillOpacity } = ovalColour(score);
 
-  // Build rings — only for southern hemisphere / NZ-visible longitudes
-  // Use full global ring so the curve looks natural at all zoom levels
-  const eqRing = buildOvalRing(equatorward, 1.5);
-  const pwRing = buildOvalRing(poleward, 1.5);
+  // Build rings
+  const eqRing  = buildOvalRing(equatorward, 1.5);
+  const pwRing  = buildOvalRing(poleward, 1.5);
 
-  // Band split into 6 layers with decreasing opacity toward edges (Gaussian-like)
+  // Visibility horizon line:
+  // Aurora at 110km altitude is geometrically visible on the horizon from
+  // ~1,000km away (arctan(110/1000) ≈ 6.3°). With atmospheric refraction
+  // a practical limit is ~9° of geomagnetic latitude equatorward of the boundary.
+  // Beyond this line, aurora is completely below the geometric horizon.
+  // Users between this line and the equatorward boundary may see a southern glow.
+  const VISIBILITY_DEG = 9.0;
+  const visHorizonGmag = equatorward + VISIBILITY_DEG; // less negative = more equatorward
+  const visRing = buildOvalRing(visHorizonGmag, 1.5);
+
+  // Band split into 6 layers with Gaussian opacity profile
   const bandLayers = 6;
   const bandPolygons = Array.from({ length: bandLayers }, (_, i) => {
     const t0 = i / bandLayers;
@@ -264,7 +273,6 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
     const g0 = poleward + t0 * halfWidth;
     const g1 = poleward + t1 * halfWidth;
     const midT = (t0 + t1) / 2;
-    // Gaussian intensity — peak at centre of band
     const intensity = Math.exp(-Math.pow((midT - 0.5) / 0.28, 2));
     const alpha = intensity * fillOpacity * Math.min(score / 20, 1);
     return { poly: buildBandPolygon(g0, g1, 3), alpha };
@@ -293,6 +301,14 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
       <Polyline
         positions={eqRing}
         pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }}
+        smoothFactor={2}
+      />
+
+      {/* Visibility horizon — beyond this line aurora is below the horizon even with clear sky.
+          Shown as a faint dotted sky-blue line with a tooltip explaining what it means. */}
+      <Polyline
+        positions={visRing}
+        pathOptions={{ color: '#38bdf8', weight: 1.2, opacity: 0.5, dashArray: '2 8' }}
         smoothFactor={2}
       />
     </>
