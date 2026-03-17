@@ -51,10 +51,81 @@ export interface NzMagEvent {
     maxDelta: number;
 }
 
+// --- Substorm Risk Worker response types ---
+export interface SubstormRiskMetrics {
+  geomag: {
+    latest_dH_corrected: number;
+    avg_5m_dH: number;
+    avg_10m_dH: number;
+    avg_15m_dH: number;
+    max_15m_dH: number;
+    ls_slope_5m_dH: number;
+    ls_slope_10m_dH: number;
+    h_bay_depth_nT: number;
+    bay_onset_detected: boolean;
+    geomag_score: number;
+  };
+  solar_wind: {
+    bz: number;
+    bt: number;
+    avg_10m_bz: number;
+    avg_30m_bz: number;
+    avg_60m_bz: number;
+    min_30m_bz: number;
+    southward_minutes_30m: number;
+    southward_minutes_60m: number;
+    speed: number;
+    avg_30m_speed: number;
+    avg_60m_speed: number;
+    density: number;
+    avg_30m_density: number;
+    dynamic_pressure_nPa: number;
+    avg_30m_pressure_nPa: number;
+    newell_coupling_now: number;
+    newell_avg_30m: number;
+    newell_avg_60m: number;
+    temperature_K: number;
+    temperature_expected_K: number;
+    temperature_ratio: number;
+    cme_sheath_flag: boolean;
+    solar_loading_score: number;
+  };
+  l1_propagation_minutes: number;
+}
+
+export interface SubstormRiskCurrent {
+  score: number;
+  level: string;
+  confidence: number | null;
+  confidence_text: string;
+  risk_increasing: boolean;
+  risk_trend: 'Rapidly Increasing' | 'Increasing' | 'Stable' | 'Decreasing' | 'Rapidly Decreasing';
+  bay_onset_flag: boolean;
+  cme_sheath_flag: boolean;
+  summary: string;
+  timestamp_utc: string;
+}
+
+export interface SubstormRiskHistoryEntry extends SubstormRiskCurrent {
+  metrics: SubstormRiskMetrics;
+}
+
+export interface SubstormRiskData {
+  ok: boolean;
+  updated_utc: string;
+  resolution: string;
+  l1_propagation_minutes: number;
+  l1_propagation_note: string;
+  current: SubstormRiskCurrent;
+  metrics: SubstormRiskMetrics;
+  history_24h: SubstormRiskHistoryEntry[];
+}
+
 type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
+const SUBSTORM_RISK_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
@@ -321,7 +392,8 @@ export const useForecastData = (
     p30: 0,
     p60: 0,
   });
-  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]); // NEW
+  const [substormRiskData, setSubstormRiskData] = useState<SubstormRiskData | null>(null);
+  const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]);
 
   const reportInitialProgress = useCallback((task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => {
     onInitialLoadProgress?.(task);
@@ -525,9 +597,23 @@ export const useForecastData = (
       // ipsApi and nzMagApi are non-blocking (not in FORECAST_INITIAL_TASKS) so they don't
       // hold the loader. Give them tighter timeouts since they feed secondary widgets only.
       withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`, 7000), 'ipsApi'),
-      withInitialProgress(fetchJsonWithRecovery(nzMagUrl, 5000), 'nzMagApi')
+      withInitialProgress(fetchJsonWithRecovery(nzMagUrl, 5000), 'nzMagApi'),
+      // Substorm risk worker — non-blocking, plain fetch to avoid the row-recovery
+      // parser mangling the object-format JSON response from this worker.
+      (async () => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15000);
+          const res = await fetch(`${SUBSTORM_RISK_URL}&_=${Date.now()}`, { signal: controller.signal });
+          clearTimeout(timer);
+          if (!res.ok) return null;
+          return await res.json();
+        } catch {
+          return null;
+        }
+      })(),
     ]);
-    const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult] = results;
+    const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult, substormRiskResult] = results;
 
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
@@ -551,7 +637,26 @@ export const useForecastData = (
       if (Array.isArray(historicalData)) setAuroraScoreHistory(historicalData.filter((d: any) => d.timestamp != null && d.baseScore != null).sort((a, b) => a.timestamp - b.timestamp)); else setAuroraScoreHistory([]);
       if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
     }
-    
+
+    // ── Substorm Risk Worker ──────────────────────────────────────────────────
+    // Non-blocking — a failure here never breaks the rest of the app.
+    // The fetch uses .catch(() => null) so substormRiskResult is always
+    // 'fulfilled' — the actual data or null is in .value directly.
+    const substormRiskValue =
+      substormRiskResult?.status === 'fulfilled'
+        ? substormRiskResult.value
+        : null;
+
+    if (
+      substormRiskValue !== null &&
+      substormRiskValue !== undefined &&
+      substormRiskValue?.ok === true &&
+      substormRiskValue?.current != null &&
+      Array.isArray(substormRiskValue?.history_24h)
+    ) {
+      setSubstormRiskData(substormRiskValue as SubstormRiskData);
+    }
+
     if (solarWindResult.status === 'fulfilled') {
       const solarWindPayload = solarWindResult.value;
       const solarWindRows = Array.isArray(solarWindPayload)
@@ -793,6 +898,7 @@ export const useForecastData = (
     loadingNzMag, 
     nzMagSubstormEvents, // NEW
     substormForecast,
+    substormRiskData,
     auroraScoreHistory,
     hemisphericPowerHistory,
     dailyCelestialHistory,
