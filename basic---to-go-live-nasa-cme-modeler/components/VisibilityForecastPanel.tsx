@@ -206,10 +206,10 @@ function summariseSightings(sightings: SightingReport[]) {
 // ─── Score colour helper ──────────────────────────────────────────────────────
 
 function scoreColour(score: number): string {
-  if (score >= 65) return '#34d399'; // green
-  if (score >= 40) return '#fbbf24'; // amber
-  if (score >= 20) return '#38bdf8'; // sky
-  return '#525252';                  // grey
+  if (score >= 70) return '#34d399'; // green  — strong/NZ-visible conditions
+  if (score >= 50) return '#fbbf24'; // amber  — developing/active
+  if (score >= 30) return '#38bdf8'; // sky    — unsettled/disturbed
+  return '#525252';                  // grey   — quiet
 }
 
 // ─── Confidence dot ───────────────────────────────────────────────────────────

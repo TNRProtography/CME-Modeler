@@ -214,9 +214,9 @@ const createDynamicChartOptions = (
             if (low < -20) min = low;
             break;
         case 'newell':
-            // Newell coupling — 0 baseline, auto-scale to data max (no artificial cap)
+            // Newell coupling — 0 baseline, auto-scale. Floor at 25000 so NZ threshold lines are visible
             min = 0;
-            max = Math.ceil(Math.max(5000, ...allYValues) / 1000) * 1000;
+            max = Math.ceil(Math.max(25000, ...allYValues) / 5000) * 5000;
             break;
         case 'pressure':
             // Dynamic pressure in nPa — 0 baseline, auto-scale
@@ -1023,7 +1023,7 @@ export const SubstormIndexChart: React.FC<{ history: { timestamp_utc: string; sc
     );
 
     const latestScore = data.at(-1)?.y ?? 0;
-    const lineColor = latestScore >= 65 ? '#34d399' : latestScore >= 40 ? '#fbbf24' : latestScore >= 20 ? '#38bdf8' : '#808080';
+    const lineColor = latestScore >= 70 ? '#34d399' : latestScore >= 50 ? '#fbbf24' : latestScore >= 30 ? '#38bdf8' : '#808080';
 
     const chartData = useMemo(() => ({
         datasets: [
@@ -1117,7 +1117,7 @@ export const NewellCouplingChart: React.FC<{ history: { timestamp_utc: string; m
     );
 
     const latestVal = data.at(-1)?.y ?? 0;
-    const lineColor = latestVal >= 8000 ? '#34d399' : latestVal >= 4000 ? '#fbbf24' : latestVal >= 1500 ? '#38bdf8' : '#808080';
+    const lineColor = latestVal >= 20000 ? '#34d399' : latestVal >= 10000 ? '#fbbf24' : latestVal >= 4000 ? '#38bdf8' : '#808080';
 
     const chartData = useMemo(() => ({
         datasets: [{
@@ -1149,14 +1149,14 @@ export const NewellCouplingChart: React.FC<{ history: { timestamp_utc: string; m
             (opts.plugins as any).annotation = {
                 annotations: {
                     moderate: {
-                        type: 'line', yMin: 4000, yMax: 4000,
+                        type: 'line', yMin: 10000, yMax: 10000,
                         borderColor: 'rgba(251,191,36,0.2)', borderWidth: 1, borderDash: [4, 4],
-                        label: { content: 'Moderate', display: true, position: 'end', color: 'rgba(251,191,36,0.5)', font: { size: 10 } },
+                        label: { content: 'Moderate (NZ)', display: true, position: 'end', color: 'rgba(251,191,36,0.5)', font: { size: 10 } },
                     },
                     strong: {
-                        type: 'line', yMin: 8000, yMax: 8000,
+                        type: 'line', yMin: 20000, yMax: 20000,
                         borderColor: 'rgba(52,211,153,0.2)', borderWidth: 1, borderDash: [4, 4],
-                        label: { content: 'Strong', display: true, position: 'end', color: 'rgba(52,211,153,0.5)', font: { size: 10 } },
+                        label: { content: 'Strong (NZ)', display: true, position: 'end', color: 'rgba(52,211,153,0.5)', font: { size: 10 } },
                     },
                 }
             };
@@ -1195,7 +1195,7 @@ export const DynamicPressureChart: React.FC<{ history: { timestamp_utc: string; 
     );
 
     const latestVal = data.at(-1)?.y ?? 0;
-    const lineColor = latestVal >= 10 ? '#f87171' : latestVal >= 4 ? '#fbbf24' : latestVal >= 1.5 ? '#38bdf8' : '#808080';
+    const lineColor = latestVal >= 15 ? '#f87171' : latestVal >= 6 ? '#fbbf24' : latestVal >= 3 ? '#38bdf8' : '#808080';
 
     const chartData = useMemo(() => ({
         datasets: [{
@@ -1226,12 +1226,12 @@ export const DynamicPressureChart: React.FC<{ history: { timestamp_utc: string; 
             (opts.plugins as any).annotation = {
                 annotations: {
                     elevated: {
-                        type: 'line', yMin: 4, yMax: 4,
+                        type: 'line', yMin: 6, yMax: 6,
                         borderColor: 'rgba(251,191,36,0.2)', borderWidth: 1, borderDash: [4, 4],
                         label: { content: 'Elevated', display: true, position: 'end', color: 'rgba(251,191,36,0.5)', font: { size: 10 } },
                     },
                     high: {
-                        type: 'line', yMin: 10, yMax: 10,
+                        type: 'line', yMin: 15, yMax: 15,
                         borderColor: 'rgba(248,113,113,0.2)', borderWidth: 1, borderDash: [4, 4],
                         label: { content: 'High', display: true, position: 'end', color: 'rgba(248,113,113,0.5)', font: { size: 10 } },
                     },
