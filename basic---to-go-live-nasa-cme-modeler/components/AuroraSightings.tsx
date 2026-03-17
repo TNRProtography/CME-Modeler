@@ -249,70 +249,110 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
-  const { line, fill, fillOpacity } = ovalColour(score);
 
-  // Build rings
-  const eqRing  = buildOvalRing(equatorward, 1.5);
-  const pwRing  = buildOvalRing(poleward, 1.5);
+  // Boundary line colour scales with activity
+  const { line } = ovalColour(score);
 
-  // Visibility horizon line — gradient boosted by activity level:
-  // Quiet (score 0):   emission top ~150km → ~9°  visibility (~1,000km)
-  // Extreme (score 100): emission top ~600km → ~25° visibility (~2,760km)
-  // During storms the high-altitude red oxygen emission (200-600km) dramatically
-  // extends the geometric line-of-sight range — this is physically real.
-  // Linear interpolation gives a smooth gradient as activity builds.
-  const MIN_VIS_DEG = 9.0;
-  const MAX_VIS_DEG = 25.0;
-  const VISIBILITY_DEG = MIN_VIS_DEG + (Math.max(0, Math.min(score, 100)) / 100) * (MAX_VIS_DEG - MIN_VIS_DEG);
-  const visHorizonGmag = equatorward + VISIBILITY_DEG;
-  const visRing = buildOvalRing(visHorizonGmag, 1.5);
+  // Build boundary rings
+  const eqRing = buildOvalRing(equatorward, 1.5);
+  const pwRing = buildOvalRing(poleward, 1.5);
 
-  // Opacity and colour of the visibility line also scales with activity
-  // so it becomes more prominent when it actually matters
+  // Visibility horizon — linearly boosted by activity (higher emission altitude during storms)
+  const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(score, 100)) / 100) * 16.0;
+  const visRing    = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
   const visOpacity = 0.3 + (score / 100) * 0.45;
   const visWeight  = 1.0 + (score / 100) * 1.0;
 
-  // Band split into 6 layers with Gaussian opacity profile
-  const bandLayers = 6;
+  // ── Band layers with OVATION-style colour gradient ──────────
+  // Each layer gets its own colour based on its position within the band:
+  //   edges (t≈0, t≈1) → always green (outer aurora is always green)
+  //   centre (t≈0.5)   → colour shifts toward yellow/orange/red as score rises
+  // This replicates how the real OVATION model renders: green outer ring,
+  // intensifying yellow→orange→red core at high activity.
+  const bandLayers = 10;
+  const globalAlpha = Math.min(score / 20, 1);
+
+  // Interpolate between two hex colours by t (0-1)
+  const lerpHex = (c1: string, c2: string, t: number): string => {
+    const h = (hex: string) => [
+      parseInt(hex.slice(1,3),16),
+      parseInt(hex.slice(3,5),16),
+      parseInt(hex.slice(5,7),16),
+    ];
+    const [r1,g1,b1] = h(c1);
+    const [r2,g2,b2] = h(c2);
+    const r = Math.round(r1 + (r2-r1)*t);
+    const g = Math.round(g1 + (g2-g1)*t);
+    const b = Math.round(b1 + (b2-b1)*t);
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+  };
+
+  // Core colour at this activity level:
+  // score 0-30:  green core only
+  // score 30-50: green → yellow-green
+  // score 50-65: yellow-green → amber
+  // score 65-80: amber → orange
+  // score 80+:   orange → red
+  const coreColour = (): string => {
+    if (score >= 80) return lerpHex('#fb923c', '#f87171', (score - 80) / 20);
+    if (score >= 65) return lerpHex('#f59e0b', '#fb923c', (score - 65) / 15);
+    if (score >= 50) return lerpHex('#a3e635', '#f59e0b', (score - 50) / 15);
+    if (score >= 30) return lerpHex('#34d399', '#a3e635', (score - 30) / 20);
+    return '#34d399';
+  };
+  const CORE  = coreColour();
+  const EDGE  = '#34d399'; // outer edges always green
+
   const bandPolygons = Array.from({ length: bandLayers }, (_, i) => {
-    const t0 = i / bandLayers;
-    const t1 = (i + 1) / bandLayers;
-    const g0 = poleward + t0 * halfWidth;
-    const g1 = poleward + t1 * halfWidth;
+    const t0   = i / bandLayers;
+    const t1   = (i + 1) / bandLayers;
+    const g0   = poleward + t0 * halfWidth;
+    const g1   = poleward + t1 * halfWidth;
     const midT = (t0 + t1) / 2;
-    const intensity = Math.exp(-Math.pow((midT - 0.5) / 0.28, 2));
-    const alpha = intensity * fillOpacity * Math.min(score / 20, 1);
-    return { poly: buildBandPolygon(g0, g1, 3), alpha };
+
+    // Gaussian envelope — peaks at band centre
+    const envelope = Math.exp(-Math.pow((midT - 0.5) / 0.28, 2));
+
+    // Colour: interpolate EDGE→CORE→EDGE across the band width
+    // Core influence grows with score so at quiet only green shows
+    const coreInfluence = Math.max(0, (score - 20) / 80); // 0 at score≤20, 1 at score=100
+    const distFromCentre = Math.abs(midT - 0.5) * 2; // 0 at centre, 1 at edge
+    const colourT = (1 - distFromCentre) * coreInfluence;
+    const bandColour = lerpHex(EDGE, CORE, colourT);
+
+    return {
+      poly:  buildBandPolygon(g0, g1, 3),
+      colour: bandColour,
+      alpha:  envelope * 0.55 * globalAlpha,
+    };
   });
 
   return (
     <>
-      {/* Probability fill band — layered polygons */}
       {bandPolygons.map((layer, i) => (
         <Polygon
           key={`band-${i}`}
           positions={layer.poly}
-          pathOptions={{ color: 'transparent', fillColor: fill, fillOpacity: layer.alpha, weight: 0 }}
+          pathOptions={{ color: 'transparent', fillColor: layer.colour, fillOpacity: layer.alpha, weight: 0 }}
           smoothFactor={2}
         />
       ))}
 
-      {/* Poleward boundary — dashed, dimmer */}
+      {/* Poleward boundary */}
       <Polyline
         positions={pwRing}
         pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }}
         smoothFactor={2}
       />
 
-      {/* Equatorward boundary — solid, main indicator */}
+      {/* Equatorward boundary */}
       <Polyline
         positions={eqRing}
         pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }}
         smoothFactor={2}
       />
 
-      {/* Visibility horizon — faint dotted line showing how far aurora is geometrically visible.
-          Moves further equatorward as activity increases (higher emission altitude during storms). */}
+      {/* Visibility horizon — dotted sky blue, expands with activity */}
       <Polyline
         positions={visRing}
         pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }}
@@ -618,33 +658,24 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 h-[500px] rounded-lg overflow-hidden border border-neutral-700 relative">
                     {/* Mini legend overlay */}
-                    <div className="absolute bottom-3 left-3 z-[500] bg-black/75 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2.5 pointer-events-none select-none">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 mb-2">Aurora Oval</p>
+                    <div className="absolute bottom-3 left-3 z-[500] bg-black/70 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2 pointer-events-none select-none">
                         <div className="space-y-1.5">
                             <div className="flex items-center gap-2">
-                                <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#f59e0b" strokeWidth="2.5"/></svg>
-                                <span className="text-[10px] text-neutral-300">Equatorward boundary</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#f59e0b" strokeWidth="1.2" strokeDasharray="4 4" opacity="0.45"/></svg>
-                                <span className="text-[10px] text-neutral-300">Poleward boundary</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <svg width="24" height="8">
-                                    <defs><linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity="0.1"/><stop offset="50%" stopColor="#34d399" stopOpacity="0.5"/><stop offset="100%" stopColor="#34d399" stopOpacity="0.1"/></linearGradient></defs>
-                                    <rect x="0" y="0" width="24" height="8" fill="url(#bandGrad)" rx="1"/>
+                                <svg width="32" height="10">
+                                    <defs>
+                                        <linearGradient id="ovalGrad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%"   stopColor="#34d399" stopOpacity="0.15"/>
+                                            <stop offset="50%"  stopColor="#f87171" stopOpacity="0.7"/>
+                                            <stop offset="100%" stopColor="#34d399" stopOpacity="0.15"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <rect x="0" y="0" width="32" height="10" fill="url(#ovalGrad)" rx="2"/>
                                 </svg>
-                                <span className="text-[10px] text-neutral-300">Aurora probability</span>
+                                <span className="text-[10px] text-neutral-400">Aurora oval · green→red = quiet→storm</span>
                             </div>
                             <div className="flex items-center gap-2">
-                                <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="2 6" opacity="0.6"/></svg>
-                                <span className="text-[10px] text-neutral-300">Visibility horizon</span>
-                            </div>
-                            <div className="flex items-center gap-0.5 pt-1.5 border-t border-white/5 mt-0.5">
-                                {['#38bdf8','#34d399','#a3e635','#f59e0b','#fb923c','#f87171'].map((c, i) => (
-                                    <div key={i} style={{background: c, width: '4px', height: '10px', borderRadius: '1px'}}/>
-                                ))}
-                                <span className="text-[10px] text-neutral-300 ml-1.5">Quiet → Storm</span>
+                                <svg width="32" height="6"><line x1="0" y1="3" x2="32" y2="3" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="2 5" opacity="0.65"/></svg>
+                                <span className="text-[10px] text-neutral-400">Visibility horizon · expands during storms</span>
                             </div>
                         </div>
                     </div>
