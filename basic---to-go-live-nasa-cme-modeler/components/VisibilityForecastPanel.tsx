@@ -190,14 +190,14 @@ function projectSubstormScores(
   const confMult = confidence != null ? (0.7 + (confidence / 100) * 0.3) : 1.0;
 
   const boostFromP = (p: number, base: number) =>
-    Math.min(100, base + p * (100 - base) * 0.75);
+    base + p * (100 - base) * 0.75;
 
   let score15: number, score30: number, score60: number;
 
   switch (status) {
     case 'ONSET':
       // Already happening — near-term stays high, 60 min starts to decay
-      score15 = Math.min(100, workerScore * 1.05);
+      score15 = workerScore * 1.05;
       score30 = workerScore * 0.90;
       score60 = workerScore * 0.62;
       break;
@@ -229,7 +229,7 @@ function projectSubstormScores(
   }
 
   const applyAll = (s: number) =>
-    Math.min(100, Math.max(0, s * trendMult * newellBoost * confMult));
+    Math.max(0, s * trendMult * newellBoost * confMult);
 
   return {
     score15: applyAll(score15),
@@ -375,7 +375,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
 
   if (isDaylight) {
     return (
-      <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-5">
+      <div className="col-span-12 card bg-neutral-950/80 p-5">
         <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
         <div className="flex items-center gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
@@ -400,7 +400,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   ];
 
   return (
-    <div className="col-span-12 lg:col-span-6 card bg-neutral-950/80 p-5">
+    <div className="col-span-12 card bg-neutral-950/80 p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-lg font-semibold text-white">What to expect</h3>
@@ -412,8 +412,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         <div className="flex items-center gap-3 mb-4 py-2 border-b border-neutral-800/60">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-neutral-500">Substorm index</span>
-            <span className="text-sm font-bold tabular-nums" style={{ color: scoreColour(workerScore) }}>
-              {typeof workerScore === 'number' ? Math.round(workerScore) : workerScore}
+            <span className="text-sm font-bold tabular-nums" style={{ color: scoreColour(rawWorkerScore ?? 0) }}>
+              {typeof rawWorkerScore === 'number' ? Math.round(rawWorkerScore) : rawWorkerScore}
             </span>
             <span className="text-xs font-medium text-neutral-400">{workerLevel}</span>
             <TrendArrow trend={workerTrend} />
