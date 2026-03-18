@@ -331,12 +331,13 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   // the worker hasn't loaded yet.
   const nowScore    = workerScore ?? auroraScore ?? 0;
 
-  // Forecast slots: projected from the substorm worker score exclusively
-  const base = workerScore ?? 0;
+  // Forecast slots projected from raw (unadjusted) score, then each slot
+  // gets the location penalty applied individually via locationAdjustedScore.
+  const base = rawWorkerScore ?? auroraScore ?? 0;
 
   const sightingContext = useMemo(() => summariseSightings(recentSightings), [recentSightings]);
 
-  const { score15, score30, score60 } = useMemo(
+  const { score15: rawScore15, score30: rawScore30, score60: rawScore60 } = useMemo(
     () => projectSubstormScores(base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf),
     [base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf]
   );
@@ -359,11 +360,18 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     };
   }, [nowScore, sightingContext, bayOnset, cmeSheath, workerConf]);
 
+  const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset]);
+  const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset]);
+  const score60 = useMemo(() => locationAdjustedScore(rawScore60, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore60, userLatitude, userLongitude, substormRiskData, bayOnset]);
   const vis15 = useMemo(() => getVisibilityPhrase(score15, conf15), [score15, conf15]);
   const vis30 = useMemo(() => getVisibilityPhrase(score30, conf30), [score30, conf30]);
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
 
-  const showForecast = base >= 15 || substormForecast.status !== 'QUIET';
+  // Use raw (unadjusted) score to gate forecast slot visibility — slots should
+  // always show when conditions are active globally, even if the user is north
+  // of the visibility line. The phrases themselves will reflect their location.
+  const rawBase = rawWorkerScore ?? auroraScore ?? 0;
+  const showForecast = rawBase >= 15 || substormForecast.status !== 'QUIET';
 
   if (isDaylight) {
     return (
@@ -405,7 +413,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-neutral-500">Substorm index</span>
             <span className="text-sm font-bold tabular-nums" style={{ color: scoreColour(workerScore) }}>
-              {workerScore}
+              {typeof workerScore === 'number' ? Math.round(workerScore) : workerScore}
             </span>
             <span className="text-xs font-medium text-neutral-400">{workerLevel}</span>
             <TrendArrow trend={workerTrend} />
