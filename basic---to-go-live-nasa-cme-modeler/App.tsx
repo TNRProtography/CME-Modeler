@@ -184,6 +184,7 @@ const App: React.FC = () => {
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
+  const [sharedCmeExpired, setSharedCmeExpired] = useState<string | null>(null); // holds the id if expired
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -805,6 +806,26 @@ const App: React.FC = () => {
   const shouldShowTimelineControls = activePage === 'modeler';
 
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
+
+  // Auto-select CME from ?cme= URL param once data has loaded
+  useEffect(() => {
+    if (!cmeData || cmeData.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedId = params.get('cme');
+    if (!sharedId) return;
+    if (currentlyModeledCMEId === sharedId) return; // already selected
+    const found = cmeData.find((c: ProcessedCME) => c.id === sharedId);
+    if (found) {
+      setSharedCmeExpired(null);
+      handleSelectCMEForModeling(found);
+      navigateToPage('modeler', true);
+    } else {
+      // CME not in current data — likely expired (> 7 days old)
+      setSharedCmeExpired(sharedId);
+      navigateToPage('modeler', true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cmeData]);
   
   const handleViewChange = (view: ViewMode) => setActiveView(view);
   const handleFocusChange = (target: FocusTarget) => setActiveFocus(target);
@@ -813,6 +834,14 @@ const App: React.FC = () => {
   const handleSelectCMEForModeling = useCallback((cme: ProcessedCME | null) => {
     setCurrentlyModeledCMEId(cme ? cme.id : null);
     setSelectedCMEForInfo(cme);
+    // Write CME id to URL so it can be shared
+    const url = new URL(window.location.href);
+    if (cme) {
+      url.searchParams.set('cme', cme.id);
+    } else {
+      url.searchParams.delete('cme');
+    }
+    window.history.replaceState({}, '', url.pathname + url.search);
     setIsCmeListOpen(false);
 
     if (cme) {
@@ -1138,6 +1167,44 @@ const App: React.FC = () => {
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
+                    {/* Expired shared CME banner */}
+                    {sharedCmeExpired && (
+                      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
+                        <div className="bg-amber-900/90 border border-amber-600/60 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
+                          <div className="flex items-start gap-3">
+                            <span className="text-2xl flex-shrink-0">⏱️</span>
+                            <div>
+                              <p className="text-amber-200 font-semibold text-sm">This CME is no longer available</p>
+                              <p className="text-amber-300/80 text-xs mt-1">Shared CME visualizations are only valid for 7 days. This one has expired or the data has been refreshed.</p>
+                              <button
+                                onClick={() => setSharedCmeExpired(null)}
+                                className="mt-2 text-xs text-amber-400 hover:text-amber-200 underline"
+                              >Dismiss</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {/* Share this CME button */}
+                    {currentlyModeledCMEId && !sharedCmeExpired && (() => {
+                      const shareUrl = `${window.location.origin}/cme-visualization?cme=${encodeURIComponent(currentlyModeledCMEId)}`;
+                      return (
+                        <div className="absolute top-4 right-4 z-50">
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(shareUrl).then(() => {
+                                const btn = document.getElementById('share-cme-btn');
+                                if (btn) { btn.textContent = '✅ Copied!'; setTimeout(() => { btn.textContent = '🔗 Share CME'; }, 2000); }
+                              });
+                            }}
+                            id="share-cme-btn"
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-black/60 border border-white/20 text-white hover:bg-black/80 backdrop-blur-sm transition-colors shadow-lg"
+                          >
+                            🔗 Share CME
+                          </button>
+                        </div>
+                      );
+                    })()}
                     <SimulationCanvas
                         ref={canvasRef}
                         cmeData={cmesToRender}
