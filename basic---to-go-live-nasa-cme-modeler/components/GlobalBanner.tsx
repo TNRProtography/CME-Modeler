@@ -91,18 +91,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   const lastProcessedBannerUniqueIdRef = useRef<string | undefined>(undefined);
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
 
-  const shouldFetchRemoteBanner = useMemo(() => {
-    const host = window.location.hostname;
-    return host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz' || host === 'cme-modeler.pages.dev';
-  }, []);
-
   useEffect(() => {
-    if (!shouldFetchRemoteBanner) {
-      setGlobalBanner(null);
-      setIsGlobalBannerDismissed(false);
-      return;
-    }
-
     const fetchGlobalBanner = async () => {
       try {
         const response = await fetch(`${BANNER_API_URL}?_=${Date.now()}`);
@@ -127,7 +116,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     fetchGlobalBanner();
     const interval = setInterval(fetchGlobalBanner, 60 * 1000);
     return () => clearInterval(interval);
-  }, [shouldFetchRemoteBanner]);
+  }, []);
 
   useEffect(() => {
     const fetchSubstorm = async () => {
