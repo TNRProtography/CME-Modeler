@@ -20,15 +20,15 @@ const TOPIC_ICONS = {
   'shock-detection':   '/icons/icon-shock-detection.png',
   'cme-sheath':        '/icons/icon-cme-sheath.png',
   'ips-shock':         '/icons/icon-ips-shock.png',
-  'aurora-40percent':  '/icons/icon-aurora.png',
-  'aurora-50percent':  '/icons/icon-aurora.png',
-  'aurora-60percent':  '/icons/icon-aurora.png',
-  'aurora-80percent':  '/icons/icon-aurora.png',
-  'substorm-forecast': '/icons/icon-substorm.png',
+  'aurora-40percent':  '/icons/icon-visibility-dslr.png',
+  'aurora-50percent':  '/icons/icon-visibility-dslr.png',
+  'aurora-60percent':  '/icons/icon-visibility-dslr.png',
+  'aurora-80percent':  '/icons/icon-visibility-dslr.png',
+  'substorm-forecast': '/icons/icon-visibility-dslr.png',
 };
 
-const DEFAULT_ICON  = '/icons/android-chrome-192x192.png';
-const DEFAULT_BADGE = '/icons/icon-badge.png';
+const DEFAULT_ICON  = '/icons/icon-visibility-dslr.png';
+const DEFAULT_BADGE = '/icons/icon-visibility-dslr.png';
 
 function getIcon(tag) {
   if (!tag) return DEFAULT_ICON;
