@@ -112,6 +112,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   }[]>([]);
   const [serverTestRunning, setServerTestRunning] = useState<boolean>(false);
   const [serverTestResult, setServerTestResult] = useState<string | null>(null);
+  const [unsubscribeRunning, setUnsubscribeRunning] = useState<boolean>(false);
+  const [unsubscribeResult, setUnsubscribeResult] = useState<string | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
@@ -287,6 +289,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       setServerTestResult(`❌ Network error: ${e.message}`);
     }
     setServerTestRunning(false);
+  }, []);
+
+  const handleUnsubscribe = useCallback(async () => {
+    if (!window.confirm('This will remove your subscription from the server and disable all push notifications. Are you sure?')) return;
+    setUnsubscribeRunning(true);
+    setUnsubscribeResult(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        setUnsubscribeResult('❌ No active subscription found in this browser.');
+        setUnsubscribeRunning(false);
+        return;
+      }
+      // Delete from server KV first
+      const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/delete-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      });
+      const data = await resp.json();
+      if (!data.deleted) {
+        setUnsubscribeResult(`❌ Server error: ${data.error ?? 'Unknown error'}`);
+        setUnsubscribeRunning(false);
+        return;
+      }
+      // Then unsubscribe in the browser
+      await sub.unsubscribe();
+      setUnsubscribeResult('✅ Successfully unsubscribed. You will no longer receive push notifications.');
+    } catch (e: any) {
+      setUnsubscribeResult(`❌ Error: ${e.message}`);
+    }
+    setUnsubscribeRunning(false);
   }, []);
 
   const handleInstallApp = useCallback(async () => {
@@ -574,6 +609,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       Send Local Test Notification
                     </button>
                   </div>
+
+                  {/* Unsubscribe */}
+                  <div className="border-t border-neutral-800/60 pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-300">Remove Subscription</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">Deletes your subscription from the server and disables all push notifications</p>
+                      </div>
+                      <button
+                        onClick={handleUnsubscribe}
+                        disabled={unsubscribeRunning}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-900/40 border border-red-700/50 text-red-400 hover:bg-red-900/60 transition-colors disabled:opacity-50"
+                      >
+                        {unsubscribeRunning ? 'Removing...' : 'Unsubscribe'}
+                      </button>
+                    </div>
+                    {unsubscribeResult && (
+                      <p className="text-xs text-neutral-400 mt-2">{unsubscribeResult}</p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -638,4 +693,4 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 };
 
 export default SettingsModal;
-// --- END OF FILE src/components/SettingsModal.tsx --- 
+// --- END OF FILE src/components/SettingsModal.tsx ---
