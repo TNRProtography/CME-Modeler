@@ -247,7 +247,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
-        substormForecast, substormRiskData, activitySummary, interplanetaryShockData
+        substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
+        userLatitude, userLongitude
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
@@ -660,6 +661,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 substormRiskData={substormRiskData}
                                 recentSightings={recentSightings}
                                 isDaylight={isDaylight}
+                                userLatitude={userLatitude}
+                                userLongitude={userLongitude}
                             />
                             <ActivitySummaryDisplay summary={activitySummary} />
                             <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />

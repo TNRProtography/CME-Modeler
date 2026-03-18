@@ -20,9 +20,66 @@ interface VisibilityForecastPanelProps {
   substormRiskData: SubstormRiskData | null;
   recentSightings: SightingReport[];
   isDaylight: boolean;
+  userLatitude?: number | null;
+  userLongitude?: number | null;
 }
 
 type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+// ─── Oval geometry (mirrors AuroraSightings) ─────────────────────────────────
+const POLE_LAT_RAD =  80.65 * Math.PI / 180;
+const POLE_LON_RAD = -72.68 * Math.PI / 180;
+
+function geoToGmagLat(latDeg: number, lonDeg: number): number {
+  const phi = latDeg * Math.PI / 180;
+  const lam = lonDeg * Math.PI / 180;
+  const sin = Math.sin(phi) * Math.sin(POLE_LAT_RAD) +
+              Math.cos(phi) * Math.cos(POLE_LAT_RAD) * Math.cos(lam - POLE_LON_RAD);
+  return Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
+}
+
+function computeOvalBoundary(metrics: SubstormRiskData['metrics'], bayOnset: boolean): number {
+  const newell60 = metrics?.solar_wind?.newell_avg_60m ?? 0;
+  const newell30 = metrics?.solar_wind?.newell_avg_30m ?? 0;
+  const newell   = Math.max(newell60, newell30 * 0.85);
+  let boundary   = -(65.5 - newell / 1800);
+  boundary       = Math.max(boundary, -76);
+  boundary       = Math.min(boundary, -44);
+  if (bayOnset) boundary = Math.min(boundary, -47.2);
+  return boundary;
+}
+
+/**
+ * Returns a location-adjusted score for visibility display.
+ * If the user is north of the visibility horizon, the score is reduced
+ * proportionally so the phrase matches what the map shows.
+ * If no location is available, the raw score is returned unchanged.
+ */
+function locationAdjustedScore(
+  rawScore: number,
+  userLat: number | null | undefined,
+  userLon: number | null | undefined,
+  metrics: SubstormRiskData['metrics'],
+  bayOnset: boolean,
+): number {
+  if (userLat == null || userLon == null) return rawScore;
+  const userGmag   = geoToGmagLat(userLat, userLon);
+  const boundary   = computeOvalBoundary(metrics, bayOnset);
+  const visDeg     = 9.0 + (Math.max(0, Math.min(rawScore, 100)) / 100) * 16.0;
+  const visHorizon = boundary + visDeg; // geomagnetic lat of visibility line (negative)
+  // distFromVis: positive = user is equatorward (north) of vis line = can't see
+  //              negative = user is poleward (south) of vis line = can see
+  const distFromVis = userGmag - visHorizon;
+  if (distFromVis <= 0) {
+    // User is within or past the visibility horizon — no adjustment needed
+    return rawScore;
+  }
+  // User is north of visibility line. Scale score down based on how far.
+  // Every 1° north of the line roughly halves visibility, capped at 0.
+  // 3° north = almost invisible, 5° north = nothing to see.
+  const penalty = Math.min(1, distFromVis / 4.0);
+  return rawScore * (1 - penalty);
+}
 
 interface VisibilityResult {
   phrase: string;
@@ -246,9 +303,20 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   substormRiskData,
   recentSightings,
   isDaylight,
+  userLatitude,
+  userLongitude,
 }) => {
   // All scores derive from the substorm worker — the physics-based measurement
-  const workerScore   = substormRiskData?.current?.score   ?? null;
+  const rawWorkerScore = substormRiskData?.current?.score   ?? null;
+  const workerScore    = rawWorkerScore != null
+    ? locationAdjustedScore(
+        rawWorkerScore,
+        userLatitude,
+        userLongitude,
+        substormRiskData?.metrics,
+        substormRiskData?.current?.bay_onset_flag ?? false,
+      )
+    : null;
   const workerTrend   = substormRiskData?.current?.risk_trend;
   const workerLevel   = substormRiskData?.current?.level;
   const bayOnset      = substormRiskData?.current?.bay_onset_flag   ?? false;

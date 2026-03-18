@@ -384,6 +384,8 @@ export const useForecastData = (
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
   const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
   const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
+  const [userLatitude, setUserLatitude] = useState<number | null>(null);
+  const [userLongitude, setUserLongitude] = useState<number | null>(null);
   const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
@@ -857,6 +859,8 @@ export const useForecastData = (
           (position) => {
             const adjustment = calculateLocationAdjustment(position.coords.latitude);
             setLocationAdjustment(adjustment);
+            setUserLatitude(position.coords.latitude);
+            setUserLongitude(position.coords.longitude);
             const direction = adjustment >= 0 ? 'south' : 'north';
             const distance = Math.abs(adjustment / 3 * 150);
             setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
@@ -927,6 +931,8 @@ export const useForecastData = (
     owmDailyForecast,
     interplanetaryShockData,
     locationBlurb,
+    userLatitude,
+    userLongitude,
     fetchAllData,
     activitySummary,
   };
