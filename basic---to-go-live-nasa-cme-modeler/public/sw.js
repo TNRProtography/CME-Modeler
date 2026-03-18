@@ -28,7 +28,7 @@ const TOPIC_ICONS = {
 };
 
 const DEFAULT_ICON  = '/icons/android-chrome-192x192.png';
-const DEFAULT_BADGE = '/icons/icon-default.png';
+const DEFAULT_BADGE = '/icons/icon-badge.png';
 
 function getIcon(tag) {
   if (!tag) return DEFAULT_ICON;
@@ -57,13 +57,13 @@ self.addEventListener('push', (event) => {
   }
 
   const tag   = data.tag || data.data?.category || 'sta-notification';
-  const badge = getBadge(tag);
+  const icon  = getIcon(tag);
   const title = data.title || 'Spot The Aurora';
 
   const options = {
     body:               data.body || '',
-    icon:               DEFAULT_ICON,
-    badge,
+    icon,
+    badge:              icon,
     vibrate:            [200, 100, 200],
     tag,
     renotify:           false,
