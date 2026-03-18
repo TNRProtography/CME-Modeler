@@ -33,34 +33,69 @@ interface SettingsModalProps {
 const NOTIFICATION_GROUPS = [
   {
     group: 'Aurora Visibility',
-    description: 'Alerts based on your precise location. Sent when aurora becomes visible from where you are.',
+    description: 'Location-aware alerts sent when the aurora oval reaches your area. Requires GPS for accuracy.',
     items: [
-      { id: 'visibility-dslr',  label: 'DSLR camera visible',  description: 'Aurora detectable with a DSLR on a tripod — furthest early warning.' },
-      { id: 'visibility-phone', label: 'Phone camera visible',  description: 'Aurora bright enough for a modern smartphone night mode.' },
-      { id: 'visibility-naked', label: 'Naked eye visible',     description: 'Aurora visible to the naked eye from your location.' },
+      {
+        id: 'visibility-dslr',
+        label: 'DSLR camera visible',
+        description: 'Aurora detectable with a DSLR on a tripod — furthest early warning.',
+        tooltip: 'The earliest warning — sent when aurora is just becoming detectable from your location using a DSLR camera on a tripod with a long exposure (5–15 seconds). This is the first sign conditions are developing toward something worth watching. Great if you want maximum lead time to get to a dark spot.',
+      },
+      {
+        id: 'visibility-phone',
+        label: 'Phone camera visible',
+        description: 'Aurora bright enough for a modern smartphone night mode.',
+        tooltip: 'Sent when aurora is bright enough to show up on a modern smartphone camera using night mode. You may not see it with the naked eye yet, but pointing your phone south should reveal green or pink hues. A good middle-ground alert for most users.',
+      },
+      {
+        id: 'visibility-naked',
+        label: 'Naked eye visible',
+        description: 'Aurora visible to the naked eye from your location.',
+        tooltip: 'Sent when aurora should be visible to the naked eye from your location — no camera needed. Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert.',
+      },
     ],
   },
   {
     group: 'Forecast',
-    description: 'Advance planning alerts.',
+    description: 'Advance planning alerts to help you prepare for a potential display tonight.',
     items: [
-      { id: 'overnight-watch', label: 'Worth watching tonight', description: 'Sent around sunset when solar wind conditions are elevated and worth monitoring.' },
+      {
+        id: 'overnight-watch',
+        label: 'Worth watching tonight',
+        description: 'Sent around sunset when solar wind conditions are elevated.',
+        tooltip: 'Sent once per day around sunset (6–9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight. Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out. Not sent on quiet nights.',
+      },
     ],
   },
   {
     group: 'Solar Events',
-    description: 'Space weather events that may affect aurora conditions.',
+    description: 'Space weather events that may affect aurora conditions in the hours ahead.',
     items: [
-      { id: 'flare-event',     label: 'Solar flare',           description: 'Notification when a solar flare peaks, including its class.' },
-      { id: 'shock-detection', label: 'Solar wind shock',      description: 'Sudden jump in solar wind speed, density and pressure detected at L1.' },
-      { id: 'cme-sheath',      label: 'CME arrival',           description: 'A coronal mass ejection structure is passing Earth — conditions may change rapidly.' },
+      {
+        id: 'flare-event',
+        label: 'Solar flare',
+        description: 'Notification when a solar flare peaks, including its class.',
+        tooltip: 'Sent when a solar flare peaks above M1 class. Includes the flare class (M or X) and peak time. Solar flares can enhance aurora conditions but the effects usually arrive 1–3 days later via an associated CME — this is an early heads-up, not an immediate aurora alert.',
+      },
+      {
+        id: 'shock-detection',
+        label: 'Solar wind shock',
+        description: 'Sudden jump in solar wind speed, density and pressure detected at L1.',
+        tooltip: 'Sent when a sudden, significant jump in solar wind speed, density, and pressure is detected at the L1 point — about 1.5 million km from Earth. This often precedes a geomagnetic storm by 30–60 minutes. One of the most actionable alerts — conditions can change rapidly after a shock arrives.',
+      },
+      {
+        id: 'cme-sheath',
+        label: 'CME arrival',
+        description: 'A coronal mass ejection structure is passing Earth.',
+        tooltip: 'Sent when a coronal mass ejection (CME) sheath or flux rope is detected passing Earth. CMEs carry strong, sustained southward magnetic fields that drive geomagnetic storms. Aurora during a CME passage can last for hours. This alert means conditions may be elevated for an extended period.',
+      },
     ],
   },
   {
     group: 'Announcements',
-    description: 'Direct messages from Spot The Aurora — tips, alerts, and important updates.',
+    description: 'Direct messages from Spot The Aurora — aurora event alerts, tips, and important updates.',
     items: [
-      { id: 'admin-broadcast', label: 'Announcements', description: 'Occasional messages sent directly by Spot The Aurora about aurora events, tips, or updates.' },
+      { id: 'admin-broadcast', label: 'Announcements', description: 'Occasional messages sent directly by Spot The Aurora about aurora events, tips, or updates.', tooltip: 'Occasional direct messages from the Spot The Aurora team — sent manually when there is something genuinely worth knowing. This might be a heads-up about an active aurora event happening right now, a tip about upcoming conditions, or an important app update. We send these sparingly, only when it matters.' },
     ],
   },
 ];
@@ -112,6 +147,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [diagRunning, setDiagRunning] = useState<boolean>(false);
+  const [openTooltipId, setOpenTooltipId] = useState<string | null>(null);
   const [diagResults, setDiagResults] = useState<{
     step: string;
     status: 'pass' | 'fail' | 'warn' | 'running';
@@ -178,6 +214,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setNotificationStatus(permission);
 
     if (permission === 'granted') {
+      // First-time install: if no preferences saved yet, default everything to ON
+      const hasAnyPref = ALL_NOTIFICATION_IDS.some(
+        id => localStorage.getItem('notification_pref_' + id) !== null
+      );
+      if (!hasAnyPref) {
+        const defaultOn: Record<string, boolean> = {};
+        ALL_NOTIFICATION_IDS.forEach(id => {
+          setNotificationPreference(id, true);
+          defaultOn[id] = true;
+        });
+        setNotificationSettings(defaultOn);
+      }
       const subscription = await subscribeUserToPush();
       if (subscription) {
         console.log("Successfully subscribed to push notifications.");
@@ -545,12 +593,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       <div className="space-y-3">
                         {group.items.map(item => (
                           <div key={item.id}>
-                            <div className="flex items-center justify-between gap-4">
-                              <ToggleSwitch
-                                label={item.label}
-                                checked={notificationSettings[item.id] ?? true}
-                                onChange={(checked) => handleNotificationToggle(item.id, checked)}
-                              />
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <ToggleSwitch
+                                  label={item.label}
+                                  checked={notificationSettings[item.id] ?? false}
+                                  onChange={(checked) => handleNotificationToggle(item.id, checked)}
+                                />
+                                {'tooltip' in item && (
+                                  <button
+                                    onClick={() => setOpenTooltipId(openTooltipId === item.id ? null : item.id)}
+                                    className="flex-shrink-0 w-4 h-4 rounded-full border border-neutral-600 text-neutral-500 hover:text-white hover:border-neutral-400 flex items-center justify-center text-xs transition-colors"
+                                    title="What does this alert do?"
+                                  >?</button>
+                                )}
+                              </div>
                               <button
                                 onClick={() => handleTestCategory(item.id)}
                                 className={chipActionClass}
@@ -558,7 +615,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 Test
                               </button>
                             </div>
-                            <p className="text-xs text-neutral-600 mt-1 ml-1">{item.description}</p>
+                            {openTooltipId === item.id && 'tooltip' in item && (
+                              <div className="mt-2 mx-1 p-3 rounded-lg bg-neutral-800/80 border border-neutral-700/60 text-xs text-neutral-300 leading-relaxed">
+                                {(item as any).tooltip}
+                              </div>
+                            )}
+                            {openTooltipId !== item.id && (
+                              <p className="text-xs text-neutral-600 mt-1 ml-1">{item.description}</p>
+                            )}
                           </div>
                         ))}
                       </div>

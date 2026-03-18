@@ -64,6 +64,8 @@ const NOTIFICATION_CATEGORIES = [
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
   'substorm-forecast',
+  // Admin broadcast
+  'admin-broadcast',
 ];
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
@@ -434,7 +436,7 @@ const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
     const stored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
-    return stored === null ? true : JSON.parse(stored);
+    return stored === null ? false : JSON.parse(stored);
   } catch (e) {
     console.error(`Error reading notification preference for ${categoryId}:`, e);
     return true;
