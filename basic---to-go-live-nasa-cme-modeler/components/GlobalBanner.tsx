@@ -267,33 +267,53 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     }
   }, [activeAlertIndex, alerts.length]);
 
-  if (!activeSlide) return null;
+  if (alerts.length === 0) return null;
 
   const goPrev = () => setActiveAlertIndex((idx) => (idx - 1 + alerts.length) % alerts.length);
   const goNext = () => setActiveAlertIndex((idx) => (idx + 1) % alerts.length);
   const hasMultiple = alerts.length > 1;
 
+  // Separate remote banner from dynamic alerts so they render independently
+  const remoteBannerSlide = alerts.find(a => a.id === (globalBanner?.id || globalBanner?.message));
+  const dynamicAlerts = alerts.filter(a => a.id !== remoteBannerSlide?.id);
+  const activeDynamic = dynamicAlerts[activeAlertIndex % Math.max(dynamicAlerts.length, 1)];
+  const hasDynamicMultiple = dynamicAlerts.length > 1;
+
   return (
-    <div
-      className={`text-sm font-semibold relative z-50 w-full ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
-      style={activeSlide.style}
-    >
-      <div className="container mx-auto px-4 py-3 flex flex-col gap-2">
-        <div className="w-full text-center leading-relaxed min-h-[1.5rem]">
-          {activeSlide.content}
+    <div className="w-full relative z-50 aurora-banner soft-appear">
+      {/* Remote banner — always visible when active, never affected by dynamic alerts */}
+      {remoteBannerSlide && (
+        <div
+          className={`w-full text-sm font-semibold px-4 py-2.5 text-center leading-relaxed ${remoteBannerSlide.backgroundClass} ${remoteBannerSlide.textClass ?? 'text-white'}`}
+          style={remoteBannerSlide.style}
+        >
+          {remoteBannerSlide.content}
         </div>
-        {hasMultiple && (
-          <div className="flex items-center justify-center gap-2">
-            <span className="px-2 py-0.5 rounded-full bg-black/20 text-white/90 text-xs">
-              {activeAlertIndex + 1}/{alerts.length} alerts
-            </span>
-            <div className="flex overflow-hidden rounded-lg border border-white/30 shadow-sm">
-              <button onClick={goPrev} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">◀</button>
-              <button onClick={goNext} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">▶</button>
+      )}
+      {/* Dynamic alert carousel */}
+      {activeDynamic && (
+        <div
+          className={`w-full text-sm font-semibold ${activeDynamic.backgroundClass} ${activeDynamic.textClass ?? 'text-white'}`}
+          style={activeDynamic.style}
+        >
+          <div className="px-4 py-2.5 flex flex-col gap-1.5">
+            <div className="w-full text-center leading-relaxed">
+              {activeDynamic.content}
             </div>
+            {hasDynamicMultiple && (
+              <div className="flex items-center justify-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-black/20 text-white/90 text-xs">
+                  {(activeAlertIndex % dynamicAlerts.length) + 1}/{dynamicAlerts.length} alerts
+                </span>
+                <div className="flex overflow-hidden rounded-lg border border-white/30 shadow-sm">
+                  <button onClick={goPrev} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">◀</button>
+                  <button onClick={goNext} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">▶</button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
