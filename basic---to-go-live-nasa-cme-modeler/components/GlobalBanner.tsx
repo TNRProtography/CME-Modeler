@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { SubstormActivity, InterplanetaryShock } from '../types';
+import type { SubstormRiskData } from '../hooks/useForecastData';
 
 // Define the shape of the banner object returned by your worker
 interface BannerData {
@@ -27,6 +28,7 @@ interface GlobalBannerProps {
   auroraScore?: number;
   isSubstormAlert: boolean;
   substormActivity?: SubstormActivity;
+  substormRiskData?: SubstormRiskData | null;
   isIpsAlert: boolean;
   ipsAlertData?: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null;
   hideForTutorial?: boolean;
@@ -72,6 +74,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   auroraScore,
   isSubstormAlert,
   substormActivity,
+  substormRiskData,
   isIpsAlert,
   ipsAlertData,
   hideForTutorial = false,
@@ -89,7 +92,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   const shouldFetchRemoteBanner = useMemo(() => {
     const host = window.location.hostname;
-    return host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
+    return host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz' || host === 'cme-modeler.pages.dev';
   }, []);
 
   useEffect(() => {
@@ -226,20 +229,28 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     });
   }
 
-  if (isSubstormAlert && substormActivity) {
+  if (substormRiskData?.current && substormRiskData.current.score >= 30) {
+    const score = substormRiskData.current.score;
+    const level = substormRiskData.current.level ?? '';
+    const trend = substormRiskData.current.risk_trend ?? '';
+    const bz = substormRiskData.metrics?.solar_wind?.bz;
+    const bayOnset = substormRiskData.current.bay_onset_flag;
+    const trendArrow = trend.includes('Rapidly Increasing') ? '⬆⬆' : trend.includes('Increasing') ? '⬆' : trend.includes('Rapidly Decreasing') ? '⬇⬇' : trend.includes('Decreasing') ? '⬇' : '→';
     alerts.push({
-      id: 'substorm-alert',
-      backgroundClass: 'bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-600',
+      id: `substorm-risk-${Math.round(score)}`,
+      backgroundClass: score >= 70
+        ? 'bg-gradient-to-r from-pink-800 via-purple-700 to-indigo-700'
+        : score >= 50
+          ? 'bg-gradient-to-r from-purple-800 via-indigo-600 to-sky-600'
+          : 'bg-gradient-to-r from-indigo-900 via-blue-800 to-sky-800',
       textClass: 'text-white',
       content: (
-        <button onClick={onSubstormAlertClick} className="flex items-center gap-2 hover:bg-white/10 px-2 py-1 rounded-md transition-colors text-left">
-          <span role="img" aria-label="Magnetic Field" className="self-start mt-0.5 sm:self-center">⚡</span>
-          <div className="flex flex-col gap-0.5">
-            <strong>Substorm Watch</strong>
-            <span className="font-medium">
-              ~{substormActivity.probability?.toFixed(0) ?? '...'}% chance between {formatTime(substormActivity.predictedStartTime)} and {formatTime(substormActivity.predictedEndTime)}.
-            </span>
-            <span className="opacity-90 text-xs sm:text-sm">Expected visibility: {getVisibilityLevel(auroraScore)}.</span>
+        <button onClick={onSubstormAlertClick} className="flex items-center gap-2 hover:bg-white/10 px-2 py-1 rounded-md transition-colors text-left w-full justify-center">
+          <span role="img" aria-label="Substorm">{bayOnset ? '🌩️' : '⚡'}</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-3 text-center sm:text-left">
+            <strong>{bayOnset ? 'Substorm Onset Detected' : `Substorm Risk: ${level}`}</strong>
+            <span className="font-medium">Index {Math.round(score)} {trendArrow}{bz != null ? ` · Bz ${bz > 0 ? '+' : ''}${bz.toFixed(1)} nT` : ''}</span>
+            <span className="opacity-80 text-xs">{getVisibilityLevel(auroraScore)} from your location</span>
           </div>
         </button>
       ),
@@ -262,16 +273,16 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   return (
     <div
-      className={`text-sm font-semibold p-3 text-center relative z-50 flex items-center justify-center ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
+      className={`text-sm font-semibold relative z-50 ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
       style={activeSlide.style}
     >
-      <div className="container mx-auto flex items-center justify-center gap-3 relative">
-        <div className="flex-1 flex items-center justify-center sm:justify-center text-center sm:text-center">
+      <div className="container mx-auto px-4 py-3 flex flex-col gap-2">
+        <div className="flex-1 text-center leading-relaxed">
           {activeSlide.content}
         </div>
         {hasMultiple && (
-          <div className="flex items-center gap-1 absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 sm:translate-y-0 sm:static">
-            <span className="px-2 py-1 rounded-full bg-black/20 text-white/90 text-xs tracking-tight">
+          <div className="flex items-center justify-center gap-2">
+            <span className="px-2 py-0.5 rounded-full bg-black/20 text-white/90 text-xs">
               {activeAlertIndex + 1}/{alerts.length} alerts
             </span>
             <div className="flex overflow-hidden rounded-lg border border-white/30 shadow-sm">

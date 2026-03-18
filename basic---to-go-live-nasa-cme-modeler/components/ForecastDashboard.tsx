@@ -71,6 +71,7 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: SubstormActivity | null) => void;
+  onSubstormRiskData?: (data: any) => void;
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
   /** Callback to report latest L1 solar wind speed to the propagation engine */
   setMeasuredWindSpeedKms?: (speed: number | undefined) => void;
@@ -267,6 +268,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             initialLoadCalled.current = true;
         }
     }, [isLoading, onInitialLoad]);
+
+    useEffect(() => {
+        if (onSubstormRiskData) onSubstormRiskData(substormRiskData);
+    }, [substormRiskData, onSubstormRiskData]);
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);

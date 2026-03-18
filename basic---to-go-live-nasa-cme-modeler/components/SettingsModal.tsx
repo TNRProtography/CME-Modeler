@@ -56,6 +56,13 @@ const NOTIFICATION_GROUPS = [
       { id: 'cme-sheath',      label: 'CME arrival',           description: 'A coronal mass ejection structure is passing Earth — conditions may change rapidly.' },
     ],
   },
+  {
+    group: 'Announcements',
+    description: 'Direct messages from Spot The Aurora — tips, alerts, and important updates.',
+    items: [
+      { id: 'admin-broadcast', label: 'Announcements', description: 'Occasional messages sent directly by Spot The Aurora about aurora events, tips, or updates.' },
+    ],
+  },
 ];
 
 // Flat list for preference loading
