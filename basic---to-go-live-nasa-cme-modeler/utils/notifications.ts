@@ -139,7 +139,7 @@ const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string
   const base: NotificationOptions = {
     body: opts?.body,
     icon: opts?.icon ?? getNotificationIcon(opts?.tag),
-    badge: opts?.badge ?? '/icons/android-chrome-192x192.png',
+    badge: opts?.badge ?? getNotificationIcon(opts?.tag),
     vibrate: opts?.vibrate ?? [200, 100, 200],
     data: { ...(opts?.data || {}), category: (opts?.tag || 'general') },
     requireInteraction: opts?.requireInteraction,
