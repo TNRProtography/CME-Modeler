@@ -104,6 +104,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
+  const [diagRunning, setDiagRunning] = useState<boolean>(false);
+  const [diagResults, setDiagResults] = useState<{
+    step: string;
+    status: 'pass' | 'fail' | 'warn' | 'running';
+    detail: string;
+  }[]>([]);
+  const [serverTestRunning, setServerTestRunning] = useState<boolean>(false);
+  const [serverTestResult, setServerTestResult] = useState<string | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
@@ -181,6 +189,104 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleGpsToggle = useCallback((checked: boolean) => {
     setUseGpsAutoDetect(checked);
     localStorage.setItem(LOCATION_PREF_KEY, JSON.stringify(checked));
+  }, []);
+
+  const runDiagnostics = useCallback(async () => {
+    setDiagRunning(true);
+    setDiagResults([]);
+    const results: { step: string; status: 'pass' | 'fail' | 'warn' | 'running'; detail: string }[] = [];
+    const push = (step: string, status: 'pass'|'fail'|'warn', detail: string) => {
+      results.push({ step, status, detail });
+      setDiagResults([...results]);
+    };
+
+    // Step 1 — Service worker registered?
+    push('Service worker', 'running', 'Checking...');
+    if (!('serviceWorker' in navigator)) {
+      results[results.length-1] = { step: 'Service worker', status: 'fail', detail: 'Service workers not supported by this browser.' };
+      setDiagResults([...results]); setDiagRunning(false); return;
+    }
+    const reg = await navigator.serviceWorker.ready.catch(() => null);
+    if (!reg) {
+      results[results.length-1] = { step: 'Service worker', status: 'fail', detail: 'Service worker not ready. Try reloading the app.' };
+      setDiagResults([...results]); setDiagRunning(false); return;
+    }
+    results[results.length-1] = { step: 'Service worker', status: 'pass', detail: `Active — scope: ${reg.scope}` };
+    setDiagResults([...results]);
+
+    // Step 2 — Push subscription exists in browser?
+    push('Push subscription', 'running', 'Checking...');
+    const sub = await reg.pushManager.getSubscription().catch(() => null);
+    if (!sub) {
+      results[results.length-1] = { step: 'Push subscription', status: 'fail', detail: 'No push subscription found in this browser. Try clicking Enable Notifications.' };
+      setDiagResults([...results]); setDiagRunning(false); return;
+    }
+    const endpointShort = sub.endpoint.slice(-28);
+    results[results.length-1] = { step: 'Push subscription', status: 'pass', detail: `Found — endpoint: ...${endpointShort}` };
+    setDiagResults([...results]);
+
+    // Step 3 — Subscription saved in worker KV?
+    push('Saved on server', 'running', 'Checking worker KV...');
+    try {
+      const checkResp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/check-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      });
+      const checkData = await checkResp.json();
+      if (checkData.saved) {
+        const loc = checkData.locationSource === 'gps'
+          ? `GPS (${Number(checkData.latitude).toFixed(2)}, ${Number(checkData.longitude).toFixed(2)})`
+          : checkData.locationSource === 'ip' ? 'IP geolocation' : 'Unknown';
+        results[results.length-1] = { step: 'Saved on server', status: 'pass', detail: `Subscription found in KV · Location: ${loc} · ${checkData.preferenceCount} preferences stored` };
+      } else {
+        results[results.length-1] = { step: 'Saved on server', status: 'fail', detail: 'Subscription NOT found in worker KV. The save request may have failed — try re-enabling notifications.' };
+      }
+    } catch (e: any) {
+      results[results.length-1] = { step: 'Saved on server', status: 'fail', detail: `Could not reach worker: ${e.message}` };
+    }
+    setDiagResults([...results]);
+
+    // Step 4 — Worker health
+    push('Worker health', 'running', 'Checking...');
+    try {
+      const healthResp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/health');
+      const health = await healthResp.json();
+      if (health.ok) {
+        const ageMin = health.ageMs ? Math.round(health.ageMs / 60000) : null;
+        results[results.length-1] = { step: 'Worker health', status: 'pass', detail: `Cron running — last run ${ageMin != null ? `${ageMin} min ago` : 'recently'}` };
+      } else {
+        results[results.length-1] = { step: 'Worker health', status: 'warn', detail: `Worker cron hasn't run recently (last: ${health.lastRun ? new Date(health.lastRun).toLocaleTimeString() : 'never'})` };
+      }
+    } catch (e: any) {
+      results[results.length-1] = { step: 'Worker health', status: 'fail', detail: `Could not reach worker: ${e.message}` };
+    }
+    setDiagResults([...results]);
+    setDiagRunning(false);
+  }, []);
+
+  const runServerTest = useCallback(async () => {
+    setServerTestRunning(true);
+    setServerTestResult(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) { setServerTestResult('❌ No push subscription found — enable notifications first.'); setServerTestRunning(false); return; }
+      const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/trigger-test-push-for-me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub.toJSON(), category: 'aurora-60percent' }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setServerTestResult('✅ Server push sent! You should receive a notification on this device within a few seconds.');
+      } else {
+        setServerTestResult(`❌ Server responded with an error: ${data.message ?? resp.status}`);
+      }
+    } catch (e: any) {
+      setServerTestResult(`❌ Network error: ${e.message}`);
+    }
+    setServerTestRunning(false);
   }, []);
 
   const handleInstallApp = useCallback(async () => {
@@ -417,13 +523,57 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 flex justify-center">
-                    <button
-                        onClick={() => sendTestNotification()} // Sends a generic test
-                        className={subtleActionClass}
-                    >
-                        Send Generic Test Notification
+                <div className="mt-4 space-y-4">
+                  {/* Diagnostics */}
+                  <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-300">Connection Diagnostics</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">Checks service worker, push subscription, and server registration</p>
+                      </div>
+                      <button onClick={runDiagnostics} disabled={diagRunning} className={`${chipActionClass} disabled:opacity-50`}>
+                        {diagRunning ? 'Running...' : 'Run check'}
+                      </button>
+                    </div>
+                    {diagResults.length > 0 && (
+                      <div className="space-y-2">
+                        {diagResults.map((r, i) => (
+                          <div key={i} className="flex items-start gap-2.5 text-xs">
+                            <span className="flex-shrink-0 mt-0.5">
+                              {r.status === 'pass' ? '✅' : r.status === 'fail' ? '❌' : r.status === 'warn' ? '⚠️' : '⏳'}
+                            </span>
+                            <div>
+                              <span className="font-semibold text-neutral-300">{r.step}</span>
+                              <span className="text-neutral-500 ml-1">— {r.detail}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Server push test */}
+                  <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-300">Server Push Test</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">Sends a real push notification from the server to this device</p>
+                      </div>
+                      <button onClick={runServerTest} disabled={serverTestRunning} className={`${chipActionClass} disabled:opacity-50`}>
+                        {serverTestRunning ? 'Sending...' : 'Send test'}
+                      </button>
+                    </div>
+                    {serverTestResult && (
+                      <p className="text-xs text-neutral-400 mt-2">{serverTestResult}</p>
+                    )}
+                  </div>
+
+                  {/* Local test */}
+                  <div className="flex justify-center">
+                    <button onClick={() => sendTestNotification()} className={subtleActionClass}>
+                      Send Local Test Notification
                     </button>
+                  </div>
                 </div>
               </div>
             )}
