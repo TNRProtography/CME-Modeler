@@ -30,14 +30,13 @@ root.render(
 );
 
 if ('serviceWorker' in navigator) {
-  const host = window.location.hostname;
-  const shouldRegisterServiceWorker = host === 'localhost' || host === '127.0.0.1' || host === 'spottheaurora.co.nz' || host === 'www.spottheaurora.co.nz';
-
-  if (shouldRegisterServiceWorker) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
-        // Silently ignore SW registration issues on unsupported browser states.
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then((reg) => {
+        console.log('[SW] Registered successfully. Scope:', reg.scope, 'State:', reg.active?.state ?? 'installing');
+      })
+      .catch((err) => {
+        console.error('[SW] Registration failed:', err);
       });
-    });
-  }
+  });
 }
