@@ -1,6 +1,7 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
+ * @version 2.0.1
  */
 
 // Maps notification topic/tag to a specific icon
@@ -26,8 +27,8 @@ const TOPIC_ICONS = {
   'substorm-forecast': '/icons/icon-substorm.png',
 };
 
-const DEFAULT_ICON  = '/icons/icon-default.png';
-const DEFAULT_BADGE = '/icons/android-chrome-192x192.png';
+const DEFAULT_ICON  = '/icons/android-chrome-192x192.png';
+const DEFAULT_BADGE = '/icons/icon-default.png';
 
 function getIcon(tag) {
   if (!tag) return DEFAULT_ICON;
@@ -56,13 +57,13 @@ self.addEventListener('push', (event) => {
   }
 
   const tag   = data.tag || data.data?.category || 'sta-notification';
-  const icon  = getIcon(tag);
+  const badge = getBadge(tag);
   const title = data.title || 'Spot The Aurora';
 
   const options = {
     body:               data.body || '',
-    icon,
-    badge:              DEFAULT_BADGE,
+    icon:               DEFAULT_ICON,
+    badge,
     vibrate:            [200, 100, 200],
     tag,
     renotify:           false,
