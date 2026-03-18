@@ -77,7 +77,7 @@ function locationAdjustedScore(
   // User is north of visibility line. Scale score down based on how far.
   // Every 1° north of the line roughly halves visibility, capped at 0.
   // 3° north = almost invisible, 5° north = nothing to see.
-  const penalty = Math.min(1, distFromVis / 4.0);
+  const penalty = Math.min(1, distFromVis / 2.0);
   return rawScore * (1 - penalty);
 }
 
@@ -152,11 +152,11 @@ function getVisibilityPhrase(
   }
 
   const phrase = confidence === 'high'
-    ? 'Activity just picked up — aurora may be starting right now'
+    ? 'Nothing to see — the sky will look completely normal right now'
     : confidence === 'medium'
     ? 'Very quiet — not worth going out at the moment'
     : 'Quiet — come back later';
-  return { phrase: confidence === 'high' && projectedScore < 5 ? 'Nothing to see — the sky will look completely normal' : phrase, icon: '😴', subtext: nothingReported ? subtext : null };
+  return { phrase, icon: '😴', subtext: nothingReported ? subtext : null };
 }
 
 // ─── Score projection — substorm worker only ─────────────────────────────────
@@ -519,7 +519,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
             <span className="inline-block w-2 h-2 rounded-full bg-neutral-500" />
             <span className="text-xs text-neutral-500">Low</span>
           </div>
-          <span className="text-xs text-neutral-600 ml-auto">Score = substorm index 0–100</span>
+          <span className="text-xs text-neutral-600 ml-auto">Score = substorm index (no upper limit)</span>
         </div>
       </div>
     </div>
