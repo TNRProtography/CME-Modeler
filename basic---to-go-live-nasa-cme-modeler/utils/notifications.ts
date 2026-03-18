@@ -9,6 +9,41 @@
  * - Returns subscription id (hash of endpoint) for easier single-device testing
  */
 
+// Icon map — mirrors TOPIC_ICONS in sw.js so local test notifications
+// also show the correct icon. Must be kept in sync with public/sw.js.
+const TOPIC_ICONS: Record<string, string> = {
+  'visibility-dslr':   '/icons/icon-visibility-dslr.png',
+  'visibility-phone':  '/icons/icon-visibility-phone.png',
+  'visibility-naked':  '/icons/icon-visibility-naked.png',
+  'overnight-watch':   '/icons/icon-overnight-watch.png',
+  'flare-event':       '/icons/icon-flare-event.png',
+  'flare-peak':        '/icons/icon-flare-peak.png',
+  'flare-M1':          '/icons/icon-flare-event.png',
+  'flare-M5':          '/icons/icon-flare-event.png',
+  'flare-X1':          '/icons/icon-flare-event.png',
+  'flare-X5':          '/icons/icon-flare-event.png',
+  'flare-X10':         '/icons/icon-flare-event.png',
+  'shock-detection':   '/icons/icon-shock-detection.png',
+  'cme-sheath':        '/icons/icon-cme-sheath.png',
+  'ips-shock':         '/icons/icon-ips-shock.png',
+  'aurora-40percent':  '/icons/icon-aurora.png',
+  'aurora-50percent':  '/icons/icon-aurora.png',
+  'aurora-60percent':  '/icons/icon-aurora.png',
+  'aurora-80percent':  '/icons/icon-aurora.png',
+  'substorm-forecast': '/icons/icon-substorm.png',
+};
+const DEFAULT_ICON = '/icons/icon-default.png';
+
+function getNotificationIcon(tag?: string): string {
+  if (!tag) return DEFAULT_ICON;
+  for (const topic of Object.keys(TOPIC_ICONS)) {
+    if (tag === topic || tag.startsWith(`test-${topic}`)) {
+      return TOPIC_ICONS[topic];
+    }
+  }
+  return DEFAULT_ICON;
+}
+
 // All notification topic keys — kept in sync with the worker.
 // Existing topics are preserved for backwards compatibility.
 // New topics added here are opt-out by default (undefined = send).
@@ -103,7 +138,7 @@ const buildStackingOptions = (opts?: CustomNotificationOptions & { body?: string
   const stacking = opts?.stacking ?? true;
   const base: NotificationOptions = {
     body: opts?.body,
-    icon: opts?.icon ?? '/icons/android-chrome-192x192.png',
+    icon: opts?.icon ?? getNotificationIcon(opts?.tag),
     badge: opts?.badge ?? '/icons/android-chrome-192x192.png',
     vibrate: opts?.vibrate ?? [200, 100, 200],
     data: { ...(opts?.data || {}), category: (opts?.tag || 'general') },
