@@ -68,7 +68,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   }, [likelihood]);
 
   return (
-    <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
+    <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>

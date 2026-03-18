@@ -385,7 +385,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
 
   if (isDaylight) {
     return (
-      <div className="col-span-12 card bg-neutral-950/80 p-5">
+      <div className="col-span-12 card bg-neutral-950/80 p-5 h-full flex flex-col">
         <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
         <div className="flex items-center gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
@@ -411,12 +411,17 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   ];
 
   return (
-    <div className="col-span-12 card bg-neutral-950/80 p-5">
+    <div className="col-span-12 card bg-neutral-950/80 p-5 h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-lg font-semibold text-white">What to expect</h3>
         <span className="text-xs text-neutral-500">Based on current conditions</span>
       </div>
+      {/* Accuracy note */}
+      <p className="text-xs text-neutral-600 mb-3 leading-snug">
+        This forecast uses your GPS location and the aurora oval position — more accurate than the % score alone.
+        {(!userLatitude) && <span className="text-amber-500/80"> Enable location for full accuracy.</span>}
+      </p>
 
       {/* Substorm context bar — just below the header */}
       {workerScore != null && (

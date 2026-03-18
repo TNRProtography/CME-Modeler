@@ -614,7 +614,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             )}
-                            {/* Score + What to expect — side by side */}
+                            {/* Score + What to expect — side by side, equal height */}
+                            <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 lg:col-span-5 card bg-neutral-950/80 p-6 text-center flex flex-col justify-center">
                                 <div className="text-7xl font-extrabold" style={{color: GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid}}>{(auroraScore ?? 0).toFixed(1)}%</div>
                                 <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
@@ -627,7 +628,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             </div>
-                            <div className="col-span-12 lg:col-span-7">
+                            <div className="col-span-12 lg:col-span-7 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
                                     substormForecast={substormForecast}
@@ -637,6 +638,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     userLatitude={userLatitude}
                                     userLongitude={userLongitude}
                                 />
+                            </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
                             <ActivitySummaryDisplay summary={activitySummary} />
@@ -658,11 +660,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             )}
-                            {/* Score + What to expect side by side */}
-                            <div className="col-span-12 lg:col-span-5">
+                            {/* Score + What to expect side by side, equal height */}
+                            <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
+                            <div className="col-span-12 lg:col-span-5 flex flex-col">
                                 <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
                             </div>
-                            <div className="col-span-12 lg:col-span-7">
+                            <div className="col-span-12 lg:col-span-7 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
                                     substormForecast={substormForecast}
@@ -672,6 +675,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     userLatitude={userLatitude}
                                     userLongitude={userLongitude}
                                 />
+                            </div>
                             </div>
                             <ActivitySummaryDisplay summary={activitySummary} />
 {(() => {
