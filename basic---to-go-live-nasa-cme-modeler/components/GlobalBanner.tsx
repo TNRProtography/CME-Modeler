@@ -280,7 +280,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   const hasDynamicMultiple = dynamicAlerts.length > 1;
 
   return (
-    <div className="w-full relative z-50 aurora-banner soft-appear">
+    <div className="w-full flex-shrink-0 relative z-50">
       {/* Remote banner — always visible when active, never affected by dynamic alerts */}
       {remoteBannerSlide && (
         <div
