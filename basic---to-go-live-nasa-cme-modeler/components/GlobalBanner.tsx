@@ -182,7 +182,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
       backgroundClass: 'bg-gradient-to-r from-red-600 via-pink-500 to-pink-600 animate-pulse',
       textClass: 'text-white',
       content: (
-        <button onClick={onIpsAlertClick} className="container mx-auto flex flex-col sm:flex-row items-center justify-center gap-x-4 gap-y-1 hover:bg-white/10 p-1 rounded-md transition-colors">
+        <button onClick={onIpsAlertClick} className="w-full flex flex-col sm:flex-row items-center justify-center gap-x-4 gap-y-1 hover:bg-white/10 p-1 rounded-md transition-colors">
           <div className="flex items-center gap-2">
             <span role="img" aria-label="Impact">💥</span>
             <strong>Interplanetary Shock Arrived at {formatTime(ipsAlertData.shock.eventTime)}!</strong>
@@ -275,11 +275,11 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   return (
     <div
-      className={`text-sm font-semibold relative z-50 ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
+      className={`text-sm font-semibold relative z-50 w-full ${activeSlide.backgroundClass} ${activeSlide.textClass ?? 'text-white'} aurora-banner soft-appear`}
       style={activeSlide.style}
     >
       <div className="container mx-auto px-4 py-3 flex flex-col gap-2">
-        <div className="flex-1 text-center leading-relaxed">
+        <div className="w-full text-center leading-relaxed min-h-[1.5rem]">
           {activeSlide.content}
         </div>
         {hasMultiple && (
