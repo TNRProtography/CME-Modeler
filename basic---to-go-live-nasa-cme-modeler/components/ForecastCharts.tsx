@@ -951,8 +951,73 @@ interface ForecastTrendChartProps {
     dailyCelestialHistory: DailyHistoryEntry[];
     owmDailyForecast: OwmDailyForecastEntry[];
     onOpenModal: () => void;
+    userLatitude?: number | null;
+    userLongitude?: number | null;
+    moonIllumination?: number | null;
+    substormBz?: number | null;
+    substormScore?: number | null;
+    ovalBoundaryGmag?: number | null;
 }
-export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraScoreHistory, dailyCelestialHistory, owmDailyForecast, onOpenModal }) => {
+// ── Visibility probability calculation ────────────────────────────────────────
+// Computes a 0–100% chance-of-seeing-aurora for a given score point, factoring
+// in the user's location relative to the oval visibility line, moon brightness,
+// and Bz direction. This is what gets plotted as the second line on the chart.
+//
+// Inputs that are null/undefined fall back gracefully so the chart always shows.
+function computeVisibilityPct(
+  rawScore: number,
+  userLat: number | null | undefined,
+  userLon: number | null | undefined,
+  ovalBoundary: number | null | undefined,
+  moonIllum: number | null | undefined,
+  bz: number | null | undefined,
+): number {
+  // Start with the raw score as the base probability
+  let pct = rawScore;
+
+  // ── Location penalty ──────────────────────────────────────────────────────
+  // If we know the user's geomagnetic latitude and the oval boundary,
+  // apply the same visibility line penalty as VisibilityForecastPanel.
+  if (userLat != null && userLon != null && ovalBoundary != null) {
+    const POLE_LAT_RAD = 80.65 * Math.PI / 180;
+    const POLE_LON_RAD = -72.68 * Math.PI / 180;
+    const phi = userLat * Math.PI / 180;
+    const lam = userLon * Math.PI / 180;
+    const sinGmag = Math.sin(phi) * Math.sin(POLE_LAT_RAD) +
+                    Math.cos(phi) * Math.cos(POLE_LAT_RAD) * Math.cos(lam - POLE_LON_RAD);
+    const userGmag = Math.asin(Math.max(-1, Math.min(1, sinGmag))) * 180 / Math.PI;
+    const visDeg = 9.0 + (Math.max(0, Math.min(rawScore, 100)) / 100) * 16.0;
+    const visHorizon = ovalBoundary + visDeg;
+    const distFromVis = userGmag - visHorizon;
+    if (distFromVis > 0) {
+      const penalty = Math.min(1, distFromVis / 2.0);
+      pct = pct * (1 - penalty);
+    }
+  }
+
+  // ── Moon penalty ──────────────────────────────────────────────────────────
+  // Bright moon reduces visibility probability. Full moon = -25% on the score.
+  if (moonIllum != null) {
+    const moonPenalty = (moonIllum / 100) * 0.25;
+    pct = pct * (1 - moonPenalty);
+  }
+
+  // ── Bz boost/penalty ─────────────────────────────────────────────────────
+  // Strongly southward Bz boosts confidence; northward Bz reduces it.
+  if (bz != null) {
+    if (bz < -8)       pct = Math.min(100, pct * 1.15);
+    else if (bz < -4)  pct = Math.min(100, pct * 1.07);
+    else if (bz > 4)   pct = pct * 0.85;
+    else if (bz > 2)   pct = pct * 0.92;
+  }
+
+  return Math.max(0, Math.min(100, pct));
+}
+
+export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
+  auroraScoreHistory, dailyCelestialHistory, owmDailyForecast, onOpenModal,
+  userLatitude, userLongitude, moonIllumination, substormBz, substormScore, ovalBoundaryGmag,
+}) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const [timeLabel, setTimeLabel] = useState('6 Hr');
     const [showAnnotations, setShowAnnotations] = useState(true);
@@ -977,7 +1042,14 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({ auroraSc
             const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0, 0.33); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0, 0.33);
             gradient.addColorStop(0, color0); gradient.addColorStop(1, color1); return gradient;
         };
-        return { datasets: [ { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: getSmoothForecastScoreColor(auroraScoreHistory.at(-1)?.finalScore ?? 0), backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 }, { label: 'Base Score', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(255, 255, 255, 1)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [5, 5], spanGaps: true, order: 2 } ] };
+        const visData = auroraScoreHistory.map(d => ({
+            x: d.timestamp,
+            y: computeVisibilityPct(d.finalScore, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz),
+        }));
+        return { datasets: [
+            { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: getSmoothForecastScoreColor(auroraScoreHistory.at(-1)?.finalScore ?? 0), backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 },
+            { label: 'Visibility Probability', data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1.5, borderDash: [4, 4], spanGaps: true, order: 2 },
+        ] };
     }, [auroraScoreHistory]);
 
     return (

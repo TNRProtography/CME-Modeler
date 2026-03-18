@@ -172,7 +172,7 @@ function projectSubstormScores(
   newellNow?: number,
   newellAvg30?: number,
   confidence?: number | null,
-): { score15: number; score30: number; score60: number } {
+): { score15: number; score30: number; score60: number; score120: number } {
   const { status, p30, p60 } = forecast;
 
   // Trend from the worker's own risk_trend field
@@ -231,10 +231,15 @@ function projectSubstormScores(
   const applyAll = (s: number) =>
     Math.max(0, s * trendMult * newellBoost * confMult);
 
+  // 2-hour projection — substorm worker has no 2h probability so we use
+  // the SpotTheAurora composite score (auroraScore) for this slot.
+  // Passed in as spotAuroraScore2h, already location-adjusted.
+  // We apply a light trend dampening but keep it independent of substorm state.
   return {
     score15: applyAll(score15),
     score30: applyAll(score30),
     score60: applyAll(score60),
+    score120: 0, // placeholder — filled by caller using SpotTheAurora score
   };
 }
 
@@ -363,9 +368,14 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset]);
   const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset]);
   const score60 = useMemo(() => locationAdjustedScore(rawScore60, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore60, userLatitude, userLongitude, substormRiskData, bayOnset]);
+  // 2-hour slot uses SpotTheAurora score — it already incorporates longer-range
+  // solar wind coupling models. Apply location penalty the same way.
+  const rawScore120 = auroraScore ?? 0;
+  const score120 = useMemo(() => locationAdjustedScore(rawScore120, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore120, userLatitude, userLongitude, substormRiskData, bayOnset]);
   const vis15 = useMemo(() => getVisibilityPhrase(score15, conf15), [score15, conf15]);
   const vis30 = useMemo(() => getVisibilityPhrase(score30, conf30), [score30, conf30]);
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
+  const vis120 = useMemo(() => getVisibilityPhrase(score120, 'low'), [score120]);
 
   // Use raw (unadjusted) score to gate forecast slot visibility — slots should
   // always show when conditions are active globally, even if the user is north
@@ -396,6 +406,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       { time: '15 min', vis: vis15, conf: conf15 as SlotConfig['confidence'], substormScore: Math.round(score15) },
       { time: '30 min', vis: vis30, conf: conf30 as SlotConfig['confidence'], substormScore: Math.round(score30) },
       { time: '1 hour', vis: vis60, conf: conf60 as SlotConfig['confidence'], substormScore: Math.round(score60) },
+      { time: '2 hours', vis: vis120, conf: 'low' as SlotConfig['confidence'], substormScore: Math.round(score120) },
     ] : []),
   ];
 

@@ -665,7 +665,30 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 userLongitude={userLongitude}
                             />
                             <ActivitySummaryDisplay summary={activitySummary} />
-                            <ForecastTrendChart auroraScoreHistory={auroraScoreHistory} dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} onOpenModal={() => openModal('forecast')} />
+{(() => {
+                                // Compute oval boundary for chart visibility probability
+                                const _newell60 = substormRiskData?.metrics?.solar_wind?.newell_avg_60m ?? 0;
+                                const _newell30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
+                                const _newell = Math.max(_newell60, _newell30 * 0.85);
+                                let _boundary = -( 65.5 - _newell / 1800);
+                                _boundary = Math.max(_boundary, -76);
+                                _boundary = Math.min(_boundary, -44);
+                                if (substormRiskData?.current?.bay_onset_flag) _boundary = Math.min(_boundary, -47.2);
+                                return (
+                                    <ForecastTrendChart
+                                        auroraScoreHistory={auroraScoreHistory}
+                                        dailyCelestialHistory={dailyCelestialHistory}
+                                        owmDailyForecast={owmDailyForecast}
+                                        onOpenModal={() => openModal('forecast')}
+                                        userLatitude={userLatitude}
+                                        userLongitude={userLongitude}
+                                        moonIllumination={gaugeData?.moon?.illumination ?? null}
+                                        substormBz={substormRiskData?.metrics?.solar_wind?.bz ?? null}
+                                        substormScore={substormRiskData?.current?.score ?? null}
+                                        ovalBoundaryGmag={_boundary}
+                                    />
+                                );
+                            })()}
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
                             
                             <ForecastChartPanel
