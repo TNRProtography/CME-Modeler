@@ -386,6 +386,7 @@ export const useForecastData = (
   const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
   const [userLatitude, setUserLatitude] = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
+  const [locationFailed, setLocationFailed] = useState<boolean>(false);
   const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
@@ -867,6 +868,7 @@ export const useForecastData = (
           },
           () => {
             setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
+            setLocationFailed(true);
           },
           { enableHighAccuracy: false, timeout: 10000, maximumAge: 1800000 }
         );
@@ -933,6 +935,7 @@ export const useForecastData = (
     locationBlurb,
     userLatitude,
     userLongitude,
+    locationFailed,
     fetchAllData,
     activitySummary,
   };

@@ -248,7 +248,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
-        userLatitude, userLongitude
+        userLatitude, userLongitude, locationFailed
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
@@ -604,11 +604,21 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                     {viewMode === 'simple' ? (
                         <main className="grid grid-cols-12 gap-6">
-                            {/* Simple View Components (Unchanged) */}
-                            <div className="col-span-12 card bg-neutral-950/80 p-6 text-center">
+                            {/* GPS banner */}
+                            {locationFailed && (
+                                <div className="col-span-12 flex items-center gap-3 px-4 py-3 bg-amber-900/30 border border-amber-700/50 rounded-lg">
+                                    <span className="text-xl flex-shrink-0">📍</span>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-amber-300">Enable location for an accurate forecast</p>
+                                        <p className="text-xs text-amber-400/70 mt-0.5">GPS is required to show aurora visibility from your location. Enable it in your browser or device settings and reload.</p>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Score + What to expect — side by side */}
+                            <div className="col-span-12 lg:col-span-5 card bg-neutral-950/80 p-6 text-center flex flex-col justify-center">
                                 <div className="text-7xl font-extrabold" style={{color: GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid}}>{(auroraScore ?? 0).toFixed(1)}%</div>
                                 <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
-                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 max-w-lg mx-auto text-left">
+                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-left">
                                     <div className="text-sm font-semibold text-amber-300 mb-2">Tonight's Forecast</div>
                                     <div className="space-y-2 text-sm text-neutral-200">
                                         {forecastLines.map((line) => (
@@ -616,33 +626,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                         ))}
                                     </div>
                                 </div>
-                                <div className="mt-4 bg-neutral-900/70 rounded-lg border border-neutral-700/60 max-w-lg mx-auto overflow-hidden">
-                                    {isDaylight ? (
-                                        <div className="flex items-center gap-3 px-4 py-5 text-neutral-400 text-sm">
-                                            <span className="text-2xl flex-shrink-0">☀️</span>
-                                            <span>It's still daylight — aurora is only visible after dark. Come back after dark.</span>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="flex items-center justify-between px-4 pt-4 pb-2">
-                                                <span className="text-sm font-semibold text-amber-300">What to expect</span>
-                                                <span className="text-xs text-neutral-600">Based on current conditions</span>
-                                            </div>
-                                            <div className="divide-y divide-neutral-800/60">
-                                                {simpleTimelineSlots.map((slot) => (
-                                                    <div key={slot.label} className={`flex items-center gap-3 px-4 py-2.5 ${slot.isNow ? 'bg-neutral-800/40' : ''}`}>
-                                                        <span className={`text-xs font-bold w-12 flex-shrink-0 ${slot.isNow ? 'text-emerald-400' : 'text-neutral-500'}`}>{slot.label}</span>
-                                                        <span className="text-base flex-shrink-0 leading-none">{slot.icon}</span>
-                                                        <span className={`flex-1 text-sm leading-snug min-w-0 ${slot.isNow ? 'text-white font-medium' : 'text-neutral-200'}`}>{slot.phrase}</span>
-                                                        {(slot.label !== '1 hour' && slot.label !== '2 hours') && (
-                                                            <span className={`text-xs font-bold tabular-nums flex-shrink-0 px-1.5 py-0.5 rounded ${slot.isNow ? 'bg-emerald-500/20 text-emerald-400' : 'text-neutral-600'}`}>{slot.score}%</span>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
+                            </div>
+                            <div className="col-span-12 lg:col-span-7">
+                                <VisibilityForecastPanel
+                                    auroraScore={auroraScore}
+                                    substormForecast={substormForecast}
+                                    substormRiskData={substormRiskData}
+                                    recentSightings={recentSightings}
+                                    isDaylight={isDaylight}
+                                    userLatitude={userLatitude}
+                                    userLongitude={userLongitude}
+                                />
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
                             <ActivitySummaryDisplay summary={activitySummary} />
@@ -654,16 +648,31 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
-                            <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
-                            <VisibilityForecastPanel
-                                auroraScore={auroraScore}
-                                substormForecast={substormForecast}
-                                substormRiskData={substormRiskData}
-                                recentSightings={recentSightings}
-                                isDaylight={isDaylight}
-                                userLatitude={userLatitude}
-                                userLongitude={userLongitude}
-                            />
+                            {/* GPS banner */}
+                            {locationFailed && (
+                                <div className="col-span-12 flex items-center gap-3 px-4 py-3 bg-amber-900/30 border border-amber-700/50 rounded-lg">
+                                    <span className="text-xl flex-shrink-0">📍</span>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-amber-300">Enable location for an accurate forecast</p>
+                                        <p className="text-xs text-amber-400/70 mt-0.5">GPS is required to show aurora visibility from your location. Enable it in your browser or device settings and reload.</p>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Score + What to expect side by side */}
+                            <div className="col-span-12 lg:col-span-5">
+                                <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
+                            </div>
+                            <div className="col-span-12 lg:col-span-7">
+                                <VisibilityForecastPanel
+                                    auroraScore={auroraScore}
+                                    substormForecast={substormForecast}
+                                    substormRiskData={substormRiskData}
+                                    recentSightings={recentSightings}
+                                    isDaylight={isDaylight}
+                                    userLatitude={userLatitude}
+                                    userLongitude={userLongitude}
+                                />
+                            </div>
                             <ActivitySummaryDisplay summary={activitySummary} />
 {(() => {
                                 // Compute oval boundary for chart visibility probability

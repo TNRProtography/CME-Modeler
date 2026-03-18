@@ -85,69 +85,36 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        <div className="space-y-4">
-          <div className="text-center lg:text-left">
-            <div className="text-6xl font-extrabold text-white">
-              {score !== null ? `${score.toFixed(1)}%` : '...'} 
-              <span className="text-5xl ml-2">{getAuroraEmoji(score)}</span>
-            </div>
-            <div className="text-sm text-neutral-400 mt-1">Aurora Visibility Score</div>
+      <div className="space-y-4">
+        <div className="text-center lg:text-left">
+          <div className="text-6xl font-extrabold text-white">
+            {score !== null ? `${score.toFixed(1)}%` : '...'}
+            <span className="text-5xl ml-2">{getAuroraEmoji(score)}</span>
           </div>
-          
-          <div className="w-full bg-neutral-700 rounded-full h-3">
-            <div
-              className="h-3 rounded-full transition-all duration-500"
-              style={{
-                width: `${score !== null ? getGaugeStyle(score, 'power').percentage : 0}%`,
-                backgroundColor: score !== null ? gaugeColors[getScoreColorKey(score)].solid : gaugeColors.gray.solid,
-              }}
-            />
-          </div>
-          
-          <div className="space-y-1">
-            <div className="text-sm text-neutral-400">{lastUpdated}</div>
-            <div className="text-xs text-neutral-500 italic">{locationBlurb}</div>
-          </div>
+          <div className="text-sm text-neutral-400 mt-1">Aurora Visibility Score</div>
         </div>
 
-        <div className="space-y-4">
-          {isSubstormActive && !isDaylight && (score ?? 0) > 0 && (
-            <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-700/50">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="text-sm text-neutral-400">Substorm Activity</div>
-                  <div className="text-xl font-semibold text-white">{windowLabel}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-neutral-400">Likelihood</div>
-                  <div className="text-2xl font-bold text-white">{likelihood}%</div>
-                </div>
-              </div>
-              
-              <div className="h-2 w-full rounded-full bg-neutral-800 overflow-hidden">
-                <div 
-                  className={`h-full bg-gradient-to-r ${likelihoodGrad} transition-all duration-500`} 
-                  style={{ width: `${likelihood}%` }}
-                />
-              </div>
-              
-              <div className="mt-2 text-xs text-neutral-500">
-                Status: {status.replace("_", " ")}
-              </div>
-            </div>
-          )}
+        <div className="w-full bg-neutral-700 rounded-full h-3">
+          <div
+            className="h-3 rounded-full transition-all duration-500"
+            style={{
+              width: `${score !== null ? getGaugeStyle(score, 'power').percentage : 0}%`,
+              backgroundColor: score !== null ? gaugeColors[getScoreColorKey(score)].solid : gaugeColors.gray.solid,
+            }}
+          />
+        </div>
 
-          <div className="rounded-lg p-4 bg-neutral-900/50 border border-neutral-700/50">
-            <div className="text-sm text-neutral-300 font-medium mb-2">
-              Tonight's Forecast
-            </div>
-            <div className="space-y-2 text-sm text-neutral-200">
-              {forecastLines.map((line) => (
-                <p key={line} className="leading-relaxed">{line}</p>
-              ))}
-            </div>
+        <div className="space-y-1">
+          <div className="text-sm text-neutral-400">{lastUpdated}</div>
+          <div className="text-xs text-neutral-500 italic">{locationBlurb}</div>
+        </div>
+
+        <div className="rounded-lg p-4 bg-neutral-900/50 border border-neutral-700/50">
+          <div className="text-sm text-neutral-300 font-medium mb-2">Tonight's Forecast</div>
+          <div className="space-y-2 text-sm text-neutral-200">
+            {forecastLines.map((line) => (
+              <p key={line} className="leading-relaxed">{line}</p>
+            ))}
           </div>
         </div>
       </div>
