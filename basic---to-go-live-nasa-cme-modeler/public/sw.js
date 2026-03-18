@@ -6,29 +6,29 @@
 
 // Maps notification topic/tag to a specific icon
 const TOPIC_ICONS = {
-  'visibility-dslr':   'https://cme-modeler.pages.dev/icons/icon-visibility-dslr.png',
-  'visibility-phone':  'https://cme-modeler.pages.dev/icons/icon-visibility-phone.png',
-  'visibility-naked':  'https://cme-modeler.pages.dev/icons/icon-visibility-naked.png',
-  'overnight-watch':   'https://cme-modeler.pages.dev/icons/icon-overnight-watch.png',
-  'flare-event':       'https://cme-modeler.pages.dev/icons/icon-flare-event.png',
-  'flare-peak':        'https://cme-modeler.pages.dev/icons/icon-flare-peak.png',
-  'flare-M1':          'https://cme-modeler.pages.dev/icons/icon-flare-event.png',
-  'flare-M5':          'https://cme-modeler.pages.dev/icons/icon-flare-event.png',
-  'flare-X1':          'https://cme-modeler.pages.dev/icons/icon-flare-event.png',
-  'flare-X5':          'https://cme-modeler.pages.dev/icons/icon-flare-event.png',
-  'flare-X10':         'https://cme-modeler.pages.dev/icons/icon-flare-event.png',
-  'shock-detection':   'https://cme-modeler.pages.dev/icons/icon-shock-detection.png',
-  'cme-sheath':        'https://cme-modeler.pages.dev/icons/icon-cme-sheath.png',
-  'ips-shock':         'https://cme-modeler.pages.dev/icons/icon-ips-shock.png',
-  'aurora-40percent':  'https://cme-modeler.pages.dev/icons/icon-aurora.png',
-  'aurora-50percent':  'https://cme-modeler.pages.dev/icons/icon-aurora.png',
-  'aurora-60percent':  'https://cme-modeler.pages.dev/icons/icon-aurora.png',
-  'aurora-80percent':  'https://cme-modeler.pages.dev/icons/icon-aurora.png',
-  'substorm-forecast': 'https://cme-modeler.pages.dev/icons/icon-substorm.png',
+  'visibility-dslr':   '/icons/icon-visibility-dslr.png',
+  'visibility-phone':  '/icons/icon-visibility-phone.png',
+  'visibility-naked':  '/icons/icon-visibility-naked.png',
+  'overnight-watch':   '/icons/icon-overnight-watch.png',
+  'flare-event':       '/icons/icon-flare-event.png',
+  'flare-peak':        '/icons/icon-flare-peak.png',
+  'flare-M1':          '/icons/icon-flare-event.png',
+  'flare-M5':          '/icons/icon-flare-event.png',
+  'flare-X1':          '/icons/icon-flare-event.png',
+  'flare-X5':          '/icons/icon-flare-event.png',
+  'flare-X10':         '/icons/icon-flare-event.png',
+  'shock-detection':   '/icons/icon-shock-detection.png',
+  'cme-sheath':        '/icons/icon-cme-sheath.png',
+  'ips-shock':         '/icons/icon-ips-shock.png',
+  'aurora-40percent':  '/icons/icon-aurora.png',
+  'aurora-50percent':  '/icons/icon-aurora.png',
+  'aurora-60percent':  '/icons/icon-aurora.png',
+  'aurora-80percent':  '/icons/icon-aurora.png',
+  'substorm-forecast': '/icons/icon-substorm.png',
 };
 
-const DEFAULT_ICON  = 'https://cme-modeler.pages.dev/icons/android-chrome-192x192.png';
-const DEFAULT_BADGE = 'https://cme-modeler.pages.dev/icons/icon-badge.png';
+const DEFAULT_ICON  = '/icons/android-chrome-192x192.png';
+const DEFAULT_BADGE = '/icons/icon-badge.png';
 
 function getIcon(tag) {
   if (!tag) return DEFAULT_ICON;
