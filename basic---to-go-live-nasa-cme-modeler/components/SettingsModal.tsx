@@ -638,4 +638,4 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 };
 
 export default SettingsModal;
-// --- END OF FILE src/components/SettingsModal.tsx ---
+// --- END OF FILE src/components/SettingsModal.tsx --- 
