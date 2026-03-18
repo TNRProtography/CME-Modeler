@@ -71,7 +71,6 @@ interface ForecastDashboardProps {
   setViewerMedia?: (media: { url: string, type: 'image' | 'video' } | null) => void;
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: SubstormActivity | null) => void;
-  onSubstormRiskData?: (data: any) => void;
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
   /** Callback to report latest L1 solar wind speed to the propagation engine */
   setMeasuredWindSpeedKms?: (speed: number | undefined) => void;
@@ -243,7 +242,7 @@ const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summar
     );
 };
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal, onSubstormRiskData }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -269,9 +268,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [isLoading, onInitialLoad]);
 
-    useEffect(() => {
-        if (onSubstormRiskData) onSubstormRiskData(substormRiskData);
-    }, [substormRiskData, onSubstormRiskData]);
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);

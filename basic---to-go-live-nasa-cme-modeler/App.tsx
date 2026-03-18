@@ -32,7 +32,6 @@ const ForecastDashboard = lazy(() => import('./components/ForecastDashboard'));
 const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDashboard'));
 const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
-import type { SubstormRiskData } from './hooks/useForecastData';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports — also lazy to keep the initial bundle lean
@@ -227,7 +226,6 @@ const App: React.FC = () => {
   const [latestXrayFlux, setLatestXrayFlux] = useState<number | null>(null);
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
-  const [appSubstormRiskData, setAppSubstormRiskData] = useState<SubstormRiskData | null>(null);
   const [ipsAlertData, setIpsAlertData] = useState<IpsAlertData | null>(null);
   /** Latest measured solar wind speed at L1 (km/s) — fed to the propagation engine */
   const [measuredWindSpeedKms, setMeasuredWindSpeedKms] = useState<number | undefined>(undefined);
@@ -1067,7 +1065,6 @@ const App: React.FC = () => {
               auroraScore={currentAuroraScore ?? undefined}
               isSubstormAlert={isSubstormAlert}
               substormActivity={substormActivityStatus ?? undefined}
-              substormRiskData={appSubstormRiskData}
               isIpsAlert={!!ipsAlertData}
               ipsAlertData={ipsAlertData}
               onFlareAlertClick={handleFlareAlertClick}
@@ -1306,7 +1303,6 @@ const App: React.FC = () => {
                         setViewerMedia={setViewerMedia}
                         setCurrentAuroraScore={setCurrentAuroraScore}
                         setSubstormActivityStatus={setSubstormActivityStatus}
-                        onSubstormRiskData={setAppSubstormRiskData}
                         setIpsAlertData={setIpsAlertData}
                         setMeasuredWindSpeedKms={setMeasuredWindSpeedKms}
                         navigationTarget={navigationTarget}

@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { SubstormActivity, InterplanetaryShock } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 
+const SUBSTORM_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m';
+
 // Define the shape of the banner object returned by your worker
 interface BannerData {
   isActive: boolean;
@@ -28,7 +30,6 @@ interface GlobalBannerProps {
   auroraScore?: number;
   isSubstormAlert: boolean;
   substormActivity?: SubstormActivity;
-  substormRiskData?: SubstormRiskData | null;
   isIpsAlert: boolean;
   ipsAlertData?: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null;
   hideForTutorial?: boolean;
@@ -74,7 +75,6 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   auroraScore,
   isSubstormAlert,
   substormActivity,
-  substormRiskData,
   isIpsAlert,
   ipsAlertData,
   hideForTutorial = false,
@@ -86,6 +86,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   if (hideForTutorial) return null;
 
   const [globalBanner, setGlobalBanner] = useState<BannerData | null>(null);
+  const [substormRisk, setSubstormRisk] = useState<SubstormRiskData | null>(null);
   const [isGlobalBannerDismissed, setIsGlobalBannerDismissed] = useState(false);
   const lastProcessedBannerUniqueIdRef = useRef<string | undefined>(undefined);
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
@@ -127,6 +128,18 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     const interval = setInterval(fetchGlobalBanner, 60 * 1000);
     return () => clearInterval(interval);
   }, [shouldFetchRemoteBanner]);
+
+  useEffect(() => {
+    const fetchSubstorm = async () => {
+      try {
+        const r = await fetch(SUBSTORM_URL);
+        if (r.ok) setSubstormRisk(await r.json());
+      } catch { /* non-critical */ }
+    };
+    fetchSubstorm();
+    const interval = setInterval(fetchSubstorm, 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     setActiveAlertIndex(0);
@@ -229,12 +242,12 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     });
   }
 
-  if (substormRiskData?.current && substormRiskData.current.score >= 30) {
-    const score = substormRiskData.current.score;
-    const level = substormRiskData.current.level ?? '';
-    const trend = substormRiskData.current.risk_trend ?? '';
-    const bz = substormRiskData.metrics?.solar_wind?.bz;
-    const bayOnset = substormRiskData.current.bay_onset_flag;
+  if (substormRisk?.current && substormRisk.current.score >= 30) {
+    const score = substormRisk.current.score;
+    const level = substormRisk.current.level ?? '';
+    const trend = substormRisk.current.risk_trend ?? '';
+    const bz = substormRisk.metrics?.solar_wind?.bz;
+    const bayOnset = substormRisk.current.bay_onset_flag;
     const trendArrow = trend.includes('Rapidly Increasing') ? '⬆⬆' : trend.includes('Increasing') ? '⬆' : trend.includes('Rapidly Decreasing') ? '⬇⬇' : trend.includes('Decreasing') ? '⬇' : '→';
     alerts.push({
       id: `substorm-risk-${Math.round(score)}`,
