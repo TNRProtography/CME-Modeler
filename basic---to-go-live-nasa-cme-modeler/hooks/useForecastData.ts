@@ -122,6 +122,7 @@ export interface SubstormRiskData {
 }
 
 type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
+export type SolarWindDataSourceMode = 'combined' | 'imap' | 'ace_dscovr';
 
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
@@ -207,7 +208,16 @@ const parseNOAATime = (s: string): number => {
 
 const getSourceLabel = (source?: string | null) => {
   if (!source) return '—';
-  return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
+  return source.includes('IMAP') ? 'IMAP' : 'ACE/DCOVR';
+};
+
+const isImapSource = (source?: string | null) => typeof source === 'string' && source.toUpperCase().includes('IMAP');
+
+const matchesSourceMode = (sourceMode: SolarWindDataSourceMode, source?: string | null) => {
+  if (sourceMode === 'combined') return true;
+  const imap = isImapSource(source);
+  if (sourceMode === 'imap') return imap;
+  return !imap;
 };
 
 const splitTopLevelArrayEntries = (raw: string): string[] => {
@@ -397,6 +407,17 @@ export const useForecastData = (
   });
   const [substormRiskData, setSubstormRiskData] = useState<SubstormRiskData | null>(null);
   const [nzMagSubstormEvents, setNzMagSubstormEvents] = useState<NzMagEvent[]>([]);
+  const [solarWindSourceMode, setSolarWindSourceMode] = useState<SolarWindDataSourceMode>(() => {
+    if (typeof window === 'undefined') return 'combined';
+    const saved = window.localStorage.getItem('solarWindSourceMode');
+    return saved === 'imap' || saved === 'ace_dscovr' || saved === 'combined' ? saved : 'combined';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('solarWindSourceMode', solarWindSourceMode);
+    }
+  }, [solarWindSourceMode]);
 
   const reportInitialProgress = useCallback((task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => {
     onInitialLoadProgress?.(task);
@@ -708,20 +729,20 @@ export const useForecastData = (
       const densityPoints: { time: number; value: number; source: string }[] = [];
       const tempPoints: { time: number; value: number; source: string }[] = [];
       const clockPoints: { time: number; value: number; source: string }[] = [];
-      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null }[] = [];
+      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null; btSource: string; bzSource: string }[] = [];
 
       for (const entry of solarWindData) {
         const timeValue = entry.time_utc ?? entry.time_nz;
         const t = timeValue ? new Date(timeValue).getTime() : NaN;
         if (!Number.isFinite(t)) continue;
 
-        if (Number.isFinite(entry.speed ?? NaN) && (entry.speed ?? 0) >= 0) {
+        if (Number.isFinite(entry.speed ?? NaN) && (entry.speed ?? 0) >= 0 && matchesSourceMode(solarWindSourceMode, entry.src?.speed)) {
           speedPoints.push({ time: t, value: entry.speed as number, source: getSourceLabel(entry.src?.speed) });
         }
-        if (Number.isFinite(entry.density ?? NaN) && (entry.density ?? 0) >= 0) {
+        if (Number.isFinite(entry.density ?? NaN) && (entry.density ?? 0) >= 0 && matchesSourceMode(solarWindSourceMode, entry.src?.density)) {
           densityPoints.push({ time: t, value: entry.density as number, source: getSourceLabel(entry.src?.density) });
         }
-        if (Number.isFinite(entry.temp ?? NaN) && (entry.temp ?? 0) >= 0) {
+        if (Number.isFinite(entry.temp ?? NaN) && (entry.temp ?? 0) >= 0 && matchesSourceMode(solarWindSourceMode, entry.src?.temp)) {
           tempPoints.push({ time: t, value: entry.temp as number, source: getSourceLabel(entry.src?.temp) });
         }
 
@@ -735,12 +756,23 @@ export const useForecastData = (
           ? (entry.bt as number)
           : (by != null && bz != null ? Math.sqrt(by ** 2 + bz ** 2) : null);
 
-        if (clock != null) {
+        const magneticSource = entry.src?.bz ?? entry.src?.by ?? entry.src?.bt;
+
+        if (clock != null && matchesSourceMode(solarWindSourceMode, entry.src?.clock ?? magneticSource)) {
           clockPoints.push({ time: t, value: clock, source: getSourceLabel(entry.src?.clock ?? entry.src?.by ?? entry.src?.bz) });
         }
 
-        if (computedBt != null && by != null && bz != null && computedBt >= 0) {
-          magneticPoints.push({ time: t, bt: computedBt, by, bz, bx: bx ?? 0, clock });
+        if (computedBt != null && by != null && bz != null && computedBt >= 0 && matchesSourceMode(solarWindSourceMode, magneticSource)) {
+          magneticPoints.push({
+            time: t,
+            bt: computedBt,
+            by,
+            bz,
+            bx: bx ?? 0,
+            clock,
+            btSource: getSourceLabel(entry.src?.bt ?? magneticSource),
+            bzSource: getSourceLabel(entry.src?.bz ?? magneticSource),
+          });
         }
       }
 
@@ -760,8 +792,6 @@ export const useForecastData = (
       const latestDensity = densityPoints.at(-1);
       const latestTemp = tempPoints.at(-1);
       const latestMagneticPoint = magneticPoints.at(-1);
-      const latestMagEntry = [...solarWindRows].reverse().find((entry: any) => entry && (entry.bt != null || entry.bz != null || entry.by != null));
-      const latestMagSource = latestMagEntry?.src;
 
       setGaugeData(prev => ({
         ...prev,
@@ -775,10 +805,10 @@ export const useForecastData = (
           ? { ...prev.temp, value: latestTemp.value.toFixed(0), emoji: latestTemp.value > 600000 ? '🔥' : latestTemp.value > 250000 ? '🌡️' : '🧊', percentage: 0, color: '#38bdf8', lastUpdated: `Updated: ${formatNZTimestamp(latestTemp.time)}`, source: latestTemp.source }
           : { ...prev.temp, value: 'N/A', emoji: '❓', lastUpdated: 'Updated: N/A', source: '—' },
         bt: latestMagneticPoint
-          ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bt) }
+          ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestMagneticPoint.btSource }
           : { ...prev.bt, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
         bz: latestMagneticPoint
-          ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bz) }
+          ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestMagneticPoint.bzSource }
           : { ...prev.bz, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' }
       }));
       }
@@ -816,7 +846,7 @@ export const useForecastData = (
     if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
 
     if (isInitialLoad) setIsLoading(false);
-  }, [locationAdjustment, getMoonData, reportInitialProgress, setCurrentAuroraScore, setSubstormActivityStatus]);
+  }, [locationAdjustment, getMoonData, reportInitialProgress, setCurrentAuroraScore, setSubstormActivityStatus, solarWindSourceMode]);
 
   const activitySummary: ActivitySummary | null = useMemo(() => {
     const now = Date.now();
@@ -948,6 +978,8 @@ export const useForecastData = (
     userLatitude,
     userLongitude,
     locationFailed,
+    solarWindSourceMode,
+    setSolarWindSourceMode,
     fetchAllData,
     activitySummary,
   };

@@ -6,7 +6,7 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import { VisibilityForecastPanel } from './VisibilityForecastPanel';
 import GuideIcon from './icons/GuideIcon';
-import { useForecastData } from '../hooks/useForecastData';
+import { useForecastData, type SolarWindDataSourceMode } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
@@ -191,6 +191,12 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 
 const isImapSource = (source?: string) => source === 'IMAP';
 
+const SOLAR_WIND_SOURCE_OPTIONS: Array<{ mode: SolarWindDataSourceMode; label: string }> = [
+  { mode: 'ace_dscovr', label: 'ACE/DCOVR' },
+  { mode: 'imap', label: 'IMAP' },
+  { mode: 'combined', label: 'Combined' },
+];
+
 const formatTimeHHMM = (timestamp: number | null | undefined): string => {
     if (!timestamp || !Number.isFinite(timestamp)) return '—';
     return new Date(timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -248,7 +254,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
-        userLatitude, userLongitude, locationFailed
+        userLatitude, userLongitude, locationFailed, solarWindSourceMode, setSolarWindSourceMode
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
@@ -596,10 +602,29 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer"><img src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" alt="TNR Protography Logo" className="mx-auto w-full max-w-[250px] mb-4" width="250" height="110"/></a>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora - New Zealand Aurora Forecast</h1>
                     </header>
-                     <div className="flex justify-center items-center gap-2 mb-6">
+                    <div className="flex justify-center items-center gap-2 mb-6">
                         <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 shadow-inner p-1 backdrop-blur-md">
                           <button onClick={() => onViewModeChange('simple')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Simple View</button>
                           <button onClick={() => onViewModeChange('advanced')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'advanced' ? 'bg-gradient-to-r from-purple-500/80 to-fuchsia-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Advanced View</button>
+                        </div>
+                    </div>
+                    <div className="mb-6 card bg-neutral-950/80 p-4 border border-neutral-700/60">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                                <h2 className="text-sm font-semibold text-white">Solar wind / IMF data source</h2>
+                                <p className="text-xs text-neutral-400">Choose IMAP, ACE/DCOVR, or Combined (fills gaps using both).</p>
+                            </div>
+                            <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 p-1">
+                                {SOLAR_WIND_SOURCE_OPTIONS.map(option => (
+                                    <button
+                                        key={option.mode}
+                                        onClick={() => setSolarWindSourceMode(option.mode)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${solarWindSourceMode === option.mode ? 'bg-sky-600 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/10'}`}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
