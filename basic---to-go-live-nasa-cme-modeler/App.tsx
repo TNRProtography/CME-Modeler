@@ -685,6 +685,12 @@ const App: React.FC = () => {
     };
   }, [getDefaultTimelineRange]);
 
+  const getScrubberValueForNow = useCallback((minDate: number, maxDate: number): number => {
+    if (maxDate <= minDate) return 0;
+    const t = (Date.now() - minDate) / (maxDate - minDate);
+    return Math.max(0, Math.min(1000, t * 1000));
+  }, []);
+
   const loadCMEData = useCallback(async (days: TimeRange, options: { silent?: boolean } = {}) => {
     const { silent = false } = options;
     if (!silent) {
@@ -704,6 +710,9 @@ const App: React.FC = () => {
       const { minDate, maxDate } = getTimelineRangeFromData(data, days);
       setTimelineMinDate(minDate);
       setTimelineMaxDate(maxDate);
+      if (!currentlyModeledCMEId) {
+        setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
+      }
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -715,6 +724,9 @@ const App: React.FC = () => {
       const { minDate, maxDate } = getDefaultTimelineRange(days);
       setTimelineMinDate(minDate);
       setTimelineMaxDate(maxDate);
+      if (!currentlyModeledCMEId) {
+        setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
+      }
     } finally {
       if (!silent) {
         setIsLoading(false);
@@ -723,7 +735,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [resetClock, apiKey, markInitialTaskDone, getTimelineRangeFromData, getDefaultTimelineRange]);
+  }, [resetClock, apiKey, markInitialTaskDone, getTimelineRangeFromData, getDefaultTimelineRange, currentlyModeledCMEId, getScrubberValueForNow]);
 
 
   useEffect(() => {
@@ -863,12 +875,12 @@ const App: React.FC = () => {
     } else {
       setTimelineActive(false);
       setTimelinePlaying(false);
-      setTimelineScrubberValue(0);
       const { minDate, maxDate } = getTimelineRangeFromData(cmeData, activeTimeRange);
       setTimelineMinDate(minDate);
       setTimelineMaxDate(maxDate);
+      setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
     }
-  }, [cmeData, activeTimeRange, getTimelineRangeFromData]);
+  }, [cmeData, activeTimeRange, getTimelineRangeFromData, getScrubberValueForNow]);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
     handleSelectCMEForModeling(cme);
