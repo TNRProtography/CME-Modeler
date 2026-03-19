@@ -204,7 +204,7 @@ export const ActivityAlert: React.FC<ActivityAlertProps> = ({ isDaylight, celest
         
         if (now >= oneHourBeforeSunset && now < sunsetTime) {
             const latestHistoryPoint = auroraScoreHistory[auroraScoreHistory.length - 1];
-            const latestBaseScore = latestHistoryPoint?.baseScore ?? 0;
+            const latestBaseScore = latestHistoryPoint?.finalScore ?? latestHistoryPoint?.baseScore ?? 0;
 
             if (latestBaseScore >= 50) {
                 let msg = "Aurora activity is currently high! Good potential for a display as soon as it's dark.";

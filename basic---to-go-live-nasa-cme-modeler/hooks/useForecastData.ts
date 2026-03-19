@@ -897,6 +897,18 @@ export const useForecastData = (
     }
   }, [locationAdjustment, baseAuroraScore, setCurrentAuroraScore]);
 
+  // Keep history finalScore location-adjusted whenever location changes.
+  // baseScore = raw Greymouth value (from server), finalScore = location-adjusted.
+  useEffect(() => {
+    if (locationAdjustment === 0) return; // no adjustment needed, server finalScore is already correct
+    setAuroraScoreHistory(prev =>
+      prev.map(d => ({
+        ...d,
+        finalScore: Math.max(0, Math.min(100, d.baseScore + locationAdjustment)),
+      }))
+    );
+  }, [locationAdjustment]);
+
   useEffect(() => {
     const now = Date.now();
     const { sun } = celestialTimes;
