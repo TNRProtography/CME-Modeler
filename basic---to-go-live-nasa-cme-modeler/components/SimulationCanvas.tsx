@@ -1087,7 +1087,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const gDur   = gEnd - gStart;
       const ns     = 200;
 
-      const BACKGROUND_SPEED   = 350; // km/s quiet solar wind
+      const BACKGROUND_SPEED   = 280; // km/s ambient solar wind
       const BACKGROUND_DENSITY = 5;   // cm⁻³ baseline
       const CME_PASSAGE_MS     = 18 * 3600 * 1000; // ~18h passage at 1 AU
       const earthDistScene     = PLANET_DATA_MAP.EARTH.radius;
@@ -1200,10 +1200,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const fastest = activeCMEs.reduce((a, b) => a.speedKms > b.speedKms ? a : b);
           ts = Math.max(ts, fastest.speedKms);
 
-          // Compression: each CME adds density, more overlap = stronger compression
-          const base = activeCMEs.length * 20;
-          const compressionBonus = activeCMEs.length > 1 ? (activeCMEs.length - 1) * 15 : 0;
-          td = Math.max(td, BACKGROUND_DENSITY + base + compressionBonus);
+          // Density model:
+          // 1 CME  → 5–10 cm⁻³ depending on speed (faster = denser ejecta)
+          // 3 CMEs → ~20 cm⁻³ (compression from multiple events)
+          // 5+     → capped at 50 cm⁻³
+          // Single CME density scaled 5–10 by arrival speed (300→slow, 1500→fast)
+          const n = activeCMEs.length;
+          const singleDensity = 5 + Math.min(5, (fastest.speedKms - 300) / 240);
+          // Each additional CME adds diminishing compression: 2nd adds ~7, 3rd ~5, etc.
+          const compressionAdd = n > 1
+            ? Array.from({ length: n - 1 }, (_, i) => 7 / (i * 0.4 + 1)).reduce((a, b) => a + b, 0)
+            : 0;
+          td = Math.max(td, Math.min(50, BACKGROUND_DENSITY + singleDensity + compressionAdd));
 
           disturbanceType = 'CME';
           disturbanceName = fastest.name;

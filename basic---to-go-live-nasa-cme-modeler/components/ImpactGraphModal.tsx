@@ -87,7 +87,7 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
       y: {
         ...baseOptions.scales?.y,
         title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' },
-        suggestedMin: 300,
+        suggestedMin: 250,
         suggestedMax: 900,
       },
     },
