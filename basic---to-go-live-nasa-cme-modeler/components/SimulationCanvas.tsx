@@ -384,6 +384,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
+  // Fallback anchor when CH detection timestamp is unavailable.
+  const chHssAnchorSunAngleRef = useRef<number>(0);
+  const chHssAnchorEarthAngleRef = useRef<number>(0);
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
@@ -662,6 +665,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
+    {
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+      }
+    }
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
     // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
@@ -790,8 +802,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // CH longitudes from SUVI are Earth-facing at detection time.
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
-      const chReferenceMs = chDetectedAtMs ?? simulationTimeMs;
-      const chDetectionSunAngle = SUN_ANGULAR_VELOCITY * (chReferenceMs / 1000);
       let earthAngle = 0;
       const earth = celestialBodiesRef.current.EARTH?.mesh;
       if (earth) {
@@ -799,10 +809,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         earth.getWorldPosition(earthPos);
         earthAngle = Math.atan2(earthPos.x, earthPos.z);
       }
-      const chHssPhase =
+      const chHssPhaseFromDetection = chDetectedAtMs != null
+        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
+        : null;
+      const chHssPhaseFromFallbackAnchor =
         CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD +
-        earthAngle -
-        chDetectionSunAngle;
+        chHssAnchorEarthAngleRef.current -
+        chHssAnchorSunAngleRef.current;
+      const chHssPhase =
+        chHssPhaseFromDetection ?? chHssPhaseFromFallbackAnchor;
       if (chGroupRef.current) {
         chGroupRef.current.rotation.y = chHssPhase;
       }
@@ -1051,6 +1066,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
+    {
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+      }
+    }
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
         const child = group.children[0];
