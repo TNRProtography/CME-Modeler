@@ -2395,18 +2395,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p>
               <p><strong>CME Associated:</strong> {(selectedFlare as any).hasCME ? 'Yes' : 'No'}</p>
               <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p>
-              {(selectedFlare as any).hasCME && selectedFlare.linkedEvents?.find((e: any) => e.activityID.includes('CME')) && (
-                <button
-                  onClick={() => {
-                    const id = selectedFlare.linkedEvents!.find((e: any) => e.activityID.includes('CME'))!.activityID;
-                    onViewCMEInVisualization(id);
-                    setSelectedFlare(null);
-                  }}
-                  className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors"
-                >
-                  View in CME Visualization
-                </button>
-              )}
+              {(selectedFlare as any).hasCME && selectedFlare.linkedEvents?.find((e: any) => e.activityID.includes('CME')) && (() => {
+                const linkedCME = selectedFlare.linkedEvents!.find((e: any) => e.activityID.includes('CME'))!;
+                const cmeId = linkedCME.activityID;
+                return (
+                  <button
+                    onClick={() => {
+                      onViewCMEInVisualization(cmeId);
+                      setSelectedFlare(null);
+                    }}
+                    className="mt-4 w-full px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                    View CME in Visualization
+                    <span className="text-indigo-300 text-xs font-normal opacity-80 truncate max-w-[160px]">{cmeId.replace(/^.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-CME-\d+)$/, '$1')}</span>
+                  </button>
+                );
+              })()}
             </div>
           )
         }

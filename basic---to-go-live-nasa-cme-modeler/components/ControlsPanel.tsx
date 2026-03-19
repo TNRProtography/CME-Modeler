@@ -240,7 +240,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 checked={showHss}
                 onChange={onShowHssChange}
               />
+              <span className="ml-2 flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                BETA
+              </span>
             </div>
+            <p className="text-xs text-neutral-500 -mt-1">
+              Experimental — may affect performance on older devices.
+            </p>
             {/* CH detection status badge */}
             {chDetectionStatus && chDetectionStatus !== 'idle' && (
               <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${
