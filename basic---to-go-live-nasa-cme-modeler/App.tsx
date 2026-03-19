@@ -179,7 +179,7 @@ const App: React.FC = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>(TimeRange.D3);
-  const [activeView, setActiveView] = useState<ViewMode>(ViewMode.TOP);
+  const [activeView, setActiveView] = useState<ViewMode>(ViewMode.SIDE);
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
@@ -206,7 +206,7 @@ const App: React.FC = () => {
   const [showFluxRope, setShowFluxRope] = useState(false);
   const [showHss, setShowHss] = useState(false);
   const [sharedSuvi195Url, setSharedSuvi195Url] = useState<string | null>(null);
-  const { coronalHoles, detectionStatus: chDetectionStatus, chEvolutions } = useCoronalHoles({
+  const { coronalHoles, detectionStatus: chDetectionStatus, chEvolutions, lastDetectedAt } = useCoronalHoles({
     enabled: showHss,
     sourceImageUrl: sharedSuvi195Url,
   });
@@ -659,10 +659,10 @@ const App: React.FC = () => {
     const endDate = new Date();
     const startDate = new Date(endDate);
     const futureDate = new Date(endDate);
-    // Past is always 7 days regardless of selected CME data range
-    startDate.setDate(endDate.getDate() - 7);
-    // Future is however many days are selected in the controls panel (activeTimeRange)
-    futureDate.setDate(endDate.getDate() + days);
+    // Past follows the controls-panel date range (1d / 3d / 7d).
+    startDate.setDate(endDate.getDate() - days);
+    // Future is always fixed to 7 days so forecast horizon stays consistent.
+    futureDate.setDate(endDate.getDate() + 7);
     return {
       minDate: startDate.getTime(),
       maxDate: futureDate.getTime(),
@@ -675,8 +675,8 @@ const App: React.FC = () => {
     }
 
     const defaultRange = getDefaultTimelineRange(days);
-    // Allow timeline to extend back if a CME started before 7 days ago,
-    // but the minimum is always 7 days back (never shrinks the past window)
+    // Allow timeline to extend back if a CME started before the selected range,
+    // but never shrink below the controls-panel lookback window.
     const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), defaultRange.minDate);
 
     return {
@@ -684,6 +684,12 @@ const App: React.FC = () => {
       maxDate: defaultRange.maxDate,
     };
   }, [getDefaultTimelineRange]);
+
+  const getScrubberValueForNow = useCallback((minDate: number, maxDate: number): number => {
+    if (maxDate <= minDate) return 0;
+    const t = (Date.now() - minDate) / (maxDate - minDate);
+    return Math.max(0, Math.min(1000, t * 1000));
+  }, []);
 
   const loadCMEData = useCallback(async (days: TimeRange, options: { silent?: boolean } = {}) => {
     const { silent = false } = options;
@@ -704,6 +710,9 @@ const App: React.FC = () => {
       const { minDate, maxDate } = getTimelineRangeFromData(data, days);
       setTimelineMinDate(minDate);
       setTimelineMaxDate(maxDate);
+      if (!currentlyModeledCMEId) {
+        setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
+      }
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('429')) {
@@ -715,6 +724,9 @@ const App: React.FC = () => {
       const { minDate, maxDate } = getDefaultTimelineRange(days);
       setTimelineMinDate(minDate);
       setTimelineMaxDate(maxDate);
+      if (!currentlyModeledCMEId) {
+        setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
+      }
     } finally {
       if (!silent) {
         setIsLoading(false);
@@ -723,7 +735,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [resetClock, apiKey, markInitialTaskDone, getTimelineRangeFromData, getDefaultTimelineRange]);
+  }, [resetClock, apiKey, markInitialTaskDone, getTimelineRangeFromData, getDefaultTimelineRange, currentlyModeledCMEId, getScrubberValueForNow]);
 
 
   useEffect(() => {
@@ -863,12 +875,12 @@ const App: React.FC = () => {
     } else {
       setTimelineActive(false);
       setTimelinePlaying(false);
-      setTimelineScrubberValue(0);
       const { minDate, maxDate } = getTimelineRangeFromData(cmeData, activeTimeRange);
       setTimelineMinDate(minDate);
       setTimelineMaxDate(maxDate);
+      setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
     }
-  }, [cmeData, activeTimeRange, getTimelineRangeFromData]);
+  }, [cmeData, activeTimeRange, getTimelineRangeFromData, getScrubberValueForNow]);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
     handleSelectCMEForModeling(cme);
@@ -1231,6 +1243,7 @@ const App: React.FC = () => {
                         showFluxRope={showFluxRope}
                         showHss={showHss}
                         coronalHoles={coronalHoles}
+                        chDetectedAtMs={lastDetectedAt?.getTime() ?? null}
                         chEvolutions={chEvolutions}
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}

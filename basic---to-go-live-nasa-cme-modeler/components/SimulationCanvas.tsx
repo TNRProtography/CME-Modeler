@@ -42,6 +42,11 @@ const TEX = {
   MILKY_WAY:     "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
 };
 
+// Small empirical trim between SUVI longitudes and the photosphere texture.
+// Main phase alignment is anchored to CH detection timestamp.
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -12;
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
+
 // ============================================================
 //  BZ FLUX ROPE SHADERS
 //
@@ -333,6 +338,8 @@ interface SimulationCanvasProps {
   showHss: boolean;
   /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
   coronalHoles: CoronalHole[];
+  /** SUVI analysis time for the current CH detections (ms since epoch) */
+  chDetectedAtMs?: number | null;
   /** 72h CH evolution tracks from worker history */
   chEvolutions?: CHEvolution[]; // kept for API compatibility — CH shape is now always current detection
   dataVersion: number;
@@ -349,7 +356,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth = false, showHss, coronalHoles, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
     measuredWindSpeedKms,
   } = props;
 
@@ -377,7 +384,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
-
+  // Fallback anchor when CH detection timestamp is unavailable.
+  const chHssAnchorSunAngleRef = useRef<number>(0);
+  const chHssAnchorEarthAngleRef = useRef<number>(0);
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
@@ -656,6 +665,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
+    {
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+      }
+    }
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
     // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
@@ -769,44 +787,49 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
 
       // ── Solar rotation / timeline sync ───────────────────────────────────
-      // When timeline is active, the sun angle is computed from the scrubbed
-      // time vs a fixed epoch — NOT vs Date.now() every frame (which drifts
-      // while paused and causes continuous glitching).
-      // When timeline is playing, timelineValueRef advances each frame, so
-      // the angle updates smoothly. When paused it stays fixed.
-      // When timeline is inactive, animate in real-time.
-      if (timelineActive && timelineMaxDate > timelineMinDate) {
-        const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        // Use a fixed epoch (Unix zero) so angle is stable when scrubber is still
-        const dtSecFromEpoch = timelineNowMs / 1000;
-        sunRotationRef.current = SUN_ANGULAR_VELOCITY * dtSecFromEpoch;
-      } else {
-        const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
-        sunRotationRef.current += sunAngularDelta;
-      }
+      // Use one absolute-time model in both live and timeline modes.
+      // This avoids phase jumps when toggling timeline play/pause.
+      const simulationTimeMs = (timelineActive && timelineMaxDate > timelineMinDate)
+        ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
+        : Date.now();
+      sunRotationRef.current = SUN_ANGULAR_VELOCITY * (simulationTimeMs / 1000);
       if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
-      // ── Cancel inherited sun rotation for CH patches and HSS spirals ──────
+      // ── Coronal-hole patches follow solar rotation ────────────────────────
+      // CH patches are children of sunMesh, so they should inherit the Sun's
+      // rotation directly and move across the visible disk with the texture.
       //
-      // Both chGroup and hssGroup are children of sunMesh, so they inherit
-      // sunMesh.rotation.y. But SUVI detections are in Stonyhurst coordinates
-      // (lon=0 = currently facing Earth), meaning the rotation is already
-      // encoded in the detected CH longitude. Counter-rotating by the same
-      // angle each frame keeps patches and spiral roots world-fixed at their
-      // correct Stonyhurst positions, regardless of the sun mesh's visual spin.
+      // CH longitudes from SUVI are Earth-facing at detection time.
+      // Anchor CH/HSS using the CH detection timestamp to keep placement
+      // stable when the timeline starts/plays from different epochs.
+      let earthAngle = 0;
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        earthAngle = Math.atan2(earthPos.x, earthPos.z);
+      }
+      const chHssPhaseFromDetection = chDetectedAtMs != null
+        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
+        : null;
+      const chHssPhaseFromFallbackAnchor =
+        CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD +
+        chHssAnchorEarthAngleRef.current -
+        chHssAnchorSunAngleRef.current;
+      const chHssPhase =
+        chHssPhaseFromDetection ?? chHssPhaseFromFallbackAnchor;
       if (chGroupRef.current) {
-        chGroupRef.current.rotation.y = -sunRotationRef.current;
+        chGroupRef.current.rotation.y = chHssPhase;
       }
 
       // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
-        hssGroupRef.current.rotation.y = -sunRotationRef.current;
+        hssGroupRef.current.rotation.y = chHssPhase;
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
-          // uSunAngle = 0: hssGroup counter-rotation above already places the
-          // spiral root at the correct world-space longitude via uChLon alone.
+          // hssGroup inherits the sun rotation, so shader rotation stays at 0.
           if (u.uSunAngle !== undefined) u.uSunAngle.value = 0;
           if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
         });
@@ -1043,7 +1066,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
+    {
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+      }
+    }
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
         const child = group.children[0];
@@ -1075,7 +1106,30 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
     if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return;
     const target = new THREE.Vector3(0, 0, 0);
-    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) celestialBodiesRef.current.EARTH.mesh.getWorldPosition(target);
+    const earth = celestialBodiesRef.current.EARTH?.mesh;
+    const sun = celestialBodiesRef.current.SUN?.mesh;
+    if (focus === FocusTarget.EARTH && earth) {
+      // For side view, place camera behind Earth, looking toward Sun
+      // (Sun -> Earth -> Camera) so CH/HSS positioning is easier to interpret.
+      if (view === ViewMode.SIDE && sun) {
+        const earthPos = new THREE.Vector3();
+        const sunPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        sun.getWorldPosition(sunPos);
+        target.copy(sunPos);
+
+        const behindDir = earthPos.clone().sub(sunPos).normalize();
+        const backDistance = SCENE_SCALE * 0.22;
+        const pos = earthPos.clone()
+          .addScaledVector(behindDir, backDistance)
+          .add(new THREE.Vector3(0, SCENE_SCALE * 0.02, 0));
+
+        gsap.to(cameraRef.current.position, { duration: 1.2, x: pos.x, y: pos.y, z: pos.z, ease: "power2.inOut" });
+        gsap.to(controlsRef.current.target, { duration: 1.2, x: target.x, y: target.y, z: target.z, ease: "power2.inOut", onUpdate: () => controlsRef.current.update() });
+        return;
+      }
+      earth.getWorldPosition(target);
+    }
     const pos = view === ViewMode.TOP
       ? new THREE.Vector3(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01)
       : new THREE.Vector3(target.x + SCENE_SCALE * 1.9, target.y + SCENE_SCALE * 0.35, target.z);
