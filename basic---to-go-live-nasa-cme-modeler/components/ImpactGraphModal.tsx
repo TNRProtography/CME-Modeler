@@ -160,13 +160,7 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
         {/* Charts */}
         <div className="overflow-y-auto p-4 flex-grow space-y-6">
           {/* Disturbances summary */}
-          {(hasCME || hasHSS) && (
-            <div className="flex gap-4 text-xs text-neutral-400 flex-wrap">
-              {hasCME && <span><span className="text-sky-400">■</span> CME passage</span>}
-              {hasHSS && <span><span className="text-yellow-400">■</span> High-speed stream (coronal hole)</span>}
-              <span className="text-yellow-300/70">| Yellow line = Now</span>
-            </div>
-          )}
+
 
           <div>
             <div className="text-xs text-neutral-500 mb-1 font-medium uppercase tracking-wide">Solar Wind Speed</div>
