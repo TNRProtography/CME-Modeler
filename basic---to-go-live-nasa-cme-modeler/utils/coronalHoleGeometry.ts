@@ -55,7 +55,7 @@ import { interpolateCHAtTimeMs, type CHEvolution } from './coronalHoleHistory';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
-const SPIRAL_TURNS           = 0.25;   // quarter revolution — open, sweeping arc
+const SPIRAL_TURNS           = 0.38;   // tighter winding — more pronounced spiral arc
 // CH_OVEREMPHASIS: scaling factor for coronal hole visual patches on the Sun.
 //
 // Previously 1.22 (inflating CHs by 22%) to make them easier to see.
@@ -589,7 +589,7 @@ export function buildParkerSpiralMesh(
     const phi = t * phiMax;
 
     // Fill the AU-domain extent for clearer WSA-ENLIL-like interpretation.
-    const r = THREE.MathUtils.lerp(sunRadius * 1.03, maxReach, t);
+    const r = THREE.MathUtils.lerp(sunRadius * 1.018, maxReach, t);
 
     // Azimuth: starts at 0 (aligned with CH centroid after shader rotation),
     // then trails backward as the Parker spiral winds out.
@@ -654,7 +654,7 @@ export function buildParkerSpiralMesh(
   const tubeR0 = sunRadius * Math.sin(chHalfAngleRad);
 
   // Minimum base radius so even small CHs produce a visible stream
-  const tubeR0Clamped = Math.max(tubeR0, sunRadius * 0.15);
+  const tubeR0Clamped = Math.max(tubeR0, sunRadius * 0.07);
 
   const sides  = SPIRAL_TUBE_SIDES;
   const pos: number[]  = [];
@@ -689,7 +689,7 @@ export function buildParkerSpiralMesh(
       // the stream is still narrow near the Sun but really opens up
       // in the outer heliosphere, matching ENLIL visualizations.
       const tExpand = Math.pow(t, 0.7);
-      const flare   = 1.0 + tExpand * (8.0 * widthFactor);  // 1× at sun → ~9–15× at Earth
+      const flare   = 1.0 + tExpand * (4.0 * widthFactor);  // 1× at sun → ~5–8× at Earth
       const rTube   = tubeR0Clamped * flare;
 
       pos.push(
