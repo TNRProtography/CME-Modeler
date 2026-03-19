@@ -465,26 +465,34 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     );
   }, [cmeData, coronalHoles, measuredWindSpeedKms]);
 
-  // ── DBM-based distance calculation ─────────────────────────────────
-  // Drop-in replacement for the old calculateDistanceWithDeceleration.
-  // Falls back to simple linear propagation if the engine isn't ready.
+  // ── Simple deceleration model (original) ─────────────────────────────────
+  // Uses empirical formula: a (m/s²) = 1.41 - 0.0035 * speed_kms
+  // CME decelerates until it reaches MIN_CME_SPEED_KMS, then coasts.
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    const engine = propagationEngineRef.current;
-    if (engine) {
-      return engine.getSceneDistance(cme.id, timeSinceEventSeconds, SCENE_SCALE);
+    const u_kms = cme.speed;
+    const t_s = Math.max(0, timeSinceEventSeconds);
+
+    if (u_kms <= MIN_CME_SPEED_KMS) {
+      return (u_kms * t_s / AU_IN_KM) * SCENE_SCALE;
     }
 
-    // Fallback: simple constant-speed propagation (better than nothing)
-    const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-    if (u <= MIN_CME_SPEED_KMS) return (u * t / AU_IN_KM) * SCENE_SCALE;
-    // Use basic quadratic drag approximation as fallback
-    const w = 380;  // assumed ambient wind
-    const gamma = 0.5e-7;  // mid-range drag parameter
-    const dv = u - w;
-    const denom = 1 + gamma * Math.abs(dv) * t;
-    const v = w + dv / denom;
-    const dist = w * t + (dv > 0 ? 1 : -1) * Math.log(denom) / gamma;
-    return (dist / AU_IN_KM) * SCENE_SCALE;
+    const a_ms2 = 1.41 - 0.0035 * u_kms;
+    const a_kms2 = a_ms2 / 1000.0;
+
+    if (a_kms2 >= 0) {
+      return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM * SCENE_SCALE;
+    }
+
+    // Decelerating CME — find when it hits the floor speed then coast
+    const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
+
+    if (t_s < time_to_floor_s) {
+      return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM * SCENE_SCALE;
+    }
+
+    const dist_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
+    const dist_coast = MIN_CME_SPEED_KMS * (t_s - time_to_floor_s);
+    return (dist_decel + dist_coast) / AU_IN_KM * SCENE_SCALE;
   }, []);
 
   const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
