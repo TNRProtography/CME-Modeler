@@ -1,6 +1,6 @@
 //--- START OF FILE src/components/VisibilityForecastPanel.tsx ---
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 
@@ -302,6 +302,76 @@ const TrendArrow: React.FC<{ trend?: string }> = ({ trend }) => {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+
+// ── Info tooltip modal ────────────────────────────────────────────────────────
+const WhatToExpectInfo: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <div
+    className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
+    style={{ background: 'rgba(0,0,0,0.7)' }}
+    onClick={onClose}
+  >
+    <div
+      className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto styled-scrollbar"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <h3 className="text-lg font-semibold text-white">About "What to expect"</h3>
+        <button onClick={onClose} className="text-neutral-400 hover:text-white flex-shrink-0 text-xl leading-none">✕</button>
+      </div>
+
+      <div className="space-y-3 text-sm text-neutral-300 leading-relaxed">
+        <p>
+          This panel answers one question: <strong className="text-white">will aurora actually be visible from where you are right now?</strong> It combines several data sources to give a location-aware answer, not just a global score.
+        </p>
+
+        <div className="border-t border-neutral-700/60 pt-3">
+          <p className="text-white font-medium mb-1">How it works</p>
+          <p>
+            The forecast starts with the <strong className="text-neutral-200">Substorm Risk Index</strong> — a physics-based score (0–100+) calculated from real-time solar wind data at the L1 point, roughly 1.5 million km from Earth. It uses the Newell coupling function to measure how much energy the solar wind is pumping into Earth's magnetosphere right now.
+          </p>
+        </div>
+
+        <div className="border-t border-neutral-700/60 pt-3">
+          <p className="text-white font-medium mb-1">Your location matters</p>
+          <p>
+            The aurora oval — the ring around the magnetic pole where aurora occurs — expands equatorward as activity increases. Your GPS coordinates are converted to geomagnetic latitude using the IGRF-13 dipole model, and compared against the computed oval boundary. If the visibility horizon hasn't reached you yet, the forecast adjusts downward accordingly. This is the same calculation shown on the sightings map.
+          </p>
+        </div>
+
+        <div className="border-t border-neutral-700/60 pt-3">
+          <p className="text-white font-medium mb-1">Reading the time slots</p>
+          <ul className="space-y-1 mt-1">
+            <li><span className="text-emerald-400 font-medium">Now</span> — the current substorm index, location-adjusted. High confidence.</li>
+            <li><span className="text-neutral-200 font-medium">15 / 30 min</span> — projected from current trend, Newell coupling acceleration, and substorm probability. Medium confidence.</li>
+            <li><span className="text-neutral-200 font-medium">1 hour</span> — substorm probability model projection. Lower confidence — treat as a guide.</li>
+            <li><span className="text-neutral-200 font-medium">2 hours</span> — uses the Spot The Aurora composite score which incorporates longer-range solar wind models. Rough guide only.</li>
+          </ul>
+        </div>
+
+        <div className="border-t border-neutral-700/60 pt-3">
+          <p className="text-white font-medium mb-1">Confidence levels</p>
+          <ul className="space-y-1 mt-1">
+            <li><span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1.5 align-middle"></span><span className="text-emerald-400">High</span> — strong signal, conditions are clear</li>
+            <li><span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 align-middle"></span><span className="text-amber-400">Moderate</span> — building or uncertain conditions</li>
+            <li><span className="inline-block w-2 h-2 rounded-full bg-neutral-500 mr-1.5 align-middle"></span><span className="text-neutral-400">Low</span> — longer-range projection, treat as a rough guide</li>
+          </ul>
+        </div>
+
+        <div className="border-t border-neutral-700/60 pt-3">
+          <p className="text-white font-medium mb-1">Why enable GPS?</p>
+          <p>
+            Without your location, the forecast assumes you're at Greymouth (the Spot The Aurora reference point). With GPS, the oval visibility calculation is specific to your exact position — someone in Invercargill will see aurora at much lower activity levels than someone in Auckland. The Spot The Aurora % score is a solid backup, but this panel is more accurate when location is available.
+          </p>
+        </div>
+
+        <div className="border-t border-neutral-700/60 pt-3 text-xs text-neutral-500">
+          Data sources: NOAA RTSW solar wind · Substorm Risk Worker (Newell coupling + IGRF-13) · SpotTheAurora forecast composite · GeoNet Eyrewell magnetometer (bay onset)
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = ({
   auroraScore,
   substormForecast,
@@ -312,6 +382,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   userLongitude,
 }) => {
   // All scores derive from the substorm worker — the physics-based measurement
+  const [infoOpen, setInfoOpen] = useState(false);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
   const workerScore    = rawWorkerScore != null
     ? locationAdjustedScore(
@@ -377,11 +448,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
   const vis120 = useMemo(() => getVisibilityPhrase(score120, 'low'), [score120]);
 
-  // Use raw (unadjusted) score to gate forecast slot visibility — slots should
-  // always show when conditions are active globally, even if the user is north
-  // of the visibility line. The phrases themselves will reflect their location.
-  const rawBase = rawWorkerScore ?? auroraScore ?? 0;
-  const showForecast = rawBase >= 15 || substormForecast.status !== 'QUIET';
+  // Always show forecast slots when it's dark — phrases reflect location.
+  const showForecast = true;
 
   if (isDaylight) {
     return (
@@ -413,8 +481,20 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-5 h-full flex flex-col">
       {/* Header */}
+      {infoOpen && <WhatToExpectInfo onClose={() => setInfoOpen(false)} />}
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-lg font-semibold text-white">What to expect</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-white">What to expect</h3>
+          <button
+            onClick={() => setInfoOpen(true)}
+            className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
+            title="How this forecast works"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+        </div>
         <span className="text-xs text-neutral-500">Based on current conditions</span>
       </div>
       {/* Accuracy note */}
