@@ -42,6 +42,12 @@ const TEX = {
   MILKY_WAY:     "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
 };
 
+// Empirical visual alignment between SUVI disk-centre longitudes and the
+// photosphere texture prime meridian used on the 3D Sun mesh.
+// Negative values move CH/HSS features slightly "back" in rotation phase.
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -8;
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
+
 // ============================================================
 //  BZ FLUX ROPE SHADERS
 //
@@ -789,14 +795,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // ── Coronal-hole patches follow solar rotation ────────────────────────
       // CH patches are children of sunMesh, so they should inherit the Sun's
       // rotation directly and move across the visible disk with the texture.
+      // Apply a small fixed phase correction so CH overlays line up with the
+      // texture's apparent central meridian.
       if (chGroupRef.current) {
-        chGroupRef.current.rotation.y = 0;
+        chGroupRef.current.rotation.y = CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD;
       }
 
       // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
-        hssGroupRef.current.rotation.y = 0;
+        hssGroupRef.current.rotation.y = CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD;
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
