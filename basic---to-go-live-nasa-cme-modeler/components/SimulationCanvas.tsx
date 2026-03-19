@@ -42,10 +42,9 @@ const TEX = {
   MILKY_WAY:     "https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg",
 };
 
-// Empirical visual alignment between SUVI disk-centre longitudes and the
-// photosphere texture prime meridian used on the 3D Sun mesh.
-// Negative values move CH/HSS features slightly "back" in rotation phase.
-const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -16;
+// Small empirical trim between SUVI longitudes and the photosphere texture.
+// Main phase alignment is handled dynamically when CH/HSS data refreshes.
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -6;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
 
 // ============================================================
@@ -383,6 +382,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
+  // Sun phase captured when CH/HSS were last rebuilt from SUVI detections.
+  const chHssAnchorSunAngleRef = useRef<number>(0);
 
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
@@ -662,6 +663,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
     // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
@@ -795,16 +797,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // ── Coronal-hole patches follow solar rotation ────────────────────────
       // CH patches are children of sunMesh, so they should inherit the Sun's
       // rotation directly and move across the visible disk with the texture.
-      // Apply a small fixed phase correction so CH overlays line up with the
-      // texture's apparent central meridian.
+      //
+      // CH longitudes from SUVI are "now-facing" at detection time. If the Sun
+      // already had non-zero phase when CHs were ingested, overlays can appear
+      // pre-shifted toward a limb. We cancel that captured ingest-time phase,
+      // then allow subsequent solar rotation to move CH/HSS naturally.
+      const chHssPhase = CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD - chHssAnchorSunAngleRef.current;
       if (chGroupRef.current) {
-        chGroupRef.current.rotation.y = CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD;
+        chGroupRef.current.rotation.y = chHssPhase;
       }
 
       // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
-        hssGroupRef.current.rotation.y = CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD;
+        hssGroupRef.current.rotation.y = chHssPhase;
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
@@ -1045,6 +1051,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
 
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
