@@ -1431,98 +1431,90 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
 
     try {
+      // ── Step 1: TXT file is authoritative ──────────────────────────────────
+      // solar-regions.txt defines which regions exist and provides:
+      // region number, location (lat/lon), area, spot count, magnetic class.
+      // Only regions in this file are shown — JSON is supplementary only.
       const rawText = await fetchFirstAvailableText([NOAA_ACTIVE_REGIONS_TEXT_URL]);
       const textRegions = parseNoaaSolarRegionsText(rawText);
-      const textRegionIds = new Set(textRegions.map((region) => region.region));
 
-      // Fetch both JSON sources explicitly in parallel — matches old working behaviour
+      if (textRegions.length === 0) {
+        setActiveSunspotRegions([]);
+        setLoadingSunspotRegions(null);
+        stampIfChanged('solar-regions', [], setLastSunspotRegionsUpdate);
+        return;
+      }
+
+      // Build a lookup by region number for fast merging
+      const txtByRegion = new Map<string, Omit<ActiveSunspotRegion, 'trend'>>();
+      textRegions.forEach(r => txtByRegion.set(r.region, r));
+
+      // ── Step 2: JSON for supplementary data — one entry per region ─────────
+      // sunspot_report.json: flare probabilities, spot count, magnetic class
+      // solar_regions.json:  same, different field names — both tried, latest wins
       const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
         fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']).catch(() => null),
         fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']).catch(() => null),
       ]);
 
-      const combined = [
-        ...(sunspotReportRaw ? extractActiveRegionEntries(sunspotReportRaw, 'sunspot_report.json') : []),
-        ...(solarRegionsRaw ? extractActiveRegionEntries(solarRegionsRaw, 'solar_regions.json') : []),
-        ...textRegions,
-      ].filter((entry) => textRegionIds.has(entry.region));
-
-      const nzNow = toNzEpochMs(Date.now());
-      const cutoff = nzNow - ACTIVE_REGION_MAX_AGE_MS;
-
-      const grouped = combined.reduce((acc, item) => {
-        if (!isValidSunspotRegion(item)) return acc;
-        const bucket = acc.get(item.region) ?? [];
-        bucket.push(item);
-        acc.set(item.region, bucket);
-        return acc;
-      }, new Map<string, Omit<ActiveSunspotRegion, 'trend'>[]>());
-
-      const dedupedLatest: ActiveSunspotRegion[] = Array.from(grouped.values())
-        .map((entries) => {
-          if (!Array.isArray(entries) || entries.length === 0) return null;
-
-          const sorted = [...entries]
-            .filter(isValidSunspotRegion)
-            .sort((a, b) => {
-              const ta = a?.observedTime ?? 0;
-              const tb = b?.observedTime ?? 0;
-              if (tb !== ta) return tb - ta;
-              const completenessDelta = getSunspotDetailCompleteness(b) - getSunspotDetailCompleteness(a);
-              if (completenessDelta !== 0) return completenessDelta;
-              return ((b as any)?._sourceIndex ?? 0) - ((a as any)?._sourceIndex ?? 0);
-            });
-
-          const latest = sorted[0];
-          if (!isValidSunspotRegion(latest)) return null;
-
-          const fallbackWithCoords = sorted.find((entry) => (entry?.latitude ?? null) !== null && (entry?.longitude ?? null) !== null);
-          const fallbackWithLocation = sorted.find((entry) => Boolean(entry?.location && entry.location !== 'N/A'));
-          const previousWithArea = sorted.slice(1).find((entry) => (entry?.area ?? null) !== null);
-
-          let trend: ActiveSunspotRegion['trend'] = 'Stable';
-          if ((latest?.area ?? null) !== null && (previousWithArea?.area ?? null) !== null) {
-            const delta = (latest.area as number) - (previousWithArea!.area as number);
-            if (delta >= 15) trend = 'Growing';
-            else if (delta <= -15) trend = 'Shrinking';
+      // Extract JSON entries, keyed by region — keep only the LATEST entry per region
+      const jsonByRegion = new Map<string, any>();
+      const processJsonSource = (raw: any, source: string) => {
+        if (!raw) return;
+        const entries = extractActiveRegionEntries(raw, source);
+        entries.forEach(entry => {
+          if (!txtByRegion.has(entry.region)) return; // only augment regions from TXT
+          const existing = jsonByRegion.get(entry.region);
+          // Keep the latest entry by observedTime
+          if (!existing || (entry.observedTime ?? 0) > (existing.observedTime ?? 0)) {
+            jsonByRegion.set(entry.region, entry);
           }
+        });
+      };
+      processJsonSource(sunspotReportRaw, 'sunspot_report.json');
+      processJsonSource(solarRegionsRaw, 'solar_regions.json');
 
-          const observed = latest.observedTime ?? null;
-          const observedNz = observed ? toNzEpochMs(observed) : null;
-          if (observedNz !== null && (observedNz < cutoff || observedNz > nzNow + 60 * 60 * 1000)) return null;
+      // ── Step 3: Merge — TXT is primary, JSON fills in extras ───────────────
+      const merged: ActiveSunspotRegion[] = textRegions.map(txt => {
+        const json = jsonByRegion.get(txt.region) ?? null;
 
-          const { _sourceIndex, ...cleanLatest } = latest as any;
-          return {
-            ...cleanLatest,
-            location: cleanLatest.location || fallbackWithLocation?.location || 'N/A',
-            latitude: (() => {
-              const lat = cleanLatest.latitude ?? fallbackWithCoords?.latitude ?? null;
-              return lat !== null && Math.abs(lat) <= 90 ? lat : null;
-            })(),
-            longitude: (() => {
-              const lon = cleanLatest.longitude ?? fallbackWithCoords?.longitude ?? null;
-              return lon !== null && Math.abs(lon) <= 90 ? lon : null;
-            })(),
-            classification: cleanLatest.classification ?? null,
-            area: getFirstNumber(sorted, (entry) => entry?.area ?? null),
-            spotCount: getFirstNumber(sorted, (entry) => entry?.spotCount ?? null),
-            magneticClass: getFirstText(sorted, (entry) => entry?.magneticClass ?? null),
-            cFlareProbability: getFirstNumber(sorted, (entry) => entry?.cFlareProbability ?? null),
-            mFlareProbability: getFirstNumber(sorted, (entry) => entry?.mFlareProbability ?? null),
-            xFlareProbability: getFirstNumber(sorted, (entry) => entry?.xFlareProbability ?? null),
-            protonProbability: getFirstNumber(sorted, (entry) => entry?.protonProbability ?? null),
-            cFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.cFlareEvents24h ?? null),
-            mFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.mFlareEvents24h ?? null),
-            xFlareEvents24h: getFirstNumber(sorted, (entry) => entry?.xFlareEvents24h ?? null),
-            previousActivity: getFirstText(sorted, (entry) => entry?.previousActivity ?? null),
-            source: cleanLatest.source ?? 'NOAA',
-            trend,
-          };
-        })
-        .filter((region): region is ActiveSunspotRegion => Boolean(region && typeof region === 'object'))
-        .filter((region) => isEarthFacingCoordinate(region.latitude, region.longitude))
-        .filter((region) => (region.area ?? 0) >= ACTIVE_REGION_MIN_AREA_MSH)
-        .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
+        // Trend: compare TXT area with JSON area if available
+        let trend: ActiveSunspotRegion['trend'] = 'Stable';
+        if (txt.area !== null && json?.area !== null && json?.area !== undefined) {
+          const delta = (txt.area as number) - (json.area as number);
+          if (delta >= 15) trend = 'Growing';
+          else if (delta <= -15) trend = 'Shrinking';
+        }
+
+        return {
+          // TXT fields are authoritative for identity and position
+          region: txt.region,
+          location: txt.location,
+          latitude: txt.latitude,
+          longitude: txt.longitude,
+          area: txt.area,
+          spotCount: txt.spotCount ?? json?.spotCount ?? null,
+          magneticClass: txt.magneticClass ?? json?.magneticClass ?? null,
+          classification: json?.classification ?? null,
+          observedTime: txt.observedTime ?? json?.observedTime ?? Date.now(),
+          // JSON supplements probability data
+          cFlareProbability: json?.cFlareProbability ?? null,
+          mFlareProbability: json?.mFlareProbability ?? null,
+          xFlareProbability: json?.xFlareProbability ?? null,
+          protonProbability: json?.protonProbability ?? null,
+          cFlareEvents24h: json?.cFlareEvents24h ?? null,
+          mFlareEvents24h: json?.mFlareEvents24h ?? null,
+          xFlareEvents24h: json?.xFlareEvents24h ?? null,
+          previousActivity: json?.previousActivity ?? null,
+          source: 'solar-regions.txt',
+          trend,
+        };
+      })
+      .filter(r => isEarthFacingCoordinate(r.latitude, r.longitude))
+      .filter(r => (r.area ?? 0) >= ACTIVE_REGION_MIN_AREA_MSH)
+      .sort((a, b) => (b.area ?? -1) - (a.area ?? -1));
+
+      const dedupedLatest = merged;
 
       setActiveSunspotRegions(dedupedLatest);
       setLoadingSunspotRegions(null);
