@@ -1630,58 +1630,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     };
   }, [selectedSunspotRegion, overviewGeometry]);
 
+  const [closeupLightbox, setCloseupLightbox] = useState(false);
+
   const openSunspotCloseupInViewer = useCallback(() => {
-    if (!selectedSunspotCloseupUrl || !selectedSunspotRegion || !selectedSunspotPreview) return;
-
-    // Use the already-rendered img element from the panel — avoids CORS issues
-    // since the browser has already decoded the image for display.
-    const img = closeupImgRef.current;
-
-    // Calculate the same crop region the CSS panel shows
-    const offsetXPercent = (CLOSEUP_OFFSET_X_PX / HMI_IMAGE_SIZE) * 100;
-    const offsetYPercent = (CLOSEUP_OFFSET_Y_PX / HMI_IMAGE_SIZE) * 100;
-    const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent + offsetXPercent));
-    const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent + offsetYPercent));
-
-    if (!img || !img.complete || img.naturalWidth === 0) {
-      // Image not ready — just open full disk
-      setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
-      return;
-    }
-
-    try {
-      const sourceW = img.naturalWidth;
-      const sourceH = img.naturalHeight;
-
-      // The panel shows 1/4.2 of the image (420% zoom = 23.8% of original)
-      const cropFraction = 1 / 4.2;
-      const cropW = sourceW * cropFraction;
-      const cropH = sourceH * cropFraction;
-
-      // Center of crop in source pixels
-      const centerX = (adjustedX / 100) * sourceW;
-      const centerY = (adjustedY / 100) * sourceH;
-
-      const sx = Math.max(0, Math.min(sourceW - cropW, centerX - cropW / 2));
-      const sy = Math.max(0, Math.min(sourceH - cropH, centerY - cropH / 2));
-
-      const cropSize = 1024;
-      const canvas = document.createElement('canvas');
-      canvas.width = cropSize;
-      canvas.height = cropSize;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
-        return;
-      }
-
-      ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, cropSize, cropSize);
-      setViewerMedia({ url: canvas.toDataURL('image/jpeg', 0.95), type: 'image' });
-    } catch {
-      // CORS blocked canvas — open full disk as fallback
-      setViewerMedia({ url: selectedSunspotCloseupUrl, type: 'image' });
-    }
-  }, [selectedSunspotCloseupUrl, selectedSunspotRegion, selectedSunspotPreview, setViewerMedia]);
+    setCloseupLightbox(true);
+  }, []);
 
   useEffect(() => {
     if (!sunspotOverviewImage.url) {
@@ -2200,6 +2153,39 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <span className="text-[11px] text-neutral-400 self-center">Swipe close-up to switch imagery</span>
                       </div>
 
+                      {closeupLightbox && selectedSunspotCloseupUrl && selectedSunspotPreview && (
+                        <div
+                          className="fixed inset-0 z-[3000] bg-black/95 flex items-center justify-center cursor-zoom-out"
+                          onClick={() => setCloseupLightbox(false)}
+                        >
+                          <div className="relative w-[90vw] h-[90vw] max-w-[90vh] max-h-[90vh] overflow-hidden rounded-lg">
+                            {(() => {
+                              const offsetXPercent = (CLOSEUP_OFFSET_X_PX / HMI_IMAGE_SIZE) * 100;
+                              const offsetYPercent = (CLOSEUP_OFFSET_Y_PX / HMI_IMAGE_SIZE) * 100;
+                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent + offsetXPercent));
+                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent + offsetYPercent));
+                              return (
+                                <img
+                                  src={selectedSunspotCloseupUrl}
+                                  alt={`AR ${selectedSunspotRegion?.region} fullscreen closeup`}
+                                  className="absolute"
+                                  style={{
+                                    width: '420%',
+                                    height: '420%',
+                                    left: `${50 - adjustedX * 4.2}%`,
+                                    top: `${50 - adjustedY * 4.2}%`,
+                                    objectFit: 'contain',
+                                    maxWidth: 'none',
+                                  }}
+                                />
+                              );
+                            })()}
+                          </div>
+                          <div className="absolute top-4 right-4 text-white/60 text-sm">Click anywhere to close</div>
+                          <div className="absolute bottom-4 text-white/60 text-sm">AR {selectedSunspotRegion?.region} · {selectedSunspotRegion?.location}</div>
+                        </div>
+                      )}
+
                       <div
                         className="rounded-md border border-neutral-800 bg-black/70 aspect-square w-full max-w-[320px] lg:max-w-none mx-auto overflow-hidden mb-3 cursor-zoom-in"
                         onClick={openSunspotCloseupInViewer}
@@ -2229,7 +2215,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                   src={selectedSunspotCloseupUrl}
                                   alt={`AR ${selectedSunspotRegion.region} closeup`}
                                   className="absolute"
-                                  crossOrigin="anonymous"
                                   onLoad={() => setIsCloseupImageLoading(false)}
                                   onError={() => setIsCloseupImageLoading(false)}
                                   style={{
