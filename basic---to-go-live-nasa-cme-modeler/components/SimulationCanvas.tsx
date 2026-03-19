@@ -1078,7 +1078,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-    if (!timelineActive || !chEvolutions || chEvolutions.length === 0) return;
+    if (!timelineActive) return;
     if (timelineMinDate <= 0 || timelineMaxDate <= timelineMinDate) return;
 
     const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
@@ -1087,18 +1087,44 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 2 * 60 * 1000) return;
     lastMorphTimeRef.current = timelineNowMs;
 
-    // Build morphed CH array from evolution data at the scrubbed time
-    const morphedCHs: CoronalHole[] = chEvolutions.map(evo => {
-      const morphed = getCHAtTimelineTime(evo, timelineNowMs);
-      console.log(`[CH Morph] ${evo.trackId}: timeline=${new Date(timelineNowMs).toISOString()}, ` +
-        `lat=${morphed.lat.toFixed(1)} lon=${morphed.lon?.toFixed(1) ?? '?'} ` +
-        `w=${(morphed.widthDeg ?? 0).toFixed(1)} snapshots=${evo.snapshots.length}`);
-      return morphed;
-    });
+    // Determine which CHs to display at the scrubbed time.
+    //
+    // Priority: evolution tracks (morphed/interpolated) > static coronalHoles prop.
+    //
+    // For evolution tracks, interpolateCHAtTimeMs already handles out-of-range:
+    //   - Before oldest snapshot  → pins to oldest snapshot's CH
+    //   - After newest snapshot   → pins to newest snapshot's CH
+    //   - Within range            → interpolates between bracketing snapshots
+    //
+    // If no evolution data exists (history not loaded yet, or live detection
+    // found nothing), fall back to the static coronalHoles prop so CHs are
+    // always visible on the sun during timeline scrubbing.
+    let morphedCHs: CoronalHole[];
 
-    if (morphedCHs.length === 0) return;
+    if (chEvolutions && chEvolutions.length > 0) {
+      morphedCHs = chEvolutions.map(evo => getCHAtTimelineTime(evo, timelineNowMs));
+    } else if (coronalHoles && coronalHoles.length > 0) {
+      // No evolution data — use static live detection as-is
+      morphedCHs = coronalHoles;
+    } else {
+      // No CH data at all — clear the groups and bail
+      const clearGroup = (group: any) => {
+        while (group.children.length > 0) {
+          const child = group.children[0];
+          group.remove(child);
+          child.geometry?.dispose?.();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
+            else child.material.dispose?.();
+          }
+        }
+      };
+      clearGroup(chGroupRef.current);
+      clearGroup(hssGroupRef.current);
+      return;
+    }
 
-    // Clear and rebuild CH patches with morphed shapes
+    // Clear and rebuild CH patches
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
         const child = group.children[0];
@@ -1120,8 +1146,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
 
-      // Rebuild HSS spiral at the scrubbed time — spiral retracts/extends
-      const evo = chEvolutions![idx];
+      // Rebuild HSS spiral at the scrubbed time — use evolution data if available
+      const evo = chEvolutions?.[idx];
       if (evo && evo.snapshots.length >= 2) {
         hssGroupRef.current.add(
           buildTimeVaryingSpiralMesh(THREE, ch, evo, sunR, hssReach, 0, timelineNowMs)
@@ -1130,7 +1156,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
       }
     });
-  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
