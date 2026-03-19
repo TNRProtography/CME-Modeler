@@ -45,7 +45,7 @@ const TEX = {
 // Empirical visual alignment between SUVI disk-centre longitudes and the
 // photosphere texture prime meridian used on the 3D Sun mesh.
 // Negative values move CH/HSS features slightly "back" in rotation phase.
-const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -8;
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -16;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
 
 // ============================================================
