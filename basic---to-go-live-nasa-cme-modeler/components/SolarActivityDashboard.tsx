@@ -137,18 +137,25 @@ const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
-// HMI latest images served by JSOC/Stanford (sdo.gsfc.nasa.gov is down)
-// Confirmed filenames from jsoc1.stanford.edu/hmi_latest:
-//   Color Magnetogram  → HMI_latest_color_Mag  (.jpg)
-//   Magnetogram (b/w)  → HMI_latest_Mag        (.gif)
-//   Color Intensitygram (no limb darkening) → HMI_latest_colInt (.jpg)
+// HMI images — JSOC primary, NASA SDO fallback
 const JSOC_HMI_BASE = 'https://jsoc1.stanford.edu/data/hmi/images/latest';
+const NASA_SDO_BASE = 'https://sdo.gsfc.nasa.gov/assets/img/latest';
+
+// Primary URLs (used for display)
 const SDO_HMI_BC_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_1024x1024.jpg`;
 const SDO_HMI_B_1024_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_1024x1024.gif`;
 const SDO_HMI_IF_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_1024x1024.jpg`;
 const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg`;
 const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.gif`;
 const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_4096x4096.jpg`;
+
+// Fallback URLs (NASA SDO direct — old version source that worked)
+const SDO_HMI_BC_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMIBC.jpg`;
+const SDO_HMI_B_1024_FALLBACK  = `${NASA_SDO_BASE}/latest_1024_HMIB.jpg`;
+const SDO_HMI_IF_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMII.jpg`;
+const SDO_HMI_BC_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMIBC.jpg`;
+const SDO_HMI_B_4096_FALLBACK  = `${NASA_SDO_BASE}/latest_4096_HMIB.jpg`;
+const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
 
 // Load directly — no Worker dependency, no domain-matching issues.
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
@@ -1163,7 +1170,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const closeModal = useCallback(() => setModalState(null), []);
 
-  const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string | null, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true) => {
+  const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string | null, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true, fallbackUrl?: string) => {
     const cacheKey = `${url}::${isVideo ? 'video' : 'image'}`;
     const cached = solarImageCache.get(cacheKey);
     const now = Date.now();
@@ -1219,6 +1226,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             forceDirectSdoRef.current = true;
             solarImageCache.set(cacheKey, { url: proxyTarget, fetchedAt: Date.now() });
             setState({ url: proxyTarget, loading: null });
+            releaseImageLoadSlot();
+            return;
+          }
+          // Try fallback URL if primary failed
+          if (fallbackUrl && fallbackUrl !== url) {
+            console.info('[solar-image] primary failed, trying fallback:', fallbackUrl);
+            const fallbackFetchUrl = addCacheBuster ? `${fallbackUrl}?_=${Date.now()}` : fallbackUrl;
+            const fallbackCacheKey = `${fallbackUrl}::image`;
+            solarImageCache.set(fallbackCacheKey, { url: fallbackFetchUrl, fetchedAt: Date.now() });
+            setState({ url: fallbackFetchUrl, loading: null });
+            stampIfChanged('solar-image-'+fallbackUrl, { url: fallbackFetchUrl }, setLastImagesUpdate);
             releaseImageLoadSlot();
             return;
           }
@@ -1521,9 +1539,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const runAllUpdates = useCallback(() => {
     fetchImage(SUVI_131_URL, setSuvi131);
     fetchImage(SUVI_304_URL, setSuvi304);
-    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_1024_URL, forceDirectSdoRef.current), setSdoHmiBc1024, false, false);
-    fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false);
-    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_1024_URL, forceDirectSdoRef.current), setSdoHmiBc1024, false, false, SDO_HMI_BC_1024_FALLBACK);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false, SDO_HMI_B_1024_FALLBACK);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false, SDO_HMI_IF_1024_FALLBACK);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
@@ -1562,9 +1580,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!selectedSunspotRegion) return;
-    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current), setSdoHmiBc4096, false, false);
-    fetchImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current), setSdoHmiB4096, false, false);
-    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current), setSdoHmiIf4096, false, false);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current), setSdoHmiBc4096, false, false, SDO_HMI_BC_4096_FALLBACK);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current), setSdoHmiB4096, false, false, SDO_HMI_B_4096_FALLBACK);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current), setSdoHmiIf4096, false, false, SDO_HMI_IF_4096_FALLBACK);
   }, [fetchImage, selectedSunspotRegion]);
 
   useEffect(() => {
@@ -1668,25 +1686,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const width = source.naturalWidth || HMI_IMAGE_SIZE;
       const height = source.naturalHeight || HMI_IMAGE_SIZE;
 
-      // SDO HMI products (1024/4096) have stable native disk geometry.
-      // Scale from 4096-native geometry so markers align in both dashboard 1K and 4K sources.
-      if (width >= 900 && height >= 900) {
-        const scaleX = width / HMI_IMAGE_SIZE;
-        const scaleY = height / HMI_IMAGE_SIZE;
-        const scale = Math.min(scaleX, scaleY);
-        const detected = detectSolarDiskGeometry(source);
-        setOverviewGeometry({
-          width,
-          height,
-          cx: (SDO_HMI_NATIVE_CX * scaleX + detected.cx) / 2,
-          cy: (SDO_HMI_NATIVE_CY * scaleY + detected.cy) / 2,
-          radius: (SDO_HMI_NATIVE_RADIUS * scale + detected.radius) / 2,
-        });
-        return;
-      }
-
-      const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
-      setOverviewGeometry(fallback);
+      // Use known native SDO HMI geometry scaled to actual image size.
+      // detectSolarDiskGeometry is unreliable on colorized/magnetogram images
+      // (false pixel edges from colour mapping throw off boundary detection).
+      // The native constants are stable across all HMI products.
+      const scaleX = width / HMI_IMAGE_SIZE;
+      const scaleY = height / HMI_IMAGE_SIZE;
+      const scale = Math.min(scaleX, scaleY);
+      setOverviewGeometry({
+        width,
+        height,
+        cx: SDO_HMI_NATIVE_CX * scaleX,
+        cy: SDO_HMI_NATIVE_CY * scaleY,
+        radius: SDO_HMI_NATIVE_RADIUS * scale,
+      });
     };
 
     source.onerror = () => {
