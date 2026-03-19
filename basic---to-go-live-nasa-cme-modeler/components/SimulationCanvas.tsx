@@ -44,7 +44,7 @@ const TEX = {
 
 // Small empirical trim between SUVI longitudes and the photosphere texture.
 // Main phase alignment is handled dynamically when CH/HSS data refreshes.
-const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -6;
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -10;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
 
 // ============================================================
