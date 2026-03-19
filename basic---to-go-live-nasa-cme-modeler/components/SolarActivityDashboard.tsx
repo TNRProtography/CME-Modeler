@@ -1607,6 +1607,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       ? sdoHmiB4096
       : sdoHmiBc4096;
 
+  const selectedSunspotPreview = useMemo(() => {
+    if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
+      return null;
+    }
+
+    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
+    const pos = solarCoordsToPixel(
+      selectedSunspotRegion.latitude,
+      selectedSunspotRegion.longitude,
+      geometry.cx,
+      geometry.cy,
+      geometry.radius
+    );
+    const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
+
+    return {
+      xPercent: (constrained.x / geometry.width) * 100,
+      yPercent: (constrained.y / geometry.height) * 100,
+      xPx: constrained.x,
+      yPx: constrained.y,
+    };
+  }, [selectedSunspotRegion, overviewGeometry]);
+
   const openSunspotCloseupInViewer = useCallback(() => {
     if (!selectedSunspotCloseupUrl || !selectedSunspotRegion || !selectedSunspotPreview) return;
 
@@ -1752,28 +1775,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     setSelectedSunspotRegion(displayedSunspotRegions[nextIndex]);
   }, [displayedSunspotRegions, selectedSunspotRegion]);
 
-  const selectedSunspotPreview = useMemo(() => {
-    if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
-      return null;
-    }
-
-    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
-    const pos = solarCoordsToPixel(
-      selectedSunspotRegion.latitude,
-      selectedSunspotRegion.longitude,
-      geometry.cx,
-      geometry.cy,
-      geometry.radius
-    );
-    const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
-
-    return {
-      xPercent: (constrained.x / geometry.width) * 100,
-      yPercent: (constrained.y / geometry.height) * 100,
-      xPx: constrained.x,
-      yPx: constrained.y,
-    };
-  }, [selectedSunspotRegion, overviewGeometry]);
 
   useEffect(() => {
     if (!selectedSunspotRegion) {

@@ -88,6 +88,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   const [globalBanner, setGlobalBanner] = useState<BannerData | null>(null);
   const [substormRisk, setSubstormRisk] = useState<SubstormRiskData | null>(null);
   const [isGlobalBannerDismissed, setIsGlobalBannerDismissed] = useState(false);
+  const [isDynamicDismissed, setIsDynamicDismissed] = useState(false);
   const lastProcessedBannerUniqueIdRef = useRef<string | undefined>(undefined);
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
 
@@ -132,6 +133,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   useEffect(() => {
     setActiveAlertIndex(0);
+    setIsDynamicDismissed(false);
   }, [isFlareAlert, isAuroraAlert, isSubstormAlert, isIpsAlert, globalBanner?.id]);
 
   const alerts: AlertSlide[] = [];
@@ -281,36 +283,51 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   return (
     <div className="w-full flex-shrink-0 relative z-50">
-      {/* Remote banner — always visible when active, never affected by dynamic alerts */}
-      {remoteBannerSlide && (
+      {/* Remote banner — always visible when active, dismissible */}
+      {remoteBannerSlide && !isGlobalBannerDismissed && (
         <div
-          className={`w-full text-sm font-semibold px-4 py-2.5 text-center leading-relaxed ${remoteBannerSlide.backgroundClass} ${remoteBannerSlide.textClass ?? 'text-white'}`}
+          className={`w-full text-sm font-semibold ${remoteBannerSlide.backgroundClass} ${remoteBannerSlide.textClass ?? 'text-white'}`}
           style={remoteBannerSlide.style}
         >
-          {remoteBannerSlide.content}
+          <div className="relative px-10 py-2.5 text-center leading-relaxed">
+            {remoteBannerSlide.content}
+            <button
+              onClick={() => setIsGlobalBannerDismissed(true)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/40 transition-colors text-white/80 hover:text-white text-xs leading-none"
+              title="Dismiss"
+              aria-label="Dismiss banner"
+            >✕</button>
+          </div>
         </div>
       )}
-      {/* Dynamic alert carousel */}
-      {activeDynamic && (
+      {/* Dynamic alert carousel — with counter, prev/next, and dismiss */}
+      {activeDynamic && !isDynamicDismissed && (
         <div
           className={`w-full text-sm font-semibold ${activeDynamic.backgroundClass} ${activeDynamic.textClass ?? 'text-white'}`}
           style={activeDynamic.style}
         >
-          <div className="px-4 py-2.5 flex flex-col gap-1.5">
+          <div className="relative px-10 py-2.5">
+            {/* Content centred */}
             <div className="w-full text-center leading-relaxed">
               {activeDynamic.content}
             </div>
+            {/* Counter + arrows inline, left of dismiss */}
             {hasDynamicMultiple && (
-              <div className="flex items-center justify-center gap-2">
-                <span className="px-2 py-0.5 rounded-full bg-black/20 text-white/90 text-xs">
-                  {(activeAlertIndex % dynamicAlerts.length) + 1}/{dynamicAlerts.length} alerts
+              <div className="flex items-center justify-center gap-1.5 mt-1">
+                <button onClick={goPrev} className="w-5 h-5 flex items-center justify-center rounded bg-black/20 hover:bg-black/40 transition-colors text-white/80 hover:text-white text-xs">◀</button>
+                <span className="px-2 py-0.5 rounded-full bg-black/20 text-white/90 text-xs tabular-nums">
+                  {(activeAlertIndex % dynamicAlerts.length) + 1} / {dynamicAlerts.length}
                 </span>
-                <div className="flex overflow-hidden rounded-lg border border-white/30 shadow-sm">
-                  <button onClick={goPrev} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">◀</button>
-                  <button onClick={goNext} className="px-2 py-1 bg-white/10 hover:bg-white/20 transition-colors">▶</button>
-                </div>
+                <button onClick={goNext} className="w-5 h-5 flex items-center justify-center rounded bg-black/20 hover:bg-black/40 transition-colors text-white/80 hover:text-white text-xs">▶</button>
               </div>
             )}
+            {/* Dismiss button */}
+            <button
+              onClick={() => setIsDynamicDismissed(true)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/40 transition-colors text-white/80 hover:text-white text-xs leading-none"
+              title="Dismiss"
+              aria-label="Dismiss alert"
+            >✕</button>
           </div>
         </div>
       )}
