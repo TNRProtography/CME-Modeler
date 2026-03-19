@@ -786,27 +786,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
-      // ── Cancel inherited sun rotation for CH patches and HSS spirals ──────
-      //
-      // Both chGroup and hssGroup are children of sunMesh, so they inherit
-      // sunMesh.rotation.y. But SUVI detections are in Stonyhurst coordinates
-      // (lon=0 = currently facing Earth), meaning the rotation is already
-      // encoded in the detected CH longitude. Counter-rotating by the same
-      // angle each frame keeps patches and spiral roots world-fixed at their
-      // correct Stonyhurst positions, regardless of the sun mesh's visual spin.
+      // ── Coronal-hole patches follow solar rotation ────────────────────────
+      // CH patches are children of sunMesh, so they should inherit the Sun's
+      // rotation directly and move across the visible disk with the texture.
       if (chGroupRef.current) {
-        chGroupRef.current.rotation.y = -sunRotationRef.current;
+        chGroupRef.current.rotation.y = 0;
       }
 
       // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
-        hssGroupRef.current.rotation.y = -sunRotationRef.current;
+        hssGroupRef.current.rotation.y = 0;
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
-          // uSunAngle = 0: hssGroup counter-rotation above already places the
-          // spiral root at the correct world-space longitude via uChLon alone.
+          // hssGroup inherits the sun rotation, so shader rotation stays at 0.
           if (u.uSunAngle !== undefined) u.uSunAngle.value = 0;
           if (u.uTime    !== undefined) u.uTime.value    = elapsedTime;
         });
