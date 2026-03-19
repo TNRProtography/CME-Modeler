@@ -43,8 +43,8 @@ const TEX = {
 };
 
 // Small empirical trim between SUVI longitudes and the photosphere texture.
-// Main phase alignment is handled dynamically when CH/HSS data refreshes.
-const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -10;
+// Main phase alignment is anchored to CH detection timestamp.
+const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -12;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
 
 // ============================================================
@@ -384,11 +384,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
-  // Sun phase captured when CH/HSS were last rebuilt from SUVI detections.
-  const chHssAnchorSunAngleRef = useRef<number>(0);
-  // Earth azimuth (from Sun, around +Y) when CH/HSS were last rebuilt.
-  const chHssAnchorEarthAngleRef = useRef<number>(0);
-
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
@@ -667,15 +662,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
-    chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    {
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
-      }
-    }
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
     // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
@@ -789,35 +775,34 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (celestialBodiesRef.current.SUN) (celestialBodiesRef.current.SUN.mesh.material as any).uniforms.uTime.value = elapsedTime;
 
       // ── Solar rotation / timeline sync ───────────────────────────────────
-      // When timeline is active, the sun angle is computed from the scrubbed
-      // time vs a fixed epoch — NOT vs Date.now() every frame (which drifts
-      // while paused and causes continuous glitching).
-      // When timeline is playing, timelineValueRef advances each frame, so
-      // the angle updates smoothly. When paused it stays fixed.
-      // When timeline is inactive, animate in real-time.
-      if (timelineActive && timelineMaxDate > timelineMinDate) {
-        const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        // Use a fixed epoch (Unix zero) so angle is stable when scrubber is still
-        const dtSecFromEpoch = timelineNowMs / 1000;
-        sunRotationRef.current = SUN_ANGULAR_VELOCITY * dtSecFromEpoch;
-      } else {
-        const sunAngularDelta = SUN_ANGULAR_VELOCITY * OSS * delta;
-        sunRotationRef.current += sunAngularDelta;
-      }
+      // Use one absolute-time model in both live and timeline modes.
+      // This avoids phase jumps when toggling timeline play/pause.
+      const simulationTimeMs = (timelineActive && timelineMaxDate > timelineMinDate)
+        ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
+        : Date.now();
+      sunRotationRef.current = SUN_ANGULAR_VELOCITY * (simulationTimeMs / 1000);
       if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
       // ── Coronal-hole patches follow solar rotation ────────────────────────
       // CH patches are children of sunMesh, so they should inherit the Sun's
       // rotation directly and move across the visible disk with the texture.
       //
-      // CH longitudes from SUVI are "now-facing" at detection time. If the Sun
-      // already had non-zero phase when CHs were ingested, overlays can appear
-      // pre-shifted toward a limb. We cancel that captured ingest-time phase,
-      // then allow subsequent solar rotation to move CH/HSS naturally.
+      // CH longitudes from SUVI are Earth-facing at detection time.
+      // Anchor CH/HSS using the CH detection timestamp to keep placement
+      // stable when the timeline starts/plays from different epochs.
+      const chReferenceMs = chDetectedAtMs ?? simulationTimeMs;
+      const chDetectionSunAngle = SUN_ANGULAR_VELOCITY * (chReferenceMs / 1000);
+      let earthAngle = 0;
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        earthAngle = Math.atan2(earthPos.x, earthPos.z);
+      }
       const chHssPhase =
         CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD +
-        chHssAnchorEarthAngleRef.current -
-        chHssAnchorSunAngleRef.current;
+        earthAngle -
+        chDetectionSunAngle;
       if (chGroupRef.current) {
         chGroupRef.current.rotation.y = chHssPhase;
       }
@@ -1066,16 +1051,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-    chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    {
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
-      }
-    }
-
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
         const child = group.children[0];
