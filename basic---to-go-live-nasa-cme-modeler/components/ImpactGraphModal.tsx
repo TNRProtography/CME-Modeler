@@ -4,8 +4,6 @@ import React, { useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { ImpactDataPoint } from '../types';
-// chartSetup registers ALL required Chart.js components including TimeScale + adapter.
-// Must be imported before any chart renders, or "time is not a registered scale" is thrown.
 import '../utils/chartSetup';
 import CloseIcon from './icons/CloseIcon';
 
@@ -15,231 +13,178 @@ interface ImpactGraphModalProps {
   data: ImpactDataPoint[];
 }
 
-const chartOptions: ChartOptions<'line'> = {
+const axisStyle = {
+  ticks: { color: '#a3a3a3' },
+  grid:  { color: '#3f3f46' },
+};
+
+const baseOptions: ChartOptions<'line'> = {
   responsive: true,
   maintainAspectRatio: false,
-  interaction: {
-    mode: 'index',
-    intersect: false,
-  },
+  interaction: { mode: 'index', intersect: false },
+  animation: false,
   scales: {
     x: {
       type: 'time',
-      time: {
-        tooltipFormat: 'MMM d, yyyy HH:mm',
-        unit: 'day',
-      },
-      ticks: {
-        color: '#a3a3a3',
-      },
-      grid: {
-        color: '#3f3f46',
-      },
+      time: { tooltipFormat: 'MMM d HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } },
+      ...axisStyle,
     },
-    y: {
-      beginAtZero: true,
-      ticks: {
-        color: '#a3a3a3',
-      },
-      grid: {
-        color: '#3f3f46',
-      },
-    },
+    y: { beginAtZero: true, ...axisStyle },
   },
-  plugins: {
-    legend: {
-      display: false,
-    },
-  },
+  plugins: { legend: { display: false } },
 };
 
 const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, data }) => {
-  if (!isOpen) {
-    return null;
-  }
+  if (!isOpen) return null;
 
-  const disturbanceMarkers = useMemo(() => {
-    const markers: { time: number; label: string }[] = [];
-    let lastLabel: string | null = null;
-
-    data.forEach((point) => {
-      if (!point.disturbanceType) {
-        lastLabel = null;
-        return;
-      }
-      const label = point.disturbanceType === 'CME'
-        ? `CME: ${point.disturbanceName ?? 'Unknown'}`
-        : 'Coronal Hole';
-
-      if (label !== lastLabel) {
-        markers.push({ time: point.time, label });
-      }
-      lastLabel = label;
-    });
-
-    return markers.slice(0, 8);
-  }, [data]);
-
+  // ── Disturbance onset markers ─────────────────────────────────────────
   const disturbanceAnnotations = useMemo(() => {
     const annotations: Record<string, any> = {};
-    disturbanceMarkers.forEach((marker, index) => {
-      annotations[`disturbance-${index}`] = {
+    let lastLabel: string | null = null;
+    let idx = 0;
+    data.forEach(point => {
+      if (!point.disturbanceType) { lastLabel = null; return; }
+      const label = point.disturbanceType === 'CME'
+        ? `CME: ${(point.disturbanceName ?? '').replace(/^.*?(\d{4}-\d{2}-\d{2}).*$/, '$1') || 'Unknown'}`
+        : 'HSS';
+      if (label === lastLabel) return;
+      lastLabel = label;
+      annotations[`d${idx}`] = {
         type: 'line',
-        xMin: marker.time,
-        xMax: marker.time,
-        borderColor: 'rgba(255, 255, 255, 0.35)',
-        borderWidth: 1,
-        borderDash: [4, 4],
+        xMin: point.time, xMax: point.time,
+        borderColor: 'rgba(255,255,255,0.3)',
+        borderWidth: 1, borderDash: [4, 4],
         label: {
-          display: true,
-          content: marker.label,
-          color: '#e5e7eb',
-          backgroundColor: 'rgba(10,10,10,0.78)',
-          borderColor: 'rgba(163,163,163,0.35)',
-          borderWidth: 1,
-          position: 'start',
-          yAdjust: 10 + (index % 2) * 18,
-          font: { size: 10, weight: '600' },
-          padding: 4,
+          display: true, content: label,
+          color: '#e5e7eb', backgroundColor: 'rgba(10,10,10,0.80)',
+          borderColor: 'rgba(163,163,163,0.3)', borderWidth: 1,
+          position: 'start', yAdjust: 8 + (idx % 2) * 18,
+          font: { size: 10, weight: '600' }, padding: 4,
         },
       };
+      idx++;
     });
-    return annotations;
-  }, [disturbanceMarkers]);
-
-  const chartDataSpeed = {
-    labels: data.map(d => d.time),
-    datasets: [{
-      label: 'Solar Wind Speed',
-      data: data.map(d => d.speed),
-      borderColor: 'rgb(56, 189, 248)',
-      backgroundColor: 'rgba(56, 189, 248, 0.2)',
-      fill: 'origin',
-      pointRadius: 0,
-      tension: 0.2,
-    }],
-  };
-  
-  const chartDataDensity = {
-    labels: data.map(d => d.time),
-    datasets: [{
-      label: 'Relative Density',
-      data: data.map(d => d.density),
-      borderColor: 'rgb(250, 204, 21)',
-      backgroundColor: 'rgba(250, 204, 21, 0.2)',
-      fill: 'origin',
-      pointRadius: 0,
-      tension: 0.2,
-    }],
-  };
-
-  // ── Bz forecast chart (from propagation engine) ──────────────────────
-  const hasBzData = data.some(d => d.bz !== undefined && d.bz !== 0);
-  const chartDataBz = {
-    labels: data.map(d => d.time),
-    datasets: [{
-      label: 'Bz (nT)',
-      data: data.map(d => d.bz ?? 0),
-      borderColor: (ctx: any) => {
-        const val = ctx.raw as number;
-        if (val === undefined || val === null) return 'rgba(150,150,150,0.5)';
-        return val < -5 ? 'rgb(239, 68, 68)' : val < 0 ? 'rgb(251, 146, 60)' : 'rgb(96, 165, 250)';
+    // "Now" line
+    annotations['now'] = {
+      type: 'line',
+      xMin: Date.now(), xMax: Date.now(),
+      borderColor: 'rgba(250,204,21,0.7)',
+      borderWidth: 1.5,
+      label: {
+        display: true, content: 'Now',
+        color: '#fbbf24', backgroundColor: 'rgba(10,10,10,0.80)',
+        position: 'end', yAdjust: -4,
+        font: { size: 9, weight: '700' }, padding: 3,
       },
-      segment: {
-        borderColor: (ctx: any) => {
-          const yVal = ctx.p1.parsed.y;
-          return yVal < -5 ? 'rgb(239, 68, 68)' : yVal < 0 ? 'rgb(251, 146, 60)' : 'rgb(96, 165, 250)';
-        },
-      },
-      backgroundColor: 'rgba(96, 165, 250, 0.1)',
-      fill: 'origin',
-      pointRadius: 0,
-      tension: 0.2,
-    }],
-  };
-
-  // ── Interaction labels for the Bz chart ────────────────────────────
-  const interactionAnnotations = useMemo(() => {
-    const annotations: Record<string, any> = {};
-    let lastFlag: string | null = null;
-    let flagIndex = 0;
-    data.forEach((point) => {
-      const flag = point.interactionFlag;
-      if (flag && flag !== 'none' && flag !== lastFlag) {
-        const label = flag === 'cannibalism' ? 'CME–CME merger'
-          : flag === 'preconditioning' ? 'Preconditioned'
-          : flag === 'compression' ? 'Compressed'
-          : flag;
-        annotations[`interact-${flagIndex}`] = {
-          type: 'line',
-          xMin: point.time,
-          xMax: point.time,
-          borderColor: flag === 'cannibalism' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(250, 204, 21, 0.5)',
-          borderWidth: 1.5,
-          borderDash: [3, 3],
-          label: {
-            display: true,
-            content: label,
-            color: '#fbbf24',
-            backgroundColor: 'rgba(10,10,10,0.85)',
-            borderColor: 'rgba(163,163,163,0.35)',
-            borderWidth: 1,
-            position: 'start',
-            yAdjust: 10 + (flagIndex % 2) * 16,
-            font: { size: 9, weight: '600' },
-            padding: 3,
-          },
-        };
-        flagIndex++;
-      }
-      lastFlag = flag ?? null;
-    });
+    };
     return annotations;
   }, [data]);
 
-  const speedOptions: ChartOptions<'line'> = { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, title: { display: true, text: 'Speed (km/s)' } } }, plugins: { ...chartOptions.plugins, annotation: { annotations: disturbanceAnnotations } as any } };
-  const densityOptions: ChartOptions<'line'> = { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, title: { display: true, text: 'Relative Density (cm⁻³)' } } } };
-  const bzOptions: ChartOptions<'line'> = { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales?.y, title: { display: true, text: 'Bz (nT)' }, grid: { ...((chartOptions.scales?.y as any)?.grid ?? {}), color: (ctx: any) => ctx.tick.value === 0 ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.05)' } } }, plugins: { ...chartOptions.plugins, annotation: { annotations: interactionAnnotations } as any } };
+  const speedOptions: ChartOptions<'line'> = {
+    ...baseOptions,
+    scales: {
+      ...baseOptions.scales,
+      y: {
+        ...baseOptions.scales?.y,
+        title: { display: true, text: 'Speed (km/s)', color: '#a3a3a3' },
+        suggestedMin: 300,
+        suggestedMax: 900,
+      },
+    },
+    plugins: {
+      ...baseOptions.plugins,
+      annotation: { annotations: disturbanceAnnotations } as any,
+    },
+  };
+
+  const densityOptions: ChartOptions<'line'> = {
+    ...baseOptions,
+    scales: {
+      ...baseOptions.scales,
+      y: {
+        ...baseOptions.scales?.y,
+        title: { display: true, text: 'Density (cm⁻³)', color: '#a3a3a3' },
+        suggestedMin: 0,
+      },
+    },
+    plugins: {
+      ...baseOptions.plugins,
+      annotation: { annotations: { now: disturbanceAnnotations['now'] } } as any,
+    },
+  };
+
+  const labels = data.map(d => d.time);
+
+  const speedDataset = {
+    label: 'Solar Wind Speed',
+    data: data.map(d => d.speed),
+    borderColor: 'rgb(56,189,248)',
+    backgroundColor: 'rgba(56,189,248,0.15)',
+    fill: 'origin', pointRadius: 0, tension: 0.25,
+  };
+
+  const densityDataset = {
+    label: 'Density',
+    data: data.map(d => d.density),
+    borderColor: 'rgb(250,204,21)',
+    backgroundColor: 'rgba(250,204,21,0.15)',
+    fill: 'origin', pointRadius: 0, tension: 0.25,
+  };
+
+  const hasCME = data.some(d => d.disturbanceType === 'CME');
+  const hasHSS = data.some(d => d.disturbanceType === 'Coronal Hole');
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black/80 backdrop-blur-md z-[3000] flex justify-center items-center p-4"
       onClick={onClose}
     >
-      <div 
-        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-4xl h-[85vh] max-h-[850px] text-neutral-300 flex flex-col"
+      <div
+        className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-4xl h-[75vh] max-h-[720px] text-neutral-300 flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h2 className="text-xl font-bold text-neutral-200">Simulated Earth Impact Forecast</h2>
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80 flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-neutral-200">Simulated Earth Impact Forecast</h2>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Speed shown is predicted arrival speed at Earth · Density reflects concurrent CME compression
+              {hasHSS && ' · HSS density peak leads speed rise (SIR)'}
+            </p>
+          </div>
           <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors">
             <CloseIcon className="w-6 h-6" />
           </button>
         </div>
-        
-        <div className="overflow-y-auto p-4 styled-scrollbar pr-2 flex-grow space-y-6">
-            <p className="text-sm text-neutral-400 text-center italic">Drag-based model (Vršnak et al. 2013) with CME–CME and CME–HSS interactions. Bz estimated from Bothmer-Schwenn chirality rules. This is a visual guide, not an official forecast.</p>
-            {disturbanceMarkers.length > 0 && (
-              <div className="text-xs text-neutral-400 text-center">
-                Disturbances: {disturbanceMarkers.map((m) => m.label).join(' · ')}
-              </div>
-            )}
-            <div className="h-52">
-                <Line options={speedOptions} data={chartDataSpeed} />
+
+        {/* Charts */}
+        <div className="overflow-y-auto p-4 flex-grow space-y-6">
+          {/* Disturbances summary */}
+          {(hasCME || hasHSS) && (
+            <div className="flex gap-4 text-xs text-neutral-400 flex-wrap">
+              {hasCME && <span><span className="text-sky-400">■</span> CME passage</span>}
+              {hasHSS && <span><span className="text-yellow-400">■</span> High-speed stream (coronal hole)</span>}
+              <span className="text-yellow-300/70">| Yellow line = Now</span>
             </div>
-            <div className="h-52">
-                <Line options={densityOptions} data={chartDataDensity} />
+          )}
+
+          <div>
+            <div className="text-xs text-neutral-500 mb-1 font-medium uppercase tracking-wide">Solar Wind Speed</div>
+            <div className="h-56">
+              <Line options={speedOptions} data={{ labels, datasets: [speedDataset] }} />
             </div>
-            {hasBzData && (
-              <>
-                <div className="text-xs text-neutral-400 text-center mt-2">
-                  <span className="text-red-400">Red</span> = southward Bz (storm risk) · <span className="text-blue-400">Blue</span> = northward (quiet)
-                </div>
-                <div className="h-52">
-                    <Line options={bzOptions} data={chartDataBz} />
-                </div>
-              </>
-            )}
+          </div>
+
+          <div>
+            <div className="text-xs text-neutral-500 mb-1 font-medium uppercase tracking-wide">Relative Plasma Density</div>
+            <div className="h-56">
+              <Line options={densityOptions} data={{ labels, datasets: [densityDataset] }} />
+            </div>
+          </div>
+
+          <p className="text-xs text-neutral-600 text-center italic pb-2">
+            Drag-based model (Vršnak et al. 2013). Visual guide only — not an official forecast.
+          </p>
         </div>
       </div>
     </div>

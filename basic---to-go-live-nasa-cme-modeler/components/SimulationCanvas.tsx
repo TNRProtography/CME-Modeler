@@ -1077,173 +1077,175 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       return null;
     },
     calculateImpactProfile: (): ImpactDataPoint[] => {
-      const THREE = (window as any).THREE;
-      if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
-      if (timelineMinDate <= 0) return [];
+      if (!cmeGroupRef.current) return [];
 
-      const engine = propagationEngineRef.current;
-      const timelineNow = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
-      const gStart = timelineNow;
-      const gEnd = gStart + 7 * 24 * 3600 * 1000;
+      // Always show from a few hours before now to 7 days ahead.
+      // Independent of the timeline scrubber position.
+      const now = Date.now();
+      const gStart = now - 6 * 3600 * 1000;   // 6 hours ago
+      const gEnd   = now + 7 * 24 * 3600 * 1000; // 7 days ahead
+      const gDur   = gEnd - gStart;
+      const ns     = 200;
 
-      if (engine) {
-        const engineProfile = engine.calculateImpactProfile(gStart, gEnd - gStart, 200);
-        return engineProfile.map(p => {
-          let distType: ImpactDataPoint['disturbanceType'] = undefined;
-          let distName: string | undefined = p.disturbanceId;
-          let interactionFlag: ImpactDataPoint['interactionFlag'] = undefined;
-          switch (p.disturbanceType) {
-            case 'CME_sheath': case 'CME_ejecta': distType = 'CME'; break;
-            case 'complex_ejecta': distType = 'CME'; interactionFlag = 'cannibalism'; break;
-            case 'HSS': case 'SIR': distType = 'Coronal Hole'; distName = undefined; break;
-          }
-          return { time: p.timeMs, speed: p.speedKms, density: p.densityCm3, bz: p.bzNt, disturbanceType: distType, disturbanceName: distName, interactionFlag };
-        });
+      const BACKGROUND_SPEED   = 350; // km/s quiet solar wind
+      const BACKGROUND_DENSITY = 5;   // cm⁻³ baseline
+      const CME_PASSAGE_MS     = 18 * 3600 * 1000; // ~18h passage at 1 AU
+      const earthDistScene     = PLANET_DATA_MAP.EARTH.radius;
+
+      // ── Pre-compute CME arrival times and speeds ────────────────────────
+      // For each CME, binary-search for the time it reaches Earth's distance,
+      // then record the decelerated speed at that moment.
+      interface CMEArrival {
+        arrivalMs:  number;
+        endMs:      number;
+        speedKms:   number;
+        name:       string;
       }
 
-      // Geometry-based fallback when engine not yet built
-      const ed = PLANET_DATA_MAP.EARTH;
-      const gDur = gEnd - gStart;
-      const graphData: ImpactDataPoint[] = []; const ns = 200, as = 350, ad = 5;
-      const wrapPi = (a: number) => {
-        let v = a;
-        while (v > Math.PI) v -= Math.PI * 2;
-        while (v < -Math.PI) v += Math.PI * 2;
-        return v;
+      const cmeArrivals: CMEArrival[] = [];
+      cmeGroupRef.current.children.forEach((co: any) => {
+        const cme = co.userData as ProcessedCME;
+        if (!cme?.startTime || !cme.speed) return;
+
+        // Binary search: find tSec when dist(tSec) = earthDistScene
+        let lo = 0, hi = 14 * 24 * 3600; // search up to 14 days
+        let arrivalSec: number | null = null;
+        const distAtHi = calculateDistanceWithDeceleration(cme, hi);
+        if (distAtHi < earthDistScene) return; // CME never reaches Earth
+
+        for (let iter = 0; iter < 60; iter++) {
+          const mid = (lo + hi) / 2;
+          if (calculateDistanceWithDeceleration(cme, mid) < earthDistScene) {
+            lo = mid;
+          } else {
+            hi = mid;
+            arrivalSec = mid;
+          }
+        }
+        if (arrivalSec === null) return;
+
+        const arrivalMs = cme.startTime.getTime() + arrivalSec * 1000;
+        if (arrivalMs > gEnd) return; // arrives after our window
+
+        // Speed at arrival using drag model
+        const engine = propagationEngineRef.current;
+        const speedKms = engine
+          ? Math.max(MIN_CME_SPEED_KMS, engine.getCurrentSpeed(cme.id, arrivalSec))
+          : (() => {
+              const u = cme.speed, w = 380, gamma = 0.5e-7, dv = u - w;
+              return Math.max(MIN_CME_SPEED_KMS, u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * arrivalSec));
+            })();
+
+        cmeArrivals.push({
+          arrivalMs,
+          endMs: arrivalMs + CME_PASSAGE_MS,
+          speedKms,
+          name: cme.id,
+        });
+      });
+
+      // ── Pre-compute HSS arrival windows ────────────────────────────────
+      // Travel time from Sun to Earth at HSS speed.
+      // Density (SIR) peaks 18h BEFORE the speed rise — the compressed slow
+      // wind piles up ahead of the fast stream.
+      interface HSSWindow {
+        speedStartMs:   number; // when fast wind arrives
+        speedEndMs:     number;
+        densityPeakMs:  number; // SIR density peak (ahead of speed rise)
+        densityEndMs:   number;
+        peakSpeedKms:   number;
+        peakDensity:    number;
+      }
+
+      const hssWindows: HSSWindow[] = coronalHoles.map(ch => {
+        const sourceSpeedKms = Math.max(450, Math.min(900, ch.estimatedSpeedKms));
+        const travelMs = (AU_IN_KM / sourceSpeedKms) * 1000;
+        // HSS speed rise at Earth: centred on transit time from now
+        const speedPeakMs   = now + travelMs;
+        const speedStartMs  = speedPeakMs - 8  * 3600 * 1000;
+        const speedEndMs    = speedPeakMs + 14 * 3600 * 1000;
+        const densityPeakMs = speedStartMs - 18 * 3600 * 1000; // SIR leads the HSS
+        const densityEndMs  = speedStartMs + 4  * 3600 * 1000; // density drops as speed rises
+
+        const widthDeg   = Math.min(60, Math.max(5, ch.widthDeg ?? 20));
+        const darkness   = Math.min(1, Math.max(0, ch.darkness ?? 0.35));
+        const peakSpeedKms = Math.min(900, 500 + (widthDeg / 60) * 200 + darkness * 120);
+        const peakDensity  = 10 + (widthDeg / 60) * 10 + darkness * 6;
+
+        return { speedStartMs, speedEndMs, densityPeakMs, densityEndMs, peakSpeedKms, peakDensity };
+      });
+
+      // ── Build time series ───────────────────────────────────────────────
+      const graphData: ImpactDataPoint[] = [];
+
+      const smoothstep = (edge0: number, edge1: number, x: number) => {
+        const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-9, edge1 - edge0)));
+        return t * t * (3 - 2 * t);
       };
+
       for (let i = 0; i <= ns; i++) {
         const ct = gStart + gDur * (i / ns);
-        const earthAz = ed.angle;
-        const ep = new THREE.Vector3(ed.radius * Math.sin(earthAz), 0, ed.radius * Math.cos(earthAz));
-        let ts = as, td = ad;
-        let dominantDisturbanceType: ImpactDataPoint['disturbanceType'] = undefined;
-        let dominantDisturbanceName: string | undefined;
-        let dominantContribution = 0;
-        cmeGroupRef.current.children.forEach((co: any) => {
-          const cme = co.userData as ProcessedCME, tsc = (ct - cme.startTime.getTime()) / 1000;
-          if (tsc > 0) {
-            const cd = calculateDistanceWithDeceleration(cme, tsc);
-            const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(co.quaternion);
-            if (cdir.angleTo(ep.clone().normalize()) < THREE.MathUtils.degToRad(cme.halfAngle)) {
-              const de = ep.length(), cth = SCENE_SCALE * 0.3;
-              const engineRef = propagationEngineRef.current;
-              const cs = engineRef
-                ? Math.max(MIN_CME_SPEED_KMS, engineRef.getCurrentSpeed(cme.id, tsc))
-                : Math.max(MIN_CME_SPEED_KMS, cme.speed * 0.7);
 
-              if (de < cd && de > cd - cth) {
-                const pen = cd - de, ct2 = cth * 0.25;
-                const inten = pen <= ct2 ? 1 : 0.5 * (1 + Math.cos(((pen - ct2) / (cth - ct2)) * Math.PI));
-                const cmeSpeedAtEarth = as + (cs - as) * inten;
-                ts = Math.max(ts, cmeSpeedAtEarth);
-                td += (THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 5, 50) - ad) * inten;
-                const cmeContribution = Math.max(0, cmeSpeedAtEarth - as);
-                if (cmeContribution > dominantContribution) {
-                  dominantContribution = cmeContribution;
-                  dominantDisturbanceType = "CME";
-                  dominantDisturbanceName = cme.id;
-                }
-              }
+        let ts = BACKGROUND_SPEED;
+        let td = BACKGROUND_DENSITY;
+        let disturbanceType: ImpactDataPoint['disturbanceType'] = undefined;
+        let disturbanceName: string | undefined;
 
-              const sheathThickness = cth * 0.4;
-              if (de >= cd && de < cd + sheathThickness) {
-                const sheathPos = (de - cd) / sheathThickness;
-                const sheathInten = Math.sin((1 - sheathPos) * Math.PI);
-                td += THREE.MathUtils.mapLinear(cme.speed, 300, 2000, 6, 35) * sheathInten;
-                const sheathSpeed = as + (cs - as) * 0.15 * sheathInten;
-                ts = Math.max(ts, sheathSpeed);
-                const sheathContribution = Math.max(0, sheathSpeed - as);
-                if (sheathContribution > dominantContribution) {
-                  dominantContribution = sheathContribution;
-                  dominantDisturbanceType = "CME";
-                  dominantDisturbanceName = cme.id;
-                }
-              }
+        // ── CME contribution ─────────────────────────────────────────────
+        // Speed = arrival speed of fastest concurrent CME.
+        // Density = compression from overlapping CMEs (each adds ~20 cm⁻³,
+        // with an extra compression bonus per additional simultaneous CME).
+        const activeCMEs = cmeArrivals.filter(a => ct >= a.arrivalMs && ct <= a.endMs);
+        if (activeCMEs.length > 0) {
+          const fastest = activeCMEs.reduce((a, b) => a.speedKms > b.speedKms ? a : b);
+          ts = Math.max(ts, fastest.speedKms);
+
+          // Compression: each CME adds density, more overlap = stronger compression
+          const base = activeCMEs.length * 20;
+          const compressionBonus = activeCMEs.length > 1 ? (activeCMEs.length - 1) * 15 : 0;
+          td = Math.max(td, BACKGROUND_DENSITY + base + compressionBonus);
+
+          disturbanceType = 'CME';
+          disturbanceName = fastest.name;
+        }
+
+        // ── HSS contribution ─────────────────────────────────────────────
+        // Density peaks in the SIR ahead of the speed rise, then drops.
+        // Speed rises as the fast stream arrives.
+        hssWindows.forEach(hss => {
+          // SIR density — Gaussian-ish peak centred on densityPeakMs
+          if (ct >= hss.densityPeakMs - 24 * 3600 * 1000 && ct <= hss.densityEndMs) {
+            let densProfile = 0;
+            if (ct < hss.densityPeakMs) {
+              densProfile = smoothstep(hss.densityPeakMs - 24 * 3600 * 1000, hss.densityPeakMs, ct);
+            } else {
+              densProfile = 1 - smoothstep(hss.densityPeakMs, hss.densityEndMs, ct);
             }
+            td = Math.max(td, BACKGROUND_DENSITY + hss.peakDensity * densProfile);
+            if (!disturbanceType) { disturbanceType = 'Coronal Hole'; }
+          }
+
+          // HSS speed rise
+          if (ct >= hss.speedStartMs && ct <= hss.speedEndMs) {
+            let speedProfile = 0;
+            const midpoint = (hss.speedStartMs + hss.speedEndMs) / 2;
+            if (ct <= midpoint) {
+              speedProfile = smoothstep(hss.speedStartMs, midpoint, ct);
+            } else {
+              speedProfile = 1 - smoothstep(midpoint, hss.speedEndMs, ct);
+            }
+            const hssSpeed = BACKGROUND_SPEED + (hss.peakSpeedKms - BACKGROUND_SPEED) * speedProfile;
+            ts = Math.max(ts, hssSpeed);
+            if (!disturbanceType) { disturbanceType = 'Coronal Hole'; }
           }
         });
 
-        // CH/HSS fallback — use corrected 1 AU speed range
-        coronalHoles.forEach((ch) => {
-          const sourceSpeed = Math.max(450, Math.min(900, ch.estimatedSpeedKms));
-          const travelSec = AU_IN_KM / sourceSpeed;
-          const emissionTime = ct - travelSec * 1000;
-
-          const sourceLon0 = THREE.MathUtils.degToRad(-ch.lon);
-          const sourceAzAtTimelineNow = sourceLon0 + SUN_ANGULAR_VELOCITY * ((timelineNow - Date.now()) / 1000);
-          const sourceAzAtEmission = sourceAzAtTimelineNow + SUN_ANGULAR_VELOCITY * ((emissionTime - timelineNow) / 1000);
-          const earthCurrentAz = Math.atan2(ep.x, ep.z);
-
-          const signedDiff = wrapPi(earthCurrentAz - sourceAzAtEmission);
-
-          const EARTH_ANGULAR_VELOCITY = 0;
-          const relativeAngularRateSigned = SUN_ANGULAR_VELOCITY - EARTH_ANGULAR_VELOCITY;
-          const safeAngularRate = Math.abs(relativeAngularRateSigned) > 1e-6
-            ? relativeAngularRateSigned
-            : (relativeAngularRateSigned >= 0 ? 1e-6 : -1e-6);
-
-          const hoursFromPeak = signedDiff / safeAngularRate / 3600;
-
-          const smoothstep = (edge0: number, edge1: number, x: number) => {
-            const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
-            return t * t * (3 - 2 * t);
-          };
-
-          const speedRiseHours = 8, speedPlateauHours = 14, speedFallHours = 10;
-          const speedPlateauHalf = speedPlateauHours / 2;
-          const speedStart = -speedRiseHours - speedPlateauHalf;
-          const speedEnd = speedPlateauHalf + speedFallHours;
-
-          let speedProfile = 0;
-          if (hoursFromPeak >= speedStart && hoursFromPeak < -speedPlateauHalf) {
-            speedProfile = smoothstep(0, 1, (hoursFromPeak - speedStart) / speedRiseHours);
-          } else if (hoursFromPeak >= -speedPlateauHalf && hoursFromPeak <= speedPlateauHalf) {
-            speedProfile = 1;
-          } else if (hoursFromPeak > speedPlateauHalf && hoursFromPeak <= speedEnd) {
-            speedProfile = 1 - smoothstep(0, 1, (hoursFromPeak - speedPlateauHalf) / speedFallHours);
-          }
-
-          const densityLeadHours = 12, densityDecayHours = 16;
-          let densityProfile = 0;
-          if (hoursFromPeak >= -densityLeadHours && hoursFromPeak < 0) {
-            densityProfile = smoothstep(-densityLeadHours, 0, hoursFromPeak);
-          } else if (hoursFromPeak >= 0) {
-            densityProfile = Math.exp(-hoursFromPeak / densityDecayHours);
-          }
-
-          if (speedProfile <= 0.002 && densityProfile <= 0.002) return;
-
-          const widthDeg = THREE.MathUtils.clamp(ch.widthDeg ?? 20, 5, 60);
-          const darkness = THREE.MathUtils.clamp(ch.darkness ?? 0.35, 0, 1);
-          // Peak HSS speed at 1 AU: 500–900 km/s depending on CH size and darkness
-          // Large dark polar-extension CHs can drive 800+ km/s at Earth
-          const peakSpeed = THREE.MathUtils.clamp(
-            500
-              + THREE.MathUtils.mapLinear(widthDeg, 5, 60, 30, 200)
-              + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 120),
-            500,
-            900,
-          );
-
-          const peakDensity = THREE.MathUtils.mapLinear(widthDeg, 5, 60, 10, 20)
-            + THREE.MathUtils.mapLinear(darkness, 0, 1, 0, 6);
-
-          const chSpeedAtEarth = as + (peakSpeed - as) * speedProfile;
-          ts = Math.max(ts, chSpeedAtEarth);
-          td += Math.max(0, peakDensity - ad) * densityProfile;
-          const chContribution = Math.max(0, chSpeedAtEarth - as);
-          if (chContribution > dominantContribution) {
-            dominantContribution = chContribution;
-            dominantDisturbanceType = "Coronal Hole";
-            dominantDisturbanceName = undefined;
-          }
-        });
-
-        graphData.push({ time: ct, speed: ts, density: td, disturbanceType: dominantDisturbanceType, disturbanceName: dominantDisturbanceName });
+        graphData.push({ time: ct, speed: Math.round(ts), density: parseFloat(td.toFixed(1)), disturbanceType, disturbanceName });
       }
+
       return graphData;
     }
-  }), [moveCamera, getClockElapsedTime, timelineMinDate, timelineMaxDate, timelineValue, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
+  }), [moveCamera, getClockElapsedTime, calculateDistanceWithDeceleration, cmeData, coronalHoles]);
 
   useEffect(() => { if (controlsRef.current && rendererRef.current?.domElement) { controlsRef.current.enabled = true; rendererRef.current.domElement.style.cursor = 'move'; } }, [interactionMode]);
   useEffect(() => { if (!celestialBodiesRef.current || !orbitsRef.current) return; ['MERCURY', 'VENUS', 'MARS'].forEach(n => { const b = celestialBodiesRef.current[n], o = orbitsRef.current[n]; if (b) b.mesh.visible = showExtraPlanets; if (o) o.visible = showExtraPlanets; }); }, [showExtraPlanets]);
