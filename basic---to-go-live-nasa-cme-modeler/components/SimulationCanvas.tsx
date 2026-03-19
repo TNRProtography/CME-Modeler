@@ -21,9 +21,11 @@ import {
 } from '../utils/coronalHoleGeometry';
 import {
   processedCMEToCMEInput,
+  createPropagationEngine,
+  coronalHoleToHSSInput,
+  type PropagationEngine,
 } from '../utils/heliosphericPropagation';
 import {
-  getCHAtTimelineTime,
   type CHEvolution,
 } from '../utils/coronalHoleHistory';
 
@@ -332,7 +334,7 @@ interface SimulationCanvasProps {
   /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
   coronalHoles: CoronalHole[];
   /** 72h CH evolution tracks from worker history */
-  chEvolutions?: CHEvolution[];
+  chEvolutions?: CHEvolution[]; // kept for API compatibility — CH shape is now always current detection
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
@@ -347,7 +349,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth = false, showHss, coronalHoles, chEvolutions, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth = false, showHss, coronalHoles, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
     measuredWindSpeedKms,
   } = props;
 
@@ -443,7 +445,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   //  Per-frame queries are O(1) via precomputed trajectory interpolation.
 
 
-  // HSS physics removed — Parker spiral is static only
+  const propagationEngineRef = useRef<PropagationEngine | null>(null);
+
+  // Rebuild propagation engine when CME data or coronal holes change
+  useMemo(() => {
+    if (cmeData.length === 0) {
+      propagationEngineRef.current = null;
+      return;
+    }
+    const cmeInputs = cmeData.map(cme => processedCMEToCMEInput(cme));
+    const hssInputs = coronalHoles.map(ch => coronalHoleToHSSInput(ch));
+    propagationEngineRef.current = createPropagationEngine(cmeInputs, hssInputs, measuredWindSpeedKms);
+  }, [cmeData, coronalHoles, measuredWindSpeedKms]);
 
   // ── Simple deceleration model (original) ─────────────────────────────────
   // Uses empirical formula: a (m/s²) = 1.41 - 0.0035 * speed_kms
@@ -504,10 +517,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // Use the propagation engine's DBM speed, falling back to simple calc.
     // As the CME decelerates via quadratic drag, colour shifts through the speed key.
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
-      const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-      const w = 380, gamma = 0.5e-7;
-      const dv = u - w;
-      const liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
+      const engine = propagationEngineRef.current;
+      let liveSpeed: number;
+      if (engine) {
+        liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
+      } else {
+        const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
+        const w = 380, gamma = 0.5e-7;
+        liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
+      }
       cmeObject.material.color = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
     }
   }, []);
@@ -792,7 +810,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       cmeGroupRef.current.children.forEach((c: any) => {
         if (c.material) {
-          c.material.opacity = getCmeOpacity(c.userData.speed);
+          const engine = propagationEngineRef.current;
+          if (engine && engine.isCannibalized(c.userData.id)) {
+            c.material.opacity = Math.max(0, c.material.opacity - 0.02);
+            if (c.material.opacity <= 0.01) { c.visible = false; return; }
+          } else {
+            c.material.opacity = getCmeOpacity(c.userData.speed);
+          }
         }
       });
 
@@ -1028,93 +1052,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
-  }, [coronalHoles, chEvolutions, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── CH MORPHING: animate CH patches when timeline is scrubbed ────────────
-  //
-  // When the user scrubs the timeline backward, the CH patches on the Sun
-  // morph to show how they looked at that point in time — growing, shrinking,
-  // or shifting as the real SUVI observations recorded over 72 hours.
-  //
-  // This only fires when we have evolution data AND the timeline is active.
-  // Debounced to avoid rebuilding geometry every frame — only rebuilds when
-  // the scrubbed time changes by more than 1 hour.
-  const lastMorphTimeRef = useRef<number>(0);
 
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-    if (!timelineActive) return;
-    if (timelineMinDate <= 0 || timelineMaxDate <= timelineMinDate) return;
-
-    const timelineNowMs = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
-
-    // Only rebuild if the scrubbed time changed by > 2 minutes
-    if (Math.abs(timelineNowMs - lastMorphTimeRef.current) < 2 * 60 * 1000) return;
-    lastMorphTimeRef.current = timelineNowMs;
-
-    // Determine which CHs to display at the scrubbed time.
-    //
-    // Priority: evolution tracks (morphed/interpolated) > static coronalHoles prop.
-    //
-    // For evolution tracks, interpolateCHAtTimeMs already handles out-of-range:
-    //   - Before oldest snapshot  → pins to oldest snapshot's CH
-    //   - After newest snapshot   → pins to newest snapshot's CH
-    //   - Within range            → interpolates between bracketing snapshots
-    //
-    // If no evolution data exists (history not loaded yet, or live detection
-    // found nothing), fall back to the static coronalHoles prop so CHs are
-    // always visible on the sun during timeline scrubbing.
-    let morphedCHs: CoronalHole[];
-
-    if (chEvolutions && chEvolutions.length > 0) {
-      morphedCHs = chEvolutions.map(evo => getCHAtTimelineTime(evo, timelineNowMs));
-    } else if (coronalHoles && coronalHoles.length > 0) {
-      // No evolution data — use static live detection as-is
-      morphedCHs = coronalHoles;
-    } else {
-      // No CH data at all — clear the groups and bail
-      const clearGroup = (group: any) => {
-        while (group.children.length > 0) {
-          const child = group.children[0];
-          group.remove(child);
-          child.geometry?.dispose?.();
-          if (child.material) {
-            if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
-            else child.material.dispose?.();
-          }
-        }
-      };
-      clearGroup(chGroupRef.current);
-      clearGroup(hssGroupRef.current);
-      return;
-    }
-
-    // Clear and rebuild CH patches
-    const clearGroup = (group: any) => {
-      while (group.children.length > 0) {
-        const child = group.children[0];
-        group.remove(child);
-        child.geometry?.dispose?.();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose?.());
-          else child.material.dispose?.();
-        }
-      }
-    };
-
-    clearGroup(chGroupRef.current);
-    clearGroup(hssGroupRef.current);
-
-    const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-    morphedCHs.forEach((ch, idx) => {
-      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
-      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
-
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
-    });
-  }, [timelineActive, timelineValue, timelineMinDate, timelineMaxDate, chEvolutions, coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
@@ -1141,11 +1081,27 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (!THREE || !cmeGroupRef.current || !celestialBodiesRef.current.EARTH) return [];
       if (timelineMinDate <= 0) return [];
 
+      const engine = propagationEngineRef.current;
       const timelineNow = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValue / 1000);
       const gStart = timelineNow;
       const gEnd = gStart + 7 * 24 * 3600 * 1000;
 
-      // ── Geometry-based impact calculation ──────────────────────────────
+      if (engine) {
+        const engineProfile = engine.calculateImpactProfile(gStart, gEnd - gStart, 200);
+        return engineProfile.map(p => {
+          let distType: ImpactDataPoint['disturbanceType'] = undefined;
+          let distName: string | undefined = p.disturbanceId;
+          let interactionFlag: ImpactDataPoint['interactionFlag'] = undefined;
+          switch (p.disturbanceType) {
+            case 'CME_sheath': case 'CME_ejecta': distType = 'CME'; break;
+            case 'complex_ejecta': distType = 'CME'; interactionFlag = 'cannibalism'; break;
+            case 'HSS': case 'SIR': distType = 'Coronal Hole'; distName = undefined; break;
+          }
+          return { time: p.timeMs, speed: p.speedKms, density: p.densityCm3, bz: p.bzNt, disturbanceType: distType, disturbanceName: distName, interactionFlag };
+        });
+      }
+
+      // Geometry-based fallback when engine not yet built
       const ed = PLANET_DATA_MAP.EARTH;
       const gDur = gEnd - gStart;
       const graphData: ImpactDataPoint[] = []; const ns = 200, as = 350, ad = 5;
@@ -1170,7 +1126,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(co.quaternion);
             if (cdir.angleTo(ep.clone().normalize()) < THREE.MathUtils.degToRad(cme.halfAngle)) {
               const de = ep.length(), cth = SCENE_SCALE * 0.3;
-              const cs = Math.max(MIN_CME_SPEED_KMS, cme.speed * 0.7);  // basic decel estimate
+              const engineRef = propagationEngineRef.current;
+              const cs = engineRef
+                ? Math.max(MIN_CME_SPEED_KMS, engineRef.getCurrentSpeed(cme.id, tsc))
+                : Math.max(MIN_CME_SPEED_KMS, cme.speed * 0.7);
 
               if (de < cd && de > cd - cth) {
                 const pen = cd - de, ct2 = cth * 0.25;
