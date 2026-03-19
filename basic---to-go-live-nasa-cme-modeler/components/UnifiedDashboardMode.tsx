@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useForecastData } from '../hooks/useForecastData';
+import { useForecastData, type SolarWindDataSourceMode } from '../hooks/useForecastData';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -139,6 +139,12 @@ const getEmojiForStatus = (status: string) => {
   return '❓';
 };
 
+const SOLAR_WIND_SOURCE_OPTIONS: Array<{ mode: SolarWindDataSourceMode; label: string }> = [
+  { mode: 'ace_dscovr', label: 'ACE/DCOVR' },
+  { mode: 'imap', label: 'IMAP' },
+  { mode: 'combined', label: 'Combined' },
+];
+
 const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSignal }) => {
   const [, setScoreMirror] = useState<number | null>(null);
   const [, setSubstormMirror] = useState<any>(null);
@@ -157,6 +163,8 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
     allDensityData,
     allMagneticData,
     hemisphericPowerHistory,
+    solarWindSourceMode,
+    setSolarWindSourceMode,
   } = useForecastData(setScoreMirror, setSubstormMirror);
 
   useEffect(() => {
@@ -509,12 +517,25 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
   return (
     <div className="w-full h-full p-2 md:p-3 overflow-hidden">
       <div className="h-full rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md p-3 md:p-4 grid grid-cols-12 grid-rows-12 gap-3">
-        <div className="col-span-12 row-span-1 rounded-xl bg-neutral-900/70 border border-neutral-700/60 px-3 py-2 flex items-center justify-between">
+        <div className="col-span-12 row-span-1 rounded-xl bg-neutral-900/70 border border-neutral-700/60 px-3 py-2 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base md:text-lg font-semibold text-white">Live Aurora Operations Dashboard</h2>
             <p className="text-[11px] text-neutral-400">Useful-only mode · one-screen, auto-refreshing</p>
           </div>
-          <div className="text-[11px] text-neutral-400">{lastUpdated}</div>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 p-1">
+              {SOLAR_WIND_SOURCE_OPTIONS.map(option => (
+                <button
+                  key={option.mode}
+                  onClick={() => setSolarWindSourceMode(option.mode)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors ${solarWindSourceMode === option.mode ? 'bg-sky-600 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/10'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[11px] text-neutral-400">{lastUpdated}</div>
+          </div>
         </div>
 
         <div className="col-span-12 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
