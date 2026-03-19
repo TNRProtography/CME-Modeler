@@ -659,8 +659,10 @@ const App: React.FC = () => {
     const endDate = new Date();
     const startDate = new Date(endDate);
     const futureDate = new Date(endDate);
-    startDate.setDate(endDate.getDate() - days);
-    futureDate.setDate(endDate.getDate() + CME_TIMELINE_FUTURE_DAYS);
+    // Past is always 7 days regardless of selected CME data range
+    startDate.setDate(endDate.getDate() - 7);
+    // Future is however many days are selected in the controls panel (activeTimeRange)
+    futureDate.setDate(endDate.getDate() + days);
     return {
       minDate: startDate.getTime(),
       maxDate: futureDate.getTime(),
@@ -673,6 +675,8 @@ const App: React.FC = () => {
     }
 
     const defaultRange = getDefaultTimelineRange(days);
+    // Allow timeline to extend back if a CME started before 7 days ago,
+    // but the minimum is always 7 days back (never shrinks the past window)
     const earliestCMEStartTime = data.reduce((min: number, cme: ProcessedCME) => Math.min(min, cme.startTime.getTime()), defaultRange.minDate);
 
     return {

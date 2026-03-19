@@ -385,38 +385,66 @@ export function interpolateCHAtTimeMs(
   const chBefore = snapBefore.ch;
   const chAfter  = snapAfter.ch;
 
-  // Both brackets have no CH data
-  if (!chBefore && !chAfter) return null;
+  // The immediate brackets may have null CH data (detector missed this CH
+  // in that snapshot). Instead of jumping to evolution.current (which
+  // causes teleporting), search outward from each bracket for the nearest
+  // non-null snapshot. This gives smooth interpolation across gaps.
 
-  // Only one bracket has data — use it directly
-  const single = chBefore ?? chAfter;
-  if (!chBefore || !chAfter) {
+  // Search backward from beforeIdx for nearest non-null
+  let resolvedBefore: CoronalHole | null = null;
+  let resolvedBeforeMs = snapBefore.timestampMs;
+  for (let i = beforeIdx; i >= 0; i--) {
+    if (snaps[i].ch !== null) {
+      resolvedBefore = snaps[i].ch;
+      resolvedBeforeMs = snaps[i].timestampMs;
+      break;
+    }
+  }
+
+  // Search forward from afterIdx for nearest non-null
+  let resolvedAfter: CoronalHole | null = null;
+  let resolvedAfterMs = snapAfter.timestampMs;
+  for (let i = afterIdx; i < snaps.length; i++) {
+    if (snaps[i].ch !== null) {
+      resolvedAfter = snaps[i].ch;
+      resolvedAfterMs = snaps[i].timestampMs;
+      break;
+    }
+  }
+
+  // If no non-null data exists anywhere — nothing to show
+  if (!resolvedBefore && !resolvedAfter) return null;
+
+  // Only one side has data — use it directly (pin to it)
+  if (!resolvedBefore || !resolvedAfter) {
+    const single = resolvedBefore ?? resolvedAfter!;
     return {
-      widthDeg: single!.widthDeg ?? 15,
-      heightDeg: single!.heightDeg ?? single!.widthDeg ?? 15,
-      darkness: single!.darkness,
-      lat: single!.lat,
-      lon: single!.lon,
-      estimatedSpeedKms: single!.estimatedSpeedKms,
+      widthDeg: single.widthDeg ?? 15,
+      heightDeg: single.heightDeg ?? single.widthDeg ?? 15,
+      darkness: single.darkness,
+      lat: single.lat,
+      lon: single.lon,
+      estimatedSpeedKms: single.estimatedSpeedKms,
     };
   }
 
-  // Both brackets have CH data — interpolate
-  const range = snapAfter.timestampMs - snapBefore.timestampMs;
-  const t = range > 0 ? (targetTimeMs - snapBefore.timestampMs) / range : 0;
+  // Both sides have data — interpolate smoothly between them
+  // This spans across any null gaps, so motion is continuous
+  const range = resolvedAfterMs - resolvedBeforeMs;
+  const t = range > 0 ? (targetTimeMs - resolvedBeforeMs) / range : 0;
   const tClamped = Math.max(0, Math.min(1, t));
   const lerp = (a: number, b: number) => a + tClamped * (b - a);
 
   return {
-    widthDeg: lerp(chBefore.widthDeg ?? 15, chAfter.widthDeg ?? 15),
+    widthDeg: lerp(resolvedBefore.widthDeg ?? 15, resolvedAfter.widthDeg ?? 15),
     heightDeg: lerp(
-      chBefore.heightDeg ?? chBefore.widthDeg ?? 15,
-      chAfter.heightDeg ?? chAfter.widthDeg ?? 15,
+      resolvedBefore.heightDeg ?? resolvedBefore.widthDeg ?? 15,
+      resolvedAfter.heightDeg ?? resolvedAfter.widthDeg ?? 15,
     ),
-    darkness: lerp(chBefore.darkness, chAfter.darkness),
-    lat: lerp(chBefore.lat, chAfter.lat),
-    lon: lerp(chBefore.lon, chAfter.lon),
-    estimatedSpeedKms: lerp(chBefore.estimatedSpeedKms, chAfter.estimatedSpeedKms),
+    darkness: lerp(resolvedBefore.darkness, resolvedAfter.darkness),
+    lat: lerp(resolvedBefore.lat, resolvedAfter.lat),
+    lon: lerp(resolvedBefore.lon, resolvedAfter.lon),
+    estimatedSpeedKms: lerp(resolvedBefore.estimatedSpeedKms, resolvedAfter.estimatedSpeedKms),
   };
 }
 
