@@ -338,6 +338,8 @@ interface SimulationCanvasProps {
   showHss: boolean;
   /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
   coronalHoles: CoronalHole[];
+  /** SUVI analysis time for the current CH detections (ms since epoch) */
+  chDetectedAtMs?: number | null;
   /** 72h CH evolution tracks from worker history */
   chEvolutions?: CHEvolution[]; // kept for API compatibility — CH shape is now always current detection
   dataVersion: number;
@@ -354,7 +356,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth = false, showHss, coronalHoles, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
     measuredWindSpeedKms,
   } = props;
 
@@ -802,7 +804,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // already had non-zero phase when CHs were ingested, overlays can appear
       // pre-shifted toward a limb. We cancel that captured ingest-time phase,
       // then allow subsequent solar rotation to move CH/HSS naturally.
-      const chHssPhase = CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD - chHssAnchorSunAngleRef.current;
+      const chDetectedSunAngle = chDetectedAtMs != null
+        ? SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000)
+        : null;
+      const chHssPhase = (
+        timelineActive && chDetectedSunAngle != null
+          ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD - chDetectedSunAngle
+          : CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD - chHssAnchorSunAngleRef.current
+      );
       if (chGroupRef.current) {
         chGroupRef.current.rotation.y = chHssPhase;
       }

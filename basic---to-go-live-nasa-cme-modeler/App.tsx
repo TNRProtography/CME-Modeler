@@ -206,7 +206,7 @@ const App: React.FC = () => {
   const [showFluxRope, setShowFluxRope] = useState(false);
   const [showHss, setShowHss] = useState(false);
   const [sharedSuvi195Url, setSharedSuvi195Url] = useState<string | null>(null);
-  const { coronalHoles, detectionStatus: chDetectionStatus, chEvolutions } = useCoronalHoles({
+  const { coronalHoles, detectionStatus: chDetectionStatus, chEvolutions, lastDetectedAt } = useCoronalHoles({
     enabled: showHss,
     sourceImageUrl: sharedSuvi195Url,
   });
@@ -1231,6 +1231,7 @@ const App: React.FC = () => {
                         showFluxRope={showFluxRope}
                         showHss={showHss}
                         coronalHoles={coronalHoles}
+                        chDetectedAtMs={lastDetectedAt?.getTime() ?? null}
                         chEvolutions={chEvolutions}
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
