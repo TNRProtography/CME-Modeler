@@ -1093,7 +1093,30 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
     if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return;
     const target = new THREE.Vector3(0, 0, 0);
-    if (focus === FocusTarget.EARTH && celestialBodiesRef.current.EARTH) celestialBodiesRef.current.EARTH.mesh.getWorldPosition(target);
+    const earth = celestialBodiesRef.current.EARTH?.mesh;
+    const sun = celestialBodiesRef.current.SUN?.mesh;
+    if (focus === FocusTarget.EARTH && earth) {
+      // For side view, place camera behind Earth, looking toward Sun
+      // (Sun -> Earth -> Camera) so CH/HSS positioning is easier to interpret.
+      if (view === ViewMode.SIDE && sun) {
+        const earthPos = new THREE.Vector3();
+        const sunPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        sun.getWorldPosition(sunPos);
+        target.copy(sunPos);
+
+        const behindDir = earthPos.clone().sub(sunPos).normalize();
+        const backDistance = SCENE_SCALE * 0.22;
+        const pos = earthPos.clone()
+          .addScaledVector(behindDir, backDistance)
+          .add(new THREE.Vector3(0, SCENE_SCALE * 0.02, 0));
+
+        gsap.to(cameraRef.current.position, { duration: 1.2, x: pos.x, y: pos.y, z: pos.z, ease: "power2.inOut" });
+        gsap.to(controlsRef.current.target, { duration: 1.2, x: target.x, y: target.y, z: target.z, ease: "power2.inOut", onUpdate: () => controlsRef.current.update() });
+        return;
+      }
+      earth.getWorldPosition(target);
+    }
     const pos = view === ViewMode.TOP
       ? new THREE.Vector3(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01)
       : new THREE.Vector3(target.x + SCENE_SCALE * 1.9, target.y + SCENE_SCALE * 0.35, target.z);

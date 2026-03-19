@@ -179,7 +179,7 @@ const App: React.FC = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState<number>(0);
   const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>(TimeRange.D3);
-  const [activeView, setActiveView] = useState<ViewMode>(ViewMode.TOP);
+  const [activeView, setActiveView] = useState<ViewMode>(ViewMode.SIDE);
   const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(FocusTarget.EARTH);
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
