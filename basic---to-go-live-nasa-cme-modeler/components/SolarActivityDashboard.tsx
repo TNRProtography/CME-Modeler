@@ -1417,16 +1417,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const textRegions = parseNoaaSolarRegionsText(rawText);
       const textRegionIds = new Set(textRegions.map((region) => region.region));
 
-      const jsonResults = await Promise.allSettled(
-        NOAA_ACTIVE_REGIONS_URLS.map((url) => fetchFirstAvailableJson([url])),
-      );
+      // Fetch both JSON sources explicitly in parallel — matches old working behaviour
+      const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
+        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']).catch(() => null),
+        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']).catch(() => null),
+      ]);
 
       const combined = [
-        ...jsonResults.flatMap((result, idx) => {
-          if (result.status !== 'fulfilled') return [];
-          const source = NOAA_ACTIVE_REGIONS_URLS[idx]?.split('/').pop() || 'NOAA';
-          return extractActiveRegionEntries(result.value, source);
-        }),
+        ...(sunspotReportRaw ? extractActiveRegionEntries(sunspotReportRaw, 'sunspot_report.json') : []),
+        ...(solarRegionsRaw ? extractActiveRegionEntries(solarRegionsRaw, 'solar_regions.json') : []),
         ...textRegions,
       ].filter((entry) => textRegionIds.has(entry.region));
 
