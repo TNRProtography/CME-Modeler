@@ -142,7 +142,7 @@ const logDev = (...args: unknown[]) => {
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'V1.5';
+const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
 const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
