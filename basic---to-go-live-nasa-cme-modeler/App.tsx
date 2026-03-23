@@ -1118,7 +1118,7 @@ const App: React.FC = () => {
                           </div>
                           <div className="flex flex-col items-start leading-[1.05] min-w-0 w-full">
                             <span className="text-[6px] sm:text-[8px] uppercase tracking-[0.18em] text-white/70 truncate">Forecast</span>
-                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">Spot The Aurora</span>
+                            <span className="text-[8px] sm:text-[10px] font-semibold text-white truncate">Aurora Forecast</span>
                           </div>
                       </button>
                       <button

@@ -449,6 +449,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
         
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
+          {/* App logo + credit */}
+          <div className="flex flex-col items-center gap-3 pt-2 pb-2">
+            <img src="/icons/android-chrome-192x192.png" alt="Spot The Aurora" className="w-20 h-20 rounded-2xl shadow-lg" width="80" height="80" />
+            <div className="text-center">
+              <p className="text-base font-bold text-neutral-100">Spot The Aurora</p>
+              <p className="text-xs text-neutral-500 mt-0.5">Built by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">TNR Protography</a></p>
+            </div>
+          </div>
+
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
