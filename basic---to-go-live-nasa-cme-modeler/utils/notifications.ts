@@ -31,6 +31,7 @@ const TOPIC_ICONS: Record<string, string> = {
   'aurora-60percent':  '/icons/icon-aurora.png',
   'aurora-80percent':  '/icons/icon-aurora.png',
   'substorm-forecast': '/icons/icon-substorm.png',
+  'admin-broadcast':   '/icons/icon-default.png',
 };
 const DEFAULT_ICON = '/icons/icon-default.png';
 

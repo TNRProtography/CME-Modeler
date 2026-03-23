@@ -25,10 +25,11 @@ const TOPIC_ICONS = {
   'aurora-60percent':  '/icons/icon-visibility-dslr.png',
   'aurora-80percent':  '/icons/icon-visibility-dslr.png',
   'substorm-forecast': '/icons/icon-visibility-dslr.png',
+  'admin-broadcast':   '/icons/icon-default.png',
 };
 
-const DEFAULT_ICON  = '/icons/icon-visibility-dslr.png';
-const DEFAULT_BADGE = '/icons/icon-visibility-dslr.png';
+const DEFAULT_ICON  = '/icons/icon-default.png';
+const DEFAULT_BADGE = '/icons/icon-default.png';
 
 function getIcon(tag) {
   if (!tag) return DEFAULT_ICON;
