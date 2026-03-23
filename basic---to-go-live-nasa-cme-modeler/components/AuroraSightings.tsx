@@ -226,14 +226,22 @@ function computeOvalParams(metrics: SubstormRiskData['metrics'], bayOnset: boole
   const newell30 = metrics?.solar_wind?.newell_avg_30m ?? 0;
   const newell   = Math.max(newell60, newell30 * 0.85);
 
-  // Holzworth-Meng parameterisation via Newell coupling
-  let boundary = -(65.5 - newell / 1800);
-  boundary = Math.max(boundary, -76);
-  boundary = Math.min(boundary, -44);
-  if (bayOnset) boundary = Math.min(boundary, -47.2);
+  // Holzworth-Meng parameterisation via Newell coupling.
+  // This drives the equatorward (northern) edge — moves toward NZ as activity rises.
+  let equatorward = -(65.5 - newell / 1800);
+  equatorward = Math.max(equatorward, -76);
+  equatorward = Math.min(equatorward, -44);
+  if (bayOnset) equatorward = Math.min(equatorward, -47.2);
 
-  // Band half-width: widens with activity
-  const halfWidth = 3.5 + (score / 100) * 5.0;
+  // The poleward (southern) edge is anchored at its quiet-time position and never moves.
+  // Only the equatorward edge expands northward during storms, making the oval thicker.
+  const QUIET_BOUNDARY  = -65.5;
+  const QUIET_HALFWIDTH =  3.5;
+  const poleward = QUIET_BOUNDARY - QUIET_HALFWIDTH; // fixed at ~-69 geomagnetic
+
+  // halfWidth is derived from the two edges so the band-polygon renderer still works.
+  const halfWidth = equatorward - poleward;
+  const boundary  = equatorward;
 
   return { boundary, halfWidth };
 }
