@@ -116,12 +116,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
       
       <div className="absolute top-4 right-4 flex items-center space-x-1 z-10 lg:static lg:mb-3">
         <div className="flex-grow flex items-center">
-            <img 
-              src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
-              alt="TNR Protography Logo"
-              className="w-auto h-8 mr-3 hidden lg:block"
-              width="182"
-              height="32"
+            <img
+              src="/icons/android-chrome-192x192.png"
+              alt="Spot The Aurora"
+              className="w-7 h-7 rounded-lg mr-2 hidden lg:block"
+              width="28"
+              height="28"
             />
             <h1 className="text-xl font-bold text-neutral-100 leading-tight hidden lg:block">
               CME Visualization
@@ -143,12 +143,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
       </div>
 
       <div className="flex flex-col items-center border-b border-neutral-700/80 pb-3 text-center lg:hidden">
-        <img 
-          src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
-          alt="TNR Protography Logo"
-          className="w-full max-w-[200px] h-auto mb-3"
-          width="200"
-          height="88"
+        <img
+          src="/icons/android-chrome-192x192.png"
+          alt="Spot The Aurora"
+          className="w-14 h-14 rounded-2xl mb-3 shadow-lg"
+          width="56"
+          height="56"
         />
         <h1 className="text-xl font-bold text-neutral-100 leading-tight">
           Spot The Aurora

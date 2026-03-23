@@ -207,12 +207,12 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
       
       <div className="absolute top-1/4 flex flex-col items-center px-6">
         <img 
-          src="https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png" 
-          alt="TNR Protography Logo"
-          className="w-full max-w-xs h-auto mb-8 animate-pulse"
+          src="/icons/android-chrome-192x192.png" 
+          alt="Spot The Aurora"
+          className="w-28 h-28 rounded-3xl mb-8 shadow-2xl"
           style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
-          width={560}
-          height={247}
+          width={112}
+          height={112}
           fetchPriority="high"
         />
         <p className="text-neutral-200 text-lg font-medium tracking-wide text-center w-80 h-12 transition-opacity duration-300">
