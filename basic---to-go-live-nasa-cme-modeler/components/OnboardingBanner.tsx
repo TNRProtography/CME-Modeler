@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { subscribeUserToPush, getNotificationPreference, setNotificationPreference, updatePushSubscriptionPreferences } from '../utils/notifications';
+import { subscribeUserToPush, getNotificationPreference, setNotificationPreference, updatePushSubscriptionPreferences, getOvernightMode, setOvernightMode } from '../utils/notifications';
+import type { OvernightMode } from '../utils/notifications';
 import CloseIcon from './icons/CloseIcon';
 
 // --- Storage keys ---
@@ -119,6 +120,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
     'Notification' in window ? Notification.permission : 'unsupported'
   );
   const [error, setError] = useState<string | null>(null);
+  const [overnightMode, setOvernightModeState] = useState<OvernightMode>(() => getOvernightMode());
 
   const togglePref = useCallback((id: string) => {
     setPrefs(prev => ({ ...prev, [id]: !prev[id] }));
@@ -152,6 +154,13 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
     await updatePushSubscriptionPreferences();
     onClose();
   }, [prefs, onClose]);
+
+  const handleOvernightModeChange = useCallback(async (mode: OvernightMode) => {
+    setOvernightModeState(mode);
+    setOvernightMode(mode);
+    // Persist immediately -- will be sent to server on next full subscribe/update
+    try { localStorage.setItem('notification_overnight_mode', mode); } catch {}
+  }, []);
 
   const allSelected = Object.values(prefs).every(Boolean);
   const toggleAll = () => {
@@ -195,7 +204,8 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
               <p className="text-xs text-neutral-500 mb-2">{group.description}</p>
               <div className="space-y-2">
                 {group.items.map(item => (
-                  <div key={item.id} className="flex items-start gap-3 p-3 bg-neutral-900 rounded-xl border border-neutral-800">
+                  <React.Fragment key={item.id}>
+                  <div className="flex items-start gap-3 p-3 bg-neutral-900 rounded-xl border border-neutral-800">
                     <button
                       onClick={() => togglePref(item.id)}
                       className={`relative flex-shrink-0 w-10 h-6 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none ${prefs[item.id] ? 'bg-sky-500' : 'bg-neutral-700'}`}
@@ -214,6 +224,36 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
                       <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.plain.split('.')[0]}.</p>
                     </div>
                   </div>
+                  {/* Overnight mode selector -- shown inline when overnight-watch is toggled on */}
+                  {item.id === 'overnight-watch' && prefs[item.id] && (
+                    <div className="mt-2 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-xl">
+                      <p className="text-xs font-semibold text-neutral-300 mb-2">Send when...</p>
+                      <div className="space-y-1.5">
+                        {([
+                          { value: 'every-night', label: 'Every night', desc: 'Always send a nightly summary, even on quiet nights.' },
+                          { value: 'camera',      label: 'Camera may detect aurora', desc: 'Only when conditions could show aurora on a DSLR.' },
+                          { value: 'phone',       label: 'Phone camera may show aurora', desc: 'Only when aurora should appear on a smartphone camera.' },
+                          { value: 'eye',         label: 'Naked eye aurora likely', desc: 'Only on significant nights -- naked eye visibility possible.' },
+                        ] as { value: OvernightMode; label: string; desc: string }[]).map(opt => (
+                          <label key={opt.value} className={`flex items-start gap-2 cursor-pointer p-2 rounded-lg transition-colors ${overnightMode === opt.value ? 'bg-sky-500/15 border border-sky-500/30' : 'hover:bg-neutral-700/40'}`}>
+                            <input
+                              type="radio"
+                              name="overnight-mode-onboarding"
+                              value={opt.value}
+                              checked={overnightMode === opt.value}
+                              onChange={() => handleOvernightModeChange(opt.value)}
+                              className="mt-0.5 accent-sky-500 flex-shrink-0"
+                            />
+                            <div>
+                              <p className="text-xs font-medium text-neutral-200">{opt.label}</p>
+                              <p className="text-[11px] text-neutral-500 leading-relaxed mt-0.5">{opt.desc}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  </React.Fragment>
                 ))}
               </div>
             </div>

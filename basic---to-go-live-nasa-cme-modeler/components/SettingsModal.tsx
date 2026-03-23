@@ -6,6 +6,9 @@ import ToggleSwitch from './ToggleSwitch';
 import {
   getNotificationPreference,
   setNotificationPreference,
+  getOvernightMode,
+  setOvernightMode,
+  type OvernightMode,
   requestNotificationPermission,
   sendTestNotification,
   subscribeUserToPush,
@@ -145,6 +148,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
+  const [overnightMode, setOvernightModeState] = useState<OvernightMode>(() => getOvernightMode());
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [diagRunning, setDiagRunning] = useState<boolean>(false);
   const [openTooltipId, setOpenTooltipId] = useState<string | null>(null);
@@ -393,6 +397,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }, [deferredPrompt]);
   
+  const handleOvernightModeChange = useCallback(async (mode: OvernightMode) => {
+    setOvernightModeState(mode);
+    setOvernightMode(mode);
+    await updatePushSubscriptionPreferences();
+  }, []);
+
   const handleTestCategory = useCallback((categoryId: string) => {
     let title = 'Test Notification';
     let body = 'This is a sample alert for your selected category.';
@@ -449,15 +459,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
         
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
-          {/* App logo + credit */}
-          <div className="flex flex-col items-center gap-3 pt-2 pb-2">
-            <img src="/icons/android-chrome-192x192.png" alt="Spot The Aurora" className="w-20 h-20 rounded-2xl shadow-lg" width="80" height="80" />
-            <div className="text-center">
-              <p className="text-base font-bold text-neutral-100">Spot The Aurora</p>
-              <p className="text-xs text-neutral-500 mt-0.5">Built by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">TNR Protography</a></p>
-            </div>
-          </div>
-
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
@@ -631,6 +632,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             )}
                             {openTooltipId !== item.id && (
                               <p className="text-xs text-neutral-600 mt-1 ml-1">{item.description}</p>
+                            )}
+                            {/* Mode selector — only for overnight-watch */}
+                            {item.id === 'overnight-watch' && notificationSettings[item.id] && (
+                              <div className="mt-3 ml-1 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-lg">
+                                <p className="text-xs font-semibold text-neutral-300 mb-2">Send when…</p>
+                                <div className="space-y-2">
+                                  {([
+                                    { value: 'every-night', label: 'Every night', desc: 'Always send a nightly summary at sunset, even if conditions are quiet.' },
+                                    { value: 'camera',      label: 'Camera may detect aurora', desc: 'Only when conditions are elevated enough for a DSLR to capture aurora.' },
+                                    { value: 'phone',       label: 'Phone camera may show aurora', desc: 'Only when aurora should be visible on a smartphone camera.' },
+                                    { value: 'eye',         label: 'Naked eye aurora likely', desc: 'Only when aurora may be visible to the naked eye — significant events only.' },
+                                  ] as { value: OvernightMode; label: string; desc: string }[]).map(opt => (
+                                    <label key={opt.value} className={`flex items-start gap-2.5 cursor-pointer p-2 rounded-lg transition-colors ${overnightMode === opt.value ? 'bg-sky-500/15 border border-sky-500/30' : 'hover:bg-neutral-700/40'}`}>
+                                      <input
+                                        type="radio"
+                                        name="overnight-mode"
+                                        value={opt.value}
+                                        checked={overnightMode === opt.value}
+                                        onChange={() => handleOvernightModeChange(opt.value)}
+                                        className="mt-0.5 accent-sky-500 flex-shrink-0"
+                                      />
+                                      <div>
+                                        <p className="text-xs font-medium text-neutral-200">{opt.label}</p>
+                                        <p className="text-[11px] text-neutral-500 leading-relaxed mt-0.5">{opt.desc}</p>
+                                      </div>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
                             )}
                           </div>
                         ))}

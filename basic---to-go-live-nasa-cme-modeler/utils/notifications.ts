@@ -310,6 +310,7 @@ const sendPushSubscriptionToServer = async (
     subscription,
     preferences,
     timezone,
+    overnight_mode: getOvernightMode(),
     ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
   });
   console.log("DIAGNOSTIC: Request Body being sent:", body);
@@ -434,10 +435,24 @@ export const sendNotificationWithCooldown = async (tag: string, cooldownMs: numb
 
 // --- Preferences ---
 const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
+// Categories that default to ON when not explicitly set by the user.
+// These are high-value actionable alerts that subscribers almost certainly want.
+const DEFAULT_ON_CATEGORIES = new Set([
+  'overnight-watch',
+  'shock-detection',
+  'cme-sheath',
+  'visibility-naked',
+  'visibility-phone',
+  'visibility-dslr',
+  'admin-broadcast',
+]);
+
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
     const stored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
-    return stored === null ? false : JSON.parse(stored);
+    // If never explicitly set, default to true for high-value categories
+    if (stored === null) return DEFAULT_ON_CATEGORIES.has(categoryId);
+    return JSON.parse(stored);
   } catch (e) {
     console.error(`Error reading notification preference for ${categoryId}:`, e);
     return true;
@@ -448,6 +463,33 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
     localStorage.setItem(NOTIFICATION_PREF_PREFIX + categoryId, JSON.stringify(enabled));
   } catch (e) {
     console.error(`Error saving notification preference for ${categoryId}:`, e);
+  }
+};
+
+// --- Overnight-watch mode (user-configurable, sent to server) ---
+// 'every-night' — always send a nightly summary regardless of conditions
+// 'camera'      — only when aurora may be detectable on a DSLR camera (score >= 25)
+// 'phone'       — only when aurora should show on a phone camera (score >= 40)
+// 'eye'         — only when aurora may be naked-eye visible (score >= 55)
+export type OvernightMode = 'every-night' | 'camera' | 'phone' | 'eye';
+const OVERNIGHT_MODE_KEY = 'notification_overnight_mode';
+const DEFAULT_OVERNIGHT_MODE: OvernightMode = 'phone';
+
+export const getOvernightMode = (): OvernightMode => {
+  try {
+    const stored = localStorage.getItem(OVERNIGHT_MODE_KEY) as OvernightMode | null;
+    if (stored && ['every-night', 'camera', 'phone', 'eye'].includes(stored)) return stored;
+    return DEFAULT_OVERNIGHT_MODE;
+  } catch {
+    return DEFAULT_OVERNIGHT_MODE;
+  }
+};
+
+export const setOvernightMode = (mode: OvernightMode) => {
+  try {
+    localStorage.setItem(OVERNIGHT_MODE_KEY, mode);
+  } catch (e) {
+    console.error('Error saving overnight mode:', e);
   }
 };
 
