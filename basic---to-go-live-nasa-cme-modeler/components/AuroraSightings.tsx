@@ -188,9 +188,9 @@ function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
 
 function buildOvalRing(gmagLat: number, lonStep = 1.5): [number, number][] {
   const pts: [number, number][] = [];
-  // Loop -180 → 180 then append a few extra degrees past 180 to avoid
-  // the hard cutoff at the antimeridian. Leaflet renders >180° correctly.
-  for (let lon = -180; lon <= 182; lon += lonStep) {
+  // Loop -180 → 200 to ensure the ring extends well past the antimeridian and
+  // fully covers the NZ map bounds (which reach 185° E). Leaflet renders >180° correctly.
+  for (let lon = -180; lon <= 200; lon += lonStep) {
     const normLon = ((lon + 180) % 360) - 180; // normalise for gmagToGeoLat calc
     const geoLat = gmagToGeoLat(gmagLat, normLon);
     if (geoLat >= -85 && geoLat <= 85) pts.push([geoLat, lon]);
@@ -201,7 +201,8 @@ function buildOvalRing(gmagLat: number, lonStep = 1.5): [number, number][] {
 function buildBandPolygon(gmagInner: number, gmagOuter: number, lonStep = 2): [number, number][] {
   const outer: [number, number][] = [];
   const inner: [number, number][] = [];
-  for (let lon = -180; lon <= 182; lon += lonStep) {
+  // Extend to 200° to match buildOvalRing and fully cover the NZ map bounds.
+  for (let lon = -180; lon <= 200; lon += lonStep) {
     const normLon = ((lon + 180) % 360) - 180;
     outer.push([gmagToGeoLat(gmagOuter, normLon), lon]);
     inner.push([gmagToGeoLat(gmagInner, normLon), lon]);
