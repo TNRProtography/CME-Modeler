@@ -346,9 +346,11 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
   const notifGranted = notifPermission === 'granted';
   const canInstall = !!deferredInstallPrompt && !isInstalled;
 
-  // Determine what to show
+  // Determine what to show.
+  // Notifications button is only shown once the app is installed — no point
+  // prompting for push notifications in a browser tab where they won't persist.
   const showInstall = canInstall;
-  const showNotif = !notifGranted;
+  const showNotif = isInstalled && !notifGranted;
 
   // Hide entirely if: dismissed, or nothing left to show
   if (dismissed || (!showInstall && !showNotif)) return null;
