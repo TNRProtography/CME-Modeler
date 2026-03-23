@@ -32,6 +32,7 @@ const ForecastDashboard = lazy(() => import('./components/ForecastDashboard'));
 const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDashboard'));
 const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
+import OnboardingBanner from './components/OnboardingBanner';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports — also lazy to keep the initial bundle lean
@@ -233,6 +234,7 @@ const App: React.FC = () => {
   const [showIabBanner, setShowIabBanner] = useState(false);
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<Event | null>(null);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
 
   const CME_TIMELINE_FUTURE_DAYS = 7;
@@ -450,9 +452,9 @@ const App: React.FC = () => {
       setIsAndroidIab(isAndroid);
     }
 
-    const onBip = () => {
-      // Do not intercept install prompt unless we provide explicit install UI.
-      // Let the browser handle native install prompt lifecycle to avoid warnings.
+    const onBip = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
     };
 
     window.addEventListener('beforeinstallprompt', onBip);
@@ -474,6 +476,13 @@ const App: React.FC = () => {
       window.open(target, '_blank', 'noopener,noreferrer');
     }
   }, [isAndroidIab]);
+
+  const handleInstallClick = useCallback(async () => {
+    if (!deferredInstallPrompt) return;
+    (deferredInstallPrompt as any).prompt();
+    const { outcome } = await (deferredInstallPrompt as any).userChoice;
+    if (outcome === 'accepted') setDeferredInstallPrompt(null);
+  }, [deferredInstallPrompt]);
 
   const handleIabCopyLink = useCallback(async () => {
     const url = window.location.href.split('#')[0];
@@ -498,7 +507,9 @@ const App: React.FC = () => {
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
-      setIsFirstVisitTutorialOpen(true);
+      // Delay the tutorial so new users can orient themselves before being interrupted
+      const tutorialTimer = setTimeout(() => setIsFirstVisitTutorialOpen(true), 30000);
+      return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); clearTimeout(tutorialTimer); };
     }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
   }, []);
@@ -1087,6 +1098,10 @@ const App: React.FC = () => {
               onAuroraAlertClick={handleAuroraAlertClick}
               onSubstormAlertClick={handleSubstormAlertClick}
               onIpsAlertClick={handleIpsAlertClick}
+          />
+          <OnboardingBanner
+              deferredInstallPrompt={deferredInstallPrompt}
+              onInstallClick={handleInstallClick}
           />
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
