@@ -90,6 +90,7 @@ interface CustomNotificationOptions extends NotificationOptions {
   tag?: string;
   forceWhenVisible?: boolean;
   stacking?: boolean;
+  skipPreferenceCheck?: boolean;
 }
 
 const DEBUG = (() => {
@@ -190,7 +191,7 @@ export const sendNotification = async (
     return false;
   }
   const categoryKey = options?.tag;
-  if (categoryKey && !getNotificationPreference(categoryKey)) {
+  if (!options?.skipPreferenceCheck && categoryKey && !getNotificationPreference(categoryKey)) {
     if (DEBUG) console.log(`Notification for category '${categoryKey}' is disabled by user preference.`);
     return false;
   }
@@ -495,7 +496,7 @@ export const setOvernightMode = (mode: OvernightMode) => {
 
 // --- Quick test helpers ---
 
-export const sendTestNotification = async (title?: string, body?: string) => {
+export const sendTestNotification = async (title?: string, body?: string, categoryId?: string) => {
   if (!('Notification' in window)) {
     alert('This browser does not support notifications.');
     return;
@@ -507,10 +508,15 @@ export const sendTestNotification = async (title?: string, body?: string) => {
   }
   const finalTitle = title || 'Test Notification';
   const finalBody = body || 'This is a test notification. If you received this, your device is set up correctly!';
+  // Use a recognised category tag so the preference check passes,
+  // but append a timestamp so it stacks rather than replacing previous notifications.
+  const tag = categoryId ? `test-${categoryId}-${Date.now()}` : `test-${Date.now()}`;
   await sendNotification(finalTitle, finalBody, {
     forceWhenVisible: true,
     stacking: true,
-    tag: `test-${Date.now()}`
+    tag,
+    // Skip the preference gate for test notifications — the user explicitly clicked Test
+    skipPreferenceCheck: true,
   });
 };
 

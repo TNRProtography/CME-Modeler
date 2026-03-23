@@ -436,7 +436,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         body = 'Solar wind conditions have changed significantly — a coronal mass ejection is passing Earth. Geomagnetic activity may increase over the next few hours.';
         break;
     }
-    sendTestNotification(title, body);
+    sendTestNotification(title, body, categoryId);
   }, []);
 
 
