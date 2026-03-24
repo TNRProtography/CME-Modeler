@@ -33,6 +33,7 @@ const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDash
 const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
 import OnboardingBanner from './components/OnboardingBanner';
+import AppDocumentation from './components/AppDocumentation';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports — also lazy to keep the initial bundle lean
@@ -235,6 +236,7 @@ const App: React.FC = () => {
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<Event | null>(null);
+  const [showDocumentation, setShowDocumentation] = useState(false);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
 
   const CME_TIMELINE_FUTURE_DAYS = 7;
@@ -1099,6 +1101,9 @@ const App: React.FC = () => {
               onSubstormAlertClick={handleSubstormAlertClick}
               onIpsAlertClick={handleIpsAlertClick}
           />
+          {showDocumentation && (
+            <AppDocumentation onClose={() => setShowDocumentation(false)} />
+          )}
           <OnboardingBanner
               deferredInstallPrompt={deferredInstallPrompt}
               onInstallClick={handleInstallClick}
@@ -1394,6 +1399,7 @@ const App: React.FC = () => {
               onClose={handleCloseSettings}
               appVersion={APP_VERSION}
               onShowTutorial={handleShowTutorial}
+              onOpenDocumentation={() => { setShowDocumentation(true); handleCloseSettings(); }}
               defaultMainPage={defaultMainPage}
               defaultForecastView={defaultForecastView}
               onDefaultMainPageChange={handleDefaultMainPageChange}
