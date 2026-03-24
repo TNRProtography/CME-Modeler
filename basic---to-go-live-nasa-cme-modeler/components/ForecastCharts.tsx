@@ -1077,18 +1077,55 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         dailyCelestialHistory.forEach(day => { if (day.sun) { addAnnotation('sunrise', day.sun.rise, 'Sunrise', '☀️', '#fcd34d', 'start'); addAnnotation('sunset', day.sun.set, 'Sunset', '☀️', '#fcd34d', 'end'); } if (day.moon) { addAnnotation('moonrise', day.moon.rise, 'Moonrise', '🌕', '#d1d5db', 'start'); addAnnotation('moonset', day.moon.set, 'Moonset', '🌕', '#d1d5db', 'end'); } });
         owmDailyForecast.forEach(day => { if (day.sunrise) addAnnotation('owm-sr-' + day.dt, day.sunrise * 1000, 'Sunrise', '☀️', '#fcd34d', 'start'); if (day.sunset) addAnnotation('owm-ss-' + day.dt, day.sunset * 1000, 'Sunset', '☀️', '#fcd34d', 'end'); if (day.moonrise) addAnnotation('owm-mr-' + day.dt, day.moonrise * 1000, 'Moonrise', '🌕', '#d1d5db', 'start'); if (day.moonset) addAnnotation('owm-ms-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end'); });
 
-        // Mark substorm bay onset events as vertical lines with score labels
+        // Substorm activity highlighting
         if (substormHistory) {
+          // 1. Background shading bands — fill when substorm score is elevated (≥30).
+          //    Group consecutive elevated readings into contiguous bands so the chart
+          //    shows a soft purple glow during active periods rather than a solid block.
+          const elevated = substormHistory
+            .map(h => ({ ts: new Date(h.timestamp_utc).getTime(), score: h.score, onset: h.bay_onset_flag }))
+            .filter(h => h.ts >= now - timeRange && h.ts <= now && h.score >= 30)
+            .sort((a, b) => a.ts - b.ts);
+
+          // Merge into contiguous bands (gap tolerance: 15 min)
+          const GAP_MS = 15 * 60 * 1000;
+          const bands: { start: number; end: number; maxScore: number; hasOnset: boolean }[] = [];
+          for (const pt of elevated) {
+            const last = bands[bands.length - 1];
+            if (last && pt.ts - last.end <= GAP_MS) {
+              last.end = pt.ts;
+              last.maxScore = Math.max(last.maxScore, pt.score);
+              if (pt.onset) last.hasOnset = true;
+            } else {
+              bands.push({ start: pt.ts, end: pt.ts, maxScore: pt.score, hasOnset: pt.onset });
+            }
+          }
+
+          bands.forEach((band, i) => {
+            // Intensity scales with substorm score: faint at 30, stronger at 80+
+            const intensity = Math.min(1, (band.maxScore - 30) / 60);
+            const alpha = 0.06 + intensity * 0.10;
+            const borderAlpha = 0.15 + intensity * 0.25;
+            annotations[`substorm-band-${i}`] = {
+              type: 'box',
+              xMin: band.start, xMax: band.end,
+              yMin: 0, yMax: 100,
+              backgroundColor: `rgba(167, 139, 250, ${alpha.toFixed(2)})`,
+              borderWidth: 0,
+            };
+          });
+
+          // 2. Vertical lines on confirmed bay onset events — sharp marker for the moment
           substormHistory.forEach((h, i) => {
             if (!h.bay_onset_flag) return;
             const ts = new Date(h.timestamp_utc).getTime();
             if (ts < now - timeRange || ts > now) return;
             annotations[`substorm-onset-${i}`] = {
               type: 'line', xMin: ts, xMax: ts,
-              borderColor: 'rgba(167, 139, 250, 0.85)',
-              borderWidth: 2, borderDash: [3, 3],
+              borderColor: 'rgba(196, 181, 253, 0.9)',
+              borderWidth: 1.5, borderDash: [3, 3],
               label: {
-                content: `⚡ Substorm (${Math.round(h.score)})`,
+                content: `⚡ ${Math.round(h.score)}`,
                 display: true, position: 'start',
                 color: '#c4b5fd', font: { size: 9, weight: 'bold' },
                 backgroundColor: 'rgba(10,10,10,0.75)', padding: 3, borderRadius: 3,
