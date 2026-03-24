@@ -20,6 +20,7 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   appVersion: string;
+  onOpenDocumentation?: () => void;
   onShowTutorial: () => void;
   defaultMainPage: 'forecast' | 'solar-activity' | 'modeler';
   defaultForecastView: 'simple' | 'advanced';
@@ -137,6 +138,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   appVersion,
+  onOpenDocumentation,
   onShowTutorial,
   defaultMainPage,
   defaultForecastView,
@@ -771,17 +773,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <MailIcon className="w-5 h-5" />
                 <span>Email for Support</span>
               </a>
-              <a
-                href="/app-documentation.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${subtleActionClass} no-underline`}
+              <button
+                onClick={() => { if (onOpenDocumentation) { onOpenDocumentation(); } }}
+                className={subtleActionClass}
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <span>App Documentation</span>
-              </a>
+                <span>How It Works</span>
+              </button>
             </div>
           </section>
         </div>
