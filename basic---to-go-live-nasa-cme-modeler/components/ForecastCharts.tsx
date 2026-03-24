@@ -983,20 +983,24 @@ function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): nu
   return 0.20; // QUIET — minimal steady-state convection, energy not releasing
 }
 
-// Find nearest substorm history point for a given timestamp (within 10 min)
-function nearestSubstorm(
+// Average substorm score over a ±15 minute window around a given timestamp.
+// Using a single nearest point causes dips when one sample catches a brief lull
+// between active readings. The average smooths those out while still responding
+// to genuine transitions between quiet and active periods.
+function averageSubstormNearTs(
   ts: number,
   history: SubstormHistoryPoint[],
-): SubstormHistoryPoint | null {
+): { score: number; bay_onset_flag: boolean } | null {
   if (!history.length) return null;
-  let best: SubstormHistoryPoint | null = null;
-  let bestDiff = Infinity;
-  for (const h of history) {
+  const WINDOW_MS = 15 * 60 * 1000;
+  const nearby = history.filter(h => {
     const t = new Date(h.timestamp_utc).getTime();
-    const diff = Math.abs(t - ts);
-    if (diff < bestDiff) { bestDiff = diff; best = h; }
-  }
-  return bestDiff < 10 * 60 * 1000 ? best : null; // only match within 10 min
+    return Math.abs(t - ts) <= WINDOW_MS;
+  });
+  if (!nearby.length) return null;
+  const avgScore = nearby.reduce((s, h) => s + h.score, 0) / nearby.length;
+  const anyOnset = nearby.some(h => h.bay_onset_flag);
+  return { score: avgScore, bay_onset_flag: anyOnset };
 }
 
 // ── Visibility probability calculation ────────────────────────────────────────
@@ -1146,8 +1150,8 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         // and derive the release multiplier. This makes the visibility line show how much
         // of the aurora potential was actually released by substorm activity.
         const visData = auroraScoreHistory.map(d => {
-            const sub = substormHistory ? nearestSubstorm(d.timestamp, substormHistory) : null;
-            const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.40;
+            const sub = substormHistory ? averageSubstormNearTs(d.timestamp, substormHistory) : null;
+            const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.20;
             return {
                 x: d.timestamp,
                 y: computeVisibilityPct(d.finalScore, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz, mult),
