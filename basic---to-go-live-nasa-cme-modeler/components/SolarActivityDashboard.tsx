@@ -2115,17 +2115,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           style={{ left: `${region.xPercent}%`, top: `${region.yPercent}%` }}
                           title={`AR ${region.region} · ${region.magneticClass || 'Unknown'} · ${region.location}`}
                         >
-                          {isSelected && (
-                            <span
-                              className="absolute inset-0 w-4 h-4 rounded-full -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2"
-                              style={{ border: `1px solid ${riskBand.color}`, animation: 'sunspotPulse 1.5s ease-out infinite' }}
-                            />
-                          )}
                           <span
-                            className="relative z-10 block w-3 h-3 rounded-full border border-white/40"
-                            style={{ backgroundColor: riskBand.color, boxShadow: `0 0 12px ${riskBand.color}` }}
-                          />
-                          <span className="absolute left-3 -top-2 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-black/75 text-sky-200 border border-sky-500/40 opacity-90 group-hover:opacity-100">
+                            className="relative z-10 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-black/80 opacity-90 group-hover:opacity-100 transition-opacity"
+                            style={{
+                              color: riskBand.color,
+                              border: `1px solid ${riskBand.color}40`,
+                              boxShadow: isSelected ? `0 0 8px ${riskBand.color}60` : 'none',
+                            }}
+                          >
                             AR {region.region}
                           </span>
                         </button>
