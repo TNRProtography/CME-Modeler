@@ -1093,7 +1093,43 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         return annotations;
     }, [timeRange, dailyCelestialHistory, owmDailyForecast, showAnnotations, substormHistory]);
     
-    const chartOptions = useMemo((): ChartOptions<'line'> => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { callbacks: { title: (ctx) => ctx.length > 0 ? `Time: ${new Date(ctx[0].parsed.x).toLocaleTimeString('en-NZ')}` : '', label: (ctx) => `${ctx.dataset.label || ''}: ${ctx.parsed.y.toFixed(1)}%` }}, annotation: { annotations: chartAnnotations, drawTime: 'afterDatasetsDraw' } }, scales: { x: { type: 'time', min: Date.now() - timeRange, max: Date.now(), ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (v: any) => `${v}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } } } }), [timeRange, chartAnnotations]);
+    const chartOptions = useMemo((): ChartOptions<'line'> => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      plugins: {
+        legend: { labels: { color: '#a1a1aa' } },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => ctx.length > 0
+              ? new Date(ctx[0].parsed.x).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' }) + ' NZST'
+              : '',
+            label: (ctx) => {
+              const label = ctx.dataset.label || '';
+              const val = ctx.parsed.y.toFixed(1);
+              if (label.includes('potential')) return `  Aurora potential:  ${val}%`;
+              if (label.includes('substorm-adjusted')) return `  Visible aurora:    ${val}%`;
+              return `  ${label}: ${val}%`;
+            },
+            afterBody: (ctx) => {
+              const potentialItem = ctx.find(c => (c.dataset.label || '').includes('potential'));
+              const visibleItem   = ctx.find(c => (c.dataset.label || '').includes('substorm-adjusted'));
+              if (!potentialItem || !visibleItem) return [];
+              const gap = potentialItem.parsed.y - visibleItem.parsed.y;
+              if (gap < 5)  return ['', '  Energy is being released — substorm active.'];
+              if (gap < 20) return ['', `  ${gap.toFixed(0)}pt gap — energy loading, not fully releasing. Aurora may be patchy.`];
+              if (gap < 40) return ['', `  ${gap.toFixed(0)}pt gap — primed but unreleased. A substorm could fire at any time.`];
+              return ['', `  ${gap.toFixed(0)}pt gap — heavily loaded, no substorm. Could be significant if one fires.`];
+            },
+          },
+        },
+        annotation: { annotations: chartAnnotations, drawTime: 'afterDatasetsDraw' },
+      },
+      scales: {
+        x: { type: 'time', min: Date.now() - timeRange, max: Date.now(), ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } },
+        y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (v: any) => `${v}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } },
+      },
+    }), [timeRange, chartAnnotations]);
     
     const chartData = useMemo(() => {
         if (auroraScoreHistory.length === 0) return { datasets: [] };
