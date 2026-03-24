@@ -972,10 +972,10 @@ interface ForecastTrendChartProps {
 // produce aurora at full potential — only steady-state convection occurs.
 function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): number {
   if (bayOnset || substormScore >= 85) return 1.00; // ONSET — full release
-  if (substormScore >= 70)             return 0.90; // IMMINENT_30
-  if (substormScore >= 50)             return 0.75; // LIKELY_60
-  if (substormScore >= 30)             return 0.60; // WATCH
-  return 0.40; // QUIET — steady-state convection only
+  if (substormScore >= 70)             return 0.85; // IMMINENT_30
+  if (substormScore >= 50)             return 0.65; // LIKELY_60
+  if (substormScore >= 30)             return 0.45; // WATCH
+  return 0.20; // QUIET — minimal steady-state convection, energy not releasing
 }
 
 // Find nearest substorm history point for a given timestamp (within 10 min)
@@ -1007,7 +1007,7 @@ function computeVisibilityPct(
   ovalBoundary: number | null | undefined,
   moonIllum: number | null | undefined,
   bz: number | null | undefined,
-  substormMult: number = 0.40, // default: quiet / no substorm
+  substormMult: number = 0.20, // default: quiet / no substorm data
 ): number {
   // Apply substorm release multiplier first — this represents how much of the
   // aurora potential is actually being released into visible aurora right now.
@@ -1059,8 +1059,8 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
   substormHistory,
 }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
-    const [timeLabel, setTimeLabel] = useState('6 Hr');
     const [showAnnotations, setShowAnnotations] = useState(true);
+    const timeLabel = timeRange >= 24 * 3600000 ? '24 Hr' : timeRange >= 12 * 3600000 ? '12 Hr' : timeRange >= 6 * 3600000 ? '6 Hr' : timeRange >= 3 * 3600000 ? '3 Hr' : timeRange >= 2 * 3600000 ? '2 Hr' : '1 Hr';
 
     const chartAnnotations = useMemo(() => {
         const annotations: any = {}; if (!showAnnotations) return annotations;
@@ -1168,7 +1168,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
                 <button onClick={onOpenModal} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
             </div>
             <div className="flex justify-between items-center mb-2">
-                <TimeRangeButtons onSelect={(d, l) => { setTimeRange(d); setTimeLabel(l); }} selected={timeRange} />
+                <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
                 <ToggleSwitch label="Moon/Sun Data" checked={showAnnotations} onChange={setShowAnnotations} />
             </div>
             <div className="flex-grow relative mt-2">
