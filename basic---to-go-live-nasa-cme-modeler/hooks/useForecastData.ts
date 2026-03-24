@@ -951,11 +951,25 @@ export const useForecastData = (
     const now = Date.now();
     const { sun } = celestialTimes;
     if (sun?.rise && sun?.set) {
-      setIsDaylight(now > sun.rise && now < sun.set);
+      // If we have the user's GPS latitude, adjust the Greymouth-based sun times
+      // to better reflect their actual sunrise/sunset. Sunset gets later as you
+      // go south in NZ (higher absolute latitude = longer summer days / shorter
+      // winter days). Approx ~1 min per degree of latitude difference.
+      // This prevents showing a non-zero score to a user south of Greymouth
+      // while isDaylight is still true based on Greymouth's sunset time.
+      let rise = sun.rise;
+      let set = sun.set;
+      if (userLatitude !== null) {
+        const latDiff = userLatitude - GREYMOUTH_LATITUDE; // negative = further south
+        const adjustMs = latDiff * 60 * 1000; // ~1 min per degree
+        rise = sun.rise + adjustMs;
+        set  = sun.set  - adjustMs; // further south = later sunset (subtract negative = add)
+      }
+      setIsDaylight(now > rise && now < set);
     } else {
       setIsDaylight(false);
     }
-  }, [celestialTimes, lastUpdated]);
+  }, [celestialTimes, lastUpdated, userLatitude]);
 
   return {
     isLoading,
