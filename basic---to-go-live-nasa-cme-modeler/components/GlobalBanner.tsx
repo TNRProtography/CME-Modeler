@@ -64,7 +64,7 @@ const getVisibilityLevel = (score?: number): string => {
   if (score >= 80) return 'Clear Eye Visible';
   if (score >= 50) return 'Faint Eye Visible';
   if (score >= 40) return 'Phone Camera Visible';
-  if (score >= 25) return 'Camera Visible';
+  if (score >= 25) return 'DSLR Camera Visible';
   return 'Insignificant';
 };
 
@@ -233,7 +233,10 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
     });
   }
 
-  if (substormRisk?.current && substormRisk.current.score >= 30) {
+  // Only show substorm banner when aurora visibility is DSLR-detectable or better (score >= 25).
+  // A substorm risk alert when conditions are quiet isn't actionable for aurora watchers.
+  const substormVisibilityQualifies = (auroraScore ?? 0) >= 25;
+  if (substormRisk?.current && substormRisk.current.score >= 30 && substormVisibilityQualifies) {
     const score = substormRisk.current.score;
     const level = substormRisk.current.level ?? '';
     const trend = substormRisk.current.risk_trend ?? '';
@@ -254,7 +257,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-3 text-center sm:text-left">
             <strong>{bayOnset ? 'Substorm Onset Detected' : `Substorm Risk: ${level}`}</strong>
             <span className="font-medium">Index {Math.round(score)} {trendArrow}{bz != null ? ` · Bz ${bz > 0 ? '+' : ''}${bz.toFixed(1)} nT` : ''}</span>
-            <span className="opacity-80 text-xs">{getVisibilityLevel(auroraScore)} from your location</span>
+            <span className="opacity-80 text-xs">{getVisibilityLevel(auroraScore)} estimated — aurora may be detectable</span>
           </div>
         </button>
       ),
