@@ -1079,43 +1079,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
 
         // Substorm activity highlighting
         if (substormHistory) {
-          // 1. Background shading bands — fill when substorm score is elevated (≥30).
-          //    Group consecutive elevated readings into contiguous bands so the chart
-          //    shows a soft purple glow during active periods rather than a solid block.
-          const elevated = substormHistory
-            .map(h => ({ ts: new Date(h.timestamp_utc).getTime(), score: h.score, onset: h.bay_onset_flag }))
-            .filter(h => h.ts >= now - timeRange && h.ts <= now && h.score >= 30)
-            .sort((a, b) => a.ts - b.ts);
-
-          // Merge into contiguous bands (gap tolerance: 15 min)
-          const GAP_MS = 15 * 60 * 1000;
-          const bands: { start: number; end: number; maxScore: number; hasOnset: boolean }[] = [];
-          for (const pt of elevated) {
-            const last = bands[bands.length - 1];
-            if (last && pt.ts - last.end <= GAP_MS) {
-              last.end = pt.ts;
-              last.maxScore = Math.max(last.maxScore, pt.score);
-              if (pt.onset) last.hasOnset = true;
-            } else {
-              bands.push({ start: pt.ts, end: pt.ts, maxScore: pt.score, hasOnset: pt.onset });
-            }
-          }
-
-          bands.forEach((band, i) => {
-            // Intensity scales with substorm score: faint at 30, stronger at 80+
-            const intensity = Math.min(1, (band.maxScore - 30) / 60);
-            const alpha = 0.06 + intensity * 0.10;
-            const borderAlpha = 0.15 + intensity * 0.25;
-            annotations[`substorm-band-${i}`] = {
-              type: 'box',
-              xMin: band.start, xMax: band.end,
-              yMin: 0, yMax: 100,
-              backgroundColor: `rgba(167, 139, 250, ${alpha.toFixed(2)})`,
-              borderWidth: 0,
-            };
-          });
-
-          // 2. Vertical lines on confirmed bay onset events — sharp marker for the moment
+          // Vertical lines on confirmed bay onset events — sharp marker for the moment
           substormHistory.forEach((h, i) => {
             if (!h.bay_onset_flag) return;
             const ts = new Date(h.timestamp_utc).getTime();
