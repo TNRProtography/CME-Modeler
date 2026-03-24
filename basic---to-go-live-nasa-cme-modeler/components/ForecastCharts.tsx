@@ -983,24 +983,25 @@ function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): nu
   return 0.20; // QUIET — minimal steady-state convection, energy not releasing
 }
 
-// Average substorm score over a ±15 minute window around a given timestamp.
-// Using a single nearest point causes dips when one sample catches a brief lull
-// between active readings. The average smooths those out while still responding
-// to genuine transitions between quiet and active periods.
-function averageSubstormNearTs(
+// Take the PEAK substorm score within a ±10 minute window around a given timestamp.
+// Using max (not average) means:
+//   - A brief lull between active readings doesn't cause a dip (max ignores it)
+//   - A genuine substorm peak is fully captured (max picks it up)
+//   - A sustained quiet period correctly returns a low score
+function peakSubstormNearTs(
   ts: number,
   history: SubstormHistoryPoint[],
 ): { score: number; bay_onset_flag: boolean } | null {
   if (!history.length) return null;
-  const WINDOW_MS = 15 * 60 * 1000;
+  const WINDOW_MS = 10 * 60 * 1000;
   const nearby = history.filter(h => {
     const t = new Date(h.timestamp_utc).getTime();
     return Math.abs(t - ts) <= WINDOW_MS;
   });
   if (!nearby.length) return null;
-  const avgScore = nearby.reduce((s, h) => s + h.score, 0) / nearby.length;
+  const peak = nearby.reduce((best, h) => h.score > best.score ? h : best, nearby[0]);
   const anyOnset = nearby.some(h => h.bay_onset_flag);
-  return { score: avgScore, bay_onset_flag: anyOnset };
+  return { score: peak.score, bay_onset_flag: anyOnset };
 }
 
 // ── Visibility probability calculation ────────────────────────────────────────
@@ -1150,7 +1151,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         // and derive the release multiplier. This makes the visibility line show how much
         // of the aurora potential was actually released by substorm activity.
         const visData = auroraScoreHistory.map(d => {
-            const sub = substormHistory ? averageSubstormNearTs(d.timestamp, substormHistory) : null;
+            const sub = substormHistory ? peakSubstormNearTs(d.timestamp, substormHistory) : null;
             const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.20;
             return {
                 x: d.timestamp,
