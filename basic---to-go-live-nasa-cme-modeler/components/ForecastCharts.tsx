@@ -970,6 +970,11 @@ interface ForecastTrendChartProps {
 // scales how much of the aurora potential is actually being released.
 // Without a substorm, solar wind energy loads the magnetotail but doesn't
 // produce aurora at full potential — only steady-state convection occurs.
+//
+// NOTE: The multiplier values below are empirical estimates, not derived from
+// a specific published model. The concept is physically grounded (substorms as
+// the release mechanism for loaded magnetotail energy) but the exact fractions
+// are calibrated by observation rather than first principles.
 function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): number {
   if (bayOnset || substormScore >= 85) return 1.00; // ONSET — full release
   if (substormScore >= 70)             return 0.85; // IMMINENT_30
@@ -1041,14 +1046,11 @@ function computeVisibilityPct(
     pct = pct * (1 - moonPenalty);
   }
 
-  // ── Bz boost/penalty ─────────────────────────────────────────────────────
-  // Strongly southward Bz boosts confidence; northward Bz reduces it.
-  if (bz != null) {
-    if (bz < -8)       pct = Math.min(100, pct * 1.15);
-    else if (bz < -4)  pct = Math.min(100, pct * 1.07);
-    else if (bz > 4)   pct = pct * 0.85;
-    else if (bz > 2)   pct = pct * 0.92;
-  }
+  // Bz adjustment intentionally removed: the aurora score from the Forecast Worker
+  // already incorporates Bz as a primary input via the Newell coupling function.
+  // Applying a second Bz multiplier here causes double-counting — strongly southward
+  // Bz would inflate the score twice. The substorm multiplier already captures the
+  // energy-release effect of sustained southward Bz through the substorm risk score.
 
   return Math.max(0, Math.min(100, pct));
 }

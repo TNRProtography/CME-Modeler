@@ -155,7 +155,10 @@ function sustainedSouth(bzSeries: number[], minutes = 15) {
   if (!bzSeries.length) return false;
   const m = Math.min(bzSeries.length, minutes);
   const sub = bzSeries.slice(bzSeries.length - m);
-  const fracSouth = sub.filter(bz => bz <= -3).length / sub.length;
+  // -5 nT threshold for sustained southward Bz: studies (e.g. Newell et al. 2007)
+  // show meaningful dayside reconnection and energy loading begins at ~-5 nT.
+  // -3 nT is too sensitive and flags weak coupling conditions as "sustained".
+  const fracSouth = sub.filter(bz => bz <= -5).length / sub.length;
   return fracSouth >= 0.8;
 }
 
@@ -172,15 +175,39 @@ function slopePerMin(series: { t: number; v: number }[], minutes = 2) {
 function probabilityModel(dPhiNow: number, dPhiMean15: number, bzMean15: number) {
   const base = Math.tanh(0.015 * (dPhiMean15 || dPhiNow) + 0.01 * dPhiNow);
   const bzBoost = bzMean15 < -3 ? 0.10 : bzMean15 < -1 ? 0.05 : 0;
-  const P60 = Math.min(0.9, Math.max(0.01, 0.25 + 0.6 * base + bzBoost));
-  const P30 = Math.min(0.9, Math.max(0.01, 0.15 + 0.7 * base + bzBoost));
+  // Floors reduced to reflect actual background substorm rate during quiet conditions.
+  // Original 0.25/0.15 floors caused likelihood% to never drop below ~21% even on
+  // completely quiet nights. True background rate during low coupling is ~5%.
+  const P60 = Math.min(0.9, Math.max(0.01, 0.05 + 0.6 * base + bzBoost));
+  const P30 = Math.min(0.9, Math.max(0.01, 0.03 + 0.7 * base + bzBoost));
   return { P30, P60 };
 }
 
-const calculateLocationAdjustment = (userLat: number): number => {
-  const isNorthOfGreymouth = userLat > GREYMOUTH_LATITUDE;
+// IGRF-13 north magnetic dipole pole (geographic coordinates)
+const POLE_LAT_RAD = 80.65 * Math.PI / 180;
+const POLE_LON_RAD = -72.68 * Math.PI / 180;
+
+// Convert geographic lat/lon to geomagnetic latitude using IGRF-13 dipole
+function geoToGmagLat(latDeg: number, lonDeg: number): number {
+  const phi = latDeg * Math.PI / 180;
+  const lam = lonDeg * Math.PI / 180;
+  const sinGmag = Math.sin(phi) * Math.sin(POLE_LAT_RAD) +
+                  Math.cos(phi) * Math.cos(POLE_LAT_RAD) * Math.cos(lam - POLE_LON_RAD);
+  return Math.asin(Math.max(-1, Math.min(1, sinGmag))) * 180 / Math.PI;
+}
+
+// Greymouth geomagnetic latitude (geographic: -42.45°, 171.21°E)
+const GREYMOUTH_GMAG_LAT = geoToGmagLat(GREYMOUTH_LATITUDE, 171.21);
+
+const calculateLocationAdjustment = (userLat: number, userLon: number = 171.21): number => {
+  // Use geomagnetic latitude (IGRF-13) rather than geographic latitude.
+  // Aurora visibility is governed by proximity to the auroral oval, which
+  // is organised by geomagnetic (not geographic) latitude. In NZ the difference
+  // is ~18–22°, so this is a meaningful correction for users far from Greymouth.
+  const userGmagLat = geoToGmagLat(userLat, userLon);
+  const isNorthOfGreymouth = userGmagLat > GREYMOUTH_GMAG_LAT;
   const R = 6371;
-  const dLat = (userLat - GREYMOUTH_LATITUDE) * (Math.PI / 180);
+  const dLat = (userGmagLat - GREYMOUTH_GMAG_LAT) * (Math.PI / 180);
   const distanceKm = Math.abs(dLat) * R;
   const numberOfSegments = Math.floor(distanceKm / 10);
   const adjustmentFactor = numberOfSegments * 0.2;
@@ -465,8 +492,19 @@ export const useForecastData = (
       const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
       const recentData = data.filter((p: any) => p.x >= thirtyMinsAgo);
       if (recentData.length < 5) return false;
-      const volatility = recentData.some((p: any) => Math.abs(p.y) > 5);
-      return volatility;
+      // Require at least 3 consecutive readings above 10 nT/min for a genuine bay onset.
+      // A single spike above 5 nT/min can be a sensor glitch or minor disturbance —
+      // real substorm bays are sustained rapid deflections.
+      let consecutiveCount = 0;
+      for (const p of recentData) {
+          if (Math.abs(p.y) >= 10) {
+              consecutiveCount++;
+              if (consecutiveCount >= 3) return true;
+          } else {
+              consecutiveCount = 0;
+          }
+      }
+      return false;
   }, [nzMagData]);
 
   // --- NEW: Analyze NZ Mag data for past events ---
@@ -858,7 +896,7 @@ export const useForecastData = (
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
-            const adjustment = calculateLocationAdjustment(position.coords.latitude);
+            const adjustment = calculateLocationAdjustment(position.coords.latitude, position.coords.longitude);
             setLocationAdjustment(adjustment);
             setUserLatitude(position.coords.latitude);
             setUserLongitude(position.coords.longitude);
