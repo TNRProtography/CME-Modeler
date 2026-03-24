@@ -58,6 +58,32 @@ const formatTime = (timestamp?: number | string): string => {
   });
 };
 
+// Estimate onset window label and midpoint clock time from substorm level
+const getOnsetTimingText = (level: string, score: number): string | null => {
+  const now = Date.now();
+  // level string from the worker matches these keywords
+  if (level.includes('ONSET') || level.includes('Onset') || level.includes('onset')) return null; // happening now — no estimate needed
+  if (level.includes('IMMINENT') || score >= 75) {
+    // IMMINENT_30 — within 30 min, midpoint ~15 min
+    const t = new Date(now + 15 * 60 * 1000);
+    const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
+    return `~${hhmm} (within 30 min)`;
+  }
+  if (level.includes('LIKELY') || score >= 55) {
+    // LIKELY_60 — within 60 min, midpoint ~35 min
+    const t = new Date(now + 35 * 60 * 1000);
+    const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
+    return `~${hhmm} (within 60 min)`;
+  }
+  if (level.includes('WATCH') || score >= 30) {
+    // WATCH — 20–90 min window, midpoint ~55 min
+    const t = new Date(now + 55 * 60 * 1000);
+    const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
+    return `~${hhmm} (20–90 min)`;
+  }
+  return null;
+};
+
 // Helper to get visibility level from aurora score
 const getVisibilityLevel = (score?: number): string => {
   if (score === undefined || score === null) return 'Insignificant';
@@ -257,7 +283,10 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-3 text-center sm:text-left">
             <strong>{bayOnset ? 'Substorm Onset Detected' : `Substorm Risk: ${level}`}</strong>
             <span className="font-medium">Index {Math.round(score)} {trendArrow}{bz != null ? ` · Bz ${bz > 0 ? '+' : ''}${bz.toFixed(1)} nT` : ''}</span>
-            <span className="opacity-80 text-xs">{getVisibilityLevel(auroraScore)} estimated — aurora may be detectable</span>
+            <span className="opacity-80 text-xs">
+              {getVisibilityLevel(auroraScore)} estimated — aurora may be detectable
+              {!bayOnset && (() => { const t = getOnsetTimingText(level, score); return t ? ` · Onset expected ${t}` : null; })()}
+            </span>
           </div>
         </button>
       ),
