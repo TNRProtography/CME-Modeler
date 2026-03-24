@@ -414,6 +414,7 @@ export const useForecastData = (
   const [userLatitude, setUserLatitude] = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
   const [locationFailed, setLocationFailed] = useState<boolean>(false);
+  const [isOutsideNZ, setIsOutsideNZ] = useState<boolean>(false);
   const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
@@ -911,6 +912,16 @@ export const useForecastData = (
             const direction = adjustment >= 0 ? 'south' : 'north';
             const distance = Math.abs(adjustment / 3 * 150);
             setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
+            // Check if user is far outside NZ — approximate nearest point on NZ landmass
+            // using a simple great-circle distance to Greymouth as proxy centre.
+            const userLat = position.coords.latitude;
+            const userLon = position.coords.longitude;
+            const R = 6371;
+            const dLat = (userLat - GREYMOUTH_LATITUDE) * Math.PI / 180;
+            const dLon = (userLon - 171.21) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(userLat * Math.PI/180) * Math.cos(GREYMOUTH_LATITUDE * Math.PI/180) * Math.sin(dLon/2)**2;
+            const distanceFromNZ = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            setIsOutsideNZ(distanceFromNZ > 1000);
           },
           () => {
             setLocationBlurb('Location unavailable. Showing default forecast for Greymouth.');
@@ -1012,6 +1023,7 @@ export const useForecastData = (
     userLatitude,
     userLongitude,
     locationFailed,
+    isOutsideNZ,
     fetchAllData,
     activitySummary,
   };

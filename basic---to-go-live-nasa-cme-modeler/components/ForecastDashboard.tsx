@@ -248,12 +248,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
         owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
-        userLatitude, userLongitude, locationFailed
+        userLatitude, userLongitude, locationFailed, isOutsideNZ
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
     const [isFaqOpen, setIsFaqOpen] = useState(false);
+    const [outsideNZDismissed, setOutsideNZDismissed] = useState(false);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
@@ -589,6 +590,36 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
+
+            {/* Outside NZ warning modal */}
+            {isOutsideNZ && !outsideNZDismissed && (
+              <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="bg-neutral-900 border border-amber-500/40 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center">
+                  <div className="text-4xl mb-4">🌏</div>
+                  <h2 className="text-xl font-bold text-white mb-3">You appear to be outside New Zealand</h2>
+                  <p className="text-sm text-neutral-300 leading-relaxed mb-4">
+                    Spot The Aurora is a New Zealand aurora and space weather forecasting app. The aurora score, substorm model, and visibility forecasts are all calibrated and optimised for viewing conditions from New Zealand — particularly the South Island.
+                  </p>
+                  <p className="text-sm text-neutral-400 leading-relaxed mb-6">
+                    If you are aurora chasing from another location in the southern hemisphere, the solar wind and space weather data is still accurate and useful — but the visibility score, location adjustment, and notification thresholds will not reflect your actual viewing conditions.
+                  </p>
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => window.history.back()}
+                      className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-300 border border-neutral-700 transition-colors"
+                    >
+                      Go back
+                    </button>
+                    <button
+                      onClick={() => setOutsideNZDismissed(true)}
+                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-sm text-white font-semibold transition-colors"
+                    >
+                      Continue anyway
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
