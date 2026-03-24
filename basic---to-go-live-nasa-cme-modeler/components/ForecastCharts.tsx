@@ -946,6 +946,12 @@ export const SimpleTrendChart: React.FC<{ auroraScoreHistory: { timestamp: numbe
 };
 
 
+interface SubstormHistoryPoint {
+    timestamp_utc: string;
+    score: number;
+    bay_onset_flag: boolean;
+}
+
 interface ForecastTrendChartProps {
     auroraScoreHistory: { timestamp: number; baseScore: number; finalScore: number; }[];
     dailyCelestialHistory: DailyHistoryEntry[];
@@ -957,7 +963,37 @@ interface ForecastTrendChartProps {
     substormBz?: number | null;
     substormScore?: number | null;
     ovalBoundaryGmag?: number | null;
+    substormHistory?: SubstormHistoryPoint[] | null;
 }
+// ── Substorm release multiplier ──────────────────────────────────────────────
+// Converts a substorm risk score (0–100) into a fractional multiplier that
+// scales how much of the aurora potential is actually being released.
+// Without a substorm, solar wind energy loads the magnetotail but doesn't
+// produce aurora at full potential — only steady-state convection occurs.
+function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): number {
+  if (bayOnset || substormScore >= 85) return 1.00; // ONSET — full release
+  if (substormScore >= 70)             return 0.90; // IMMINENT_30
+  if (substormScore >= 50)             return 0.75; // LIKELY_60
+  if (substormScore >= 30)             return 0.60; // WATCH
+  return 0.40; // QUIET — steady-state convection only
+}
+
+// Find nearest substorm history point for a given timestamp (within 10 min)
+function nearestSubstorm(
+  ts: number,
+  history: SubstormHistoryPoint[],
+): SubstormHistoryPoint | null {
+  if (!history.length) return null;
+  let best: SubstormHistoryPoint | null = null;
+  let bestDiff = Infinity;
+  for (const h of history) {
+    const t = new Date(h.timestamp_utc).getTime();
+    const diff = Math.abs(t - ts);
+    if (diff < bestDiff) { bestDiff = diff; best = h; }
+  }
+  return bestDiff < 10 * 60 * 1000 ? best : null; // only match within 10 min
+}
+
 // ── Visibility probability calculation ────────────────────────────────────────
 // Computes a 0–100% chance-of-seeing-aurora for a given score point, factoring
 // in the user's location relative to the oval visibility line, moon brightness,
@@ -971,9 +1007,12 @@ function computeVisibilityPct(
   ovalBoundary: number | null | undefined,
   moonIllum: number | null | undefined,
   bz: number | null | undefined,
+  substormMult: number = 0.40, // default: quiet / no substorm
 ): number {
-  // Start with the raw score as the base probability
-  let pct = rawScore;
+  // Apply substorm release multiplier first — this represents how much of the
+  // aurora potential is actually being released into visible aurora right now.
+  // A high aurora score with no substorm means energy is loaded but not released.
+  let pct = rawScore * substormMult;
 
   // ── Location penalty ──────────────────────────────────────────────────────
   // If we know the user's geomagnetic latitude and the oval boundary,
@@ -1017,6 +1056,7 @@ function computeVisibilityPct(
 export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
   auroraScoreHistory, dailyCelestialHistory, owmDailyForecast, onOpenModal,
   userLatitude, userLongitude, moonIllumination, substormBz, substormScore, ovalBoundaryGmag,
+  substormHistory,
 }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const [timeLabel, setTimeLabel] = useState('6 Hr');
@@ -1029,8 +1069,29 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         const addAnnotation = (key: string, ts: number | null | undefined, text: string, emoji: string, color: string, pos: 'start' | 'end') => { if (ts && ts > startTime && ts < now) annotations[`${key}-${ts}`] = { type: 'line', xMin: ts, xMax: ts, borderColor: color.replace(/, 1\)/, ', 0.7)'), borderWidth: 1.5, borderDash: [6, 6], label: { content: `${emoji} ${text}: ${formatTime(ts)}`, display: true, position: pos, color, font: { size: 10, weight: 'bold' }, backgroundColor: 'rgba(10, 10, 10, 0.7)', padding: 3, borderRadius: 3 } }; };
         dailyCelestialHistory.forEach(day => { if (day.sun) { addAnnotation('sunrise', day.sun.rise, 'Sunrise', '☀️', '#fcd34d', 'start'); addAnnotation('sunset', day.sun.set, 'Sunset', '☀️', '#fcd34d', 'end'); } if (day.moon) { addAnnotation('moonrise', day.moon.rise, 'Moonrise', '🌕', '#d1d5db', 'start'); addAnnotation('moonset', day.moon.set, 'Moonset', '🌕', '#d1d5db', 'end'); } });
         owmDailyForecast.forEach(day => { if (day.sunrise) addAnnotation('owm-sr-' + day.dt, day.sunrise * 1000, 'Sunrise', '☀️', '#fcd34d', 'start'); if (day.sunset) addAnnotation('owm-ss-' + day.dt, day.sunset * 1000, 'Sunset', '☀️', '#fcd34d', 'end'); if (day.moonrise) addAnnotation('owm-mr-' + day.dt, day.moonrise * 1000, 'Moonrise', '🌕', '#d1d5db', 'start'); if (day.moonset) addAnnotation('owm-ms-' + day.dt, day.moonset * 1000, 'Moonset', '🌕', '#d1d5db', 'end'); });
+
+        // Mark substorm bay onset events as vertical lines with score labels
+        if (substormHistory) {
+          substormHistory.forEach((h, i) => {
+            if (!h.bay_onset_flag) return;
+            const ts = new Date(h.timestamp_utc).getTime();
+            if (ts < now - timeRange || ts > now) return;
+            annotations[`substorm-onset-${i}`] = {
+              type: 'line', xMin: ts, xMax: ts,
+              borderColor: 'rgba(167, 139, 250, 0.85)',
+              borderWidth: 2, borderDash: [3, 3],
+              label: {
+                content: `⚡ Substorm (${Math.round(h.score)})`,
+                display: true, position: 'start',
+                color: '#c4b5fd', font: { size: 9, weight: 'bold' },
+                backgroundColor: 'rgba(10,10,10,0.75)', padding: 3, borderRadius: 3,
+              },
+            };
+          });
+        }
+
         return annotations;
-    }, [timeRange, dailyCelestialHistory, owmDailyForecast, showAnnotations]);
+    }, [timeRange, dailyCelestialHistory, owmDailyForecast, showAnnotations, substormHistory]);
     
     const chartOptions = useMemo((): ChartOptions<'line'> => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { labels: { color: '#a1a1aa' }}, tooltip: { callbacks: { title: (ctx) => ctx.length > 0 ? `Time: ${new Date(ctx[0].parsed.x).toLocaleTimeString('en-NZ')}` : '', label: (ctx) => `${ctx.dataset.label || ''}: ${ctx.parsed.y.toFixed(1)}%` }}, annotation: { annotations: chartAnnotations, drawTime: 'afterDatasetsDraw' } }, scales: { x: { type: 'time', min: Date.now() - timeRange, max: Date.now(), ticks: { color: '#71717a', source: 'auto' }, grid: { color: '#3f3f46' } }, y: { type: 'linear', min: 0, max: 100, ticks: { color: '#71717a', callback: (v: any) => `${v}%` }, grid: { color: '#3f3f46' }, title: { display: true, text: 'Aurora Score (%)', color: '#a3a3a3' } } } }), [timeRange, chartAnnotations]);
     
@@ -1042,15 +1103,27 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
             const color0 = getSmoothForecastScoreColor(ctx.p0?.parsed?.y ?? 0, 0.33); const color1 = getSmoothForecastScoreColor(ctx.p1?.parsed?.y ?? 0, 0.33);
             gradient.addColorStop(0, color0); gradient.addColorStop(1, color1); return gradient;
         };
-        const visData = auroraScoreHistory.map(d => ({
-            x: d.timestamp,
-            y: computeVisibilityPct(d.finalScore, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz),
-        }));
+
+        // For each aurora score history point, find the matching substorm history entry
+        // and derive the release multiplier. This makes the visibility line show how much
+        // of the aurora potential was actually released by substorm activity.
+        const visData = auroraScoreHistory.map(d => {
+            const sub = substormHistory ? nearestSubstorm(d.timestamp, substormHistory) : null;
+            const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.40;
+            return {
+                x: d.timestamp,
+                y: computeVisibilityPct(d.finalScore, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz, mult),
+            };
+        });
+
         return { datasets: [
-            { label: 'Spot The Aurora Forecast', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: getSmoothForecastScoreColor(auroraScoreHistory.at(-1)?.finalScore ?? 0), backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 1.5, spanGaps: true, order: 1 },
-            { label: 'Visibility Probability', data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1.5, borderDash: [4, 4], spanGaps: true, order: 2 },
+            // Aurora score potential ceiling — thin, neutral, shows what conditions allow
+            { label: 'Aurora Score (potential)', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'rgba(148, 163, 184, 0.45)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [2, 3], spanGaps: true, order: 3 },
+            // Substorm-released visibility — the score after accounting for whether a substorm
+            // is actually releasing the loaded energy. Gap between this and the score above = energy loading but not released.
+            { label: 'Visibility (substorm-adjusted)', data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 1 },
         ] };
-    }, [auroraScoreHistory]);
+    }, [auroraScoreHistory, substormHistory, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz]);
 
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
