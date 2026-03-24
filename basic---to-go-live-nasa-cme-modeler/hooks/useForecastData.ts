@@ -672,7 +672,15 @@ export const useForecastData = (
       const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
       setBaseAuroraScore(baseScore);
 
-      const initialAdjustedScore = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
+      const rawAdjusted = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
+      // Compute daylight directly from the freshly received sun times rather than
+      // relying on the isDaylight state, which may not have updated yet on first load.
+      const freshSun = currentForecast?.sun;
+      const nowTs = Date.now();
+      const freshIsDaylight = freshSun?.rise && freshSun?.set
+        ? (nowTs > freshSun.rise && nowTs < freshSun.set)
+        : false;
+      const initialAdjustedScore = freshIsDaylight ? 0 : rawAdjusted;
       setAuroraScore(initialAdjustedScore);
       setCurrentAuroraScore(initialAdjustedScore);
 
@@ -929,11 +937,15 @@ export const useForecastData = (
 
   useEffect(() => {
     if (baseAuroraScore !== null) {
-      const adjustedScore = Math.max(0, Math.min(100, baseAuroraScore + locationAdjustment));
+      // Zero the displayed score during daylight — solar conditions don't matter
+      // if the sun is up. The baseAuroraScore is preserved so it recovers at sunset.
+      const adjustedScore = isDaylight
+        ? 0
+        : Math.max(0, Math.min(100, baseAuroraScore + locationAdjustment));
       setAuroraScore(adjustedScore);
       setCurrentAuroraScore(adjustedScore);
     }
-  }, [locationAdjustment, baseAuroraScore, setCurrentAuroraScore]);
+  }, [locationAdjustment, baseAuroraScore, isDaylight, setCurrentAuroraScore]);
 
   // Keep history finalScore location-adjusted whenever location changes.
   // baseScore = raw Greymouth value (from server), finalScore = location-adjusted.
