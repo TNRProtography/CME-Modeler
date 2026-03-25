@@ -16,6 +16,98 @@ import {
 } from '../utils/notifications.ts';
 import { PageViewStats } from '../utils/pageViews';
 
+// ── IndexedDB notification history ───────────────────────────────────────────
+interface NotificationHistoryEntry {
+  id: number;
+  title: string;
+  body: string;
+  tag: string;
+  timestamp: number;
+  url: string;
+  category: string;
+}
+
+async function openNotificationDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('sta-notifications', 1);
+    req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
+    req.onerror   = (e) => reject((e.target as IDBOpenDBRequest).error);
+    req.onupgradeneeded = (e) => {
+      const db = (e.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains('history')) {
+        const store = db.createObjectStore('history', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+    };
+  });
+}
+
+async function getNotificationHistory(): Promise<NotificationHistoryEntry[]> {
+  try {
+    const db = await openNotificationDb();
+    return new Promise((resolve, reject) => {
+      const tx    = db.transaction('history', 'readonly');
+      const store = tx.objectStore('history');
+      const req   = store.index('timestamp').getAll();
+      req.onsuccess = () => { db.close(); resolve((req.result as NotificationHistoryEntry[]).reverse()); };
+      req.onerror   = () => { db.close(); reject(req.error); };
+    });
+  } catch { return []; }
+}
+
+async function clearNotificationHistory(): Promise<void> {
+  try {
+    const db = await openNotificationDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx  = db.transaction('history', 'readwrite');
+      const req = tx.objectStore('history').clear();
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror   = () => { db.close(); reject(req.error); };
+    });
+  } catch { /* silent */ }
+}
+
+async function deleteNotificationEntry(id: number): Promise<void> {
+  try {
+    const db = await openNotificationDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx  = db.transaction('history', 'readwrite');
+      const req = tx.objectStore('history').delete(id);
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror   = () => { db.close(); reject(req.error); };
+    });
+  } catch { /* silent */ }
+}
+
+function formatHistoryTime(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now.getTime() - ts;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 2)   return 'Just now';
+  if (diffMins < 60)  return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7)   return `${diffDays}d ago`;
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', timeZone: 'Pacific/Auckland' });
+}
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  'visibility-naked':  '👁️',
+  'visibility-phone':  '📱',
+  'visibility-dslr':   '📷',
+  'overnight-watch':   '🌌',
+  'flare-event':       '☀️',
+  'flare-peak':        '☀️',
+  'shock-detection':   '💥',
+  'cme-sheath':        '🌞',
+  'ips-shock':         '💥',
+  'substorm-forecast': '⚡',
+  'admin-broadcast':   '📢',
+};
+const AURORA_RE = /^aurora-(\d+)percent$/;
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -151,6 +243,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [overnightMode, setOvernightModeState] = useState<OvernightMode>(() => getOvernightMode());
+  const [notifHistory, setNotifHistory] = useState<NotificationHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    const entries = await getNotificationHistory();
+    setNotifHistory(entries);
+    setHistoryLoading(false);
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    await clearNotificationHistory();
+    setNotifHistory([]);
+  }, []);
+
+  const handleDeleteEntry = useCallback(async (id: number) => {
+    await deleteNotificationEntry(id);
+    setNotifHistory(prev => prev.filter(e => e.id !== id));
+  }, []);
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [diagRunning, setDiagRunning] = useState<boolean>(false);
   const [openTooltipId, setOpenTooltipId] = useState<string | null>(null);
@@ -751,6 +863,69 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
             <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
+          </section>
+
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xl font-semibold text-neutral-300">Notification History</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowHistory(v => { if (!v) loadHistory(); return !v; }); }}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors"
+                >
+                  {showHistory ? 'Hide' : 'Show history'}
+                </button>
+                {showHistory && notifHistory.length > 0 && (
+                  <button
+                    onClick={handleClearHistory}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-800/50 text-red-400 border border-red-700/40 transition-colors"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-sm text-neutral-500 mb-3">Every notification sent to this device is saved here. Stored locally — cleared only if you clear the app cache or delete entries manually.</p>
+            {showHistory && (
+              <div className="space-y-2 max-h-80 overflow-y-auto styled-scrollbar pr-1">
+                {historyLoading ? (
+                  <p className="text-sm text-neutral-500 text-center py-4">Loading...</p>
+                ) : notifHistory.length === 0 ? (
+                  <p className="text-sm text-neutral-500 text-center py-6">No notifications received yet. They will appear here as they arrive.</p>
+                ) : (
+                  notifHistory.map(entry => {
+                    const emoji = CATEGORY_EMOJI[entry.category]
+                      ?? (AURORA_RE.test(entry.category) ? '🌌' : '🔔');
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-start gap-3 p-3 rounded-xl bg-neutral-800/60 border border-neutral-700/40 group"
+                      >
+                        <span className="text-xl flex-shrink-0 mt-0.5">{emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-semibold text-neutral-200 leading-snug">{entry.title}</p>
+                            <span className="text-xs text-neutral-500 flex-shrink-0 mt-0.5">{formatHistoryTime(entry.timestamp)}</span>
+                          </div>
+                          {entry.body && (
+                            <p className="text-xs text-neutral-400 mt-1 leading-relaxed whitespace-pre-line line-clamp-3">{entry.body}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleDeleteEntry(entry.id)}
+                          className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all p-1 rounded"
+                          title="Delete this entry"
+                        >
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </section>
 
           <section>

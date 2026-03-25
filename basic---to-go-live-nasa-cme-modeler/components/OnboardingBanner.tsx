@@ -158,8 +158,10 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   const handleOvernightModeChange = useCallback(async (mode: OvernightMode) => {
     setOvernightModeState(mode);
     setOvernightMode(mode);
-    // Persist immediately -- will be sent to server on next full subscribe/update
-    try { localStorage.setItem('notification_overnight_mode', mode); } catch {}
+    // Fix: also push the updated mode to the server immediately.
+    // Previously this only saved to localStorage, so the server always
+    // defaulted the user to 'phone' mode regardless of their selection.
+    await updatePushSubscriptionPreferences();
   }, []);
 
   const allSelected = Object.values(prefs).every(Boolean);
