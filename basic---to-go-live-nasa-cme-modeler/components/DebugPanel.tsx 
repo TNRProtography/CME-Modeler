@@ -645,5 +645,5 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
   );
 };
 
-export default DebugPanel;
+export default DebugPanel; 
 // --- END OF FILE src/components/DebugPanel.tsx ---
