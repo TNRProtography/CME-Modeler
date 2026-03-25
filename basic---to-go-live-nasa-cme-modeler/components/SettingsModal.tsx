@@ -11,6 +11,7 @@ import {
   type OvernightMode,
   requestNotificationPermission,
   sendTestNotification,
+  sendServerSelfTest,
   subscribeUserToPush,
   updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
