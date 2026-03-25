@@ -1,7 +1,7 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
- * @version 2.0.1
+ * @version 2.0.2
  */
 
 // Maps notification topic/tag to a specific icon
@@ -20,11 +20,11 @@ const TOPIC_ICONS = {
   'shock-detection':   '/icons/icon-shock-detection.png',
   'cme-sheath':        '/icons/icon-cme-sheath.png',
   'ips-shock':         '/icons/icon-ips-shock.png',
-  'aurora-40percent':  '/icons/icon-visibility-dslr.png',
-  'aurora-50percent':  '/icons/icon-visibility-dslr.png',
-  'aurora-60percent':  '/icons/icon-visibility-dslr.png',
-  'aurora-80percent':  '/icons/icon-visibility-dslr.png',
-  'substorm-forecast': '/icons/icon-visibility-dslr.png',
+  'aurora-40percent':  '/icons/icon_aurora.png',
+  'aurora-50percent':  '/icons/icon_aurora.png',
+  'aurora-60percent':  '/icons/icon_aurora.png',
+  'aurora-80percent':  '/icons/icon_aurora.png',
+  'substorm-forecast': '/icons/icon-substorm.png',
   'admin-broadcast':   '/icons/icon-default.png',
 };
 
