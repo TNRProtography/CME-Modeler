@@ -33,7 +33,7 @@ const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDash
 const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
 import OnboardingBanner from './components/OnboardingBanner';
-import AppDocumentation from './components/AppDocumentation';
+import AppDocumentation from './components/docs/AppDocumentation';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports — also lazy to keep the initial bundle lean

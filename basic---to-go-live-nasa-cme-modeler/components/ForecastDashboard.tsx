@@ -207,40 +207,7 @@ const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp
     return latest;
 };
 
-const ActivitySummaryDisplay: React.FC<{ summary: ActivitySummary }> = ({ summary }) => {
-    if (!summary) return null;
-    const latestEvent = summary.substormEvents?.[summary.substormEvents.length - 1];
-    return (
-        <div className="col-span-12 card bg-neutral-950/80 p-4">
-            <h3 className="text-xl font-semibold text-white mb-2">Recent Activity Summary</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-neutral-300">
-                <div className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
-                    <div className="text-neutral-400 text-xs uppercase">Peak Score</div>
-                    <div className="text-lg font-semibold text-white">
-                        {summary.highestScore?.finalScore?.toFixed(1) ?? 'N/A'}%
-                    </div>
-                    <div className="text-xs text-neutral-500">
-                        {summary.highestScore?.timestamp ? new Date(summary.highestScore.timestamp).toLocaleString() : '—'}
-                    </div>
-                </div>
-                <div className="bg-neutral-900/70 p-3 rounded-lg border border-neutral-700/60">
-                    <div className="text-neutral-400 text-xs uppercase">Latest Substorm Window</div>
-                    {latestEvent ? (
-                        <>
-                            <div className="text-lg font-semibold text-white">{latestEvent.peakStatus}</div>
-                            <div className="text-xs text-neutral-500">
-                                {new Date(latestEvent.start).toLocaleTimeString()} – {new Date(latestEvent.end).toLocaleTimeString()}
-                            </div>
-                            <div className="text-xs text-neutral-400">Peak probability: {latestEvent.peakProbability}%</div>
-                        </>
-                    ) : (
-                        <div className="text-neutral-500 text-sm">No substorm events recorded.</div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
+
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
