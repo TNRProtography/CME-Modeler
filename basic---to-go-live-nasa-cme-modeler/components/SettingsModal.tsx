@@ -517,40 +517,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     await updatePushSubscriptionPreferences();
   }, []);
 
-  const handleTestCategory = useCallback((categoryId: string) => {
-    let title = 'Test Notification';
-    let body = 'This is a sample alert for your selected category.';
-    switch (categoryId) {
-      case 'visibility-dslr':
-        title = '📷 Aurora — DSLR Camera Visible';
-        body = 'Aurora is detectable from your location with a camera on a tripod. Point south and try a long exposure.';
-        break;
-      case 'visibility-phone':
-        title = '📱 Aurora — Phone Camera Visible';
-        body = 'Aurora is bright enough to appear on your phone camera. Point south and try night mode.';
-        break;
-      case 'visibility-naked':
-        title = '👁️ Aurora — Naked Eye Visible';
-        body = 'Aurora should be visible to the naked eye from your location. Head outside and look south.';
-        break;
-      case 'overnight-watch':
-        title = '🌌 Worth watching tonight';
-        body = 'Solar wind conditions are elevated heading into tonight.\n\nNow: Bz −7.2 nT · Speed 510 km/s\n\nTrend: Bz has been southward for 22 minutes and conditions are building.\n\nMoon: 18% — good dark sky conditions.';
-        break;
-      case 'flare-event':
-        title = '☀️ M4.7 Solar Flare';
-        body = 'A solar flare peaked at M4.7 at 11:34pm NZST.';
-        break;
-      case 'shock-detection':
-        title = '💥 Solar Wind Shock Detected';
-        body = 'A sudden jump in solar wind was detected.\n\nSpeed: 420 → 580 km/s (+160)\nDensity: 6.2 → 31.4 p/cm³\nPressure: 1.8 → 14.2 nPa\nBt: 8.1 → 22.4 nT · Bz: +2.1 → −14.3 nT\n\nThis shock is likely already interacting with the magnetosphere.';
-        break;
-      case 'cme-sheath':
-        title = '🌞 Solar Storm Arriving';
-        body = 'Solar wind conditions have changed significantly — a coronal mass ejection is passing Earth. Geomagnetic activity may increase over the next few hours.';
-        break;
-    }
-    sendTestNotification(title, body, categoryId);
+  const handleTestCategory = useCallback(async (categoryId: string) => {
+    await sendServerSelfTest(categoryId);
   }, []);
 
 
