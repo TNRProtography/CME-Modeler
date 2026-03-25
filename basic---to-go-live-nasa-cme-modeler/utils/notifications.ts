@@ -61,6 +61,8 @@ const NOTIFICATION_CATEGORIES = [
   'shock-detection',
   // CME sheath arrival
   'cme-sheath',
+  // IPS shock (interplanetary shock from DONKI) — was missing, causing it to never be sent
+  'ips-shock',
   // Legacy topics — kept for backwards compat, hidden from UI but still respected
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
@@ -442,6 +444,7 @@ const DEFAULT_ON_CATEGORIES = new Set([
   'overnight-watch',
   'shock-detection',
   'cme-sheath',
+  'ips-shock',
   'visibility-naked',
   'visibility-phone',
   'visibility-dslr',
