@@ -8,6 +8,7 @@ export const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', strin
 
 export const SETTINGS_PATH = '/settings';
 export const TUTORIAL_PATH = '/tutorial';
+export const DEBUG_PATH = '/debug';
 export const DEFAULT_MAIN_PAGE_KEY = 'sta_default_main_page';
 export const DEFAULT_FORECAST_VIEW_KEY = 'sta_default_forecast_view';
 

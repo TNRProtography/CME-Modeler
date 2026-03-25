@@ -47,6 +47,7 @@ import { startAppPreload } from './utils/appPreloader';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
   DEFAULT_MAIN_PAGE_KEY,
+  DEBUG_PATH,
   getForecastViewFromSearch,
   getPageFromPathname,
   PAGE_PATHS,
@@ -148,6 +149,7 @@ const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
 const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = lazy(() => import('./components/ImpactGraphModal'));
+const DebugPanel = lazy(() => import('./components/DebugPanel'));
 
 
 const App: React.FC = () => {
@@ -191,6 +193,7 @@ const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<ViewerMedia | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
@@ -335,6 +338,7 @@ const App: React.FC = () => {
       const mainPage = getPageFromPathname(url.pathname);
       const isSettingsPath = url.pathname === SETTINGS_PATH;
       const isTutorialPath = url.pathname === TUTORIAL_PATH;
+      const isDebugPath = url.pathname === DEBUG_PATH;
 
       if (mainPage) {
         lastMainPageRef.current = mainPage;
@@ -354,7 +358,7 @@ const App: React.FC = () => {
             }
           }
         }
-      } else if (!isSettingsPath && !isTutorialPath) {
+      } else if (!isSettingsPath && !isTutorialPath && !isDebugPath) {
         const fallbackPath =
           lastMainPageRef.current === 'forecast'
             ? `${PAGE_PATHS.forecast}?view=${forecastViewMode}`
@@ -371,6 +375,7 @@ const App: React.FC = () => {
 
       setIsSettingsOpen(isSettingsPath);
       setIsTutorialOpen(isTutorialPath);
+      setIsDebugOpen(isDebugPath);
     },
     [defaultForecastView, forecastViewMode]
   );
@@ -648,6 +653,11 @@ const App: React.FC = () => {
 
   const handleCloseSettings = useCallback(() => {
     setIsSettingsOpen(false);
+    navigateToPage(lastMainPageRef.current);
+  }, [navigateToPage]);
+
+  const handleCloseDebug = useCallback(() => {
+    setIsDebugOpen(false);
     navigateToPage(lastMainPageRef.current);
   }, [navigateToPage]);
 
@@ -1409,6 +1419,10 @@ const App: React.FC = () => {
             />
           </Suspense>
           
+          <Suspense fallback={null}>
+            <DebugPanel isOpen={isDebugOpen} onClose={handleCloseDebug} />
+          </Suspense>
+
           <Suspense fallback={null}>
             <FirstVisitTutorial
                 isOpen={isFirstVisitTutorialOpen}

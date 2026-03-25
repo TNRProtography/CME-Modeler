@@ -1,0 +1,649 @@
+// --- START OF FILE src/components/DebugPanel.tsx ---
+/**
+ * Debug panel — accessible at /debug
+ * Shows push subscription state, server KV record, preferences,
+ * worker health, device information, and captured app logs.
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  getNotificationPreference,
+  getOvernightMode,
+} from '../utils/notifications';
+import { getLogs, clearLogs, type LogEntry } from '../utils/logCapture';
+
+const PUSH_WORKER_URL = 'https://push-notification-worker.thenamesrock.workers.dev';
+
+const ALL_TOPICS = [
+  'visibility-dslr', 'visibility-phone', 'visibility-naked',
+  'overnight-watch', 'flare-event', 'shock-detection', 'cme-sheath',
+  'ips-shock', 'aurora-40percent', 'aurora-50percent', 'aurora-60percent',
+  'aurora-80percent', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5',
+  'flare-X10', 'flare-peak', 'substorm-forecast', 'admin-broadcast',
+];
+
+interface ServerRecord {
+  saved: boolean;
+  locationSource?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  country?: string | null;
+  timezone?: string | null;
+  locationUpdatedAt?: number | null;
+  preferenceCount?: number;
+  error?: string;
+}
+
+interface WorkerHealth {
+  ok: boolean;
+  lastRun: number | null;
+  ageMs: number | null;
+  error?: string;
+}
+
+type StatusLevel = 'pass' | 'fail' | 'warn' | 'loading' | 'idle';
+
+interface DeviceInfo {
+  userAgent: string;
+  platform: string;
+  vendor: string;
+  language: string;
+  languages: string;
+  timezone: string;
+  screenW: number;
+  screenH: number;
+  pixelRatio: number;
+  viewportW: number;
+  viewportH: number;
+  orientation: string;
+  touchPoints: number;
+  online: boolean;
+  connectionType: string;
+  connectionSpeed: string;
+  memoryGB: string;
+  cpuCores: number | string;
+  colorDepth: number;
+  cookiesEnabled: boolean;
+  localStorageAvailable: boolean;
+  indexedDBAvailable: boolean;
+  displayMode: string;
+  isPWA: boolean;
+  swSupported: boolean;
+  pushSupported: boolean;
+  notificationSupported: boolean;
+  notificationPermission: string;
+}
+
+function getDeviceInfo(): DeviceInfo {
+  const nav = navigator as any;
+  const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
+  const displayMode = window.matchMedia('(display-mode: standalone)').matches
+    ? 'standalone (PWA)'
+    : window.matchMedia('(display-mode: fullscreen)').matches
+    ? 'fullscreen'
+    : window.matchMedia('(display-mode: minimal-ui)').matches
+    ? 'minimal-ui'
+    : 'browser';
+  const isPWA = displayMode.includes('standalone') || nav.standalone === true;
+  let localStorageAvailable = false;
+  try { localStorage.getItem('_t'); localStorageAvailable = true; } catch {}
+  let indexedDBAvailable = false;
+  try { indexedDBAvailable = !!window.indexedDB; } catch {}
+  return {
+    userAgent: navigator.userAgent,
+    platform: nav.userAgentData?.platform || navigator.platform || 'Unknown',
+    vendor: navigator.vendor || 'Unknown',
+    language: navigator.language,
+    languages: navigator.languages?.join(', ') || navigator.language,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    screenW: screen.width,
+    screenH: screen.height,
+    pixelRatio: window.devicePixelRatio,
+    viewportW: window.innerWidth,
+    viewportH: window.innerHeight,
+    orientation: screen.orientation?.type || 'Unknown',
+    touchPoints: navigator.maxTouchPoints ?? 0,
+    online: navigator.onLine,
+    connectionType: conn?.effectiveType || conn?.type || 'Unknown',
+    connectionSpeed: conn?.downlink != null ? `${conn.downlink} Mbps` : 'Unknown',
+    memoryGB: nav.deviceMemory != null ? `${nav.deviceMemory} GB` : 'Not exposed',
+    cpuCores: navigator.hardwareConcurrency || 'Unknown',
+    colorDepth: screen.colorDepth,
+    cookiesEnabled: navigator.cookieEnabled,
+    localStorageAvailable,
+    indexedDBAvailable,
+    displayMode,
+    isPWA,
+    swSupported: 'serviceWorker' in navigator,
+    pushSupported: 'PushManager' in window,
+    notificationSupported: 'Notification' in window,
+    notificationPermission: 'Notification' in window ? Notification.permission : 'unsupported',
+  };
+}
+
+const Badge: React.FC<{ status: StatusLevel }> = ({ status }) => {
+  const map: Record<StatusLevel, { bg: string; text: string; label: string }> = {
+    pass:    { bg: 'bg-emerald-500/20', text: 'text-emerald-300', label: 'OK' },
+    fail:    { bg: 'bg-red-500/20',     text: 'text-red-300',     label: 'FAIL' },
+    warn:    { bg: 'bg-amber-500/20',   text: 'text-amber-300',   label: 'WARN' },
+    loading: { bg: 'bg-sky-500/20',     text: 'text-sky-300',     label: '…' },
+    idle:    { bg: 'bg-neutral-700',    text: 'text-neutral-400', label: '—' },
+  };
+  const { bg, text, label } = map[status];
+  return <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${bg} ${text}`}>{label}</span>;
+};
+
+const Row: React.FC<{ label: string; value: React.ReactNode; mono?: boolean }> = ({ label, value, mono }) => (
+  <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-800/60 last:border-0">
+    <span className="text-xs text-neutral-500 flex-shrink-0 w-40">{label}</span>
+    <span className={`text-xs text-right break-all ${mono ? 'font-mono text-sky-300' : 'text-neutral-200'}`}>{value}</span>
+  </div>
+);
+
+const BoolRow: React.FC<{ label: string; value: boolean; trueLabel?: string; falseLabel?: string }> = ({
+  label, value, trueLabel = 'Yes', falseLabel = 'No',
+}) => (
+  <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-800/60 last:border-0">
+    <span className="text-xs text-neutral-500 flex-shrink-0 w-40">{label}</span>
+    <span className={`text-xs font-semibold ${value ? 'text-emerald-400' : 'text-red-400'}`}>
+      {value ? trueLabel : falseLabel}
+    </span>
+  </div>
+);
+
+const PrefDot: React.FC<{ on: boolean }> = ({ on }) => (
+  <span
+    className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+    style={on
+      ? { background: 'linear-gradient(135deg, #f0abfc, #a78bfa)', boxShadow: '0 0 5px rgba(167,139,250,0.5)' }
+      : { background: '#404040' }}
+  />
+);
+
+const SectionHeader: React.FC<{ icon: string; title: string; right?: React.ReactNode }> = ({ icon, title, right }) => (
+  <div className="flex items-center justify-between mb-3">
+    <div className="flex items-center gap-2">
+      <span>{icon}</span>
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+    </div>
+    {right}
+  </div>
+);
+
+function logColor(level: LogEntry['level']): string {
+  switch (level) {
+    case 'error': return 'text-red-400';
+    case 'warn':  return 'text-amber-400';
+    case 'info':  return 'text-sky-400';
+    default:      return 'text-neutral-300';
+  }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch { return false; }
+  }
+}
+
+interface DebugPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
+  const [subId, setSubId]               = useState<string | null>(null);
+  const [endpoint, setEndpoint]         = useState<string | null>(null);
+  const [swReady, setSwReady]           = useState<boolean | null>(null);
+  const [serverRecord, setServerRecord] = useState<ServerRecord | null>(null);
+  const [workerHealth, setWorkerHealth] = useState<WorkerHealth | null>(null);
+  const [localPrefs, setLocalPrefs]     = useState<Record<string, boolean>>({});
+  const [overnightMode, setOvernightMode] = useState<string>('');
+  const [loading, setLoading]           = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [deviceInfo, setDeviceInfo]     = useState<DeviceInfo | null>(null);
+  const [logs, setLogs]                 = useState<LogEntry[]>([]);
+  const [logFilter, setLogFilter]       = useState<'all' | 'log' | 'info' | 'warn' | 'error'>('all');
+  const [logSearch, setLogSearch]       = useState('');
+  const [copied, setCopied]             = useState(false);
+
+  const run = useCallback(async () => {
+    setLoading(true);
+    setDeviceInfo(getDeviceInfo());
+    setLogs(getLogs());
+    try { setSubId(localStorage.getItem('push_subscription_id')); } catch { setSubId(null); }
+    setOvernightMode(getOvernightMode());
+    const prefs: Record<string, boolean> = {};
+    ALL_TOPICS.forEach(t => { prefs[t] = getNotificationPreference(t); });
+    setLocalPrefs(prefs);
+
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        setSwReady(true);
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          setEndpoint(sub.endpoint);
+          try {
+            const resp = await fetch(`${PUSH_WORKER_URL}/check-subscription`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: sub.endpoint }),
+            });
+            setServerRecord(await resp.json());
+          } catch (e: any) { setServerRecord({ saved: false, error: e.message }); }
+        } else { setEndpoint(null); setServerRecord({ saved: false }); }
+      } catch { setSwReady(false); setEndpoint(null); setServerRecord({ saved: false, error: 'SW not ready' }); }
+    } else { setSwReady(false); }
+
+    try {
+      const resp = await fetch(`${PUSH_WORKER_URL}/health`);
+      setWorkerHealth(await resp.json());
+    } catch (e: any) { setWorkerHealth({ ok: false, lastRun: null, ageMs: null, error: e.message }); }
+
+    setLastRefreshed(new Date());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { if (isOpen) run(); }, [isOpen, run]);
+
+  // Live-tail logs every 3 s while open
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = setInterval(() => setLogs(getLogs()), 3000);
+    return () => clearInterval(id);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const swStatus: StatusLevel     = swReady === null ? 'loading' : swReady ? 'pass' : 'fail';
+  const subStatus: StatusLevel    = !endpoint ? 'fail' : serverRecord?.saved ? 'pass' : 'warn';
+  const serverStatus: StatusLevel = serverRecord === null ? 'loading' : serverRecord.saved ? 'pass' : 'fail';
+  const healthStatus: StatusLevel = workerHealth === null ? 'loading' : workerHealth.ok ? 'pass' : 'warn';
+  const ageMin = workerHealth?.ageMs != null ? Math.round(workerHealth.ageMs / 60000) : null;
+
+  const locStr = serverRecord?.locationSource === 'gps'
+    ? `GPS (${Number(serverRecord.latitude).toFixed(4)}, ${Number(serverRecord.longitude).toFixed(4)})`
+    : serverRecord?.locationSource === 'ip'
+    ? `IP geolocation${serverRecord.country ? ` (${serverRecord.country})` : ''}`
+    : serverRecord?.locationSource ?? 'Unknown';
+
+  const updatedAt = serverRecord?.locationUpdatedAt
+    ? new Date(serverRecord.locationUpdatedAt).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' })
+    : null;
+
+  const nzHour = parseInt(new Date().toLocaleString('en-NZ', {
+    timeZone: 'Pacific/Auckland', hour: 'numeric', hour12: false,
+  }));
+  const windowOpen = nzHour >= 17 && nzHour < 22;
+
+  const overnightThresholdMap: Record<string, string> = {
+    'every-night': '0 — fires every night',
+    'camera':      '25 — fires when score >= 25',
+    'phone':       '40 — fires when score >= 40 (default)',
+    'eye':         '55 — fires when score >= 55',
+  };
+
+  const filteredLogs = logs.filter(e => {
+    if (logFilter !== 'all' && e.level !== logFilter) return false;
+    if (logSearch && !e.message.toLowerCase().includes(logSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  const handleCopyReport = async () => {
+    const lines = [
+      '=== SPOT THE AURORA DEBUG REPORT ===',
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      '--- SUBSCRIPTION ---',
+      `ID: ${subId ?? 'not found'}`,
+      `Endpoint: ${endpoint ?? 'none'}`,
+      `SW ready: ${swReady}`,
+      `Permission: ${deviceInfo?.notificationPermission ?? 'unknown'}`,
+      '',
+      '--- SERVER RECORD ---',
+      `Saved: ${serverRecord?.saved}`,
+      `Location: ${locStr}`,
+      `Timezone: ${serverRecord?.timezone ?? 'unknown'}`,
+      `Preferences stored: ${serverRecord?.preferenceCount ?? 0}`,
+      `Location updated: ${updatedAt ?? 'unknown'}`,
+      '',
+      '--- WORKER HEALTH ---',
+      `Healthy: ${workerHealth?.ok}`,
+      `Last run: ${workerHealth?.lastRun ? new Date(workerHealth.lastRun).toISOString() : 'never'}`,
+      `Age: ${ageMin != null ? `${ageMin} min` : 'unknown'}`,
+      '',
+      '--- OVERNIGHT WATCH ---',
+      `Mode: ${overnightMode}`,
+      `NZT hour: ${nzHour}`,
+      `Window open: ${windowOpen}`,
+      '',
+      '--- PREFERENCES ---',
+      ...ALL_TOPICS.map(t => `${t}: ${localPrefs[t] ? 'ON' : 'OFF'}`),
+      '',
+      '--- DEVICE ---',
+      ...(deviceInfo ? [
+        `UA: ${deviceInfo.userAgent}`,
+        `Platform: ${deviceInfo.platform}`,
+        `Screen: ${deviceInfo.screenW}x${deviceInfo.screenH} @${deviceInfo.pixelRatio}x`,
+        `Viewport: ${deviceInfo.viewportW}x${deviceInfo.viewportH}`,
+        `Display mode: ${deviceInfo.displayMode}`,
+        `Network: ${deviceInfo.connectionType} ${deviceInfo.connectionSpeed}`,
+        `Memory: ${deviceInfo.memoryGB}`,
+        `CPU: ${deviceInfo.cpuCores} cores`,
+        `Touch points: ${deviceInfo.touchPoints}`,
+        `Online: ${deviceInfo.online}`,
+        `SW: ${deviceInfo.swSupported} Push: ${deviceInfo.pushSupported} Notif: ${deviceInfo.notificationSupported}`,
+      ] : ['not loaded']),
+      '',
+      '--- LOGS (last 200) ---',
+      ...logs.slice(-200).map(e => {
+        const t = new Date(e.ts).toISOString().slice(11, 23);
+        return `[${t}] ${e.level.toUpperCase().padEnd(5)} ${e.message}`;
+      }),
+    ];
+    const ok = await copyText(lines.join('\n'));
+    if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2500); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[3000] bg-neutral-950 flex flex-col overflow-hidden">
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 bg-neutral-950 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">🔬</span>
+          <div>
+            <h2 className="text-sm font-bold text-white leading-none">Notification Debug</h2>
+            {lastRefreshed && (
+              <p className="text-xs text-neutral-500 mt-0.5">Refreshed {lastRefreshed.toLocaleTimeString('en-NZ')}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopyReport}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-500/20 text-violet-300 border border-violet-500/30 hover:bg-violet-500/30 transition-colors"
+          >
+            {copied ? '✓ Copied' : 'Copy report'}
+          </button>
+          <button
+            onClick={run} disabled={loading}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/30 disabled:opacity-50 transition-colors"
+          >
+            {loading ? '…' : 'Refresh'}
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+        {/* Status cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {([
+            { label: 'Service worker',  status: swStatus },
+            { label: 'Subscription',    status: subStatus },
+            { label: 'Saved on server', status: serverStatus },
+            { label: 'Worker health',   status: healthStatus },
+          ] as { label: string; status: StatusLevel }[]).map(s => (
+            <div key={s.label} className="bg-neutral-900 rounded-lg p-3 border border-neutral-800 flex flex-col gap-2">
+              <span className="text-xs text-neutral-400 leading-tight">{s.label}</span>
+              <Badge status={s.status} />
+            </div>
+          ))}
+        </div>
+
+        {/* Subscription */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader icon="🔑" title="Your Subscription" />
+          <Row label="Subscription ID" value={subId ?? 'Not in localStorage'} mono />
+          <Row label="Push endpoint" value={endpoint ? `…${endpoint.slice(-40)}` : 'No subscription'} mono />
+          <Row label="Permission" value={deviceInfo?.notificationPermission ?? '…'} />
+          <Row label="Service worker" value={swReady === null ? '…' : swReady ? 'Active' : 'Not ready'} />
+        </div>
+
+        {/* Server record */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader icon="☁️" title="Server Record (KV)" />
+          {serverRecord === null ? (
+            <p className="text-xs text-neutral-500">Checking…</p>
+          ) : !serverRecord.saved ? (
+            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3 space-y-1">
+              <p>Subscription not found in worker KV.</p>
+              {serverRecord.error && <p className="text-neutral-500">{serverRecord.error}</p>}
+              <p className="text-neutral-400">Go to Settings and re-enable notifications.</p>
+            </div>
+          ) : (
+            <>
+              <Row label="Saved in KV" value="Yes" />
+              <Row label="Location source" value={locStr} />
+              <Row label="Timezone" value={serverRecord.timezone ?? 'Unknown'} />
+              <Row label="Location updated" value={updatedAt ?? 'Unknown'} />
+              <Row label="Preferences stored" value={`${serverRecord.preferenceCount ?? 0} topics`} />
+            </>
+          )}
+        </div>
+
+        {/* Worker health */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader icon="⚙️" title="Push Worker Health" />
+          {workerHealth === null ? (
+            <p className="text-xs text-neutral-500">Checking…</p>
+          ) : (
+            <>
+              <BoolRow label="Cron healthy" value={workerHealth.ok} falseLabel="No — cron may have stopped" />
+              <Row
+                label="Last cron run"
+                value={workerHealth.lastRun
+                  ? new Date(workerHealth.lastRun).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' })
+                  : 'Never recorded'}
+              />
+              <Row label="Age" value={ageMin !== null ? `${ageMin} min ago` : 'Unknown'} />
+              {workerHealth.error && <p className="text-xs text-red-400 mt-2">{workerHealth.error}</p>}
+            </>
+          )}
+        </div>
+
+        {/* Overnight window */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader icon="🌌" title="Overnight-watch Window" />
+          <p className="text-xs text-neutral-500 mb-3">
+            Fires between 5pm and 10pm NZT, within 3 hours after sunset. Silently skipped at all other times.
+          </p>
+          <Row
+            label="Current NZT time"
+            value={new Date().toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit' })}
+          />
+          <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-800/60">
+            <span className="text-xs text-neutral-500 w-40">Window open</span>
+            <span className={`text-xs font-semibold ${windowOpen ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {windowOpen ? 'Yes (5pm–10pm)' : `No — window is 5pm–10pm NZT (now ${nzHour}:xx)`}
+            </span>
+          </div>
+          <Row label="Mode" value={overnightMode} mono />
+          <Row label="Score threshold" value={overnightThresholdMap[overnightMode] ?? overnightMode} />
+        </div>
+
+        {/* Preferences */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader icon="🔔" title="Local Preferences" />
+          <p className="text-xs text-neutral-500 mb-3">
+            What is stored in localStorage and sent to the server. Every topic should be ON unless you explicitly disabled it.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+            {ALL_TOPICS.map(topic => (
+              <div key={topic} className="flex items-center gap-2 py-1.5 border-b border-neutral-800/40 last:border-0">
+                <PrefDot on={localPrefs[topic] ?? false} />
+                <span className="text-xs font-mono text-neutral-300 flex-1 truncate">{topic}</span>
+                <span className={`text-xs font-semibold flex-shrink-0 ${localPrefs[topic] ? 'text-violet-300' : 'text-neutral-600'}`}>
+                  {localPrefs[topic] ? 'on' : 'off'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Device information */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader icon="📱" title="Device Information" />
+          {deviceInfo === null ? (
+            <p className="text-xs text-neutral-500">Loading…</p>
+          ) : (
+            <>
+              <div className="mb-3 pb-3 border-b border-neutral-800/60">
+                <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Push Capability</p>
+                <BoolRow label="Service workers" value={deviceInfo.swSupported} />
+                <BoolRow label="Push API" value={deviceInfo.pushSupported} />
+                <BoolRow label="Notification API" value={deviceInfo.notificationSupported} />
+                <Row label="Permission" value={deviceInfo.notificationPermission} />
+                <BoolRow label="Installed as PWA" value={deviceInfo.isPWA} trueLabel="Yes (standalone)" falseLabel="No (browser)" />
+                <Row label="Display mode" value={deviceInfo.displayMode} />
+              </div>
+
+              <div className="mb-3 pb-3 border-b border-neutral-800/60">
+                <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Browser / OS</p>
+                <Row label="Platform" value={deviceInfo.platform} />
+                <Row label="Vendor" value={deviceInfo.vendor} />
+                <Row label="Language" value={deviceInfo.language} />
+                <Row label="All languages" value={deviceInfo.languages} />
+                <Row label="Timezone" value={deviceInfo.timezone} />
+              </div>
+
+              <div className="mb-3 pb-3 border-b border-neutral-800/60">
+                <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Screen</p>
+                <Row label="Resolution" value={`${deviceInfo.screenW} x ${deviceInfo.screenH}`} />
+                <Row label="Viewport" value={`${deviceInfo.viewportW} x ${deviceInfo.viewportH}`} />
+                <Row label="Pixel ratio" value={`${deviceInfo.pixelRatio}x`} />
+                <Row label="Colour depth" value={`${deviceInfo.colorDepth} bit`} />
+                <Row label="Orientation" value={deviceInfo.orientation} />
+                <Row label="Touch points" value={String(deviceInfo.touchPoints)} />
+              </div>
+
+              <div className="mb-3 pb-3 border-b border-neutral-800/60">
+                <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Hardware & Network</p>
+                <Row label="Memory" value={deviceInfo.memoryGB} />
+                <Row label="CPU cores" value={String(deviceInfo.cpuCores)} />
+                <BoolRow label="Online" value={deviceInfo.online} />
+                <Row label="Connection type" value={deviceInfo.connectionType} />
+                <Row label="Downlink" value={deviceInfo.connectionSpeed} />
+              </div>
+
+              <div className="mb-3 pb-3 border-b border-neutral-800/60">
+                <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Storage</p>
+                <BoolRow label="localStorage" value={deviceInfo.localStorageAvailable} />
+                <BoolRow label="IndexedDB" value={deviceInfo.indexedDBAvailable} />
+                <BoolRow label="Cookies" value={deviceInfo.cookiesEnabled} />
+              </div>
+
+              <div>
+                <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">User Agent</p>
+                <p className="text-xs font-mono text-sky-300 break-all leading-relaxed">{deviceInfo.userAgent}</p>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* App logs */}
+        <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-4">
+          <SectionHeader
+            icon="📋"
+            title={`App Logs (${filteredLogs.length}${logSearch || logFilter !== 'all' ? ` of ${logs.length}` : ''})`}
+            right={
+              <button
+                onClick={() => { clearLogs(); setLogs([]); }}
+                className="text-xs text-neutral-500 hover:text-red-400 transition-colors"
+              >
+                Clear
+              </button>
+            }
+          />
+
+          {/* Filter chips */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {(['all', 'log', 'info', 'warn', 'error'] as const).map(f => {
+              const count = f === 'all' ? logs.length : logs.filter(e => e.level === f).length;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setLogFilter(f)}
+                  className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                    logFilter === f
+                      ? 'bg-violet-500/30 border-violet-500/50 text-violet-200'
+                      : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          <input
+            type="text"
+            placeholder="Search logs…"
+            value={logSearch}
+            onChange={e => setLogSearch(e.target.value)}
+            className="w-full mb-3 px-3 py-1.5 text-xs bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-violet-500/50"
+          />
+
+          {/* Terminal */}
+          <div className="h-72 overflow-y-auto bg-neutral-950 rounded-lg border border-neutral-800 p-3 font-mono text-xs space-y-0.5">
+            {filteredLogs.length === 0 ? (
+              <p className="text-neutral-600 italic">
+                {logs.length === 0
+                  ? 'No logs captured yet. Interact with the app to generate them.'
+                  : 'No logs match the current filter.'}
+              </p>
+            ) : (
+              filteredLogs.map(entry => (
+                <div key={entry.id} className="flex gap-2 leading-relaxed min-w-0">
+                  <span className="text-neutral-600 flex-shrink-0 select-none">
+                    {new Date(entry.ts).toISOString().slice(11, 23)}
+                  </span>
+                  <span className={`flex-shrink-0 font-bold w-10 ${logColor(entry.level)}`}>
+                    {entry.level.toUpperCase()}
+                  </span>
+                  <span className={`break-all ${logColor(entry.level)}`}>
+                    {entry.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          <p className="text-xs text-neutral-600 mt-2">
+            Up to 300 entries from this session. Refreshes automatically every 3 seconds.
+          </p>
+        </div>
+
+        <p className="text-xs text-neutral-700 text-center pb-2">
+          Read-only. Nothing here changes your settings.
+          Use "Copy report" to share a full snapshot for support.
+        </p>
+
+      </div>
+    </div>
+  );
+};
+
+export default DebugPanel;
+// --- END OF FILE src/components/DebugPanel.tsx ---
