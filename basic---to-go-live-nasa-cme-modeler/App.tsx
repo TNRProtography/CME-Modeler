@@ -188,6 +188,13 @@ const App: React.FC = () => {
   const [currentlyModeledCMEId, setCurrentlyModeledCMEId] = useState<string | null>(null);
   const [selectedCMEForInfo, setSelectedCMEForInfo] = useState<ProcessedCME | null>(null);
   const [sharedCmeExpired, setSharedCmeExpired] = useState<string | null>(null); // holds the id if expired
+  // Capture the shared CME id at mount time so URL changes never lose it
+  const initialSharedCmeIdRef = useRef<string | null>(
+    new URLSearchParams(window.location.search).get('cme')
+  );
+  const [sharedCmeSearching, setSharedCmeSearching] = useState<boolean>(
+    () => !!new URLSearchParams(window.location.search).get('cme')
+  );
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [isCmeListOpen, setIsCmeListOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -359,8 +366,12 @@ const App: React.FC = () => {
           }
         }
       } else if (!isSettingsPath && !isTutorialPath && !isDebugPath) {
-        const fallbackPath =
-          lastMainPageRef.current === 'forecast'
+        // If a ?cme= param is present on an unrecognised path, route to the
+        // modeler so shared CME links always land in the right place.
+        const hasCmeParam = url.searchParams.has('cme');
+        const fallbackPath = hasCmeParam
+          ? PAGE_PATHS.modeler
+          : lastMainPageRef.current === 'forecast'
             ? `${PAGE_PATHS.forecast}?view=${forecastViewMode}`
             : PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast;
         if (path !== fallbackPath) {
@@ -844,22 +855,36 @@ const App: React.FC = () => {
 
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
 
-  // Auto-select CME from ?cme= URL param once data has loaded
+  // Auto-select CME from ?cme= URL param once data has loaded.
+  // Uses a ref so the ID is never lost when navigation strips the URL param.
+  // If not found in the current range, automatically expands to 7 days before
+  // giving up — handles the common case of a link that's a few days old.
   useEffect(() => {
-    if (!cmeData || cmeData.length === 0) return;
-    const params = new URLSearchParams(window.location.search);
-    const sharedId = params.get('cme');
+    const sharedId = initialSharedCmeIdRef.current;
     if (!sharedId) return;
-    if (currentlyModeledCMEId === sharedId) return; // already selected
+    if (!cmeData || cmeData.length === 0) return;
+    if (currentlyModeledCMEId === sharedId) {
+      setSharedCmeSearching(false);
+      return;
+    }
+
     const found = cmeData.find((c: ProcessedCME) => c.id === sharedId);
     if (found) {
       setSharedCmeExpired(null);
+      setSharedCmeSearching(false);
       handleSelectCMEForModeling(found);
-      navigateToPage('modeler', true);
+      // Don't call navigateToPage here — we're already on the modeler page
+      // and calling it would strip the ?cme= param from the URL.
+    } else if (activeTimeRange < TimeRange.D7) {
+      // Not found in the current narrow window — silently expand to 7 days
+      // and let the data re-load. The effect will fire again with the new data.
+      setActiveTimeRange(TimeRange.D7);
+      setSharedCmeSearching(true);
     } else {
-      // CME not in current data — likely expired (> 7 days old)
+      // Exhausted the maximum range and still not found — genuinely expired
       setSharedCmeExpired(sharedId);
-      navigateToPage('modeler', true);
+      setSharedCmeSearching(false);
+      initialSharedCmeIdRef.current = null; // stop retrying
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cmeData]);
@@ -1210,19 +1235,32 @@ const App: React.FC = () => {
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
-                    {/* Expired shared CME banner */}
+                    {/* Shared CME — searching or not found */}
+                    {sharedCmeSearching && !sharedCmeExpired && (
+                      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
+                        <div className="bg-sky-900/90 border border-sky-600/60 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl flex-shrink-0 animate-pulse">🔭</span>
+                            <div>
+                              <p className="text-sky-200 font-semibold text-sm">Looking for shared CME…</p>
+                              <p className="text-sky-300/80 text-xs mt-1">Expanding search window to find this CME.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {sharedCmeExpired && (
                       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
                         <div className="bg-amber-900/90 border border-amber-600/60 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
                           <div className="flex items-start gap-3">
                             <span className="text-2xl flex-shrink-0">⏱️</span>
                             <div>
-                              <p className="text-amber-200 font-semibold text-sm">This CME is no longer available</p>
-                              <p className="text-amber-300/80 text-xs mt-1">Shared CME visualizations are only valid for 7 days. This one has expired or the data has been refreshed.</p>
+                              <p className="text-amber-200 font-semibold text-sm">CME not found</p>
+                              <p className="text-amber-300/80 text-xs mt-1">This shared CME no longer exists in the available data. CME visualizations are only valid for up to 7 days after the eruption. You can browse recent CMEs using the list below.</p>
                               <button
                                 onClick={() => setSharedCmeExpired(null)}
                                 className="mt-2 text-xs text-amber-400 hover:text-amber-200 underline"
-                              >Dismiss</button>
+                              >Browse recent CMEs</button>
                             </div>
                           </div>
                         </div>
