@@ -1012,42 +1012,20 @@ function peakSubstormNearTs(
 // Inputs that are null/undefined fall back gracefully so the chart always shows.
 function computeVisibilityPct(
   rawScore: number,
-  userLat: number | null | undefined,
-  userLon: number | null | undefined,
-  ovalBoundary: number | null | undefined,
   moonIllum: number | null | undefined,
-  bz: number | null | undefined,
   substormMult: number = 0.20, // default: quiet / no substorm data
 ): number {
-  // Apply substorm release multiplier first — this represents how much of the
-  // aurora potential is actually being released into visible aurora right now.
-  // A high aurora score with no substorm means energy is loaded but not released.
+  // The rawScore already has location adjustment applied by the server.
+  // This function only applies the substorm release multiplier and moon penalty.
   let pct = rawScore * substormMult;
 
-  // ── Location penalty ──────────────────────────────────────────────────────
-  // Soft taper based on how far the user's geomagnetic latitude is from the
-  // visibility horizon. Uses a wide 20-degree scale so that being a few degrees
-  // outside the horizon causes a gentle reduction rather than zeroing the line.
-  // Previous version used a 2-degree scale which completely zeroed Greymouth
-  // on quiet nights, causing the chart to show nothing with GPS but show
-  // activity without GPS — a confusing and misleading inconsistency.
-  if (userLat != null && userLon != null && ovalBoundary != null) {
-    const POLE_LAT_RAD = 80.65 * Math.PI / 180;
-    const POLE_LON_RAD = -72.68 * Math.PI / 180;
-    const phi = userLat * Math.PI / 180;
-    const lam = userLon * Math.PI / 180;
-    const sinGmag = Math.sin(phi) * Math.sin(POLE_LAT_RAD) +
-                    Math.cos(phi) * Math.cos(POLE_LAT_RAD) * Math.cos(lam - POLE_LON_RAD);
-    const userGmag = Math.asin(Math.max(-1, Math.min(1, sinGmag))) * 180 / Math.PI;
-    const visDeg = 9.0 + (Math.max(0, Math.min(rawScore, 100)) / 100) * 16.0;
-    const visHorizon = ovalBoundary + visDeg;
-    const distFromVis = userGmag - visHorizon;
-    if (distFromVis > 0) {
-      // 20-degree taper: at 10° outside = 50% reduction, at 20° outside = 100%
-      const penalty = Math.min(1, distFromVis / 20.0);
-      pct = pct * (1 - penalty);
-    }
-  }
+  // ── Location penalty removed ─────────────────────────────────────────────
+  // The aurora score passed in as rawScore is already location-adjusted by the
+  // server (calibrated for the user's latitude vs Greymouth). Applying a second
+  // geographic penalty here double-counts the location effect and crushes the
+  // visibility line to near-zero for GPS users on quiet nights.
+  // The substorm multiplier and moon penalty below are the correct modifiers
+  // for this chart — location is already handled upstream in the score itself.
 
   // ── Moon penalty ──────────────────────────────────────────────────────────
   // Bright moon reduces visibility probability. Full moon = -25% on the score.
@@ -1056,11 +1034,7 @@ function computeVisibilityPct(
     pct = pct * (1 - moonPenalty);
   }
 
-  // Bz adjustment intentionally removed: the aurora score from the Forecast Worker
-  // already incorporates Bz as a primary input via the Newell coupling function.
-  // Applying a second Bz multiplier here causes double-counting — strongly southward
-  // Bz would inflate the score twice. The substorm multiplier already captures the
-  // energy-release effect of sustained southward Bz through the substorm risk score.
+  // Bz adjustment not applied — already incorporated in rawScore via Newell coupling.
 
   return Math.max(0, Math.min(100, pct));
 }
@@ -1161,7 +1135,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
             const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.20;
             return {
                 x: d.timestamp,
-                y: computeVisibilityPct(d.finalScore, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz, mult),
+                y: computeVisibilityPct(d.finalScore, moonIllumination, mult),
             };
         });
 
@@ -1172,7 +1146,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
             // is actually releasing the loaded energy. Gap between this and the score above = energy loading but not released.
             { label: 'Visibility (substorm-adjusted)', data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 1 },
         ] };
-    }, [auroraScoreHistory, substormHistory, userLatitude, userLongitude, ovalBoundaryGmag, moonIllumination, substormBz]);
+    }, [auroraScoreHistory, substormHistory, moonIllumination]);
 
     return (
         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
