@@ -1025,8 +1025,12 @@ function computeVisibilityPct(
   let pct = rawScore * substormMult;
 
   // ── Location penalty ──────────────────────────────────────────────────────
-  // If we know the user's geomagnetic latitude and the oval boundary,
-  // apply the same visibility line penalty as VisibilityForecastPanel.
+  // Soft taper based on how far the user's geomagnetic latitude is from the
+  // visibility horizon. Uses a wide 20-degree scale so that being a few degrees
+  // outside the horizon causes a gentle reduction rather than zeroing the line.
+  // Previous version used a 2-degree scale which completely zeroed Greymouth
+  // on quiet nights, causing the chart to show nothing with GPS but show
+  // activity without GPS — a confusing and misleading inconsistency.
   if (userLat != null && userLon != null && ovalBoundary != null) {
     const POLE_LAT_RAD = 80.65 * Math.PI / 180;
     const POLE_LON_RAD = -72.68 * Math.PI / 180;
@@ -1039,7 +1043,8 @@ function computeVisibilityPct(
     const visHorizon = ovalBoundary + visDeg;
     const distFromVis = userGmag - visHorizon;
     if (distFromVis > 0) {
-      const penalty = Math.min(1, distFromVis / 2.0);
+      // 20-degree taper: at 10° outside = 50% reduction, at 20° outside = 100%
+      const penalty = Math.min(1, distFromVis / 20.0);
       pct = pct * (1 - penalty);
     }
   }
@@ -1174,6 +1179,9 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
             <div className="flex justify-center items-center gap-2 mb-2">
                 <h2 className="text-xl font-semibold text-white text-center">Forecast Trend (Last {timeLabel})</h2>
                 <button onClick={onOpenModal} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                {(userLatitude == null) && (
+                  <span className="text-xs text-neutral-500 ml-2">(visibility based on Greymouth — enable GPS for your location)</span>
+                )}
             </div>
             <div className="flex justify-between items-center mb-2">
                 <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
