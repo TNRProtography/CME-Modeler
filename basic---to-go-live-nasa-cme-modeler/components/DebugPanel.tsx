@@ -577,7 +577,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
               </button>
             }
           />
-
+ 
           {/* Filter chips */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {(['all', 'log', 'info', 'warn', 'error'] as const).map(f => {
