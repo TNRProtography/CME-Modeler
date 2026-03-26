@@ -1721,6 +1721,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       .sort((a, b) => (b?.area ?? -1) - (a?.area ?? -1));
   }, [activeSunspotRegions]);
 
+  // Build a lookup map: last-4-digits of activeRegionNum → flares[]
+  // NASA DONKI uses 5-digit cycle numbers (e.g. 14403) while NOAA regions use 4-digit (e.g. 4403).
+  // Normalising by taking the last 4 digits aligns both sources.
+  const flaresByRegion = useMemo(() => {
+    const map = new Map<string, SolarFlare[]>();
+    solarFlares.forEach((flare) => {
+      if (!flare.activeRegionNum) return;
+      const key = String(flare.activeRegionNum).slice(-4);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(flare);
+    });
+    return map;
+  }, [solarFlares]);
+
   const cycleSunspotImageryMode = useCallback((direction: 1 | -1) => {
     const modes: SunspotImageryMode[] = ['colorized', 'magnetogram', 'intensity'];
     const currentIndex = modes.indexOf(sunspotImageryMode);
@@ -2260,6 +2274,54 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <div className="flex justify-between"><span className="text-neutral-500">24h flare events</span><span className="text-neutral-100 font-semibold">C {selectedSunspotRegion.cFlareEvents24h ?? '—'} · M {selectedSunspotRegion.mFlareEvents24h ?? '—'} · X {selectedSunspotRegion.xFlareEvents24h ?? '—'}</span></div>
                         <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || '—'}</span></div>
                       </div>
+
+                      {/* ── Flares from NASA DONKI matched to this region ── */}
+                      {(() => {
+                        const regionKey = String(selectedSunspotRegion.region).slice(-4);
+                        const matched = flaresByRegion.get(regionKey) ?? [];
+                        return (
+                          <div className="mt-3">
+                            <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-1.5">
+                              Flares from this region
+                              <span className="ml-2 text-neutral-400 normal-case tracking-normal">
+                                ({matched.length} in last 7 days)
+                              </span>
+                            </div>
+                            {matched.length === 0 ? (
+                              <div className="text-xs text-neutral-600 italic">No flares recorded for AR {selectedSunspotRegion.region} in the last 7 days.</div>
+                            ) : (
+                              <div className="space-y-1 max-h-[160px] overflow-y-auto styled-scrollbar pr-1">
+                                {matched.map((flare, i) => {
+                                  const colors = getColorForFlareClass(flare.classType);
+                                  const peakDate = flare.peakTime ? new Date(flare.peakTime) : null;
+                                  const peakStr = peakDate
+                                    ? `${peakDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${peakDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })} UTC`
+                                    : '—';
+                                  return (
+                                    <div
+                                      key={flare.flrID ?? i}
+                                      className="flex items-center justify-between rounded px-2 py-1 bg-neutral-900/60 border border-neutral-800"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${colors.text}`}
+                                          style={{ backgroundColor: colors.background }}
+                                        >
+                                          {flare.classType}
+                                        </span>
+                                        {(flare as any).hasCME && (
+                                          <span className="text-[10px] text-sky-400 border border-sky-700 rounded px-1">CME</span>
+                                        )}
+                                      </div>
+                                      <span className="text-[11px] text-neutral-400">{peakStr}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : (
                     <div className="flex-1 overflow-y-auto styled-scrollbar pr-1">
