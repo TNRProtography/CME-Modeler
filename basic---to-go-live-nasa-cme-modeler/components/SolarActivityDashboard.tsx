@@ -2271,7 +2271,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">24h flare events</span><span className="text-neutral-100 font-semibold">C {selectedSunspotRegion.cFlareEvents24h ?? '—'} · M {selectedSunspotRegion.mFlareEvents24h ?? '—'} · X {selectedSunspotRegion.xFlareEvents24h ?? '—'}</span></div>
+                        {(() => {
+                          const regionKey = String(selectedSunspotRegion.region).slice(-4);
+                          const matched = flaresByRegion.get(regionKey) ?? [];
+                          const mCount = matched.filter(f => f.classType?.toUpperCase().startsWith('M')).length;
+                          const xCount = matched.filter(f => f.classType?.toUpperCase().startsWith('X')).length;
+                          return (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-500">7-day flare events</span>
+                              <span className="text-neutral-100 font-semibold">
+                                M <span className={mCount > 0 ? 'text-orange-300' : ''}>{mCount > 0 ? mCount : '—'}</span>
+                                {' · '}
+                                X <span className={xCount > 0 ? 'text-red-300' : ''}>{xCount > 0 ? xCount : '—'}</span>
+                              </span>
+                            </div>
+                          );
+                        })()}
                         <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || '—'}</span></div>
                       </div>
 
