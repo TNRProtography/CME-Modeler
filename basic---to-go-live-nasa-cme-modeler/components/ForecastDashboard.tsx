@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
-import { EPAMPanel } from './EPAMPanel';
+import EPAMPanel from './EPAMPanel';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import { VisibilityForecastPanel } from './VisibilityForecastPanel';
