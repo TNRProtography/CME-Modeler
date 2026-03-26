@@ -963,18 +963,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     return frameTimes.map((startMs) => {
       const endMs = startMs + intervalMs;
-      const startToken = toToken(startMs);
-      const endToken = toToken(endMs);
-      return [
-        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-2.png`,
-        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-2.png`,
-        `${root}or_suvi-l2-ci${channel}_g19_s${startToken}_e${endToken}_v1-0-1.png`,
-        `${root}or_suvi-l2-ci${channel}_g18_s${startToken}_e${endToken}_v1-0-1.png`,
-      ];
+      // SUVI frames don't always start exactly on 4-minute boundaries.
+      // Try ±1 and ±2 minute offsets to catch slightly misaligned files.
+      const OFFSETS_MS = [0, 60000, -60000, 120000, -120000];
+      const candidates: string[] = [];
+      for (const offset of OFFSETS_MS) {
+        const s = toToken(startMs + offset);
+        const e = toToken(endMs + offset);
+        candidates.push(
+          `${root}or_suvi-l2-ci${channel}_g19_s${s}_e${e}_v1-0-2.png`,
+          `${root}or_suvi-l2-ci${channel}_g18_s${s}_e${e}_v1-0-2.png`,
+          `${root}or_suvi-l2-ci${channel}_g19_s${s}_e${e}_v1-0-1.png`,
+          `${root}or_suvi-l2-ci${channel}_g18_s${s}_e${e}_v1-0-1.png`,
+        );
+      }
+      return candidates;
     });
   }, []);
 
-  const probeImageUrl = useCallback((url: string, timeoutMs: number = 1400) => (
+  const probeImageUrl = useCallback((url: string, timeoutMs: number = 3000) => (
     new Promise<string | null>((resolve) => {
       const img = new Image();
       const timer = window.setTimeout(() => resolve(null), timeoutMs);
@@ -1009,7 +1016,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     try {
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 1800);
+      // Increased from 1800ms — directory listing can be slow on first load
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
       const response = await fetch(`${indexUrl}?_=${Date.now()}`, { signal: controller.signal });
       window.clearTimeout(timeout);
       if (response.ok) {
