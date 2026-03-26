@@ -449,6 +449,19 @@ const DEFAULT_ON_CATEGORIES = new Set([
   'visibility-phone',
   'visibility-dslr',
   'admin-broadcast',
+  // Legacy topics — controlled server-side, should appear ON in debug
+  'flare-event',
+  'flare-M1',
+  'flare-M5',
+  'flare-X1',
+  'flare-X5',
+  'flare-X10',
+  'flare-peak',
+  'aurora-40percent',
+  'aurora-50percent',
+  'aurora-60percent',
+  'aurora-80percent',
+  'substorm-forecast',
 ]);
 
 export const getNotificationPreference = (categoryId: string): boolean => {
