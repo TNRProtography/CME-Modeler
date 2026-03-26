@@ -20,11 +20,20 @@ interface DerivedMetrics {
   stereo_earth_lon_sep_deg?: number;
   note: string;
 }
+interface L1FleetEntry {
+  key: string; name: string; color: string; desc: string;
+  r_au: number | null; lon_deg: number | null;
+  positionSource?: string;
+}
+
 interface PositionData {
   ok: boolean; fetchedAt: string;
   positions: {
     solo?: SpacecraftPosition; stereoA?: SpacecraftPosition;
     earth?: SpacecraftPosition; l1?: SpacecraftPosition;
+    ace?: SpacecraftPosition; dscovr?: SpacecraftPosition;
+    imap?: SpacecraftPosition; swfoL1?: SpacecraftPosition;
+    l1Fleet?: L1FleetEntry[];
     derived?: DerivedMetrics;
   };
 }
@@ -341,7 +350,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
             GEO orbit*
           </text>
 
-          {/* ── L1 ── */}
+          {/* ── L1 point marker ── */}
           {l1p && (
             <g>
               <circle cx={l1p.sx} cy={l1p.sy} r={2.5 * inv} fill="#34d399" opacity="0.5" />
@@ -349,6 +358,48 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
               <text x={l1p.sx - 4 * inv} y={l1p.sy - 5 * inv} fill="#34d399" fontSize={7 * inv} fontFamily="inherit" textAnchor="middle" opacity="0.8">L1</text>
             </g>
           )}
+
+          {/* ── L1 Fleet: ACE, DSCOVR, IMAP, SWFO-L1 ─────────────────────── */}
+          {/* All orbit ~0.01 AU sunward of Earth. At default zoom they overlap  */}
+          {/* L1 — when zoomed in (zoom > 3) they fan out for legibility.        */}
+          {l1p && (() => {
+            const fleet = [
+              { key: 'ace',    label: 'ACE',    color: '#34d399', angleDeg: -30 },
+              { key: 'dscovr', label: 'DSCOVR', color: '#67e8f9', angleDeg:  0  },
+              { key: 'imap',   label: 'IMAP',   color: '#f0abfc', angleDeg:  30 },
+              { key: 'swfoL1', label: 'SWFO-L1',color: '#fbbf24', angleDeg:  60 },
+            ];
+            // Spread radius: at zoom 1 = 0, scales up so they separate when zoomed
+            const spreadR = Math.min(zoom * 4.5, 28) * inv;
+            return fleet.map(({ key, label, color, angleDeg }) => {
+              const sc = positions[key as keyof typeof positions] as SpacecraftPosition | undefined;
+              if (!sc) return null;
+              const scPos = toSvg(sc.x, sc.y);
+              // Offset from L1 in a fanned arc when zoomed
+              const rad = angleDeg * Math.PI / 180;
+              // Direction perpendicular to Sun-Earth line
+              const earthAngle = Math.atan2(positions.earth!.y, positions.earth!.x);
+              const perpAngle = earthAngle + Math.PI / 2 + rad;
+              const ox = Math.cos(perpAngle) * spreadR;
+              const oy = Math.sin(perpAngle) * spreadR;
+              const fx = scPos.sx + ox, fy = scPos.sy - oy;
+              return (
+                <g key={key}>
+                  {zoom > 2 && (
+                    <line x1={l1p.sx} y1={l1p.sy} x2={fx} y2={fy}
+                      stroke={color} strokeWidth={0.4 * inv} opacity="0.3" vectorEffect="non-scaling-stroke" />
+                  )}
+                  <circle cx={fx} cy={fy} r={2 * inv} fill={color} opacity="0.9" />
+                  {zoom > 1.5 && (
+                    <text x={fx + 4 * inv} y={fy + 3 * inv}
+                      fill={color} fontSize={6.5 * inv} fontFamily="inherit" opacity="0.9">
+                      {label}
+                    </text>
+                  )}
+                </g>
+              );
+            });
+          })()}
 
           {/* ── STEREO-A ── */}
           {stp && positions.stereoA && (
@@ -538,6 +589,36 @@ const SoloPanel: React.FC = () => {
               );
             })}
 
+            {/* L1 Fleet */}
+            <div className="bg-neutral-950/70 rounded p-2.5 border border-neutral-800">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-neutral-300">L1 Fleet</div>
+                <span className="text-[10px] text-neutral-600">~{position?.positions?.l1?.r_au?.toFixed(3) ?? '0.990'} AU</span>
+              </div>
+              <p className="text-[11px] text-neutral-600 mb-2 leading-relaxed">
+                All four orbit ~0.01 AU sunward of Earth. Zoom in to separate them on the map.
+              </p>
+              <div className="space-y-1.5">
+                {(position?.positions?.l1Fleet ?? [
+                  { key:'ace',    name:'ACE',     color:'#34d399', desc:'Advanced Composition Explorer (1997, NASA)',                positionSource:'—' },
+                  { key:'dscovr', name:'DSCOVR',  color:'#67e8f9', desc:'Deep Space Climate Observatory (2015, NOAA/NASA)',         positionSource:'—' },
+                  { key:'imap',   name:'IMAP',    color:'#f0abfc', desc:'Interstellar Mapping & Acceleration Probe (2025, NASA)',   positionSource:'—' },
+                  { key:'swfoL1', name:'SWFO-L1', color:'#fbbf24', desc:'Space Weather Follow-On L1 (2025, NOAA)',                  positionSource:'—' },
+                ]).map(sc => (
+                  <div key={sc.key} className="flex items-start gap-2">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: sc.color }} />
+                    <div className="min-w-0">
+                      <span className="text-xs font-semibold" style={{ color: sc.color }}>{sc.name}</span>
+                      {sc.positionSource === 'l1_computed' || sc.positionSource === 'l1_computed_fallback' ? (
+                        <span className="ml-1.5 text-[10px] text-neutral-600">computed</span>
+                      ) : null}
+                      <p className="text-[11px] text-neutral-600 leading-tight">{sc.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* GOES note */}
             <div className="bg-neutral-950/70 rounded p-2.5 border border-neutral-800">
               <div className="text-xs font-semibold mb-1" style={{ color: '#fde047' }}>GOES (Geostationary)</div>
@@ -572,7 +653,10 @@ const SoloPanel: React.FC = () => {
               {[
                 { color: '#fbbf24', label: 'Sun' },
                 { color: '#3b82f6', label: 'Earth' },
-                { color: '#34d399', label: 'L1' },
+                { color: '#34d399', label: 'L1 / ACE' },
+                { color: '#67e8f9', label: 'DSCOVR' },
+                { color: '#f0abfc', label: 'IMAP' },
+                { color: '#fbbf24', label: 'SWFO-L1' },
                 { color: '#fde047', label: 'GOES (GEO*)' },
                 { color: '#ea580c', label: 'Solar Orbiter' },
                 { color: '#8b5cf6', label: 'STEREO-A' },
@@ -583,6 +667,9 @@ const SoloPanel: React.FC = () => {
                 </div>
               ))}
             </div>
+            <p className="text-[11px] text-neutral-700 leading-relaxed">
+              * L1 fleet craft overlap at heliocentric scale. Zoom in 3× or more to separate them.
+            </p>
           </div>
         </div>
       </div>

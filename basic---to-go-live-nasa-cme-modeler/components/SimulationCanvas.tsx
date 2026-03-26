@@ -28,6 +28,14 @@ import {
 import {
   type CHEvolution,
 } from '../utils/coronalHoleHistory';
+import {
+  computeEclipticLongitude,
+  computeGMST,
+  computeMoonSceneAngle,
+  horizonsToScene,
+  EARTH_TILT_RAD,
+  J2000_MS,
+} from '../utils/astronomicalPositions';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS
@@ -390,6 +398,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
+  // ── Spacecraft markers (SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1) ──────
+  const spacecraftGroupRef = useRef<any>(null);
+  const spacecraftPositionsRef = useRef<Record<string, {x:number;y:number;z:number;name:string;color:string}>>({});
+
   const timelineValueRef    = useRef(timelineValue);
   const lastTimeRef         = useRef(0);
   const raycasterRef        = useRef<any>(null);
@@ -704,14 +716,27 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
 
     // ── Planets ──────────────────────────────────────────────────────────────
+    // Initial placement uses NOW so the scene opens with today's real geometry.
+    // The animation loop then updates positions every frame from simulationTimeMs.
+    const initTimeMs = Date.now();
     Object.entries(PLANET_DATA_MAP).forEach(([name, data]) => {
       if (name === 'SUN' || data.orbits) return;
       const pm = new THREE.Mesh(new THREE.SphereGeometry(data.size, 64, 64), new THREE.MeshPhongMaterial({ color: data.color, shininess: 30 }));
-      pm.position.set(data.radius * Math.sin(data.angle), 0, data.radius * Math.cos(data.angle)); pm.userData = data;
-      scene.add(pm); celestialBodiesRef.current[name] = { mesh: pm, name: data.name, labelId: data.labelElementId, userData: data };
+
+      // ── Real ecliptic longitude from Keplerian elements ─────────────────
+      const lon = computeEclipticLongitude(name, initTimeMs);
+      pm.position.set(data.radius * Math.sin(lon), 0, data.radius * Math.cos(lon));
+      pm.userData = { ...data, _initLon: lon };
+
+      scene.add(pm); celestialBodiesRef.current[name] = { mesh: pm, name: data.name, labelId: data.labelElementId, userData: pm.userData };
       planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: pm });
       if (name === 'EARTH') {
         pm.material = new THREE.MeshPhongMaterial({ map: tex.earthDay, normalMap: tex.earthNormal, specularMap: tex.earthSpec, specular: new THREE.Color(0x111111), shininess: 6 });
+        // Axial tilt — Earth's spin axis tilts 23.44° toward ecliptic north.
+        // We tilt the mesh around the X axis so the poles point in the right direction.
+        pm.rotation.z = EARTH_TILT_RAD;
+        // Initial sidereal rotation so prime meridian faces the correct direction.
+        pm.rotation.y = computeGMST(initTimeMs);
         const clouds = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.01, 48, 48), new THREE.MeshLambertMaterial({ map: tex.earthClouds, transparent: true, opacity: 0.7, depthWrite: false })); clouds.name = 'clouds'; pm.add(clouds);
         const atmo = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.2, 32, 32), new THREE.ShaderMaterial({ vertexShader: EARTH_ATMOSPHERE_VERTEX_SHADER, fragmentShader: EARTH_ATMOSPHERE_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uImpactTime: { value: 0 }, uTime: { value: 0 } } })); atmo.name = 'atmosphere'; pm.add(atmo);
         const aur = new THREE.Mesh(new THREE.SphereGeometry((data as PlanetData).size * 1.25, 64, 64), new THREE.ShaderMaterial({ vertexShader: AURORA_VERTEX_SHADER, fragmentShader: AURORA_FRAGMENT_SHADER, blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false, uniforms: { uTime: { value: 0 }, uCmeSpeed: { value: 0 }, uImpactTime: { value: 0 }, uAuroraMinY: { value: Math.sin(70 * Math.PI / 180) }, uAuroraIntensity: { value: 0 } } })); aur.name = 'aurora'; pm.add(aur);
@@ -724,8 +749,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (!data.orbits) return;
       const parent = celestialBodiesRef.current[data.orbits]; if (!parent) return;
       const mm = new THREE.Mesh(new THREE.SphereGeometry(data.size, 16, 16), new THREE.MeshPhongMaterial({ color: data.color, shininess: 6, map: name === 'MOON' ? tex.moon : null }));
-      mm.position.set(data.radius * Math.sin(data.angle), 0, data.radius * Math.cos(data.angle)); mm.userData = data;
-      parent.mesh.add(mm); celestialBodiesRef.current[name] = { mesh: mm, name: data.name, labelId: data.labelElementId, userData: data };
+      // Real Moon angle (geocentric, relative to Earth in scene ecliptic XZ plane)
+      const moonInitAngle = name === 'MOON' ? computeMoonSceneAngle(initTimeMs) : (data.angle ?? 0);
+      mm.position.set(data.radius * Math.sin(moonInitAngle), 0, data.radius * Math.cos(moonInitAngle));
+      mm.userData = { ...data, _initAngle: moonInitAngle };
+      parent.mesh.add(mm); celestialBodiesRef.current[name] = { mesh: mm, name: data.name, labelId: data.labelElementId, userData: mm.userData };
       if (name === 'MOON' && !planetLabelInfos.find(p => p.name === 'Moon')) planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: mm });
       const mp = []; for (let i = 0; i <= 64; i++) mp.push(new THREE.Vector3(Math.sin((i / 64) * Math.PI * 2) * data.radius, 0, Math.cos((i / 64) * Math.PI * 2) * data.radius));
       const mo = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(mp), 64, 0.003 * SCENE_SCALE, 8, true), new THREE.MeshBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.7 })); mo.name = 'moon-orbit'; parent.mesh.add(mo);
@@ -735,6 +763,54 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       celestialBodiesRef.current[name] = { mesh: pm, name: data.name, labelId: data.labelElementId, userData: data };
       planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: pm });
     });
+
+    // ── Spacecraft markers ────────────────────────────────────────────────────
+    // SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1 — small glowing tetrahedra.
+    // Positions are fetched from the solo-worker and updated in a useEffect.
+    const scGroup = new THREE.Group(); scGroup.name = 'spacecraft'; scene.add(scGroup);
+    spacecraftGroupRef.current = scGroup;
+
+    // Fetch spacecraft positions from the solo-worker (non-blocking).
+    fetch('https://solo-worker.thenamesrock.workers.dev/solo/position')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.ok || !data.positions) return;
+        const { positions } = data;
+        const SPACECRAFT_DEF: Array<{key:string;name:string;color:number;size:number}> = [
+          { key:'solo',    name:'SolO',     color:0xf97316, size:0.018 * SCENE_SCALE },
+          { key:'stereoA', name:'STEREO-A', color:0xa78bfa, size:0.014 * SCENE_SCALE },
+          { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE },
+          { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE },
+          { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE },
+          { key:'swfoL1',  name:'SWFO-L1',  color:0xfbbf24, size:0.012 * SCENE_SCALE },
+        ];
+        // Clear any previously-placed markers
+        while (scGroup.children.length > 0) scGroup.remove(scGroup.children[0]);
+        planetLabelInfos.filter(l => l.id.startsWith('sc-')).length; // noop — labels added below
+        const scLabelInfos: PlanetLabelInfo[] = [];
+        SPACECRAFT_DEF.forEach(({ key, name, color, size }) => {
+          const pos = positions[key]; if (!pos?.x && pos?.x !== 0) return;
+          // Horizons frame → scene frame: scene_x=hY, scene_y=hZ, scene_z=hX
+          const [sx, sy, sz] = [pos.y * SCENE_SCALE, pos.z * SCENE_SCALE, pos.x * SCENE_SCALE];
+          spacecraftPositionsRef.current[key] = { x: sx, y: sy, z: sz, name, color: '#' + color.toString(16).padStart(6,'0') };
+          // Tetrahedron marker
+          const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+          const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
+          mesh.position.set(sx, sy, sz);
+          mesh.name = `sc-${key}`;
+          // Point light for glow
+          const light = new THREE.PointLight(color, 0.4, size * 80);
+          mesh.add(light);
+          scGroup.add(mesh);
+          // Register for labels
+          const labelId = `sc-${key}-label`;
+          scLabelInfos.push({ id: labelId, name, mesh });
+          celestialBodiesRef.current[`SC_${key.toUpperCase()}`] = { mesh, name, labelId };
+        });
+        setPlanetMeshesForLabels([...planetLabelInfos, ...scLabelInfos]);
+      })
+      .catch(() => {/* worker unavailable — spacecraft markers silently absent */});
+
     setPlanetMeshesForLabels(planetLabelInfos);
 
     const handleResize = () => {
@@ -773,12 +849,23 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
       if (starsFarRef.current)  starsFarRef.current.rotation.y  += 0.00009;
 
-      const OSS = 2000;
-      Object.values(celestialBodiesRef.current).forEach(body => {
-        const d = body.userData as PlanetData | undefined;
-        if (!d?.orbitalPeriodDays || body.name === 'EARTH') return;
-        const a = d.angle + ((2 * Math.PI) / (d.orbitalPeriodDays * 24 * 3600) * OSS) * elapsedTime;
-        body.mesh.position.set(d.radius * Math.sin(a), 0, d.radius * Math.cos(a));
+      // ── simulationTimeMs: the authoritative simulation epoch ─────────────
+      // Used for planet positions, Earth rotation, Moon, and Sun rotation.
+      const simulationTimeMs = (timelineActive && timelineMaxDate > timelineMinDate)
+        ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
+        : Date.now();
+
+      // ── Real planet positions from simulationTimeMs ─────────────────────
+      // All planets except Earth move per simulationTimeMs (timeline-synced
+      // wall-clock epoch). Earth is driven separately below because it also
+      // needs axial tilt and GMST sidereal rotation.
+      // Moon is handled after Earth so it inherits Earth's world position.
+      const PLANETS_TO_UPDATE = ['MERCURY','VENUS','MARS','JUPITER','SATURN','URANUS','NEPTUNE'];
+      PLANETS_TO_UPDATE.forEach(name => {
+        const body = celestialBodiesRef.current[name]; if (!body) return;
+        const d = body.userData as PlanetData;
+        const lon = computeEclipticLongitude(name, simulationTimeMs);
+        body.mesh.position.set(d.radius * Math.sin(lon), 0, d.radius * Math.cos(lon));
       });
 
       const l1 = celestialBodiesRef.current['L1'], eb = celestialBodiesRef.current['EARTH'];
@@ -789,9 +876,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // ── Solar rotation / timeline sync ───────────────────────────────────
       // Use one absolute-time model in both live and timeline modes.
       // This avoids phase jumps when toggling timeline play/pause.
-      const simulationTimeMs = (timelineActive && timelineMaxDate > timelineMinDate)
-        ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
-        : Date.now();
       sunRotationRef.current = SUN_ANGULAR_VELOCITY * (simulationTimeMs / 1000);
       if (sunMeshRef.current) sunMeshRef.current.rotation.y = sunRotationRef.current;
 
@@ -838,12 +922,39 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh;
-        // Only spin Earth when timeline is playing or not active — freeze when paused
+        // ── Real heliocentric orbital position (ecliptic longitude) ────────
+        const earthLon = computeEclipticLongitude('EARTH', simulationTimeMs);
+        const earthData = PLANET_DATA_MAP.EARTH;
+        e.position.set(
+          earthData.radius * Math.sin(earthLon),
+          0,
+          earthData.radius * Math.cos(earthLon)
+        );
+        // ── Real axial tilt (fixed — the tilt is baked into rotation.z at init)
+        // ── Real sidereal rotation (GMST drives rotation.y) ─────────────────
+        // Earth spins ~360° per sidereal day. GMST gives the absolute angle of
+        // the prime meridian relative to the J2000 vernal equinox direction.
+        // We freeze it when the timeline is paused so users can inspect.
         if (!timelineActive || timelinePlaying) {
-          e.rotation.y += 0.05 * delta;
-          const c = e.children.find((c: any) => c.name === 'clouds'); if (c) c.rotation.y += 0.01 * delta;
+          e.rotation.y = computeGMST(simulationTimeMs);
+          const c = e.children.find((c: any) => c.name === 'clouds');
+          if (c) c.rotation.y = computeGMST(simulationTimeMs) + (elapsedTime * 0.008);
         }
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
+
+        // ── Moon position — geocentric angle relative to Earth ───────────────
+        const moon = celestialBodiesRef.current['MOON'];
+        if (moon) {
+          const moonAngle = computeMoonSceneAngle(simulationTimeMs);
+          const moonData = moon.userData as PlanetData;
+          moon.mesh.position.set(
+            moonData.radius * Math.sin(moonAngle),
+            0,
+            moonData.radius * Math.cos(moonAngle)
+          );
+          // Tidally locked: Moon's rotation.y = moonAngle so same face always toward Earth
+          moon.mesh.rotation.y = moonAngle + Math.PI;
+        }
       }
 
       cmeGroupRef.current.children.forEach((c: any) => {
