@@ -32,9 +32,7 @@ import {
   computeEclipticLongitude,
   computeGMST,
   computeMoonSceneAngle,
-  horizonsToScene,
   EARTH_TILT_RAD,
-  J2000_MS,
 } from '../utils/astronomicalPositions';
 
 /** =========================================================
