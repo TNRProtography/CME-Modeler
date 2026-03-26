@@ -857,8 +857,9 @@ const App: React.FC = () => {
 
   // Auto-select CME from ?cme= URL param once data has loaded.
   // Uses a ref so the ID is never lost when navigation strips the URL param.
-  // If not found in the current range, automatically expands to 7 days before
-  // giving up — handles the common case of a link that's a few days old.
+  // If not found in the current range, automatically expands to 7 days first
+  // by directly calling loadCMEData — setting activeTimeRange alone is not
+  // enough because the reload effects guard against re-running once done.
   useEffect(() => {
     const sharedId = initialSharedCmeIdRef.current;
     if (!sharedId) return;
@@ -873,15 +874,15 @@ const App: React.FC = () => {
       setSharedCmeExpired(null);
       setSharedCmeSearching(false);
       handleSelectCMEForModeling(found);
-      // Don't call navigateToPage here — we're already on the modeler page
-      // and calling it would strip the ?cme= param from the URL.
     } else if (activeTimeRange < TimeRange.D7) {
-      // Not found in the current narrow window — silently expand to 7 days
-      // and let the data re-load. The effect will fire again with the new data.
-      setActiveTimeRange(TimeRange.D7);
+      // Not found in the current narrow window — expand to 7 days and reload.
+      // Must call loadCMEData directly because the existing reload effects
+      // won't fire again once the initial load is marked as done.
       setSharedCmeSearching(true);
+      setActiveTimeRange(TimeRange.D7);
+      loadCMEData(TimeRange.D7, { silent: true });
     } else {
-      // Exhausted the maximum range and still not found — genuinely expired
+      // Exhausted the maximum range — genuinely expired or never existed
       setSharedCmeExpired(sharedId);
       setSharedCmeSearching(false);
       initialSharedCmeIdRef.current = null; // stop retrying
