@@ -177,8 +177,9 @@ const EPAMPanel: React.FC = () => {
       if (!filteredStereo.length) return null;
       const pts = rev(filteredStereo);
       return { datasets: [
-        {...mkDs(pts,'time_tag','sep_lo','#a78bfa','Particles Low-E'), yAxisID:'y'},
-        {...mkDs(pts,'time_tag','sep_hi','#c084fc','Particles High-E'), yAxisID:'y'},
+        {...mkDs(pts,'time_tag','sep_lo','#a78bfa','Protons 75–623 keV'), yAxisID:'y'},
+        {...mkDs(pts,'time_tag','sep_hi','#c084fc','Protons 623 keV–21 MeV'), yAxisID:'y'},
+        {...mkDs(pts,'time_tag','electrons_lo','#e879f9','e⁻ 35–65 keV'), yAxisID:'y'},
         {...mkDs(pts,'time_tag','speed','#34d399','Speed (km/s)',false), yAxisID:'y2'},
         {...mkDs(pts,'time_tag','bt','#60a5fa','Bt (nT)',false), yAxisID:'y2'},
       ]};
@@ -205,7 +206,7 @@ const EPAMPanel: React.FC = () => {
         datasets.push({ label: 'GOES SEISS (avg all channels)', borderColor: '#fde047', backgroundColor: '#fde04720', borderWidth: 2, pointRadius: 0, tension: 0.2, data: pts });
       }
 
-      // STEREO average: geometric mean of sep_lo + sep_hi only (particle channels)
+      // STEREO average: geometric mean of proton channels
       if (showStereo && filteredStereo.length) {
         const pts = rev(filteredStereo).map(p => ({
           x: new Date(p.time_tag).getTime(),
