@@ -37,7 +37,7 @@ const baseOptions = (yType: 'logarithmic'|'linear', yLabel: string): ChartOption
     tooltip: { backgroundColor: '#1a1a1a', borderColor: '#3f3f46', borderWidth: 1, titleColor: '#e5e5e5', bodyColor: '#a3a3a3' },
   },
   scales: {
-    x: { type: 'time', time: { tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { color: '#71717a', maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { color: '#27272a' } },
+    x: { type: 'time', time: { tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { color: '#71717a', maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { color: '#27272a' }, title: { display: true, text: 'NZT', color: '#52525b', font: { size: 9 } } },
     y: { type: yType, ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6 }, grid: { color: '#27272a' }, title: { display: true, text: yLabel, color: '#71717a', font: { size: 10 } } },
   },
 });
@@ -64,6 +64,22 @@ function estimateArrival(status: string, trend: number|null): string|null {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Always parse a time_tag string as UTC, regardless of whether the source
+ * includes a 'Z' suffix or not. Without this, browsers treat bare ISO strings
+ * (e.g. "2025-03-27T10:00:00") as LOCAL time, shifting everything by the
+ * local UTC offset — 13 hours wrong for NZ users.
+ */
+function parseUTC(s: string): number {
+  if (!s) return NaN;
+  // Already has timezone info — parse as-is
+  if (s.endsWith('Z') || s.includes('+') || /[T ]\d{2}:\d{2}(:\d{2})?[-+]\d/.test(s)) {
+    return new Date(s).getTime();
+  }
+  // No timezone marker — force UTC by appending Z
+  return new Date(s.replace(' ', 'T') + 'Z').getTime();
+}
+
 // Compute geometric mean across channels (handles log-scale data well)
 function geoMeanRow(values: (number|null)[]): number|null {
   const valid = values.filter((v): v is number => v !== null && v > 0);
@@ -74,13 +90,13 @@ function geoMeanRow(values: (number|null)[]): number|null {
 
 function filterByTimeRange(data: {time_tag: string}[], hours: TimeRange) {
   const cutoff = Date.now() - hours * 3600 * 1000;
-  return data.filter(p => new Date(p.time_tag).getTime() > cutoff);
+  return data.filter(p => parseUTC(p.time_tag) > cutoff);
 }
 
 const mkDs = (pts: any[], timeKey: string, valueKey: string, color: string, label: string, positiveOnly = true) => ({
   label, borderColor: color, backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0, tension: 0,
   data: pts
-    .map(p => ({ x: new Date(p[timeKey]).getTime(), y: p[valueKey] ?? null }))
+    .map(p => ({ x: parseUTC(String(p[timeKey])), y: p[valueKey] ?? null }))
     .filter(d => d.y !== null && (!positiveOnly || (d.y as number) > 0)),
 });
 
@@ -191,7 +207,7 @@ const EPAMPanel: React.FC = () => {
       // ACE average: geometric mean across 5 proton channels
       if (showAce && filteredEpam.length) {
         const pts = rev(filteredEpam).map(p => ({
-          x: new Date(p.time_tag).getTime(),
+          x: parseUTC(p.time_tag),
           y: geoMeanRow([p.p1, p.p3, p.p5, p.p7, p.p8]),
         })).filter(d => d.y !== null && d.y > 0);
         datasets.push({ label: 'ACE EPAM (avg all channels)', borderColor: '#60a5fa', backgroundColor: '#60a5fa20', borderWidth: 2, pointRadius: 0, tension: 0.2, data: pts });
@@ -200,7 +216,7 @@ const EPAMPanel: React.FC = () => {
       // GOES average: geometric mean across available channels
       if (showGoes && filteredGoes.length) {
         const pts = rev(filteredGoes).map(p => ({
-          x: new Date(p.time_tag).getTime(),
+          x: parseUTC(p.time_tag),
           y: geoMeanRow([p.ge1 ?? null, p.ge10 ?? null, p.ge100 ?? null, p.ge500 ?? null]),
         })).filter(d => d.y !== null && d.y > 0);
         datasets.push({ label: 'GOES SEISS (avg all channels)', borderColor: '#fde047', backgroundColor: '#fde04720', borderWidth: 2, pointRadius: 0, tension: 0.2, data: pts });
@@ -209,7 +225,7 @@ const EPAMPanel: React.FC = () => {
       // STEREO average: geometric mean of proton channels
       if (showStereo && filteredStereo.length) {
         const pts = rev(filteredStereo).map(p => ({
-          x: new Date(p.time_tag).getTime(),
+          x: parseUTC(p.time_tag),
           y: geoMeanRow([p.sep_lo ?? null, p.sep_hi ?? null]),
         })).filter(d => d.y !== null && d.y > 0);
         datasets.push({ label: 'STEREO-A (avg particle channels)', borderColor: '#a78bfa', backgroundColor: '#a78bfa20', borderWidth: 2, pointRadius: 0, tension: 0.2, borderDash: [4,3], data: pts });
