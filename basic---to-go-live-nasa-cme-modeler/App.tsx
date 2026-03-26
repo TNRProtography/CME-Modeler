@@ -192,6 +192,7 @@ const App: React.FC = () => {
   const initialSharedCmeIdRef = useRef<string | null>(
     new URLSearchParams(window.location.search).get('cme')
   );
+  const sharedCmeRangeExpandedRef = useRef<boolean>(false);
   const [sharedCmeSearching, setSharedCmeSearching] = useState<boolean>(
     () => !!new URLSearchParams(window.location.search).get('cme')
   );
@@ -874,15 +875,16 @@ const App: React.FC = () => {
       setSharedCmeExpired(null);
       setSharedCmeSearching(false);
       handleSelectCMEForModeling(found);
-    } else if (activeTimeRange < TimeRange.D7) {
-      // Not found in the current narrow window — expand to 7 days and reload.
-      // Must call loadCMEData directly because the existing reload effects
-      // won't fire again once the initial load is marked as done.
+      initialSharedCmeIdRef.current = null; // stop watching — user can change range freely now
+    } else if (!sharedCmeRangeExpandedRef.current && activeTimeRange < TimeRange.D7) {
+      // Not found in the current narrow window — expand to 7 days once only.
+      // After this point the ref is set so user range changes won't be overridden.
+      sharedCmeRangeExpandedRef.current = true;
       setSharedCmeSearching(true);
       setActiveTimeRange(TimeRange.D7);
       loadCMEData(TimeRange.D7, { silent: true });
     } else {
-      // Exhausted the maximum range — genuinely expired or never existed
+      // Already expanded or already at max range — genuinely expired or never existed
       setSharedCmeExpired(sharedId);
       setSharedCmeSearching(false);
       initialSharedCmeIdRef.current = null; // stop retrying
