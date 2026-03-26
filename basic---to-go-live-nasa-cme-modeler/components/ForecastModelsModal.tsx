@@ -20,8 +20,8 @@ interface ForecastModelsModalProps {
 // --- CONSTANTS for the models ---
 const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
 const MAX_FRAMES_TO_CHECK = 400;
-const HUXT_ANIMATION_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_animation_latest.mp4';
-const HUXT_FORECAST_IMAGE_URL = 'https://huxt-bucket.s3.eu-west-2.amazonaws.com/wsa_huxt_forecast_latest.png';
+const HUXT_ANIMATION_URL = 'https://swxforecastlab.s3.eu-west-2.amazonaws.com/WSA_DONKI_huxt_animation_latest.mp4';
+const HUXT_FORECAST_IMAGE_URL = 'https://swxforecastlab.s3.eu-west-2.amazonaws.com/WSA_DONKI_huxt_forecast_latest.png';
 const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo.mp4';
 const EUHFORIA_ANIMATION_URL = 'https://swe.ssa.esa.int/DOCS/portal_images/uk_ral_euhforia_earth.mp4';
 
