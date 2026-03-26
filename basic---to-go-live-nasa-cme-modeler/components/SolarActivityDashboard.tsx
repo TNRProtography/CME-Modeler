@@ -2475,7 +2475,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p>
               <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p>
               <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p>
-              <p><strong>Active Region:</strong> {selectedFlare.activeRegionNum || 'N/A'}</p>
+              <p><strong>Active Region:</strong> {(() => {
+                if (!selectedFlare.activeRegionNum) return 'N/A';
+                const displayNum = String(selectedFlare.activeRegionNum).slice(-4);
+                const matchedRegion = activeSunspotRegions.find(
+                  r => String(r.region).slice(-4) === displayNum
+                );
+                if (!matchedRegion) return `AR ${displayNum}`;
+                return (
+                  <button
+                    className="text-amber-300 hover:text-amber-200 underline underline-offset-2 font-semibold transition-colors"
+                    title={`Jump to AR ${displayNum} in Active Sunspot Tracker`}
+                    onClick={() => {
+                      setSelectedFlare(null);
+                      setSelectedSunspotRegion(matchedRegion);
+                      setTimeout(() => {
+                        document.getElementById('active-sunspots-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 50);
+                    }}
+                  >
+                    AR {displayNum} ↑
+                  </button>
+                );
+              })()}</p>
               <p><strong>CME Associated:</strong> {(selectedFlare as any).hasCME ? 'Yes' : 'No'}</p>
               <p><a href={selectedFlare.link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">View on NASA DONKI</a></p>
               {(selectedFlare as any).hasCME && selectedFlare.linkedEvents?.find((e: any) => e.activityID.includes('CME')) && (() => {
