@@ -220,7 +220,7 @@ const createArrowTexture = (THREE: any) => {
 // ============================================================
 const GCS_ARC_RADIUS_FRAC  = 0.55;
 const GCS_ARC_SPAN         = Math.PI * 0.85;
-const GCS_TUBE_RADIUS_FRAC = 0.38;
+const GCS_TUBE_RADIUS_FRAC = 0.52; // thicker cross-section for a bolder CME shape
 const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
 
 // Number of helical field lines around the tube, and points per line
@@ -986,20 +986,32 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
       // Density falls off toward the tail so it looks like a tear, not a box.
 
-      const backDepthFrac = 3.00; // how far back the tail extends as fraction of arcR
+      const backDepthFrac = 0.70; // tail extends only 70% of arcR behind the arc — prevents particles going through the sun
       // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
 
-      // Main arc particles — rounded front cap for a teardrop head.
+      // Main arc particles — stadium/pill profile: full thickness body with rounded caps at the tips.
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
         const Nx = -Math.sin(t), Ny = -Math.cos(t);
 
-        // Keep the front broad/smooth; tips thinner to avoid crescent "horns".
+        // Stadium shape: hold near-full width through the body, then round off
+        // the last ~30% of the arc into a smooth semicircular cap.
         const tNorm = Math.abs(t / hs);
-        const taper = 0.30 + 0.70 * Math.pow(1 - tNorm, 1.8);
+        const capStart = 0.70; // body runs from 0→capStart at full width
+        let taper: number;
+        if (tNorm <= capStart) {
+          // Slight front-to-back thickness gradient so it still reads as a CME
+          taper = 1.0 - 0.18 * (tNorm / capStart);
+        } else {
+          // Semicircular cap — radius follows sqrt(1 - u²) for a true round end
+          const u = (tNorm - capStart) / (1.0 - capStart);
+          taper = 0.82 * Math.sqrt(Math.max(0, 1 - u * u));
+        }
+        taper = Math.max(taper, 0.06);
+
         const tubeR = baseTubeR * taper;
         const rho   = Math.sqrt(Math.random()) * tubeR;
         const phi   = Math.random() * 2 * Math.PI;
@@ -1007,6 +1019,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
 
       // Tail particles — converge toward a single apex so whole CME reads teardrop.
+      // Clamped so no particle travels back through the sun (local Y must stay >= 0).
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
@@ -1030,9 +1043,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const rho   = Math.sqrt(Math.random()) * tubeR;
         const phi   = Math.random() * 2 * Math.PI;
 
+        const py = tailCy + rho * Math.cos(phi) * Ny + depthY;
+        // Hard clamp — no particle goes behind the sun (local Y = 0 is the sun centre)
+        if (py < 0) continue;
         pos.push(
           tailCx + rho * Math.cos(phi) * Nx,
-          tailCy + rho * Math.cos(phi) * Ny + depthY,
+          py,
           rho * Math.sin(phi)
         );
       }
