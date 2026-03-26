@@ -963,8 +963,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     return frameTimes.map((startMs) => {
       const endMs = startMs + intervalMs;
-      // SUVI frames don't always start exactly on 4-minute boundaries.
-      // Try ±1 and ±2 minute offsets to catch slightly misaligned files.
+      // Try ±1 and ±2 minute offsets to catch frames that don't land on exact
+      // 4-minute boundaries. Only used during background probing, not as the
+      // immediate fallback (which uses exact timestamps only to keep it fast).
       const OFFSETS_MS = [0, 60000, -60000, 120000, -120000];
       const candidates: string[] = [];
       for (const offset of OFFSETS_MS) {
@@ -999,7 +1000,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const buildSuviFallbackUrls = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
     const groups = buildSuviFrameCandidateGroups(mode);
-    return groups.flatMap((group) => group);
+    // Use only the first candidate per group (exact timestamp, g19, v1-0-2)
+    // as an immediate placeholder. The directory listing will replace this
+    // with confirmed URLs once it loads. Keeps initial count at ~90, not 1800.
+    return groups.map((group) => group[0]).filter(Boolean);
   }, [buildSuviFrameCandidateGroups]);
 
   const buildSuviFrameUrls = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
