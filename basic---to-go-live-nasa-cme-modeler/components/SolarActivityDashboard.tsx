@@ -5,7 +5,6 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import SoloPanel from './SoloPanel';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 // Import only flare functions/types (IPS removed)
 import { 
@@ -2448,11 +2447,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 {protonChartData.datasets[0]?.data.length > 0 ? <Line data={protonChartData} options={protonChartOptions} /> : <LoadingSpinner message={loadingProton} />}
               </div>
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastProtonUpdate || 'N/A'}</div>
-            </div>
-
-            {/* ── Solar Orbiter ── */}
-            <div id="solar-orbiter-section" className="col-span-12 card bg-neutral-950/80 p-4">
-              <SoloPanel />
             </div>
 
           </main>
