@@ -1,18 +1,56 @@
 // --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+
+/**
+ * Wraps React.lazy() with automatic stale-chunk recovery.
+ *
+ * After a new deployment, Vite generates new content-hashed filenames for every
+ * JS chunk. If a user still has the old HTML loaded in their tab, any subsequent
+ * lazy import will try to fetch the old (now-deleted) filename and throw
+ * "Failed to fetch dynamically imported module". This wrapper catches that error
+ * and reloads the page once — which fetches the fresh HTML and correct new URLs.
+ * A sessionStorage flag prevents an infinite reload loop if the error persists
+ * for an unrelated reason.
+ */
+const CHUNK_RELOAD_KEY = 'sta_chunk_reload_attempted';
+function retryLazyLoad<T extends React.ComponentType<any>>(
+  importFn: () => Promise<{ default: T }>
+): React.LazyExoticComponent<T> {
+  return lazy(() =>
+    importFn().catch((err: unknown) => {
+      const isChunkError =
+        err instanceof Error &&
+        (err.message.includes('Failed to fetch dynamically imported module') ||
+          err.message.includes('Importing a module script failed') ||
+          err.message.includes('error loading dynamically imported module'));
+
+      if (isChunkError && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+        window.location.reload();
+        // Return a never-resolving promise — the reload will take over
+        return new Promise<{ default: T }>(() => {});
+      }
+      // Not a chunk error, or already retried — clear flag and re-throw so
+      // the ErrorBoundary can display the real problem
+      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      throw err;
+    })
+  );
+}
+
 // Modeler-page-only components — lazy loaded so they never touch the initial bundle
 // for users landing on the forecast or solar activity pages.
-const SimulationCanvas = lazy(() => import('./components/SimulationCanvas'));
-const ControlsPanel = lazy(() => import('./components/ControlsPanel'));
-const CMEListPanel = lazy(() => import('./components/CMEListPanel'));
-const TimelineControls = lazy(() => import('./components/TimelineControls'));
-const PlanetLabel = lazy(() => import('./components/PlanetLabel'));
-const TutorialModal = lazy(() => import('./components/TutorialModal'));
-const LoadingOverlay = lazy(() => import('./components/LoadingOverlay'));
+const SimulationCanvas = retryLazyLoad(() => import('./components/SimulationCanvas'));
+const ControlsPanel = retryLazyLoad(() => import('./components/ControlsPanel'));
+const CMEListPanel = retryLazyLoad(() => import('./components/CMEListPanel'));
+const TimelineControls = retryLazyLoad(() => import('./components/TimelineControls'));
+const PlanetLabel = retryLazyLoad(() => import('./components/PlanetLabel'));
+const TutorialModal = retryLazyLoad(() => import('./components/TutorialModal'));
+const LoadingOverlay = retryLazyLoad(() => import('./components/LoadingOverlay'));
 // MediaViewerModal is used across all pages but returns null until media is set,
 // so lazy-loading it is safe and removes it from the critical path.
-const MediaViewerModal = lazy(() => import('./components/MediaViewerModal'));
+const MediaViewerModal = retryLazyLoad(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
 import { refreshLocationOnServer } from './utils/notifications';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock, ImpactDataPoint } from './types';
@@ -28,19 +66,19 @@ import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/
 
 // Dashboard and Banner Imports — heavy pages are lazy-loaded to avoid
 // blocking the initial paint for users landing on any page.
-const ForecastDashboard = lazy(() => import('./components/ForecastDashboard'));
-const SolarActivityDashboard = lazy(() => import('./components/SolarActivityDashboard'));
-const UnifiedDashboardMode = lazy(() => import('./components/UnifiedDashboardMode'));
+const ForecastDashboard = retryLazyLoad(() => import('./components/ForecastDashboard'));
+const SolarActivityDashboard = retryLazyLoad(() => import('./components/SolarActivityDashboard'));
+const UnifiedDashboardMode = retryLazyLoad(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
 import OnboardingBanner from './components/OnboardingBanner';
 import AppDocumentation from './components/AppDocumentation';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports — also lazy to keep the initial bundle lean
-const SettingsModal = lazy(() => import('./components/SettingsModal'));
-const FirstVisitTutorial = lazy(() => import('./components/FirstVisitTutorial'));
-const CmeModellerTutorial = lazy(() => import('./components/CmeModellerTutorial'));
-const ForecastModelsModal = lazy(() => import('./components/ForecastModelsModal'));
+const SettingsModal = retryLazyLoad(() => import('./components/SettingsModal'));
+const FirstVisitTutorial = retryLazyLoad(() => import('./components/FirstVisitTutorial'));
+const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModellerTutorial'));
+const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastModelsModal'));
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
@@ -147,9 +185,9 @@ const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
-const SolarSurferGame = lazy(() => import('./components/SolarSurferGame'));
-const ImpactGraphModal = lazy(() => import('./components/ImpactGraphModal'));
-const DebugPanel = lazy(() => import('./components/DebugPanel'));
+const SolarSurferGame = retryLazyLoad(() => import('./components/SolarSurferGame'));
+const ImpactGraphModal = retryLazyLoad(() => import('./components/ImpactGraphModal'));
+const DebugPanel = retryLazyLoad(() => import('./components/DebugPanel'));
 
 
 const App: React.FC = () => {
