@@ -5,6 +5,7 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
+import SoloPanel from './SoloPanel';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 // Import only flare functions/types (IPS removed)
 import { 
@@ -2448,6 +2449,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastProtonUpdate || 'N/A'}</div>
             </div>
+
+            {/* ── Solar Orbiter ── */}
+            <div id="solar-orbiter-section" className="col-span-12 card bg-neutral-950/80 p-4">
+              <SoloPanel />
+            </div>
+
           </main>
 
           <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">

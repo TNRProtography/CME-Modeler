@@ -13,7 +13,6 @@ interface ImageChannel {
   height:         number;
   tileUrl:        string;
   helioviewerUrl: string;
-  fetchedAt:      string;
 }
 
 interface SpacecraftPosition {
@@ -28,17 +27,17 @@ interface SpacecraftPosition {
 }
 
 interface DerivedMetrics {
-  solo_earth_lon_sep_deg:  number;
-  solo_is_upstream:        boolean;
-  solo_upstream_quality:   string;
-  solo_warning_lead_hours: number | null;
+  solo_earth_lon_sep_deg:   number;
+  solo_is_upstream:         boolean;
+  solo_upstream_quality:    string;
+  solo_warning_lead_hours:  number | null;
   stereo_earth_lon_sep_deg?: number;
-  note:                    string;
+  note:                     string;
 }
 
 interface PositionData {
-  ok:          boolean;
-  fetchedAt:   string;
+  ok:        boolean;
+  fetchedAt: string;
   positions: {
     solo?:    SpacecraftPosition;
     stereoA?: SpacecraftPosition;
@@ -55,281 +54,207 @@ interface ImageryData {
   channels:     ImageChannel[];
 }
 
-const SOLO_BASE = 'https://solo.thenamesrock.workers.dev';
+const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
 
-// ─── Upstream quality badge ───────────────────────────────────────────────────
-const QUALITY_STYLES: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-  excellent: { bg: 'bg-green-900/50',  text: 'text-green-300',  dot: 'bg-green-400',   label: 'Excellent upstream alignment' },
-  good:      { bg: 'bg-emerald-900/40',text: 'text-emerald-300',dot: 'bg-emerald-400', label: 'Good upstream alignment' },
-  marginal:  { bg: 'bg-yellow-900/40', text: 'text-yellow-300', dot: 'bg-yellow-400',  label: 'Marginal upstream alignment' },
-  watch:     { bg: 'bg-orange-900/30', text: 'text-orange-300', dot: 'bg-orange-400',  label: 'Off-axis — limited predictive value' },
-  'off-axis':{ bg: 'bg-neutral-800/60',text: 'text-neutral-400',dot: 'bg-neutral-500', label: 'Off Sun-Earth line' },
+// ─── Upstream quality config — matches app status-banner convention ───────────
+const QUALITY_STYLES: Record<string, { dot: string; bg: string; border: string; text: string; label: string }> = {
+  excellent: { dot: 'bg-green-400',    bg: 'bg-green-950/50',    border: 'border-green-700/60',    text: 'text-green-300',   label: '✅ Excellent upstream alignment — <5° from Sun-Earth line' },
+  good:      { dot: 'bg-emerald-400',  bg: 'bg-emerald-950/40',  border: 'border-emerald-700/50',  text: 'text-emerald-300', label: '✅ Good upstream alignment — <10° from Sun-Earth line' },
+  marginal:  { dot: 'bg-yellow-400',   bg: 'bg-yellow-950/40',   border: 'border-yellow-700/50',   text: 'text-yellow-300',  label: '⚠️ Marginal upstream alignment — <15° from Sun-Earth line' },
+  watch:     { dot: 'bg-orange-400',   bg: 'bg-orange-950/30',   border: 'border-orange-700/40',   text: 'text-orange-300',  label: '📡 Off-axis — limited predictive value for Earth' },
+  'off-axis':{ dot: 'bg-neutral-500',  bg: 'bg-neutral-900/60',  border: 'border-neutral-700/60',  text: 'text-neutral-400', label: '📡 Off Sun-Earth line — in-situ data not directly predictive' },
 };
 
-// ─── Heliocentric position SVG ────────────────────────────────────────────────
+// ─── Heliocentric position map ────────────────────────────────────────────────
 const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const SIZE  = 480;
-  const CX    = SIZE / 2;
-  const CY    = SIZE / 2;
-  // 1 AU maps to 45% of the SVG half-width so everything fits
-  const AU_PX = (SIZE / 2) * 0.42;
+  const SIZE   = 420;
+  const CX     = SIZE / 2;
+  const CY     = SIZE / 2;
+  const AU_PX  = (SIZE / 2) * 0.40; // 1 AU in pixels
 
   const { positions } = data;
-  if (!positions?.earth) return null;
+  if (!positions?.earth) return (
+    <div className="w-full h-full flex items-center justify-center text-neutral-500 text-sm">
+      Position data unavailable
+    </div>
+  );
 
-  // Convert AU coords → SVG px (x right = ecliptic 0°, y up = 90°)
   const toSvg = (x: number, y: number) => ({
     sx: CX + x * AU_PX,
-    sy: CY - y * AU_PX,  // SVG y increases downward so invert
+    sy: CY - y * AU_PX,
   });
 
-  // Reference orbit circles (AU radii)
-  const orbitRings = [0.3, 0.5, 0.7, 1.0, 1.2];
+  // Reference orbit rings
+  const rings = [0.3, 0.5, 0.7, 1.0];
 
-  // Approximate SolO orbit: eccentric, perihelion ~0.28 AU, aphelion ~1.02 AU
-  const soloOrbitPoints = useMemo(() => {
-    const n = 120;
-    const a = 0.65;  // semi-major axis AU
-    const e = 0.57;  // eccentricity
-    const pts: { x: number; y: number }[] = [];
-    for (let i = 0; i < n; i++) {
-      const theta = (i / n) * 2 * Math.PI;
-      const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta));
-      pts.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
-    }
-    return pts;
-  }, []);
-
-  // STEREO-A orbit: nearly circular at ~1.0 AU
-  const stereoOrbitPoints = useMemo(() => {
-    const n = 120;
-    const r = 1.0;
+  // SolO orbit approximation — eccentric, perihelion ~0.28 AU, aphelion ~1.02 AU
+  const soloOrbit = useMemo(() => {
+    const a = 0.65, e = 0.57, n = 120;
     return Array.from({ length: n }, (_, i) => {
       const theta = (i / n) * 2 * Math.PI;
+      const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta));
       return { x: r * Math.cos(theta), y: r * Math.sin(theta) };
     });
   }, []);
 
+  // STEREO-A orbit — near-circular at ~1.0 AU
+  const stereoOrbit = useMemo(() => Array.from({ length: 120 }, (_, i) => {
+    const theta = (i / 120) * 2 * Math.PI;
+    return { x: Math.cos(theta), y: Math.sin(theta) };
+  }), []);
+
   const orbitPath = (pts: { x: number; y: number }[]) =>
-    pts.map((p, i) => {
-      const { sx, sy } = toSvg(p.x, p.y);
-      return `${i === 0 ? 'M' : 'L'} ${sx.toFixed(1)} ${sy.toFixed(1)}`;
-    }).join(' ') + ' Z';
+    pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${toSvg(p.x, p.y).sx.toFixed(1)},${toSvg(p.x, p.y).sy.toFixed(1)}`).join(' ') + 'Z';
 
-  const earthPos = toSvg(positions.earth.x, positions.earth.y);
-  const soloPos  = positions.solo   ? toSvg(positions.solo.x,    positions.solo.y)   : null;
-  const stereoPos= positions.stereoA? toSvg(positions.stereoA.x, positions.stereoA.y): null;
-  const l1Pos    = positions.l1     ? toSvg(positions.l1.x,      positions.l1.y)     : null;
+  const ep  = toSvg(positions.earth.x,    positions.earth.y);
+  const sp  = positions.solo    ? toSvg(positions.solo.x,    positions.solo.y)    : null;
+  const stp = positions.stereoA ? toSvg(positions.stereoA.x, positions.stereoA.y) : null;
+  const l1p = positions.l1      ? toSvg(positions.l1.x,      positions.l1.y)      : null;
 
-  const derived = positions.derived;
-  const isUpstream = derived?.solo_is_upstream;
-  const sepDeg = derived?.solo_earth_lon_sep_deg;
+  const derived    = positions.derived;
+  const isUpstream = derived?.solo_is_upstream ?? false;
+  const sepDeg     = derived?.solo_earth_lon_sep_deg;
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${SIZE} ${SIZE}`}
-      className="w-full h-full"
-      style={{ background: 'transparent', maxHeight: '100%' }}
-    >
-      {/* Starfield */}
-      {Array.from({ length: 80 }, (_, i) => {
-        const seed = i * 7919;
-        const sx = (seed * 1301 % SIZE);
-        const sy = (seed * 1637 % SIZE);
-        const r  = (i % 3 === 0) ? 0.8 : 0.4;
-        const op = 0.2 + (i % 5) * 0.08;
-        return <circle key={i} cx={sx} cy={sy} r={r} fill="white" opacity={op} />;
+    <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full" style={{ maxHeight: '100%' }}>
+      {/* Subtle starfield */}
+      {Array.from({ length: 60 }, (_, i) => {
+        const s = i * 6271;
+        return (
+          <circle key={i} cx={(s * 1301) % SIZE} cy={(s * 1637) % SIZE}
+            r={i % 4 === 0 ? 0.8 : 0.4} fill="white" opacity={0.15 + (i % 4) * 0.06} />
+        );
       })}
 
-      {/* Reference orbit rings */}
-      {orbitRings.map(r => (
-        <circle
-          key={r}
-          cx={CX} cy={CY}
-          r={r * AU_PX}
-          fill="none"
-          stroke="#3f3f46"
-          strokeWidth="0.5"
+      {/* Reference rings */}
+      {rings.map(r => (
+        <circle key={r} cx={CX} cy={CY} r={r * AU_PX}
+          fill="none" stroke="#3f3f46"
+          strokeWidth={r === 1.0 ? 0.8 : 0.5}
           strokeDasharray={r === 1.0 ? '4 3' : '2 4'}
-          opacity={r === 1.0 ? 0.6 : 0.3}
-        />
+          opacity={r === 1.0 ? 0.5 : 0.25} />
+      ))}
+      {/* Ring labels */}
+      {[0.5, 1.0].map(r => (
+        <text key={`l${r}`} x={CX + r * AU_PX + 3} y={CY - 3}
+          fill="#52525b" fontSize="7" fontFamily="inherit">{r} AU</text>
       ))}
 
-      {/* AU labels on ring */}
-      {[0.3, 0.5, 1.0].map(r => (
-        <text
-          key={`lbl-${r}`}
-          x={CX + r * AU_PX + 3}
-          y={CY - 3}
-          fill="#52525b"
-          fontSize="7"
-          fontFamily="monospace"
-        >
-          {r} AU
-        </text>
-      ))}
+      {/* Sun–Earth reference line */}
+      <line x1={CX} y1={CY} x2={ep.sx} y2={ep.sy}
+        stroke="#60a5fa" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.2" />
 
-      {/* Sun-Earth line (dashed) */}
-      <line
-        x1={CX} y1={CY}
-        x2={earthPos.sx} y2={earthPos.sy}
-        stroke="#60a5fa"
-        strokeWidth="0.5"
-        strokeDasharray="3 3"
-        opacity="0.25"
-      />
-
-      {/* SolO-Sun line (highlight when upstream) */}
-      {soloPos && isUpstream && (
-        <line
-          x1={CX} y1={CY}
-          x2={soloPos.sx} y2={soloPos.sy}
-          stroke="#f97316"
-          strokeWidth="0.8"
-          strokeDasharray="3 2"
-          opacity="0.4"
-        />
+      {/* SolO upstream highlight line */}
+      {sp && isUpstream && (
+        <line x1={CX} y1={CY} x2={sp.sx} y2={sp.sy}
+          stroke="#f97316" strokeWidth="0.8" strokeDasharray="3 2" opacity="0.35" />
       )}
 
-      {/* Angular separation arc between SolO and Earth */}
-      {soloPos && sepDeg !== undefined && sepDeg < 45 && positions.solo && positions.earth && (() => {
-        const arcR = AU_PX * 0.18;
-        const earthAngle = Math.atan2(-positions.earth.y, positions.earth.x); // SVG coords
-        const soloAngle  = Math.atan2(-positions.solo.y,  positions.solo.x);
-        const x1 = CX + arcR * Math.cos(earthAngle);
-        const y1 = CY + arcR * Math.sin(earthAngle);
-        const x2 = CX + arcR * Math.cos(soloAngle);
-        const y2 = CY + arcR * Math.sin(soloAngle);
-        const large = Math.abs(earthAngle - soloAngle) > Math.PI ? 1 : 0;
+      {/* Angular separation arc */}
+      {sp && sepDeg !== undefined && sepDeg < 45 && positions.solo && (() => {
+        const arcR = AU_PX * 0.16;
+        const ea = Math.atan2(-positions.earth.y, positions.earth.x);
+        const sa = Math.atan2(-positions.solo.y,  positions.solo.x);
+        const x1 = CX + arcR * Math.cos(ea), y1 = CY + arcR * Math.sin(ea);
+        const x2 = CX + arcR * Math.cos(sa), y2 = CY + arcR * Math.sin(sa);
+        const large = Math.abs(ea - sa) > Math.PI ? 1 : 0;
+        const mid   = (ea + sa) / 2;
         return (
           <g>
-            <path
-              d={`M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${arcR} ${arcR} 0 ${large} 0 ${x2.toFixed(1)} ${y2.toFixed(1)}`}
-              fill="none"
-              stroke={isUpstream ? '#f97316' : '#6b7280'}
-              strokeWidth="1.2"
-              opacity="0.7"
-            />
-            <text
-              x={CX + arcR * 1.4 * Math.cos((earthAngle + soloAngle) / 2)}
-              y={CY + arcR * 1.4 * Math.sin((earthAngle + soloAngle) / 2)}
-              fill={isUpstream ? '#fb923c' : '#9ca3af'}
-              fontSize="8"
-              fontFamily="monospace"
-              textAnchor="middle"
-            >
+            <path d={`M${x1.toFixed(1)},${y1.toFixed(1)} A${arcR},${arcR} 0 ${large} 0 ${x2.toFixed(1)},${y2.toFixed(1)}`}
+              fill="none" stroke={isUpstream ? '#f97316' : '#6b7280'} strokeWidth="1.2" opacity="0.65" />
+            <text x={CX + arcR * 1.45 * Math.cos(mid)} y={CY + arcR * 1.45 * Math.sin(mid)}
+              fill={isUpstream ? '#fb923c' : '#9ca3af'} fontSize="8" fontFamily="inherit" textAnchor="middle">
               {sepDeg.toFixed(1)}°
             </text>
           </g>
         );
       })()}
 
-      {/* SolO orbit trace */}
-      <path
-        d={orbitPath(soloOrbitPoints)}
-        fill="none"
-        stroke="#f97316"
-        strokeWidth="0.6"
-        strokeDasharray="2 3"
-        opacity="0.25"
-      />
-
-      {/* STEREO-A orbit trace */}
-      <path
-        d={orbitPath(stereoOrbitPoints)}
-        fill="none"
-        stroke="#a78bfa"
-        strokeWidth="0.6"
-        strokeDasharray="2 3"
-        opacity="0.2"
-      />
+      {/* Orbit traces */}
+      <path d={orbitPath(soloOrbit)} fill="none" stroke="#f97316" strokeWidth="0.6" strokeDasharray="2 3" opacity="0.2" />
+      <path d={orbitPath(stereoOrbit)} fill="none" stroke="#a78bfa" strokeWidth="0.6" strokeDasharray="2 3" opacity="0.18" />
 
       {/* ── Sun ── */}
-      <g>
-        <circle cx={CX} cy={CY} r={10} fill="#fbbf24" opacity="0.15" />
-        <circle cx={CX} cy={CY} r={7}  fill="#fbbf24" opacity="0.3" />
-        <circle cx={CX} cy={CY} r={5}  fill="#fde68a" />
-        <text x={CX} y={CY + 18} fill="#fbbf24" fontSize="8" textAnchor="middle" fontFamily="monospace" opacity="0.8">Sun</text>
-      </g>
+      <circle cx={CX} cy={CY} r={9}  fill="#fbbf24" opacity="0.15" />
+      <circle cx={CX} cy={CY} r={6}  fill="#fbbf24" opacity="0.3" />
+      <circle cx={CX} cy={CY} r={4}  fill="#fde68a" />
+      <text x={CX} y={CY + 16} fill="#fbbf24" fontSize="7" fontFamily="inherit" textAnchor="middle" opacity="0.9">Sun</text>
 
       {/* ── Earth ── */}
-      <g>
-        <circle cx={earthPos.sx} cy={earthPos.sy} r={6} fill="#60a5fa" opacity="0.2" />
-        <circle cx={earthPos.sx} cy={earthPos.sy} r={4} fill="#3b82f6" />
-        <text x={earthPos.sx + 8} y={earthPos.sy + 4} fill="#93c5fd" fontSize="8" fontFamily="monospace">Earth</text>
-        <text x={earthPos.sx + 8} y={earthPos.sy + 13} fill="#60a5fa" fontSize="7" fontFamily="monospace" opacity="0.7">
-          {positions.earth.r_au.toFixed(3)} AU
-        </text>
-      </g>
+      <circle cx={ep.sx} cy={ep.sy} r={5}  fill="#3b82f6" opacity="0.25" />
+      <circle cx={ep.sx} cy={ep.sy} r={3.5} fill="#3b82f6" />
+      <text x={ep.sx + 7} y={ep.sy + 4}  fill="#93c5fd" fontSize="8" fontFamily="inherit">Earth</text>
+      <text x={ep.sx + 7} y={ep.sy + 13} fill="#60a5fa"  fontSize="7" fontFamily="inherit" opacity="0.7">
+        {positions.earth.r_au.toFixed(3)} AU
+      </text>
 
       {/* ── L1 ── */}
-      {l1Pos && (
+      {l1p && (
         <g>
-          <circle cx={l1Pos.sx} cy={l1Pos.sy} r={3} fill="#34d399" opacity="0.5" />
-          <circle cx={l1Pos.sx} cy={l1Pos.sy} r={1.5} fill="#34d399" />
-          <text x={l1Pos.sx - 5} y={l1Pos.sy - 6} fill="#34d399" fontSize="7" fontFamily="monospace" textAnchor="middle" opacity="0.8">L1</text>
+          <circle cx={l1p.sx} cy={l1p.sy} r={2.5} fill="#34d399" opacity="0.5" />
+          <circle cx={l1p.sx} cy={l1p.sy} r={1.5} fill="#34d399" />
+          <text x={l1p.sx - 4} y={l1p.sy - 5} fill="#34d399" fontSize="7" fontFamily="inherit" textAnchor="middle" opacity="0.8">L1</text>
         </g>
       )}
 
       {/* ── STEREO-A ── */}
-      {stereoPos && positions.stereoA && (
+      {stp && positions.stereoA && (
         <g>
-          <circle cx={stereoPos.sx} cy={stereoPos.sy} r={5} fill="#a78bfa" opacity="0.2" />
-          <circle cx={stereoPos.sx} cy={stereoPos.sy} r={3} fill="#8b5cf6" />
-          <text x={stereoPos.sx + 7} y={stereoPos.sy + 4} fill="#c4b5fd" fontSize="8" fontFamily="monospace">STEREO-A</text>
-          <text x={stereoPos.sx + 7} y={stereoPos.sy + 13} fill="#a78bfa" fontSize="7" fontFamily="monospace" opacity="0.7">
+          <circle cx={stp.sx} cy={stp.sy} r={4}   fill="#8b5cf6" opacity="0.2" />
+          <circle cx={stp.sx} cy={stp.sy} r={3}   fill="#8b5cf6" />
+          <text x={stp.sx + 6} y={stp.sy + 4}  fill="#c4b5fd" fontSize="8" fontFamily="inherit">STEREO-A</text>
+          <text x={stp.sx + 6} y={stp.sy + 13} fill="#a78bfa" fontSize="7" fontFamily="inherit" opacity="0.7">
             {positions.stereoA.r_au.toFixed(3)} AU
           </text>
         </g>
       )}
 
       {/* ── Solar Orbiter ── */}
-      {soloPos && positions.solo && (
+      {sp && positions.solo && (
         <g>
           {isUpstream && (
-            <circle cx={soloPos.sx} cy={soloPos.sy} r={9} fill="#f97316" opacity="0.15">
-              <animate attributeName="r" values="7;11;7" dur="2s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.15;0.05;0.15" dur="2s" repeatCount="indefinite" />
+            <circle cx={sp.sx} cy={sp.sy} r={8} fill="#f97316" opacity="0.12">
+              <animate attributeName="r"       values="7;11;7"           dur="2.5s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.12;0.04;0.12"   dur="2.5s" repeatCount="indefinite" />
             </circle>
           )}
-          <circle cx={soloPos.sx} cy={soloPos.sy} r={5} fill="#f97316" opacity="0.25" />
-          <circle cx={soloPos.sx} cy={soloPos.sy} r={3.5} fill="#ea580c" />
-          {/* SolO icon cross */}
-          <line x1={soloPos.sx - 5} y1={soloPos.sy} x2={soloPos.sx + 5} y2={soloPos.sy} stroke="#f97316" strokeWidth="1" opacity="0.6" />
-          <line x1={soloPos.sx} y1={soloPos.sy - 5} x2={soloPos.sx} y2={soloPos.sy + 5} stroke="#f97316" strokeWidth="1" opacity="0.6" />
-          <text x={soloPos.sx + 9} y={soloPos.sy + 4}  fill="#fb923c" fontSize="8" fontFamily="monospace">SolO</text>
-          <text x={soloPos.sx + 9} y={soloPos.sy + 13} fill="#f97316" fontSize="7" fontFamily="monospace" opacity="0.7">
+          <circle cx={sp.sx} cy={sp.sy} r={5}   fill="#f97316" opacity="0.2" />
+          <circle cx={sp.sx} cy={sp.sy} r={3.5} fill="#ea580c" />
+          {/* Solar panel cross */}
+          <line x1={sp.sx - 5} y1={sp.sy} x2={sp.sx + 5} y2={sp.sy} stroke="#f97316" strokeWidth="1" opacity="0.55" />
+          <line x1={sp.sx} y1={sp.sy - 5} x2={sp.sx} y2={sp.sy + 5} stroke="#f97316" strokeWidth="1" opacity="0.55" />
+          <text x={sp.sx + 8} y={sp.sy + 4}  fill="#fb923c" fontSize="8" fontFamily="inherit">SolO</text>
+          <text x={sp.sx + 8} y={sp.sy + 13} fill="#f97316" fontSize="7" fontFamily="inherit" opacity="0.7">
             {positions.solo.r_au.toFixed(3)} AU
           </text>
-          <text x={soloPos.sx + 9} y={soloPos.sy + 21} fill={isUpstream ? '#fb923c' : '#6b7280'} fontSize="7" fontFamily="monospace" opacity="0.8">
-            {sepDeg !== undefined ? `${sepDeg.toFixed(1)}° sep` : ''}
-          </text>
+          {sepDeg !== undefined && (
+            <text x={sp.sx + 8} y={sp.sy + 22} fill={isUpstream ? '#fb923c' : '#6b7280'} fontSize="7" fontFamily="inherit" opacity="0.8">
+              {sepDeg.toFixed(1)}° sep
+            </text>
+          )}
         </g>
       )}
 
-      {/* North direction label */}
-      <text x={CX} y={14} fill="#3f3f46" fontSize="7" textAnchor="middle" fontFamily="monospace">Ecliptic North ↑</text>
-      <text x={SIZE - 4} y={CY + 4} fill="#3f3f46" fontSize="7" textAnchor="end" fontFamily="monospace">0°</text>
+      <text x={CX} y={12} fill="#3f3f46" fontSize="7" fontFamily="inherit" textAnchor="middle">↑ Ecliptic North</text>
     </svg>
   );
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const SoloPanel: React.FC = () => {
-  const [tab, setTab]           = useState<'map' | 'imagery'>('map');
-  const [imagery, setImagery]   = useState<ImageryData | null>(null);
-  const [position, setPosition] = useState<PositionData | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [activeChannel, setActiveChannel] = useState(0);
-  const [imgLoaded, setImgLoaded] = useState(false);
-  const [imgError, setImgError] = useState(false);
+  const [tab,           setTab]          = useState<'map' | 'imagery'>('map');
+  const [imagery,       setImagery]      = useState<ImageryData | null>(null);
+  const [position,      setPosition]     = useState<PositionData | null>(null);
+  const [loading,       setLoading]      = useState(true);
+  const [activeChannel, setActiveChannel]= useState(0);
+  const [imgLoaded,     setImgLoaded]    = useState(false);
+  const [imgError,      setImgError]     = useState(false);
+  const [lastUpdated,   setLastUpdated]  = useState<Date | null>(null);
   const mountedRef = useRef(true);
 
   const fetchAll = useCallback(async () => {
     if (!mountedRef.current) return;
-    setLoading(true);
     try {
       const [imgRes, posRes] = await Promise.allSettled([
         fetch(`${SOLO_BASE}/solo/imagery`).then(r => r.ok ? r.json() : null),
@@ -338,6 +263,7 @@ const SoloPanel: React.FC = () => {
       if (!mountedRef.current) return;
       if (imgRes.status === 'fulfilled' && imgRes.value?.ok) setImagery(imgRes.value);
       if (posRes.status === 'fulfilled' && posRes.value?.ok) setPosition(posRes.value);
+      setLastUpdated(new Date());
     } catch {}
     finally { if (mountedRef.current) setLoading(false); }
   }, []);
@@ -345,219 +271,262 @@ const SoloPanel: React.FC = () => {
   useEffect(() => {
     mountedRef.current = true;
     fetchAll();
-    const iv = setInterval(fetchAll, 15 * 60 * 1000); // refresh every 15 min
+    const iv = setInterval(fetchAll, 15 * 60 * 1000);
     return () => { mountedRef.current = false; clearInterval(iv); };
   }, [fetchAll]);
 
-  const derived  = position?.positions?.derived;
+  const derived    = position?.positions?.derived;
   const qualityKey = derived?.solo_upstream_quality ?? 'off-axis';
-  const qs = QUALITY_STYLES[qualityKey] ?? QUALITY_STYLES['off-axis'];
-
-  const channel = imagery?.channels?.[activeChannel];
+  const qs         = QUALITY_STYLES[qualityKey] ?? QUALITY_STYLES['off-axis'];
+  const channel    = imagery?.channels?.[activeChannel];
+  const isUpstream = derived?.solo_is_upstream ?? false;
 
   return (
-    <div className="h-full flex flex-col">
+    <div>
       {/* ── Header ── */}
-      <div className="flex items-start justify-between mb-3 gap-2 flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold text-white">Solar Orbiter</h2>
-          <p className="text-xs text-neutral-500 mt-0.5">ESA/NASA · Heliocentric orbit · EUI imager</p>
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-semibold text-white">Solar Orbiter (SolO)</h2>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-neutral-600">
-            {position?.fetchedAt ? new Date(position.fetchedAt).toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit' }) + ' NZT' : ''}
-          </span>
+          {lastUpdated && (
+            <span className="text-xs text-neutral-600">
+              {lastUpdated.toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit' })} NZT
+            </span>
+          )}
           <button onClick={fetchAll} className="p-1.5 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="Refresh">↻</button>
         </div>
       </div>
+      <p className="text-xs text-neutral-500 mb-4">ESA/NASA · Heliocentric orbit · EUI imager · JPL Horizons positioning</p>
 
       {/* ── Upstream status banner ── */}
-      {derived && (
-        <div className={`${qs.bg} border border-neutral-700/50 rounded-lg px-3 py-2 mb-3 flex items-start gap-2`}>
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${qs.dot} ${derived.solo_is_upstream ? 'animate-pulse' : ''}`} />
-          <div className="min-w-0">
-            <p className={`text-xs font-semibold ${qs.text}`}>{qs.label}</p>
-            <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{derived.note}</p>
-            {derived.solo_is_upstream && derived.solo_warning_lead_hours !== null && (
-              <p className="text-xs font-mono text-orange-300 mt-1">
-                ⏱ Estimated CME lead time: ~{derived.solo_warning_lead_hours}h ahead of Earth
-              </p>
+      {loading && !position ? (
+        <div className="h-14 bg-neutral-800/50 rounded-lg animate-pulse mb-4" />
+      ) : derived && (
+        <div className={`${qs.bg} border ${qs.border} rounded-lg px-4 py-3 mb-4`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${qs.dot} ${isUpstream ? 'animate-pulse' : ''}`} />
+            <span className={`text-sm font-semibold ${qs.text}`}>{qs.label}</span>
+            {isUpstream && derived.solo_warning_lead_hours !== null && (
+              <span className="px-2 py-0.5 rounded-full bg-orange-900/50 border border-orange-700/40 text-orange-300 text-xs">
+                ~{derived.solo_warning_lead_hours}h CME lead time
+              </span>
             )}
           </div>
+          <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">{derived.note}</p>
         </div>
       )}
 
       {/* ── Tab selector ── */}
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={() => setTab('map')}
-          className={`px-3 py-1 text-xs rounded transition-colors ${tab === 'map' ? 'bg-orange-700 text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
-        >
-          📍 Position Map
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <button onClick={() => setTab('map')}
+          className={`px-3 py-1 text-xs rounded transition-colors ${tab === 'map' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+          Heliocentric Map
         </button>
-        <button
-          onClick={() => setTab('imagery')}
-          className={`px-3 py-1 text-xs rounded transition-colors ${tab === 'imagery' ? 'bg-orange-700 text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
-        >
-          🌅 EUI Imagery
+        <button onClick={() => setTab('imagery')}
+          className={`px-3 py-1 text-xs rounded transition-colors ${tab === 'imagery' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
+          EUI Imagery
         </button>
       </div>
 
-      {/* ── Map tab ── */}
+      {/* ══ MAP TAB ══════════════════════════════════════════════════════════ */}
       {tab === 'map' && (
-        <div className="flex-1 flex flex-col min-h-0">
-          {loading && !position ? (
-            <div className="flex-1 bg-neutral-800/40 rounded-lg animate-pulse" />
-          ) : position ? (
-            <div className="flex-1 bg-neutral-950/60 rounded-lg border border-neutral-800 overflow-hidden relative" style={{ minHeight: 320 }}>
-              <HeliocentricMap data={position} />
+        <div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* SVG map */}
+            <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 p-3 flex items-center justify-center" style={{ minHeight: 320 }}>
+              {loading && !position ? (
+                <div className="w-full h-64 bg-neutral-800/50 rounded-lg animate-pulse" />
+              ) : position ? (
+                <div className="w-full" style={{ aspectRatio: '1 / 1', maxHeight: 420 }}>
+                  <HeliocentricMap data={position} />
+                </div>
+              ) : (
+                <p className="text-neutral-500 text-sm italic">Position data unavailable — check back after first cron run</p>
+              )}
             </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center bg-neutral-900/40 rounded-lg border border-neutral-700/50">
-              <p className="text-neutral-500 text-sm">Position data unavailable</p>
-            </div>
-          )}
 
-          {/* Position table */}
-          {position?.positions && (
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            {/* Stats panel */}
+            <div className="lg:col-span-5 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col gap-3">
+              {/* Spacecraft data rows */}
               {(['solo', 'stereoA', 'earth'] as const).map(key => {
-                const sc = position.positions[key];
-                if (!sc) return null;
+                const sc = position?.positions?.[key];
+                if (!sc) return (
+                  <div key={key} className="bg-neutral-950/70 rounded p-2.5 border border-neutral-800 animate-pulse h-16" />
+                );
                 return (
-                  <div key={key} className="bg-neutral-900/60 rounded px-2.5 py-2 border border-neutral-800">
-                    <div className="font-semibold mb-1" style={{ color: sc.color }}>{sc.name}</div>
-                    <div className="text-neutral-400 space-y-0.5">
-                      <div className="flex justify-between"><span>Distance</span><span className="text-neutral-200 font-mono">{sc.r_au} AU</span></div>
-                      <div className="flex justify-between"><span>Longitude</span><span className="text-neutral-200 font-mono">{sc.lon_deg.toFixed(1)}°</span></div>
-                      <div className="flex justify-between"><span>Latitude</span><span className="text-neutral-200 font-mono">{sc.lat_deg.toFixed(1)}°</span></div>
+                  <div key={key} className="bg-neutral-950/70 rounded p-2.5 border border-neutral-800">
+                    <div className="text-xs font-semibold mb-1.5" style={{ color: sc.color }}>{sc.name}</div>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Distance from Sun</span>
+                        <span className="text-neutral-100 font-semibold">{sc.r_au} AU</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Heliocentric lon.</span>
+                        <span className="text-neutral-100 font-semibold">{sc.lon_deg.toFixed(1)}°</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Ecliptic lat.</span>
+                        <span className="text-neutral-100 font-semibold">{sc.lat_deg.toFixed(1)}°</span>
+                      </div>
                     </div>
                   </div>
                 );
               })}
-              {derived?.stereo_earth_lon_sep_deg !== undefined && (
-                <div className="bg-neutral-900/60 rounded px-2.5 py-2 border border-neutral-800">
-                  <div className="font-semibold text-purple-400 mb-1">STEREO-A separation</div>
-                  <div className="text-neutral-400">
-                    <div className="flex justify-between"><span>From Earth</span><span className="text-neutral-200 font-mono">{derived.stereo_earth_lon_sep_deg.toFixed(1)}°</span></div>
+
+              {/* Separation summary */}
+              {derived && (
+                <div className="bg-neutral-950/70 rounded p-2.5 border border-neutral-800">
+                  <div className="text-xs font-semibold text-neutral-400 mb-1.5">Angular Separations</div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">SolO from Sun-Earth line</span>
+                      <span className={`font-semibold ${isUpstream ? 'text-orange-300' : 'text-neutral-300'}`}>
+                        {derived.solo_earth_lon_sep_deg.toFixed(1)}°
+                      </span>
+                    </div>
+                    {derived.stereo_earth_lon_sep_deg !== undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">STEREO-A from Sun-Earth line</span>
+                        <span className="text-neutral-300 font-semibold">{derived.stereo_earth_lon_sep_deg.toFixed(1)}°</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Legend */}
-          <div className="mt-2 flex gap-4 flex-wrap">
-            {[
-              { color: '#fbbf24', label: 'Sun' },
-              { color: '#60a5fa', label: 'Earth' },
-              { color: '#34d399', label: 'L1' },
-              { color: '#f97316', label: 'Solar Orbiter' },
-              { color: '#a78bfa', label: 'STEREO-A' },
-            ].map(({ color, label }) => (
-              <div key={label} className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                <span className="text-[11px] text-neutral-500">{label}</span>
+              {/* Legend */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
+                {[
+                  { color: '#fbbf24', label: 'Sun' },
+                  { color: '#3b82f6', label: 'Earth' },
+                  { color: '#34d399', label: 'L1' },
+                  { color: '#ea580c', label: 'Solar Orbiter' },
+                  { color: '#8b5cf6', label: 'STEREO-A' },
+                ].map(({ color, label }) => (
+                  <div key={label} className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-[11px] text-neutral-500">{label}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
-          <p className="text-[11px] text-neutral-600 mt-1">
-            Positions from NASA JPL Horizons · Heliocentric ecliptic J2000 · Updated every 6h
+
+          <p className="text-right text-xs text-neutral-500 mt-2">
+            Positions: NASA JPL Horizons · Heliocentric ecliptic J2000 · Updated every 6h
           </p>
         </div>
       )}
 
-      {/* ── Imagery tab ── */}
+      {/* ══ IMAGERY TAB ══════════════════════════════════════════════════════ */}
       {tab === 'imagery' && (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div>
           {/* Channel selector */}
           {imagery?.channels && imagery.channels.length > 0 && (
-            <div className="flex gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
               {imagery.channels.map((ch, i) => (
-                <button
-                  key={ch.wavelength}
+                <button key={ch.wavelength}
                   onClick={() => { setActiveChannel(i); setImgLoaded(false); setImgError(false); }}
-                  className={`px-3 py-1 text-xs rounded transition-colors ${activeChannel === i ? 'text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
-                  style={activeChannel === i ? { backgroundColor: ch.color } : {}}
-                >
+                  className={`px-3 py-1 text-xs rounded transition-colors ${activeChannel === i ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>
                   {ch.label}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Image display */}
-          <div className="flex-1 bg-black rounded-lg border border-neutral-800 overflow-hidden flex items-center justify-center relative" style={{ minHeight: 280 }}>
-            {loading && !imagery ? (
-              <div className="animate-pulse text-neutral-600 text-sm">Loading EUI imagery...</div>
-            ) : channel ? (
-              <>
-                {!imgLoaded && !imgError && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-neutral-500 text-sm">Loading image...</div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Image */}
+            <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 flex items-center justify-center overflow-hidden" style={{ minHeight: 320 }}>
+              {loading && !imagery ? (
+                <div className="w-full h-64 bg-neutral-800/50 rounded-lg animate-pulse" />
+              ) : channel ? (
+                <div className="relative w-full h-full flex items-center justify-center" style={{ minHeight: 280 }}>
+                  {!imgLoaded && !imgError && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <svg className="animate-spin h-7 w-7 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </div>
+                  )}
+                  {imgError ? (
+                    <div className="flex flex-col items-center gap-2 p-4">
+                      <p className="text-neutral-500 text-sm italic">Image unavailable from worker</p>
+                      <a href={channel.helioviewerUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-sky-400 hover:underline">View on Helioviewer ↗</a>
+                    </div>
+                  ) : (
+                    <img
+                      key={`${channel.imageId}-${activeChannel}`}
+                      src={`${SOLO_BASE}${channel.tileUrl}`}
+                      alt={`Solar Orbiter EUI ${channel.label}`}
+                      className={`w-full h-full object-contain transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+                      onLoad={() => setImgLoaded(true)}
+                      onError={() => setImgError(true)}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="p-6 text-center">
+                  <p className="text-neutral-500 text-sm italic">No EUI imagery yet</p>
+                  <p className="text-neutral-600 text-xs mt-1">Check back after the first cron run</p>
+                </div>
+              )}
+            </div>
+
+            {/* Image metadata */}
+            <div className="lg:col-span-5 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col gap-2">
+              <div className="text-xs uppercase tracking-[0.2em] text-neutral-500 mb-1">Image Details</div>
+
+              {channel ? (
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Instrument</span>
+                    <span className="text-neutral-100 font-semibold">EUI FSI · {channel.wavelength} Å</span>
                   </div>
-                )}
-                {imgError && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                    <p className="text-neutral-500 text-sm">Image unavailable</p>
-                    <a href={channel.helioviewerUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-400 hover:underline">
-                      View on Helioviewer ↗
-                    </a>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Observation time</span>
+                    <span className="text-neutral-100 font-semibold">{channel.date} UTC</span>
                   </div>
-                )}
-                <img
-                  key={`${channel.imageId}-${activeChannel}`}
-                  src={`${SOLO_BASE}${channel.tileUrl}`}
-                  alt={`Solar Orbiter EUI ${channel.label}`}
-                  className={`w-full h-full object-contain transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-                  onLoad={() => setImgLoaded(true)}
-                  onError={() => setImgError(true)}
-                />
-              </>
-            ) : (
-              <div className="flex flex-col items-center gap-2">
-                <p className="text-neutral-500 text-sm">No EUI imagery available yet</p>
-                <p className="text-neutral-600 text-xs">Check back after the first cron run</p>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Scale</span>
+                    <span className="text-neutral-100 font-semibold">{channel.scale?.toFixed(2)} arcsec/px</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Resolution</span>
+                    <span className="text-neutral-100 font-semibold">{channel.width} × {channel.height} px</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="text-neutral-500">Full resolution</span>
+                    <a href={channel.helioviewerUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-sky-400 hover:underline text-xs">Helioviewer ↗</a>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-neutral-600 text-xs italic">No image selected</p>
+              )}
+
+              {/* About EUI */}
+              <div className="mt-3 pt-3 border-t border-neutral-800">
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  The <strong className="text-neutral-400">Extreme Ultraviolet Imager (EUI)</strong> Full Sun Imager observes the entire solar disk at 174 Å (hot corona) and 304 Å (chromosphere/transition region) — wavelengths that reveal active regions, filaments, coronal loops, and eruption sites invisible in white light.
+                </p>
               </div>
-            )}
+
+              {/* Latency warning */}
+              {imagery?.latency_note && (
+                <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-900/30 border border-amber-700/40 rounded-lg mt-2">
+                  <span className="text-amber-400 flex-shrink-0 mt-0.5">⚠</span>
+                  <p className="text-xs text-amber-300/80 leading-relaxed">{imagery.latency_note}</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Image metadata */}
-          {channel && (
-            <div className="mt-3 space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Observation time</span>
-                <span className="text-neutral-200 font-mono">{channel.date} UTC</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Scale</span>
-                <span className="text-neutral-200 font-mono">{channel.scale?.toFixed(2)} arcsec/px</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Resolution</span>
-                <span className="text-neutral-200 font-mono">{channel.width} × {channel.height} px</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-neutral-500">Full resolution</span>
-                <a
-                  href={channel.helioviewerUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sky-400 hover:text-sky-300 transition-colors"
-                >
-                  View on Helioviewer ↗
-                </a>
-              </div>
-            </div>
-          )}
-
-          {imagery?.latency_note && (
-            <div className="mt-2 px-2.5 py-2 rounded bg-amber-900/20 border border-amber-800/30">
-              <p className="text-[11px] text-amber-400/80 leading-relaxed">⚠ {imagery.latency_note}</p>
-            </div>
-          )}
-          <p className="text-[11px] text-neutral-700 mt-2">
-            Imagery via ESA/NASA Helioviewer Project · EUI science data: Royal Observatory of Belgium
+          <p className="text-right text-xs text-neutral-500 mt-2">
+            Imagery via ESA/NASA Helioviewer Project · EUI data: Royal Observatory of Belgium (SIDC)
           </p>
         </div>
       )}
