@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import EPAMPanel from './EPAMPanel';
+import SatelliteImageryPanel from './SatelliteImageryPanel';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import { VisibilityForecastPanel } from './VisibilityForecastPanel';
@@ -796,6 +797,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
                                 <EPAMPanel />
+                            </div>
+
+                            <div className="col-span-12 card bg-neutral-950/80 p-4">
+                                <SatelliteImageryPanel />
                             </div>
                             
                         </main>
