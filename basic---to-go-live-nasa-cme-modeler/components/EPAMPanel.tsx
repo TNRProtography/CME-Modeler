@@ -38,7 +38,16 @@ const baseOptions = (yType: 'logarithmic'|'linear', yLabel: string): ChartOption
   },
   scales: {
     x: { type: 'time', time: { tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { color: '#71717a', maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { color: '#27272a' }, title: { display: true, text: 'NZT', color: '#52525b', font: { size: 9 } } },
-    y: { type: yType, ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6 }, grid: { color: '#27272a' }, title: { display: true, text: yLabel, color: '#71717a', font: { size: 10 } } },
+    y: { type: yType, ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6, callback: (val: number | string) => {
+          const n = Number(val);
+          if (!isFinite(n) || n <= 0) return '';
+          const exp = Math.floor(Math.log10(n));
+          const base = n / Math.pow(10, exp);
+          if (Math.abs(base - 1) < 0.01) return `1e${exp}`;
+          if (Math.abs(base - 2) < 0.05) return `2e${exp}`;
+          if (Math.abs(base - 5) < 0.1)  return `5e${exp}`;
+          return `${base.toFixed(0)}e${exp}`;
+        }, }, grid: { color: '#27272a' }, title: { display: true, text: yLabel, color: '#71717a', font: { size: 10 } } },
   },
 });
 
@@ -244,7 +253,16 @@ const EPAMPanel: React.FC = () => {
         ...baseOptions('logarithmic', 'Particle flux'),
         scales: {
           x: (baseOptions('logarithmic','') as any).scales.x,
-          y:  { type: 'logarithmic', ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6 }, grid: { color: '#27272a' }, title: { display: true, text: 'Particle flux', color: '#71717a', font: { size: 10 } } },
+          y:  { type: 'logarithmic', ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6, callback: (val: number | string) => {
+          const n = Number(val);
+          if (!isFinite(n) || n <= 0) return '';
+          const exp = Math.floor(Math.log10(n));
+          const base = n / Math.pow(10, exp);
+          if (Math.abs(base - 1) < 0.01) return `1e${exp}`;
+          if (Math.abs(base - 2) < 0.05) return `2e${exp}`;
+          if (Math.abs(base - 5) < 0.1)  return `5e${exp}`;
+          return `${base.toFixed(0)}e${exp}`;
+        }, }, grid: { color: '#27272a' }, title: { display: true, text: 'Particle flux', color: '#71717a', font: { size: 10 } } },
           y2: { type: 'linear', position: 'right', ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6 }, grid: { drawOnChartArea: false }, title: { display: true, text: 'km/s · nT', color: '#71717a', font: { size: 10 } } },
         },
       };
