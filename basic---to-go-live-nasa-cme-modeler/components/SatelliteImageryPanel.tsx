@@ -345,4 +345,4 @@ const SatelliteImageryPanel: React.FC = () => {
 };
 
 export default SatelliteImageryPanel;
-// --- END OF FILE src/components/SatelliteImageryPanel.tsx ---
+// --- END OF FILE src/components/SatelliteImageryPanel.tsx --- 
