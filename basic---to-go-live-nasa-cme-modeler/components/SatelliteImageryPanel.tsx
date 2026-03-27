@@ -322,6 +322,13 @@ const SatelliteImageryPanel: React.FC = () => {
         )
       )}
 
+      {/* Daytime warning */}
+      {imgSrc && !error && !loading && (
+        <p className="text-xs text-neutral-600 mt-2 leading-relaxed">
+          ⚠ Blank or white image? The satellite crosses NZ around <strong className="text-neutral-500">1:30 pm local time</strong> — DNB only captures nighttime light. Try yesterday's date, or a date with known aurora activity.
+        </p>
+      )}
+
       {/* Legend */}
       <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-neutral-600">
         <span><span className="inline-block w-2 h-2 rounded-full bg-white mr-1.5 align-middle" />Aurora / moonlit cloud</span>
