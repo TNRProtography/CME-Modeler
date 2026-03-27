@@ -45,12 +45,12 @@ const REGIONS: RegionDef[] = [
   },
 ];
 
-type LayerKey = 'snpp' | 'noaa20' | 'noaa21';
+type LayerKey = 'snpp' | 'noaa20';
 
 const LAYERS: { key: LayerKey; label: string }[] = [
   { key: 'snpp',   label: 'SuomiNPP' },
   { key: 'noaa20', label: 'NOAA-20'  },
-  { key: 'noaa21', label: 'NOAA-21'  },
+
 ];
 
 function locationToBbox(lat: number, lon: number, radiusDeg = 3.6): string {
@@ -345,4 +345,4 @@ const SatelliteImageryPanel: React.FC = () => {
 };
 
 export default SatelliteImageryPanel;
-// --- END OF FILE src/components/SatelliteImageryPanel.tsx --- 
+// --- END OF FILE src/components/SatelliteImageryPanel.tsx ---
