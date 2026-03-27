@@ -48,8 +48,8 @@ const REGIONS: RegionDef[] = [
 type LayerKey = 'snpp' | 'noaa20';
 
 const LAYERS: { key: LayerKey; label: string }[] = [
-  { key: 'snpp',   label: 'SuomiNPP' },
   { key: 'noaa20', label: 'NOAA-20'  },
+  { key: 'snpp',   label: 'SuomiNPP (pre-2024)' },
 
 ];
 
@@ -68,7 +68,7 @@ function yesterdayUTC(): string {
 // ── Component ─────────────────────────────────────────────────────────────────
 const SatelliteImageryPanel: React.FC = () => {
   const [activeRegion, setActiveRegion] = useState<RegionKey>('full');
-  const [activeLayer,  setActiveLayer]  = useState<LayerKey>('snpp');
+  const [activeLayer,  setActiveLayer]  = useState<LayerKey>('noaa20');
   const [date,         setDate]         = useState<string>(yesterdayUTC());
 
   const [imgSrc,   setImgSrc]   = useState<string>('');
