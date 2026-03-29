@@ -565,7 +565,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    // Initial position is overridden below after Earth's position is computed
     camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5);
     cameraRef.current = camera; onCameraReady(camera);
 
@@ -832,29 +831,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
-    // ── Initial camera: Earth in front, Sun in background ─────────────────
-    // Compute Earth's scene position from the same Keplerian longitude used
-    // to place the mesh — this avoids getWorldPosition() before the first
-    // render (world matrix not yet updated) which would return (0,0,0) for
-    // Earth, causing normalize() to produce NaN and breaking the camera.
-    const initEarthLon = computeEclipticLongitude('EARTH', initTimeMs);
-    const initEarthX   = PLANET_DATA_MAP.EARTH.radius * Math.sin(initEarthLon);
-    const initEarthZ   = PLANET_DATA_MAP.EARTH.radius * Math.cos(initEarthLon);
-    // awayFromSun = unit vector pointing from origin (Sun) toward Earth
-    const initDist = Math.sqrt(initEarthX * initEarthX + initEarthZ * initEarthZ);
-    if (initDist > 0) {
-      const awayX = initEarthX / initDist;
-      const awayZ = initEarthZ / initDist;
-      // Place camera 0.28 AU behind Earth, slightly elevated, looking toward Sun
-      camera.position.set(
-        initEarthX + awayX * SCENE_SCALE * 0.28,
-        SCENE_SCALE * 0.06,
-        initEarthZ + awayZ * SCENE_SCALE * 0.28
-      );
-      controls.target.set(0, 0, 0); // look at Sun / origin
-      controls.update();
-    }
-
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -903,12 +879,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // CH longitudes from SUVI are Earth-facing at detection time.
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
-      // Compute earthAngle directly from simulationTimeMs (not from mesh position,
-      // which always lags one frame behind). This keeps CH/HSS phase perfectly
-      // in sync with the timeline scrubber at all times — including instant jumps.
-      const earthAngle = computeEclipticLongitude('EARTH', simulationTimeMs);
+      // Single authoritative Earth longitude for this frame — used for both
+      // CH/HSS phase and Earth mesh position below. One declaration avoids
+      // Terser CSE creating a TDZ by merging two identical RHS expressions.
+      const earthLonNow = computeEclipticLongitude('EARTH', simulationTimeMs);
       const chHssPhaseFromDetection = chDetectedAtMs != null
-        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
+        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthLonNow - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
         : null;
       const chHssPhaseFromFallbackAnchor =
         CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD +
@@ -937,12 +913,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh;
         // ── Real heliocentric orbital position (ecliptic longitude) ────────
-        const earthLon = computeEclipticLongitude('EARTH', simulationTimeMs);
-        const earthData = PLANET_DATA_MAP.EARTH;
+        // Reuse earthLonNow computed above — same simulationTimeMs, avoids
+        // a second const that Terser could merge into a TDZ-causing pattern.
         e.position.set(
-          earthData.radius * Math.sin(earthLon),
+          earthData.radius * Math.sin(earthLonNow),
           0,
-          earthData.radius * Math.cos(earthLon)
+          earthData.radius * Math.cos(earthLonNow)
         );
         // ── Real axial tilt (fixed — the tilt is baked into rotation.z at init)
         // ── Real sidereal rotation (GMST drives rotation.y) ─────────────────
