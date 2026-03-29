@@ -565,7 +565,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5); // Start at angled side view showing full inner solar system
+    // Initial position will be overridden after Earth is placed (see post-init camera block below)
+    camera.position.set(SCENE_SCALE * 4, SCENE_SCALE * 0.5, SCENE_SCALE * 0);
     cameraRef.current = camera; onCameraReady(camera);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -676,14 +677,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    {
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
-      }
-    }
+    // Use authoritative Keplerian longitude for anchor — same source as the
+    // per-frame earthAngle — so there is zero phase error at scene open.
+    chHssAnchorEarthAngleRef.current = computeEclipticLongitude('EARTH', initTimeMs);
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
     // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
@@ -836,6 +832,29 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
+    // ── Initial camera: Earth in front, Sun in background ─────────────────
+    // Position the camera behind Earth (along the Earth-Sun line, on the far
+    // side) so the user sees Earth in the foreground with the Sun behind it.
+    {
+      const earthMesh = celestialBodiesRef.current.EARTH?.mesh;
+      const sunMesh2  = celestialBodiesRef.current.SUN?.mesh;
+      if (earthMesh && sunMesh2) {
+        const earthPos = new THREE.Vector3();
+        const sunPos   = new THREE.Vector3();
+        earthMesh.getWorldPosition(earthPos);
+        sunMesh2.getWorldPosition(sunPos);
+        // Direction from Sun → Earth
+        const awayFromSun = earthPos.clone().sub(sunPos).normalize();
+        // Place camera 0.24 AU behind Earth (away from Sun), slightly elevated
+        const initCamPos = earthPos.clone()
+          .addScaledVector(awayFromSun, SCENE_SCALE * 0.24)
+          .add(new THREE.Vector3(0, SCENE_SCALE * 0.04, 0));
+        camera.position.copy(initCamPos);
+        controls.target.copy(sunPos);
+        controls.update();
+      }
+    }
+
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -884,13 +903,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // CH longitudes from SUVI are Earth-facing at detection time.
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
-      let earthAngle = 0;
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        earthAngle = Math.atan2(earthPos.x, earthPos.z);
-      }
+      // Compute earthAngle directly from simulationTimeMs (not from mesh position,
+      // which always lags one frame behind). This keeps CH/HSS phase perfectly
+      // in sync with the timeline scrubber at all times — including instant jumps.
+      const earthAngle = computeEclipticLongitude('EARTH', simulationTimeMs);
       const chHssPhaseFromDetection = chDetectedAtMs != null
         ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
         : null;
@@ -1192,13 +1208,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
+    // Compute anchor from the current simulation time, not the mesh position.
+    // This keeps the CH/HSS phase consistent with the authoritative earthAngle
+    // used in the animation loop, even on first render or after a timeline jump.
     {
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
-      }
+      const nowMs = (animPropsRef.current.timelineActive && animPropsRef.current.timelineMaxDate > animPropsRef.current.timelineMinDate)
+        ? animPropsRef.current.timelineMinDate + (animPropsRef.current.timelineMaxDate - animPropsRef.current.timelineMinDate) * (timelineValueRef.current / 1000)
+        : Date.now();
+      chHssAnchorEarthAngleRef.current = computeEclipticLongitude('EARTH', nowMs);
     }
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {

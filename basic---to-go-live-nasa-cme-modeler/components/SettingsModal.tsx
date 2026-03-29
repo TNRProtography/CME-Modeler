@@ -371,7 +371,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setDiagRunning(true);
     setDiagResults([]);
     const results: { step: string; status: 'pass' | 'fail' | 'warn' | 'running'; detail: string }[] = [];
-    const push = (step: string, status: 'pass'|'fail'|'warn', detail: string) => {
+    const push = (step: string, status: 'pass'|'fail'|'warn'|'running', detail: string) => {
       results.push({ step, status, detail });
       setDiagResults([...results]);
     };
