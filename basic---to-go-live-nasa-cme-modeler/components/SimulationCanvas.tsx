@@ -565,8 +565,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    // Initial position will be overridden after Earth is placed (see post-init camera block below)
-    camera.position.set(SCENE_SCALE * 4, SCENE_SCALE * 0.5, SCENE_SCALE * 0);
+    // Initial position is overridden below after Earth's position is computed
+    camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5);
     cameraRef.current = camera; onCameraReady(camera);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -833,26 +833,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
     // ── Initial camera: Earth in front, Sun in background ─────────────────
-    // Position the camera behind Earth (along the Earth-Sun line, on the far
-    // side) so the user sees Earth in the foreground with the Sun behind it.
-    {
-      const earthMesh = celestialBodiesRef.current.EARTH?.mesh;
-      const sunMesh2  = celestialBodiesRef.current.SUN?.mesh;
-      if (earthMesh && sunMesh2) {
-        const earthPos = new THREE.Vector3();
-        const sunPos   = new THREE.Vector3();
-        earthMesh.getWorldPosition(earthPos);
-        sunMesh2.getWorldPosition(sunPos);
-        // Direction from Sun → Earth
-        const awayFromSun = earthPos.clone().sub(sunPos).normalize();
-        // Place camera 0.24 AU behind Earth (away from Sun), slightly elevated
-        const initCamPos = earthPos.clone()
-          .addScaledVector(awayFromSun, SCENE_SCALE * 0.24)
-          .add(new THREE.Vector3(0, SCENE_SCALE * 0.04, 0));
-        camera.position.copy(initCamPos);
-        controls.target.copy(sunPos);
-        controls.update();
-      }
+    // Compute Earth's scene position from the same Keplerian longitude used
+    // to place the mesh — this avoids getWorldPosition() before the first
+    // render (world matrix not yet updated) which would return (0,0,0) for
+    // Earth, causing normalize() to produce NaN and breaking the camera.
+    const initEarthLon = computeEclipticLongitude('EARTH', initTimeMs);
+    const initEarthX   = PLANET_DATA_MAP.EARTH.radius * Math.sin(initEarthLon);
+    const initEarthZ   = PLANET_DATA_MAP.EARTH.radius * Math.cos(initEarthLon);
+    // awayFromSun = unit vector pointing from origin (Sun) toward Earth
+    const initDist = Math.sqrt(initEarthX * initEarthX + initEarthZ * initEarthZ);
+    if (initDist > 0) {
+      const awayX = initEarthX / initDist;
+      const awayZ = initEarthZ / initDist;
+      // Place camera 0.28 AU behind Earth, slightly elevated, looking toward Sun
+      camera.position.set(
+        initEarthX + awayX * SCENE_SCALE * 0.28,
+        SCENE_SCALE * 0.06,
+        initEarthZ + awayZ * SCENE_SCALE * 0.28
+      );
+      controls.target.set(0, 0, 0); // look at Sun / origin
+      controls.update();
     }
 
     let animationFrameId: number;
