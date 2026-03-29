@@ -916,9 +916,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Reuse earthLonNow computed above — same simulationTimeMs, avoids
         // a second const that Terser could merge into a TDZ-causing pattern.
         e.position.set(
-          earthData.radius * Math.sin(earthLonNow),
+          PLANET_DATA_MAP.EARTH.radius * Math.sin(earthLonNow),
           0,
-          earthData.radius * Math.cos(earthLonNow)
+          PLANET_DATA_MAP.EARTH.radius * Math.cos(earthLonNow)
         );
         // ── Real axial tilt (fixed — the tilt is baked into rotation.z at init)
         // ── Real sidereal rotation (GMST drives rotation.y) ─────────────────
