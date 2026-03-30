@@ -550,19 +550,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.position.copy(dir.clone().multiplyScalar(sunRadius + tailBackDist));
         tailMesh.quaternion.copy(cmeObject.quaternion);
         // Scale: Y stretches along the propagation direction,
-        // XZ matches the full width of the CME front
-        tailMesh.scale.set(sXZ, tailLength, sXZ);
+        // XZ 1.2× the front width so the tail spans the full croissant arc
+        const tailW = sXZ * 1.2;
+        tailMesh.scale.set(tailW, tailLength, tailW);
       }
     }
 
-    // ── COLOUR ─────────────────────────────────────────────────────────────
-    // Use the INITIAL eruption speed for coloring so each CME always matches
-    // the Speed Guide key.  (.copy modifies the existing THREE.Color in-place
-    // so the renderer picks up the change in r128.)
+    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
+    // As the CME decelerates via drag, colour shifts through the speed key.
+    // .copy() modifies the existing THREE.Color in-place so r128 picks it up.
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
-      const frontColor = getCmeCoreColor(cme.speed);
-      cmeObject.material.color.copy(frontColor);
-      if (tailMesh?.material) tailMesh.material.color.copy(frontColor);
+      const engine = propagationEngineRef.current;
+      let liveSpeed: number;
+      if (engine) {
+        liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
+      } else {
+        const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
+        const w = 380, gamma = 0.5e-7, dv = u - w;
+        liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
+      }
+      const liveColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
+      cmeObject.material.color.copy(liveColor);
+      if (tailMesh?.material) tailMesh.material.color.copy(liveColor);
     }
   }, []);
 
