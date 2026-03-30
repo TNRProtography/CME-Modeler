@@ -880,9 +880,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
       // Single authoritative Earth longitude for this frame — used for both
-      // CH/HSS phase and Earth mesh position below. One declaration avoids
-      // Terser CSE creating a TDZ by merging two identical RHS expressions.
-      const earthLonNow = computeEclipticLongitude('EARTH', simulationTimeMs);
+      // CH/HSS phase and Earth mesh position below. Using `let` (not `const`)
+      // prevents Terser's CSE from hoisting this into a TDZ with other
+      // identical const expressions elsewhere in the module.
+      // eslint-disable-next-line prefer-const
+      let earthLonNow = computeEclipticLongitude('EARTH', simulationTimeMs);
       const chHssPhaseFromDetection = chDetectedAtMs != null
         ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthLonNow - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
         : null;
