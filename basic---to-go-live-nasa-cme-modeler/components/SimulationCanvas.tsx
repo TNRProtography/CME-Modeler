@@ -556,24 +556,33 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     }
 
-    // ── DISTANCE-BASED COLOUR ──────────────────────────────────────────────
-    // Real drag decelerates everything to ~380 km/s long before we render,
-    // making all CMEs yellow.  Instead, map colour to DISTANCE from the Sun:
-    //   • At the Sun surface  → full eruption-speed colour (purple/red/orange)
-    //   • At ~1.5 AU outward  → partially decelerated (shifts toward next tier)
-    // The deceleration is capped at 55% so fast CMEs never collapse to yellow.
-    // The tail is coloured slightly more decelerated than the front.
+    // ── DISTANCE-BASED COLOUR TRANSITION ────────────────────────────────────
+    // The CME starts at its eruption-speed colour near the Sun and gradually
+    // shifts through lower speed tiers as it propagates outward.
+    //
+    // Floor speed scales with eruption speed (faster CMEs settle faster):
+    //   300 km/s  → floor 300    (stays grey)
+    //   500 km/s  → floor ~390   (yellow → grey-ish)
+    //   1000 km/s → floor ~500   (red → orange → yellow)
+    //   1800 km/s → floor ~680   (purple → red → orange)
+    //   2500 km/s → floor ~800   (pink → purple → red → orange)
+    //
+    // By ~1 AU the front reaches its floor colour; the tail is further
+    // along the deceleration curve so shows the intermediate tiers.
     if (cmeObject.material) {
       const earthDist = PLANET_DATA_MAP.EARTH.radius;
-      const distFrac  = Math.min(1, dist / (earthDist * 1.5));
-      const ambientW  = 380;
-      // Front: decelerate up to 55% of the way toward ambient by 1.5 AU
-      const frontVisualSpeed = cme.speed + (ambientW - cme.speed) * distFrac * 0.55;
+      // 0 at Sun → 1 at Earth orbit
+      const distFrac = Math.min(1, dist / earthDist);
+      // Floor speed: linear map from initial 300→2500 to floor 300→800
+      const floorSpeed = 300 + (Math.min(cme.speed, 2500) - 300) / (2500 - 300) * 500;
+      // Front lerps from initial speed → floor speed over Sun→Earth distance
+      const frontVisualSpeed = cme.speed + (floorSpeed - cme.speed) * distFrac;
       const frontColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, frontVisualSpeed));
       cmeObject.material.color.copy(frontColor);
       if (tailMesh?.material) {
-        // Tail: decelerate a bit more (75%) so you can see the gradient
-        const tailVisualSpeed = cme.speed + (ambientW - cme.speed) * Math.min(1, distFrac * 1.35) * 0.75;
+        // Tail is further decelerated — 40% ahead of the front on the curve
+        const tailFrac = Math.min(1, distFrac + 0.4);
+        const tailVisualSpeed = cme.speed + (floorSpeed - cme.speed) * tailFrac;
         const tailColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, tailVisualSpeed));
         tailMesh.material.color.copy(tailColor);
       }
