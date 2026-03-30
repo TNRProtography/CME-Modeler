@@ -556,22 +556,27 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     }
 
-    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
-    // As the CME decelerates via drag, colour shifts through the speed key.
-    // .copy() modifies the existing THREE.Color in-place so r128 picks it up.
-    if (timeSinceEventSeconds !== undefined && cmeObject.material) {
-      const engine = propagationEngineRef.current;
-      let liveSpeed: number;
-      if (engine) {
-        liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
-      } else {
-        const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-        const w = 380, gamma = 0.5e-7, dv = u - w;
-        liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
+    // ── DISTANCE-BASED COLOUR ──────────────────────────────────────────────
+    // Real drag decelerates everything to ~380 km/s long before we render,
+    // making all CMEs yellow.  Instead, map colour to DISTANCE from the Sun:
+    //   • At the Sun surface  → full eruption-speed colour (purple/red/orange)
+    //   • At ~1.5 AU outward  → partially decelerated (shifts toward next tier)
+    // The deceleration is capped at 55% so fast CMEs never collapse to yellow.
+    // The tail is coloured slightly more decelerated than the front.
+    if (cmeObject.material) {
+      const earthDist = PLANET_DATA_MAP.EARTH.radius;
+      const distFrac  = Math.min(1, dist / (earthDist * 1.5));
+      const ambientW  = 380;
+      // Front: decelerate up to 55% of the way toward ambient by 1.5 AU
+      const frontVisualSpeed = cme.speed + (ambientW - cme.speed) * distFrac * 0.55;
+      const frontColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, frontVisualSpeed));
+      cmeObject.material.color.copy(frontColor);
+      if (tailMesh?.material) {
+        // Tail: decelerate a bit more (75%) so you can see the gradient
+        const tailVisualSpeed = cme.speed + (ambientW - cme.speed) * Math.min(1, distFrac * 1.35) * 0.75;
+        const tailColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, tailVisualSpeed));
+        tailMesh.material.color.copy(tailColor);
       }
-      const liveColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
-      cmeObject.material.color.copy(liveColor);
-      if (tailMesh?.material) tailMesh.material.color.copy(liveColor);
     }
   }, []);
 
