@@ -360,12 +360,12 @@ const App: React.FC = () => {
 
   const rerunHssStatusText = useMemo(() => {
     if (!rerunHssInteraction) return '';
-    if (!currentlyModeledCMEId) return 'Select one CME to run CME↔HSS interaction physics.';
-    if (chDetectionStatus === 'loading' || rerunAwaitingHssData) return 'Loading SUVI coronal holes and rebuilding CME↔HSS coupling…';
-    if (chDetectionStatus === 'detected') return 'CME↔HSS interaction model active (DBM + CH-driven HSS).';
-    if (chDetectionStatus === 'empty') return 'No coronal hole detected in latest SUVI frame; running with ambient wind only.';
-    if (chDetectionStatus === 'error') return 'SUVI feed retrying — using last available HSS state.';
-    return 'Preparing HSS interaction run…';
+    if (!currentlyModeledCMEId) return 'Select a CME to activate Physics Model.';
+    if (chDetectionStatus === 'loading' || rerunAwaitingHssData) return 'Loading SUVI coronal holes and building heliospheric interaction model…';
+    if (chDetectionStatus === 'detected') return 'Physics Model active — CME–CME collisions + CME–HSS drag (Vršnak DBM).';
+    if (chDetectionStatus === 'empty') return 'No coronal holes detected — running CME–CME physics with ambient wind only.';
+    if (chDetectionStatus === 'error') return 'SUVI feed retrying — using last available heliospheric state.';
+    return 'Preparing Physics Model…';
   }, [rerunHssInteraction, currentlyModeledCMEId, chDetectionStatus, rerunAwaitingHssData]);
 
   const rerunHssBusy = rerunHssInteraction && (chDetectionStatus === 'loading' || rerunAwaitingHssData);
@@ -970,12 +970,18 @@ const App: React.FC = () => {
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
   const cmesToRender = useMemo(() => {
+    // In Physics Model mode, render ALL CMEs so CME–CME interactions are visible.
+    // The selected CME remains the "primary" (simulation clock is anchored to it)
+    // but other CMEs propagate at their real-time positions.
+    if (currentlyModeledCMEId && rerunHssInteraction) {
+      return filteredCmes;
+    }
     if (currentlyModeledCMEId) {
       const singleCME = cmeData.find(c => c.id === currentlyModeledCMEId);
       return singleCME ? [singleCME] : [];
     }
     return filteredCmes;
-  }, [currentlyModeledCMEId, cmeData, filteredCmes]);
+  }, [currentlyModeledCMEId, cmeData, filteredCmes, rerunHssInteraction]);
 
   const shouldShowTimelineControls = activePage === 'modeler';
 

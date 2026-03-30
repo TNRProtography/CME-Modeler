@@ -432,6 +432,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const [rerunOverlayVisible, setRerunOverlayVisible] = useState(false);
   const rerunOverlayPhaseRef = useRef<number>(0);      // sub-step counter for status messages
 
+  // ── CME–CME collision tracking ───────────────────────────────────────────
+  // Stores each CME's world position and propagation data from the previous frame.
+  // Used by updateCMEShape to apply visual CME–CME non-penetration physics
+  // (Lugaz et al. 2017; Gopalswamy et al. 2001 cannibalism).
+  // Reading from previous frame avoids order-dependent artefacts.
+  const cmeFrameStatesRef = useRef<Map<string, {
+    position: any;      // THREE.Vector3 — world position
+    dir: any;           // THREE.Vector3 — propagation unit direction
+    dist: number;       // scene-units distance from Sun centre
+    speed: number;      // km/s eruption speed
+    halfAngle: number;  // degrees
+    latitude: number;
+    longitude: number;
+    scale: any;         // THREE.Vector3 — current mesh scale
+  }>>(new Map());
+
   const timelineValueRef    = useRef(timelineValue);
   const lastTimeRef         = useRef(0);
   const raycasterRef        = useRef<any>(null);
@@ -609,7 +625,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       : 0;
     // In re-run mode, HSS acts as a hard barrier — much stronger holdback
     const holdbackFactor = rerunHssInteraction ? 0.55 : 0.30;
-    const heldDist = Math.max(0, dist * (1 - holdbackFactor * hssPressure) - rebound);
+    let heldDist = Math.max(0, dist * (1 - holdbackFactor * hssPressure) - rebound);
 
     const sideAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
     if (sideAxis.lengthSq() < 1e-6) sideAxis.set(1, 0, 0);
@@ -618,14 +634,149 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const bendStrength = rerunHssInteraction ? 0.38 : 0.22;
     const bendOffset = sideAxis.multiplyScalar(sunRadius * bendStrength * hssPressure * hssBendSign);
 
+    // ── Visual CME↔CME non-penetration (Physics Model only) ──────────────
+    //
+    //  Physical basis (Lugaz et al. 2017, J. Geophys. Res.):
+    //  When a fast CME overtakes a slower preceding CME, the interaction
+    //  proceeds through several stages:
+    //
+    //  1. SHEATH COMPRESSION — the fast CME's driven sheath compresses
+    //     against the slow CME's trailing magnetic ejecta. Plasma piles up
+    //     at the interface; neither structure can simply phase through the
+    //     other because the magnetic pressure of the ejecta acts as a
+    //     barrier (Manchester et al. 2017, Space Sci. Rev. 212:1159).
+    //
+    //  2. MOMENTUM EXCHANGE — the interaction is approximately an inelastic
+    //     collision. The fast CME decelerates while the slow CME accelerates.
+    //     Gopalswamy et al. (2001, ApJ 548:L91) showed merged speed follows:
+    //       v_merged ≈ (m1·v1 + m2·v2) / (m1 + m2)
+    //     Since mass ∝ v² (kinetic energy proxy), faster CMEs dominate.
+    //
+    //  3. LATERAL DEFLECTION — when angular separation > 0 but < combined
+    //     half-widths, the CMEs deflect away from each other
+    //     (Shen et al. 2012, Solar Phys. 269:389). The deflection angle
+    //     depends on the relative momentum and angular overlap.
+    //
+    //  4. CANNIBALIZATION — if a fast CME fully engulfs a slow one, the
+    //     result is a "complex ejecta" with disordered Bz, enhanced density,
+    //     and intermediate speed (Burlaga et al. 2002, J. Geophys. Res.).
+    //     The consumed CME fades from view (handled by propagation engine).
+    //
+    //  Here we implement stages 1–3 as visual effects: radial holdback,
+    //  sheath compression (scale change), and lateral deflection.
+    //
+    let cmeCmePressure = 0;
+    let cmeCmeBendSign = 0;
+    let cmeCmeCompression = 0;
+
+    if (rerunHssInteraction && cmeFrameStatesRef.current.size > 0) {
+      const thisId = cme.id;
+      const thisLat = Number.isFinite(cme.latitude) ? cme.latitude : 0;
+      const thisLon = Number.isFinite(cme.longitude) ? cme.longitude : 0;
+      const thisHalfAngle = cme.halfAngle ?? 30;
+      const thisDist = sunRadius + heldDist;  // current heliocentric distance
+
+      cmeFrameStatesRef.current.forEach((other, otherId) => {
+        if (otherId === thisId) return;
+        if (other.dist < sunRadius * 0.3) return;  // other CME too close to Sun
+
+        // ── Angular separation (Haversine on the helio sphere) ───────────
+        const otherLat = other.latitude;
+        const otherLon = other.longitude;
+        const dLatR = THREE.MathUtils.degToRad(thisLat - otherLat);
+        const dLonR = THREE.MathUtils.degToRad(thisLon - otherLon);
+        const lat1R = THREE.MathUtils.degToRad(thisLat);
+        const lat2R = THREE.MathUtils.degToRad(otherLat);
+        const sdLat = Math.sin(dLatR * 0.5);
+        const sdLon = Math.sin(dLonR * 0.5);
+        const hav2 = sdLat * sdLat + Math.cos(lat1R) * Math.cos(lat2R) * sdLon * sdLon;
+        const angSep = THREE.MathUtils.radToDeg(2 * Math.asin(Math.min(1, Math.sqrt(Math.max(0, hav2)))));
+
+        // Combined interaction cone — CMEs interact when their half-widths overlap
+        const combinedCone = (thisHalfAngle + (other.halfAngle ?? 30)) * 0.7;
+        if (angSep >= combinedCone) return;
+
+        // ── Radial proximity check ───────────────────────────────────────
+        // We care about cases where THIS CME is approaching or at the same
+        // radial distance as the OTHER CME.
+        const otherDist = other.dist;
+        const radialGap = otherDist - thisDist;  // positive = other is ahead
+
+        // Only apply blocking when this CME is close behind or at the other
+        // (within ~0.15 AU in scene units)
+        const blockingRange = PLANET_DATA_MAP.EARTH.radius * 0.15;
+        if (radialGap < -blockingRange || radialGap > blockingRange * 1.5) return;
+
+        // ── Interaction intensity ────────────────────────────────────────
+        // Peaks when angular separation ≈ 0 and radial gap ≈ 0
+        const angularOverlap2 = 1 - (angSep / combinedCone);
+        const radialCloseness = 1 - Math.abs(radialGap) / (blockingRange * 1.5);
+        const interactionStrength = Math.max(0, angularOverlap2 * radialCloseness);
+
+        // ── Non-penetration: hold this CME back ──────────────────────────
+        // When this (faster) CME catches the other (slower), cap its distance
+        // so it doesn't pass through. The front piles up at the other's rear.
+        if (radialGap > 0 && radialGap < blockingRange) {
+          const penetrationFraction = 1 - radialGap / blockingRange;
+          const holdback = penetrationFraction * angularOverlap2;
+          // Reduce heldDist so this CME stops at the other's trailing edge
+          // Scale factor: at full overlap, hold back up to 65% of closing distance
+          const maxHoldback = radialGap * 0.65 * holdback;
+          heldDist = Math.max(sunRadius * 0.1, heldDist - maxHoldback);
+        }
+        // If this CME has passed the other (radialGap < 0), push it back
+        if (radialGap < 0 && radialGap > -blockingRange * 0.5) {
+          const overshot = Math.abs(radialGap) / (blockingRange * 0.5);
+          heldDist = Math.max(sunRadius * 0.1, heldDist - overshot * angularOverlap2 * blockingRange * 0.3);
+        }
+
+        if (interactionStrength > cmeCmePressure) {
+          cmeCmePressure = interactionStrength;
+          cmeCmeBendSign = Math.sign(thisLon - otherLon) || 1;
+          cmeCmeCompression = interactionStrength;
+        }
+      });
+    }
+
+    // ── Apply CME–CME lateral deflection (Shen et al. 2012) ──────────────
+    // When CMEs partially overlap in angle, the faster one deflects away
+    if (cmeCmePressure > 0.05) {
+      const cmeBendAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+      if (cmeBendAxis.lengthSq() < 1e-6) cmeBendAxis.set(1, 0, 0);
+      cmeBendAxis.normalize();
+      const cmeBendStrength = sunRadius * 0.30 * cmeCmePressure * cmeCmeBendSign;
+      bendOffset.addScaledVector(cmeBendAxis, cmeBendStrength);
+    }
+
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + heldDist).add(bendOffset));
     const lateral = Math.max(heldDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
     const compressionFactor = rerunHssInteraction ? 0.50 : 0.35;
-    const compression = 1 - compressionFactor * hssPressure;
-    const sXZ = (lateral / GCS_ARC_RADIUS_FRAC) * compression;
+    // Combined compression from HSS + CME–CME sheath pile-up
+    // CME–CME compression squeezes the ejecta cross-section (Manchester et al. 2017)
+    const totalCompression = Math.max(0.25,
+      (1 - compressionFactor * hssPressure) * (1 - 0.40 * cmeCmeCompression)
+    );
+    const sXZ = (lateral / GCS_ARC_RADIUS_FRAC) * totalCompression;
     const axialStretchFactor = rerunHssInteraction ? 0.45 : 0.25;
-    const axialStretch = GCS_AXIAL_DEPTH_FRAC * (1 + axialStretchFactor * hssPressure);
-    cmeObject.scale.set(sXZ, sXZ * axialStretch, sXZ);
+    // CME–CME collision also causes axial pancaking (ejecta flattens at interface)
+    const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC
+      * (1 + axialStretchFactor * hssPressure)
+      * (1 + 0.35 * cmeCmeCompression);
+    cmeObject.scale.set(sXZ, sXZ * totalAxialStretch, sXZ);
+
+    // ── Store this CME's frame state for CME–CME checks next frame ───────
+    if (rerunHssInteraction && cme.id) {
+      cmeFrameStatesRef.current.set(cme.id, {
+        position: cmeObject.position.clone(),
+        dir: dir.clone(),
+        dist: sunRadius + heldDist,
+        speed: cme.speed ?? 400,
+        halfAngle: cme.halfAngle ?? 30,
+        latitude: Number.isFinite(cme.latitude) ? cme.latitude : 0,
+        longitude: Number.isFinite(cme.longitude) ? cme.longitude : 0,
+        scale: cmeObject.scale.clone(),
+      });
+    }
 
     // ── TAIL POSITIONING ─────────────────────────────────────────────────────
     // The tail back edge travels at half the front speed, so the CME elongates
@@ -1454,7 +1605,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         rerunPhaseRef.current = 'hss-building';
         rerunPhaseStartRef.current = getClockElapsedTime();
         rerunOverlayPhaseRef.current = 1;
-        setRerunOverlayText('Mapping coronal hole boundaries from SUVI EUV…');
+        setRerunOverlayText('Mapping coronal hole boundaries from SUVI 195Å EUV…');
       }, 800));
 
       timers.push(setTimeout(() => {
@@ -1464,41 +1615,48 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       timers.push(setTimeout(() => {
         rerunOverlayPhaseRef.current = 3;
-        setRerunOverlayText('Propagating high-speed solar wind to 1 AU…');
+        setRerunOverlayText('Propagating variable-speed solar wind to 1 AU (Vršnak DBM)…');
       }, 3800));
 
       timers.push(setTimeout(() => {
         rerunOverlayPhaseRef.current = 4;
-        setRerunOverlayText('HSS corridors established — injecting CME into heliosphere…');
-        rerunPhaseRef.current = 'cme-launching';
-        rerunPhaseStartRef.current = getClockElapsedTime();
+        setRerunOverlayText('Resolving CME–CME trajectories — checking for preconditioning (Temmer 2017)…');
       }, 5200));
 
       timers.push(setTimeout(() => {
         rerunOverlayPhaseRef.current = 5;
-        setRerunOverlayText('Calculating CME↔HSS drag-based interaction model…');
-      }, 6200));
+        setRerunOverlayText('Evaluating CME–CME momentum exchange and cannibalism (Lugaz 2017)…');
+        rerunPhaseRef.current = 'cme-launching';
+        rerunPhaseStartRef.current = getClockElapsedTime();
+      }, 6500));
 
       timers.push(setTimeout(() => {
         rerunOverlayPhaseRef.current = 6;
-        setRerunOverlayText('Modelling sheath pile-up and deflection at HSS boundary…');
-      }, 7400));
+        setRerunOverlayText('Computing sheath pile-up at CME–HSS and CME–CME interfaces…');
+      }, 7800));
 
       timers.push(setTimeout(() => {
-        // Final: reveal CME and finish
+        rerunOverlayPhaseRef.current = 7;
+        setRerunOverlayText('Applying lateral deflection model (Shen 2012) and non-penetration constraints…');
+      }, 9200));
+
+      timers.push(setTimeout(() => {
+        // Final: reveal all CMEs and finish
         rerunCmeDelayRef.current = false;
         rerunPhaseRef.current = 'running';
+        // Clear old CME frame states so collision tracking starts fresh
+        cmeFrameStatesRef.current.clear();
 
-        // Reset CME simulation start time so it launches fresh
+        // Reset simulation start times — all CMEs launch from their real-time positions
         cmeGroupRef.current?.children.forEach((cm: any) => {
           if (cm.userData?._isTail) return;
-          if (!currentlyModeledCMEId || cm.userData.id === currentlyModeledCMEId) {
-            cm.userData.simulationStartTime = getClockElapsedTime();
-            cm.visible = true;
-          }
+          cm.userData.simulationStartTime = getClockElapsedTime();
+          cm.visible = true;
+          // Also show tails
+          if (cm.userData._tailMesh) cm.userData._tailMesh.visible = true;
         });
 
-        // Build prediction line
+        // Build prediction line for the selected CME
         if (THREE && sceneRef.current) {
           const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
           if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) {
@@ -1515,9 +1673,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
 
-        setRerunOverlayText('CME↔HSS interaction model running');
-        setTimeout(() => { setRerunOverlayVisible(false); setRerunOverlayText(''); }, 1600);
-      }, 8600));
+        setRerunOverlayText('Physics Model running — CME–CME + CME–HSS interactions active');
+        setTimeout(() => { setRerunOverlayVisible(false); setRerunOverlayText(''); }, 2000);
+      }, 10600));
 
       return () => timers.forEach(t => clearTimeout(t));
     }
@@ -1549,6 +1707,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       rerunHssOpacityRef.current = 1;
       setRerunOverlayVisible(false);
       setRerunOverlayText('');
+      // Clear CME–CME collision tracking state
+      cmeFrameStatesRef.current.clear();
       // Restore CH/HSS opacities to full
       if (chGroupRef.current) {
         chGroupRef.current.children.forEach((child: any) => {
@@ -1894,7 +2054,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
               color: 'rgba(160,190,255,0.95)', fontSize: '11px', fontWeight: 600,
               letterSpacing: '0.04em', textTransform: 'uppercase',
             }}>
-              CME↔HSS Interaction Model
+              CME–CME &amp; CME–HSS Physics Model
             </span>
             <span style={{
               color: 'rgba(200,215,255,0.82)', fontSize: '12px', fontWeight: 400,

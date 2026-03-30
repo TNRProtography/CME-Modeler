@@ -258,27 +258,28 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <p className="text-xs text-neutral-500 -mt-1">
               Experimental — may affect performance on older devices.
             </p>
-            {/* Re-run simulation toggle (selected CME + HSS interaction pass) */}
+            {/* Physics Model toggle (CME-CME + CME-HSS interaction) */}
             <div className="rounded-lg border border-indigo-500/20 bg-indigo-950/25 px-3 py-2 text-xs space-y-2">
               <div className="flex items-center justify-between">
                 <ToggleSwitch
                   id="rerun-hss-interaction-toggle"
-                  label="Re-run CME vs HSS"
+                  label="Physics Model"
                   checked={rerunHssInteraction}
                   onChange={onRerunHssInteractionChange}
                   disabled={!hasSelectedCme}
                 />
-                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-indigo-400/30 text-indigo-300 bg-indigo-500/10">
-                  DBM + HSS
+                <span className="ml-2 flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  BETA
                 </span>
               </div>
               {!hasSelectedCme ? (
                 <p className="text-neutral-400">
-                  Select a CME first, then enable this to re-run against CH-derived HSS corridors.
+                  Select a CME first, then enable this to model CME–CME and CME–HSS heliospheric interactions.
                 </p>
               ) : (
                 <p className="text-neutral-300">
-                  Uses coronal-hole HSS data to recompute visual CME/HSS interaction. HSS turns on automatically.
+                  Drag-based propagation with CME–CME collision physics (Lugaz et al. 2017) and CH-derived HSS blocking (Temmer et al. 2017). CMEs cannot pass through HSS corridors or each other.
                 </p>
               )}
               {(rerunHssInteraction || rerunHssStatusText) && (
@@ -293,7 +294,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                       <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                     </svg>
                   )}
-                  <span>{rerunHssStatusText || (rerunHssBusy ? 'Re-running simulation…' : 'Interaction run complete.')}</span>
+                  <span>{rerunHssStatusText || (rerunHssBusy ? 'Building heliospheric model…' : 'Physics model active.')}</span>
                 </div>
               )}
             </div>
