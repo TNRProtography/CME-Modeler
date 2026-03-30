@@ -29,14 +29,6 @@ import {
   type CHEvolution,
 } from '../utils/coronalHoleHistory';
 import {
-  CMEParticlePhysics,
-  HSSParticlePhysics,
-  createCMEParticlePhysics,
-  createHSSParticlePhysics,
-  processedCMEToPhysicsInput,
-  type ArrivalStats,
-} from '../utils/particlePhysicsEngine';
-import {
   computeEclipticLongitude,
   computeGMST,
   computeMoonSceneAngle,
@@ -455,33 +447,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     longitude: number;
     scale: any;         // THREE.Vector3 — current mesh scale
   }>>(new Map());
-
-  // ── Per-Particle Physics Refs ────────────────────────────────────────────
-  // Physics mode replaces the rigid-body CME meshes with full particle-level DBM.
-  // Each CME gets a CMEParticlePhysics engine + its own THREE.Points object.
-  // HSS streams get HSSParticlePhysics for fine-grained solar wind structure.
-
-  // Map<cmeId, { engine, points, posBuffer, colorBuffer }>
-  const physicsSystemsRef = useRef<Map<string, {
-    engine:     CMEParticlePhysics;
-    points:     any;                // THREE.Points in world space
-    posBuffer:  Float32Array;
-    colBuffer:  Float32Array;
-  }>>(new Map());
-
-  // Map<chId, { engine, points, posBuffer, colorBuffer }>
-  const hssPhysicsRef = useRef<Map<string, {
-    engine:    HSSParticlePhysics;
-    points:    any;
-    posBuffer: Float32Array;
-    colBuffer: Float32Array;
-  }>>(new Map());
-
-  // THREE.Group that holds all physics particle systems (separate from cmeGroupRef)
-  const physicsGroupRef = useRef<any>(null);
-
-  // Arrival statistics per CME (for the forecast overlay)
-  const [physicsArrivalStats, setPhysicsArrivalStats] = useState<Map<string, ArrivalStats>>(new Map());
 
   const timelineValueRef    = useRef(timelineValue);
   const lastTimeRef         = useRef(0);
@@ -916,13 +881,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     controlsRef.current = controls;
 
     cmeGroupRef.current = new THREE.Group(); scene.add(cmeGroupRef.current);
-
-    // Physics particle group — separate from visual CME group.
-    // Contains per-particle DBM systems when physics mode is active.
-    const physicsGroup = new THREE.Group();
-    physicsGroup.name = 'physics-particles';
-    scene.add(physicsGroup);
-    physicsGroupRef.current = physicsGroup;
 
     // Legacy torus — kept for import compatibility, hidden by default
     const fluxRopeMat = new THREE.ShaderMaterial({
@@ -1414,46 +1372,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
       }
 
-      // ── Per-Particle Physics Engine — frame update ────────────────────────
-      // When physics mode is active, each CME's particle cloud is re-computed
-      // analytically every frame using the per-particle DBM solution.
-      // This is O(N) per CME: ~15K particles × 6 floats written per particle.
-      // The GPU buffers are marked needsUpdate so Three.js re-uploads them.
-      if (rerunHssInteraction && physicsSystemsRef.current.size > 0) {
-        const sunRadius = PLANET_DATA_MAP.SUN.size;
-        physicsSystemsRef.current.forEach(({ engine, points, posBuffer, colBuffer }) => {
-          const elapsedSec = (simulationTimeMs - points.userData.startTimeMs) / 1000;
-          if (elapsedSec < 0) {
-            points.visible = false;
-            return;
-          }
-          points.visible = true;
-          engine.computeAll(elapsedSec, SCENE_SCALE, sunRadius, posBuffer, colBuffer);
-          const posAttr = points.geometry.attributes.position;
-          const colAttr = points.geometry.attributes.color;
-          posAttr.needsUpdate = true;
-          colAttr.needsUpdate = true;
-          // Recompute bounding sphere so frustum culling stays correct
-          points.geometry.computeBoundingSphere();
-        });
-
-        // ── HSS particle stream update ──────────────────────────────────────
-        // HSS streams rotate with the Sun; their Parker spiral arms shift as
-        // solar rotation carries the source region across the disk.
-        if (hssPhysicsRef.current.size > 0) {
-          const earthMesh = celestialBodiesRef.current.EARTH?.mesh;
-          const earthLonRad = earthMesh
-            ? Math.atan2(earthMesh.position.x, earthMesh.position.z)
-            : 0;
-          hssPhysicsRef.current.forEach(({ engine, points, posBuffer, colBuffer }) => {
-            engine.computeAll(sunRotationRef.current, SCENE_SCALE, earthLonRad, posBuffer, colBuffer);
-            points.geometry.attributes.position.needsUpdate = true;
-            points.geometry.attributes.color.needsUpdate = true;
-            points.geometry.computeBoundingSphere();
-          });
-        }
-      }
-
       const maxImpactSpeed = checkImpacts();
       updateImpactEffects(maxImpactSpeed, elapsedTime);
       controlsRef.current.update();
@@ -1851,199 +1769,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
 
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  PER-PARTICLE PHYSICS SYSTEMS — BUILD / TEARDOWN
-  //  When physics mode (rerunHssInteraction) activates, we spin up one
-  //  CMEParticlePhysics engine per CME + HSSParticlePhysics per coronal hole.
-  //  Each engine owns a THREE.Points object whose position buffer is written
-  //  directly every frame from the analytical DBM solution.
-  // ══════════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    const THREE = (window as any).THREE;
-    if (!THREE || !physicsGroupRef.current || !sceneRef.current) return;
-
-    // ── Dispose existing physics systems ────────────────────────────────────
-    const disposeAll = () => {
-      physicsSystemsRef.current.forEach(({ points }) => {
-        physicsGroupRef.current?.remove(points);
-        points.geometry?.dispose?.();
-        points.material?.dispose?.();
-      });
-      physicsSystemsRef.current.clear();
-      hssPhysicsRef.current.forEach(({ points }) => {
-        physicsGroupRef.current?.remove(points);
-        points.geometry?.dispose?.();
-        points.material?.dispose?.();
-      });
-      hssPhysicsRef.current.clear();
-    };
-
-    if (!rerunHssInteraction) {
-      disposeAll();
-      // Restore regular CME group visibility
-      if (cmeGroupRef.current) cmeGroupRef.current.visible = true;
-      return;
-    }
-
-    // ── Build phase: create physics systems ────────────────────────────────
-    disposeAll();
-    setRerunOverlayText('Initializing particle-level DBM ensemble…');
-    setRerunOverlayVisible(true);
-
-    // Small async delay so the overlay renders before heavy CPU work
-    const buildTimer = setTimeout(() => {
-      if (!physicsGroupRef.current) return;
-
-      // Build CME particle systems
-      cmeData.forEach(cme => {
-        const input = processedCMEToPhysicsInput({
-          id: cme.id,
-          startTime: cme.startTime,
-          speed: cme.speed,
-          longitude: cme.longitude ?? 0,
-          latitude: cme.latitude ?? 0,
-          halfAngle: cme.halfAngle ?? 30,
-          sourceLocation: cme.sourceLocation,
-        });
-
-        const engine = createCMEParticlePhysics(input, coronalHoles, measuredWindSpeedKms);
-        const N = engine.particleCount;
-
-        // Pre-allocated buffers
-        const posBuffer = new Float32Array(N * 3);
-        const colBuffer = new Float32Array(N * 3);
-
-        // Initialize positions to origin (will be filled on first frame)
-        posBuffer.fill(0);
-        // Initialize colors to CME base color
-        colBuffer.fill(0.5);
-
-        // Build Three.js geometry with vertex colors
-        const geom = new THREE.BufferGeometry();
-        const posAttr = new THREE.BufferAttribute(posBuffer, 3);
-        posAttr.setUsage(THREE.DynamicDrawUsage); // tell GPU this updates frequently
-        geom.setAttribute('position', posAttr);
-        const colAttr = new THREE.BufferAttribute(colBuffer, 3);
-        colAttr.setUsage(THREE.DynamicDrawUsage);
-        geom.setAttribute('color', colAttr);
-
-        // Point size: scaled with speed (faster = smaller, denser appearance)
-        const baseSize = THREE.MathUtils.mapLinear(
-          THREE.MathUtils.clamp(cme.speed, 300, 3000), 300, 3000, 0.0035, 0.0065
-        ) * SCENE_SCALE;
-
-        const mat = new THREE.PointsMaterial({
-          size: baseSize,
-          sizeAttenuation: true,
-          vertexColors: true,
-          transparent: true,
-          opacity: THREE.MathUtils.mapLinear(
-            THREE.MathUtils.clamp(cme.speed, 300, 3000), 300, 3000, 0.45, 0.85
-          ),
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        });
-
-        const points = new THREE.Points(geom, mat);
-        points.userData.cmeId = cme.id;
-        points.userData.startTimeMs = cme.startTime.getTime();
-        points.frustumCulled = false; // don't cull — CME can be very large
-        physicsGroupRef.current.add(points);
-
-        // Set CME quaternion on engine (for coordinate transforms)
-        // Reuse the same quaternion as the visual CME mesh
-        const existingMesh = cmeGroupRef.current?.children?.find(
-          (c: any) => c.userData?.id === cme.id && !c.userData?._isTail
-        );
-        if (existingMesh) {
-          const q = existingMesh.quaternion;
-          engine.setQuaternion(q.x, q.y, q.z, q.w);
-        } else {
-          // Compute quaternion from longitude/latitude directly
-          const earthLon = Math.atan2(
-            celestialBodiesRef.current.EARTH?.mesh?.position?.x ?? 0,
-            celestialBodiesRef.current.EARTH?.mesh?.position?.z ?? 1,
-          );
-          const dir = new THREE.Vector3();
-          dir.setFromSphericalCoords(
-            1,
-            THREE.MathUtils.degToRad(90 - (cme.latitude ?? 0)),
-            earthLon + THREE.MathUtils.degToRad(cme.longitude ?? 0),
-          );
-          const q = new THREE.Quaternion().setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0), dir
-          );
-          engine.setQuaternion(q.x, q.y, q.z, q.w);
-        }
-
-        physicsSystemsRef.current.set(cme.id, { engine, points, posBuffer, colBuffer });
-      });
-
-      // Build HSS particle systems (one per coronal hole)
-      if (coronalHoles.length > 0) {
-        setRerunOverlayText('Building particle-level HSS stream ensemble…');
-        coronalHoles.forEach(ch => {
-          const chId = ch.id ?? `ch-${ch.lon.toFixed(1)}`;
-          const engine = createHSSParticlePhysics(ch);
-          const N = engine.particleCount;
-
-          const posBuffer = new Float32Array(N * 3);
-          const colBuffer = new Float32Array(N * 3);
-          posBuffer.fill(0);
-          colBuffer.fill(0.7);
-
-          const geom = new THREE.BufferGeometry();
-          const posAttr = new THREE.BufferAttribute(posBuffer, 3);
-          posAttr.setUsage(THREE.DynamicDrawUsage);
-          geom.setAttribute('position', posAttr);
-          const colAttr = new THREE.BufferAttribute(colBuffer, 3);
-          colAttr.setUsage(THREE.DynamicDrawUsage);
-          geom.setAttribute('color', colAttr);
-
-          const mat = new THREE.PointsMaterial({
-            size: 0.003 * SCENE_SCALE,
-            sizeAttenuation: true,
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.35,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-          });
-
-          const points = new THREE.Points(geom, mat);
-          points.userData.chId = chId;
-          points.frustumCulled = false;
-          physicsGroupRef.current.add(points);
-          hssPhysicsRef.current.set(chId, { engine, points, posBuffer, colBuffer });
-        });
-      }
-
-      // ── Compute arrival statistics ────────────────────────────────────────
-      setRerunOverlayText('Computing arrival time ensemble (DBEM statistics)…');
-      const statsMap = new Map<string, ArrivalStats>();
-      physicsSystemsRef.current.forEach(({ engine }, cmeId) => {
-        statsMap.set(cmeId, engine.getArrivalStats());
-      });
-      setPhysicsArrivalStats(new Map(statsMap));
-
-      // Hide regular CME meshes — physics particles replace them
-      if (cmeGroupRef.current) cmeGroupRef.current.visible = false;
-
-      setRerunOverlayText('Particle physics running — ' +
-        physicsSystemsRef.current.size + ' CME × ' +
-        ([...physicsSystemsRef.current.values()][0]?.engine.particleCount.toLocaleString() ?? '0') +
-        ' particles each');
-      setTimeout(() => {
-        setRerunOverlayVisible(false);
-        setRerunOverlayText('');
-      }, 2500);
-
-    }, 80);
-
-    return () => clearTimeout(buildTimer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rerunHssInteraction, cmeData, coronalHoles, measuredWindSpeedKms, threeReady]);
-
   const moveCamera = useCallback((view: ViewMode, focus: FocusTarget | null) => {
     const THREE = (window as any).THREE; const gsap = (window as any).gsap;
     if (!cameraRef.current || !controlsRef.current || !gsap || !THREE) return;
@@ -2302,18 +2027,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (atmo?.material?.uniforms) { (atmo.material as any).opacity = 0.12 + hit * 0.22; atmo.material.uniforms.uImpactTime.value = hit > 0 ? elapsed : 0; }
   }, []);
 
-  // ── Format arrival time for display ────────────────────────────────────────
-  const fmtArrival = (ms: number | null | undefined): string => {
-    if (!ms) return '—';
-    const d = new Date(ms);
-    return d.toUTCString().replace(' GMT', ' UTC').replace(/:\d\d UTC/, ' UTC');
-  };
-  const fmtHours = (ms1: number | null | undefined, ms2: number | null | undefined): string => {
-    if (!ms1 || !ms2) return '';
-    const h = Math.abs(ms2 - ms1) / 3600000;
-    return h < 1 ? `${Math.round(h * 60)}m` : `${h.toFixed(1)}h`;
-  };
-
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} className="w-full h-full" />
@@ -2341,7 +2054,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
               color: 'rgba(160,190,255,0.95)', fontSize: '11px', fontWeight: 600,
               letterSpacing: '0.04em', textTransform: 'uppercase',
             }}>
-              Particle-Level CME &amp; HSS Physics Engine
+              CME–CME &amp; CME–HSS Physics Model
             </span>
             <span style={{
               color: 'rgba(200,215,255,0.82)', fontSize: '12px', fontWeight: 400,
@@ -2350,170 +2063,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
               {rerunOverlayText}
             </span>
           </div>
-        </div>
-      )}
-
-      {/* ── Arrival Forecast Panel (shown when physics mode is active + stats ready) ── */}
-      {rerunHssInteraction && !rerunOverlayVisible && physicsArrivalStats.size > 0 && (
-        <div style={{
-          position: 'absolute', top: '12px', right: '12px',
-          zIndex: 48, pointerEvents: 'auto',
-          display: 'flex', flexDirection: 'column', gap: '8px',
-          maxWidth: '320px',
-        }}>
-          {[...physicsArrivalStats.entries()].map(([cmeId, stats]) => {
-            const cme = cmeData.find(c => c.id === cmeId);
-            if (!cme) return null;
-
-            // Storm category
-            const kpMax = stats.kpRange[1];
-            const stormCat = kpMax >= 8 ? 'G4–G5' : kpMax >= 6 ? 'G2–G3' : kpMax >= 5 ? 'G1' : 'Minor/None';
-            const stormColor = kpMax >= 8 ? '#ff3c3c' : kpMax >= 6 ? '#ff8c00' : kpMax >= 5 ? '#ffd700' : '#5fc26e';
-
-            // Bz risk
-            const bzRisk = stats.peakBzNt < -15 ? 'Extreme' : stats.peakBzNt < -10 ? 'High' : stats.peakBzNt < -5 ? 'Moderate' : 'Low';
-            const bzColor = stats.peakBzNt < -15 ? '#ff3c3c' : stats.peakBzNt < -10 ? '#ff8c00' : stats.peakBzNt < -5 ? '#ffd700' : '#5fc26e';
-
-            // Uncertainty bar width (0–48h mapped to 0–100%)
-            const uncertaintyBarW = Math.min(100, (stats.sigmaHours / 24) * 100);
-
-            // Impact fraction display
-            const impactPct = (stats.impactFraction * 100).toFixed(0);
-
-            return (
-              <div key={cmeId} style={{
-                background: 'linear-gradient(160deg, rgba(8,6,28,0.95), rgba(14,10,40,0.92))',
-                border: '1px solid rgba(100,140,255,0.22)',
-                borderRadius: '12px', padding: '14px 16px',
-                backdropFilter: 'blur(16px)',
-                boxShadow: '0 6px 40px rgba(30,20,90,0.5), inset 0 1px 0 rgba(255,255,255,0.05)',
-              }}>
-                {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ color: 'rgba(160,190,255,0.9)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                      Particle DBM Forecast
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '10px', marginTop: '1px' }}>
-                      CME {cme.speed} km/s · {cme.startTime.toUTCString().slice(5, 16)} UTC
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                    <span style={{
-                      background: stormColor + '22', border: `1px solid ${stormColor}66`,
-                      borderRadius: '6px', padding: '2px 7px',
-                      color: stormColor, fontSize: '10px', fontWeight: 700,
-                    }}>
-                      Kp {stats.kpRange[0].toFixed(0)}–{stats.kpRange[1].toFixed(0)} · {stormCat}
-                    </span>
-                    <span style={{ color: 'rgba(200,215,255,0.5)', fontSize: '9px' }}>
-                      {impactPct}% Earth-directed ensemble
-                    </span>
-                  </div>
-                </div>
-
-                {/* Arrival time row */}
-                {stats.p50Ms ? (
-                  <>
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' }}>
-                        <span style={{ color: 'rgba(160,200,255,0.7)', fontSize: '10px', fontWeight: 600 }}>ARRIVAL TIME (P50)</span>
-                        <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '11px', fontWeight: 600 }}>
-                          {fmtArrival(stats.p50Ms)}
-                        </span>
-                      </div>
-                      {/* Uncertainty band: P5 ←───────── P50 ─────────→ P95 */}
-                      <div style={{ position: 'relative', height: '20px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px', overflow: 'hidden' }}>
-                        {/* P5–P95 band */}
-                        {stats.p05Ms && stats.p95Ms && (() => {
-                          const range = stats.p95Ms - stats.p05Ms;
-                          const total = range * 1.4;
-                          const offsetLeft = ((stats.p05Ms - (stats.p05Ms - range * 0.2)) / total) * 100;
-                          const bandWidth = (range / total) * 100;
-                          return (
-                            <div style={{
-                              position: 'absolute', top: '4px', height: '12px',
-                              left: `${Math.max(0, offsetLeft)}%`,
-                              width: `${Math.min(100, bandWidth)}%`,
-                              background: 'linear-gradient(90deg, rgba(80,140,255,0.15), rgba(120,180,255,0.35), rgba(80,140,255,0.15))',
-                              borderRadius: '3px',
-                            }} />
-                          );
-                        })()}
-                        {/* P50 marker */}
-                        <div style={{
-                          position: 'absolute', top: '2px', left: '50%', transform: 'translateX(-50%)',
-                          width: '2px', height: '16px',
-                          background: 'rgba(140,200,255,0.8)', borderRadius: '1px',
-                        }} />
-                        {/* Labels */}
-                        <span style={{ position: 'absolute', left: '4px', top: '4px', color: 'rgba(140,170,220,0.6)', fontSize: '8px' }}>
-                          P5 {stats.p05Ms ? fmtHours(stats.p05Ms, stats.p50Ms) + ' early' : ''}
-                        </span>
-                        <span style={{ position: 'absolute', right: '4px', top: '4px', color: 'rgba(140,170,220,0.6)', fontSize: '8px' }}>
-                          P95 +{stats.p95Ms ? fmtHours(stats.p50Ms, stats.p95Ms) : ''}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                        <span style={{ color: 'rgba(140,170,220,0.5)', fontSize: '9px' }}>
-                          σ = {stats.sigmaHours.toFixed(1)}h uncertainty
-                        </span>
-                        <span style={{ color: 'rgba(180,210,255,0.6)', fontSize: '9px' }}>
-                          Impact speed {stats.medianArrivalSpeedKms.toFixed(0)} km/s
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Bz / Storm row */}
-                    <div style={{
-                      display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px',
-                      marginBottom: '8px',
-                    }}>
-                      {/* Peak Bz */}
-                      <div style={{
-                        background: 'rgba(255,255,255,0.03)', borderRadius: '7px', padding: '7px 9px',
-                        border: `1px solid ${bzColor}33`,
-                      }}>
-                        <div style={{ color: 'rgba(160,190,255,0.6)', fontSize: '9px', fontWeight: 600, marginBottom: '2px' }}>PEAK Bz</div>
-                        <div style={{ color: bzColor, fontSize: '13px', fontWeight: 700 }}>
-                          {stats.peakBzNt.toFixed(1)} nT
-                        </div>
-                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '9px', marginTop: '1px' }}>{bzRisk} storm risk</div>
-                      </div>
-                      {/* Bz-south integral */}
-                      <div style={{
-                        background: 'rgba(255,255,255,0.03)', borderRadius: '7px', padding: '7px 9px',
-                        border: '1px solid rgba(100,130,200,0.2)',
-                      }}>
-                        <div style={{ color: 'rgba(160,190,255,0.6)', fontSize: '9px', fontWeight: 600, marginBottom: '2px' }}>Bz-SOUTH ∫</div>
-                        <div style={{ color: 'rgba(220,200,255,0.9)', fontSize: '13px', fontWeight: 700 }}>
-                          {stats.bzSouthIntegral.toFixed(0)} nT·h
-                        </div>
-                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '9px', marginTop: '1px' }}>Dst proxy</div>
-                      </div>
-                    </div>
-
-                    {/* Particle count / model info */}
-                    <div style={{
-                      borderTop: '1px solid rgba(100,130,200,0.12)', paddingTop: '7px',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    }}>
-                      <span style={{ color: 'rgba(120,150,200,0.5)', fontSize: '9px' }}>
-                        {physicsSystemsRef.current.get(cmeId)?.engine.particleCount.toLocaleString() ?? '—'} particle ensemble
-                      </span>
-                      <span style={{ color: 'rgba(120,150,200,0.5)', fontSize: '9px' }}>
-                        Vršnak DBM + Bothmer–Schwenn Bz
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ color: 'rgba(200,180,120,0.7)', fontSize: '11px', textAlign: 'center', padding: '8px 0' }}>
-                    CME not Earth-directed — no 1 AU crossing predicted
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
       )}
     </div>
