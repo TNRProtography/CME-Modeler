@@ -358,17 +358,6 @@ const App: React.FC = () => {
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const rerunHssStatusText = useMemo(() => {
-    if (!currentlyModeledCMEId) return 'Select a CME to run interaction physics.';
-    if (chDetectionStatus === 'loading' || rerunAwaitingHssData) return 'Loading SUVI coronal holes and building heliospheric interaction model…';
-    if (chDetectionStatus === 'detected') return 'Physics Model active — CME–CME collisions + CME–HSS drag (Vršnak DBM).';
-    if (chDetectionStatus === 'empty') return 'No coronal holes detected — running CME–CME physics with ambient wind only.';
-    if (chDetectionStatus === 'error') return 'SUVI feed retrying — using last available heliospheric state.';
-    return 'Preparing Physics Model…';
-  }, [currentlyModeledCMEId, chDetectionStatus, rerunAwaitingHssData]);
-
-  const rerunHssBusy = rerunHssInteraction && (chDetectionStatus === 'loading' || rerunAwaitingHssData);
-
   const markInitialTaskDone = useCallback((task: InitialLoadTaskKey) => {
     setInitialLoadTasks((prev) => {
       if (prev[task]) return prev;
@@ -956,11 +945,9 @@ const App: React.FC = () => {
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
   const cmesToRender = useMemo(() => {
-    // In Physics Model mode, render ALL CMEs so CME–CME interactions are visible.
-    // The selected CME remains the "primary" (simulation clock is anchored to it)
-    // but other CMEs propagate at their real-time positions.
     if (currentlyModeledCMEId) {
-      return filteredCmes;
+      const selected = filteredCmes.find((c) => c.id === currentlyModeledCMEId);
+      return selected ? [selected] : [];
     }
     return filteredCmes;
   }, [currentlyModeledCMEId, filteredCmes]);
@@ -1363,7 +1350,7 @@ const App: React.FC = () => {
               <Suspense fallback={null}>
               <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} chDetectionStatus={chDetectionStatus} rerunHssBusy={rerunHssBusy} rerunHssStatusText={rerunHssStatusText} />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} chDetectionStatus={chDetectionStatus} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
