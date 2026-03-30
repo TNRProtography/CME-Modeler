@@ -550,28 +550,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.position.copy(dir.clone().multiplyScalar(sunRadius + tailBackDist));
         tailMesh.quaternion.copy(cmeObject.quaternion);
         // Scale: Y stretches along the propagation direction,
-        // XZ is a fraction of the front's lateral width for a tapered wake
-        const tailLateralScale = sXZ * 0.45;
-        tailMesh.scale.set(tailLateralScale, tailLength, tailLateralScale);
+        // XZ matches the full width of the CME front
+        tailMesh.scale.set(sXZ, tailLength, sXZ);
       }
     }
 
-    // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
-    // Use the propagation engine's DBM speed, falling back to simple calc.
-    // As the CME decelerates via quadratic drag, colour shifts through the speed key.
+    // ── COLOUR ─────────────────────────────────────────────────────────────
+    // Use the INITIAL eruption speed for coloring so each CME always matches
+    // the Speed Guide key.  (.copy modifies the existing THREE.Color in-place
+    // so the renderer picks up the change in r128.)
     if (timeSinceEventSeconds !== undefined && cmeObject.material) {
-      const engine = propagationEngineRef.current;
-      let liveSpeed: number;
-      if (engine) {
-        liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
-      } else {
-        const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-        const w = 380, gamma = 0.5e-7, dv = u - w;
-        liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
-      }
-      const liveColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
-      cmeObject.material.color = liveColor;
-      if (tailMesh?.material) tailMesh.material.color = liveColor;
+      const frontColor = getCmeCoreColor(cme.speed);
+      cmeObject.material.color.copy(frontColor);
+      if (tailMesh?.material) tailMesh.material.color.copy(frontColor);
     }
   }, []);
 
@@ -1199,13 +1190,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // Particles distributed from Y=0 (back, near sun) to Y=1 (front, near CME head).
       // Conical taper: wider at the CME-head end, narrower toward the sun.
       // updateCMEShape scales/positions this so the tail back travels at half the front speed.
-      const tailParticleCount = Math.floor(getCmeParticleCount(cme.speed) * 0.35);
+      const tailParticleCount = Math.floor(getCmeParticleCount(cme.speed) * 0.5);
       const tailPos: number[] = [];
       for (let i = 0; i < tailParticleCount; i++) {
         // Y from 0 (back) to 1 (front) with bias toward the front (near the CME head)
-        const yNorm = Math.pow(Math.random(), 1.6);
-        // Conical spread: wider at the front (yNorm=1), narrower at the back (yNorm=0)
-        const spread = 0.12 + 0.30 * yNorm;
+        const yNorm = Math.pow(Math.random(), 1.4);
+        // Full-width spread matching the CME front arc extent (~0.82 in normalised space).
+        // Tapers from ~0.15 at the sun-ward back to ~0.80 at the CME-head end.
+        const spread = 0.15 + 0.65 * yNorm;
         const rho = Math.sqrt(Math.random()) * spread;
         const phi = Math.random() * 2 * Math.PI;
         tailPos.push(
