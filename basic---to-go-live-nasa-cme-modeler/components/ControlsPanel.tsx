@@ -59,6 +59,11 @@ interface ControlsPanelProps {
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
   chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'empty' | 'error';
+  rerunHssInteraction: boolean;
+  onRerunHssInteractionChange: (enabled: boolean) => void;
+  rerunHssBusy?: boolean;
+  rerunHssStatusText?: string;
+  hasSelectedCme: boolean;
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -107,6 +112,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   showHss,
   onShowHssChange,
   chDetectionStatus,
+  rerunHssInteraction,
+  onRerunHssInteractionChange,
+  rerunHssBusy = false,
+  rerunHssStatusText,
+  hasSelectedCme,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -248,6 +258,45 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <p className="text-xs text-neutral-500 -mt-1">
               Experimental — may affect performance on older devices.
             </p>
+            {/* Re-run simulation toggle (selected CME + HSS interaction pass) */}
+            <div className="rounded-lg border border-indigo-500/20 bg-indigo-950/25 px-3 py-2 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <ToggleSwitch
+                  id="rerun-hss-interaction-toggle"
+                  label="Re-run CME vs HSS"
+                  checked={rerunHssInteraction}
+                  onChange={onRerunHssInteractionChange}
+                  disabled={!hasSelectedCme}
+                />
+                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-indigo-400/30 text-indigo-300 bg-indigo-500/10">
+                  DBM + HSS
+                </span>
+              </div>
+              {!hasSelectedCme ? (
+                <p className="text-neutral-400">
+                  Select a CME first, then enable this to re-run against CH-derived HSS corridors.
+                </p>
+              ) : (
+                <p className="text-neutral-300">
+                  Uses coronal-hole HSS data to recompute visual CME/HSS interaction. HSS turns on automatically.
+                </p>
+              )}
+              {(rerunHssInteraction || rerunHssStatusText) && (
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded border ${
+                  rerunHssBusy
+                    ? 'border-indigo-500/30 bg-indigo-950/35 text-indigo-200/90'
+                    : 'border-cyan-500/30 bg-cyan-950/35 text-cyan-200/90'
+                }`}>
+                  {rerunHssBusy && (
+                    <svg className="h-3.5 w-3.5 flex-shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.28" strokeWidth="3" />
+                      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  )}
+                  <span>{rerunHssStatusText || (rerunHssBusy ? 'Re-running simulation…' : 'Interaction run complete.')}</span>
+                </div>
+              )}
+            </div>
             {/* CH detection status badge */}
             {chDetectionStatus && chDetectionStatus !== 'idle' && (
               <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${

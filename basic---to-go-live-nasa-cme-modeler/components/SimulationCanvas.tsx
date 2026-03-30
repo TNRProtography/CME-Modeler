@@ -371,6 +371,8 @@ interface SimulationCanvasProps {
   onSunClick?: () => void;
   /** Latest measured solar wind speed at L1 (km/s) for DBM drag model */
   measuredWindSpeedKms?: number;
+  /** Increment to force a selected-CME simulation restart. */
+  rerunToken?: number;
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -381,7 +383,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
     showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
-    measuredWindSpeedKms,
+    measuredWindSpeedKms, rerunToken = 0,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -1355,7 +1357,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]), new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE }));
       l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l;
     }
-  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady]);
+  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady, rerunToken]);
 
   // ── Rebuild CH/HSS geometry when fresh SUVI data arrives ─────────────────
   useEffect(() => {
