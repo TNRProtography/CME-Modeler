@@ -238,13 +238,31 @@ const getCmeParticleCount = (speed: number) => { const T = (window as any).THREE
 const getCmeParticleSize  = (speed: number, scale: number) => { const T = (window as any).THREE; if (!T) return 0.05 * scale; return T.MathUtils.mapLinear(T.MathUtils.clamp(speed, 300, 3000), 300, 3000, 0.04 * scale, 0.08 * scale); };
 const getCmeCoreColor     = (speed: number) => {
   const T = (window as any).THREE; if (!T) return { setHex: () => {} };
-  if (speed >= 2500) return new T.Color(0xff69b4);
-  if (speed >= 1800) return new T.Color(0x9370db);
-  if (speed >= 1000) return new T.Color(0xff4500);
-  if (speed >= 800)  return new T.Color(0xffa500);
-  if (speed >= 500)  return new T.Color(0xffff00);
-  if (speed < 350)   return new T.Color(0x808080);
-  return new T.Color(0x808080).lerp(new T.Color(0xffff00), T.MathUtils.mapLinear(speed, 350, 500, 0, 1));
+
+  const clamped = T.MathUtils.clamp(speed, 0, 3000);
+  const stops = [
+    { speed: 0, color: new T.Color(0x808080) },
+    { speed: 350, color: new T.Color(0x808080) },
+    { speed: 500, color: new T.Color(0xffff00) },
+    { speed: 800, color: new T.Color(0xffa500) },
+    { speed: 1000, color: new T.Color(0xff4500) },
+    { speed: 1800, color: new T.Color(0x9370db) },
+    { speed: 2500, color: new T.Color(0xff69b4) },
+    { speed: 3000, color: new T.Color(0xff69b4) },
+  ];
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const start = stops[i];
+    const end = stops[i + 1];
+    if (clamped <= end.speed) {
+      const t = end.speed === start.speed
+        ? 0
+        : T.MathUtils.mapLinear(clamped, start.speed, end.speed, 0, 1);
+      return start.color.clone().lerp(end.color, t);
+    }
+  }
+
+  return stops[stops.length - 1].color.clone();
 };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
