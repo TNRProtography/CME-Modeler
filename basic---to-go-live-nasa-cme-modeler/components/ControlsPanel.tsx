@@ -59,11 +59,6 @@ interface ControlsPanelProps {
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
   chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'empty' | 'error';
-  rerunHssInteraction: boolean;
-  onRerunHssInteractionChange: (enabled: boolean) => void;
-  rerunHssBusy?: boolean;
-  rerunHssStatusText?: string;
-  hasSelectedCme: boolean;
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
 }
@@ -112,11 +107,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   showHss,
   onShowHssChange,
   chDetectionStatus,
-  rerunHssInteraction,
-  onRerunHssInteractionChange,
-  rerunHssBusy = false,
-  rerunHssStatusText,
-  hasSelectedCme,
   cmeFilter,
   onCmeFilterChange,
 }) => {
@@ -258,46 +248,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <p className="text-xs text-neutral-500 -mt-1">
               Experimental — may affect performance on older devices.
             </p>
-            {/* Physics Model toggle (CME-CME + CME-HSS interaction) */}
-            <div className="rounded-lg border border-indigo-500/20 bg-indigo-950/25 px-3 py-2 text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <ToggleSwitch
-                  id="rerun-hss-interaction-toggle"
-                  label="Physics Model"
-                  checked={rerunHssInteraction}
-                  onChange={onRerunHssInteractionChange}
-                  disabled={!hasSelectedCme}
-                />
-                <span className="ml-2 flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                  <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                  BETA
-                </span>
-              </div>
-              {!hasSelectedCme ? (
-                <p className="text-neutral-400">
-                  Select a CME first, then enable this to model CME–CME and CME–HSS heliospheric interactions.
-                </p>
-              ) : (
-                <p className="text-neutral-300">
-                  Drag-based propagation with CME–CME collision physics (Lugaz et al. 2017) and CH-derived HSS blocking (Temmer et al. 2017). CMEs cannot pass through HSS corridors or each other.
-                </p>
-              )}
-              {(rerunHssInteraction || rerunHssStatusText) && (
-                <div className={`flex items-center gap-1.5 px-2 py-1 rounded border ${
-                  rerunHssBusy
-                    ? 'border-indigo-500/30 bg-indigo-950/35 text-indigo-200/90'
-                    : 'border-cyan-500/30 bg-cyan-950/35 text-cyan-200/90'
-                }`}>
-                  {rerunHssBusy && (
-                    <svg className="h-3.5 w-3.5 flex-shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.28" strokeWidth="3" />
-                      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                    </svg>
-                  )}
-                  <span>{rerunHssStatusText || (rerunHssBusy ? 'Building heliospheric model…' : 'Physics model active.')}</span>
-                </div>
-              )}
-            </div>
             {/* CH detection status badge */}
             {chDetectionStatus && chDetectionStatus !== 'idle' && (
               <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${

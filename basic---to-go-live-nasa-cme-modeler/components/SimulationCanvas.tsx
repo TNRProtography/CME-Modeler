@@ -422,16 +422,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const spacecraftGroupRef = useRef<any>(null);
   const spacecraftPositionsRef = useRef<Record<string, {x:number;y:number;z:number;name:string;color:string}>>({});
 
-  // ── Staged Re-run state ──────────────────────────────────────────────────
-  // Phases: 'idle' → 'clearing' → 'hss-building' → 'cme-launching' → 'running'
-  const rerunPhaseRef      = useRef<'idle' | 'clearing' | 'hss-building' | 'cme-launching' | 'running'>('idle');
-  const rerunPhaseStartRef = useRef<number>(0);       // getClockElapsedTime() at phase start
-  const rerunHssOpacityRef = useRef<number>(1);        // opacity ramp for HSS during build
-  const rerunCmeDelayRef   = useRef<boolean>(false);   // true = CME hidden during HSS build
-  const [rerunOverlayText, setRerunOverlayText] = useState<string>('');
-  const [rerunOverlayVisible, setRerunOverlayVisible] = useState(false);
-  const rerunOverlayPhaseRef = useRef<number>(0);      // sub-step counter for status messages
-
   // ── CME–CME collision tracking ───────────────────────────────────────────
   // Stores each CME's world position and propagation data from the previous frame.
   // Used by updateCMEShape to apply visual CME–CME non-penetration physics
@@ -738,30 +728,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       });
     }
 
-    // ── Apply CME–CME lateral deflection (Shen et al. 2012) ──────────────
-    // When CMEs partially overlap in angle, the faster one deflects away
-    if (cmeCmePressure > 0.05) {
-      const cmeBendAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-      if (cmeBendAxis.lengthSq() < 1e-6) cmeBendAxis.set(1, 0, 0);
-      cmeBendAxis.normalize();
-      const cmeBendStrength = sunRadius * 0.30 * cmeCmePressure * cmeCmeBendSign;
-      bendOffset.addScaledVector(cmeBendAxis, cmeBendStrength);
-    }
-
-    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + heldDist).add(bendOffset));
-    const lateral = Math.max(heldDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const compressionFactor = rerunHssInteraction ? 0.50 : 0.35;
-    // Combined compression from HSS + CME–CME sheath pile-up
-    // CME–CME compression squeezes the ejecta cross-section (Manchester et al. 2017)
-    const totalCompression = Math.max(0.25,
-      (1 - compressionFactor * hssPressure) * (1 - 0.40 * cmeCmeCompression)
-    );
-    const sXZ = (lateral / GCS_ARC_RADIUS_FRAC) * totalCompression;
-    const axialStretchFactor = rerunHssInteraction ? 0.45 : 0.25;
-    // CME–CME collision also causes axial pancaking (ejecta flattens at interface)
-    const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC
-      * (1 + axialStretchFactor * hssPressure)
-      * (1 + 0.35 * cmeCmeCompression);
+    // Keep position physics simple and stable:
+    // - location follows radial propagation distance
+    // - no lateral deflection / non-penetration offsets
+    const radialDist = Math.max(0, dist);
+    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + radialDist));
+    const lateral = Math.max(radialDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
+    const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
+    const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC;
     cmeObject.scale.set(sXZ, sXZ * totalAxialStretch, sXZ);
 
     // ── Store this CME's frame state for CME–CME checks next frame ───────
@@ -769,7 +743,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeFrameStatesRef.current.set(cme.id, {
         position: cmeObject.position.clone(),
         dir: dir.clone(),
-        dist: sunRadius + heldDist,
+        dist: sunRadius + radialDist,
         speed: cme.speed ?? 400,
         halfAngle: cme.halfAngle ?? 30,
         latitude: Number.isFinite(cme.latitude) ? cme.latitude : 0,
@@ -782,10 +756,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // The tail back edge travels at half the front speed, so the CME elongates
     // as it propagates outward.  tailBackDist ≈ frontDist × 0.5.
     if (tailMesh) {
-      const tailBackDist = heldDist * 0.5;
-      const tailLength   = heldDist - tailBackDist;  // = heldDist * 0.5
+      const tailBackDist = radialDist * 0.5;
+      const tailLength   = radialDist - tailBackDist;  // = radialDist * 0.5
       const minLen = sunRadius * 0.15;
-      if (tailLength < minLen || heldDist < sunRadius * 0.3) {
+      if (tailLength < minLen || radialDist < sunRadius * 0.3) {
         tailMesh.visible = false;
       } else {
         tailMesh.visible = cmeObject.visible;
@@ -1201,53 +1175,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (hssAuRingsRef.current) hssAuRingsRef.current.visible = showHss;
 
-      // ── Staged re-run: progressive HSS/CH opacity build ────────────────────
-      if (rerunPhaseRef.current === 'hss-building' || rerunPhaseRef.current === 'cme-launching') {
-        const phaseElapsed = elapsedTime - rerunPhaseStartRef.current;
-        // HSS opacity ramps from 0 → 1 over ~4 seconds during hss-building phase
-        const targetOpacity = rerunPhaseRef.current === 'hss-building'
-          ? Math.min(1, phaseElapsed / 4.0)
-          : 1;
-        rerunHssOpacityRef.current = targetOpacity;
-
-        // Apply opacity to HSS shader materials
-        if (hssGroupRef.current) {
-          hssGroupRef.current.children.forEach((child: any) => {
-            const u = child.material?.uniforms;
-            if (u && u.uOpacity !== undefined) {
-              u.uOpacity.value = targetOpacity;
-            } else if (child.material) {
-              child.material.opacity = targetOpacity;
-              child.material.transparent = targetOpacity < 1;
-            }
-          });
-        }
-        // Apply opacity to CH patches + outlines
-        if (chGroupRef.current) {
-          chGroupRef.current.children.forEach((child: any) => {
-            if (child.material) {
-              child.material.opacity = targetOpacity;
-              child.material.transparent = targetOpacity < 1;
-            }
-          });
-        }
-        // AU rings also fade in
-        if (hssAuRingsRef.current) {
-          hssAuRingsRef.current.children.forEach((child: any) => {
-            if (child.material) {
-              child.material.opacity = targetOpacity * 0.35;
-            }
-          });
-        }
-      }
-      // Hide CMEs during staged rebuild
-      if (rerunCmeDelayRef.current && cmeGroupRef.current) {
-        cmeGroupRef.current.children.forEach((c: any) => {
-          c.visible = false;
-          if (c.userData?._tailMesh) c.userData._tailMesh.visible = false;
-        });
-      }
-
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh;
         // ── Real heliocentric orbital position (ecliptic longitude) ────────
@@ -1556,130 +1483,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!cmeGroupRef.current) return;
 
-    // ── Staged re-run: HSS first, then CME ────────────────────────────────
-    if (rerunHssInteraction && rerunToken > 0 && currentlyModeledCMEId) {
-      // Phase 1: Hide all CMEs immediately
-      cmeGroupRef.current.children.forEach((cm: any) => {
-        cm.visible = false;
-        if (cm.userData?._tailMesh) cm.userData._tailMesh.visible = false;
-      });
-      // Clear prediction line
-      if (THREE && sceneRef.current && predictionLineRef.current) {
-        sceneRef.current.remove(predictionLineRef.current);
-        predictionLineRef.current.geometry.dispose();
-        predictionLineRef.current.material.dispose();
-        predictionLineRef.current = null;
-      }
-
-      // Start the staged rebuild sequence
-      rerunPhaseRef.current = 'clearing';
-      rerunPhaseStartRef.current = getClockElapsedTime();
-      rerunHssOpacityRef.current = 0;
-      rerunCmeDelayRef.current = true;
-      rerunOverlayPhaseRef.current = 0;
-      setRerunOverlayVisible(true);
-      setRerunOverlayText('Initializing heliospheric model…');
-
-      // Set all HSS materials to transparent for fade-in
-      if (hssGroupRef.current) {
-        hssGroupRef.current.children.forEach((child: any) => {
-          if (child.material) {
-            child.material.transparent = true;
-            child.material.opacity = 0;
-          }
-        });
-      }
-      // Set CH patches to transparent for fade-in
-      if (chGroupRef.current) {
-        chGroupRef.current.children.forEach((child: any) => {
-          if (child.material) {
-            child.material.transparent = true;
-            child.material.opacity = 0;
-          }
-        });
-      }
-
-      // Staged message sequence driven by timeouts
-      const timers: ReturnType<typeof setTimeout>[] = [];
-      timers.push(setTimeout(() => {
-        rerunPhaseRef.current = 'hss-building';
-        rerunPhaseStartRef.current = getClockElapsedTime();
-        rerunOverlayPhaseRef.current = 1;
-        setRerunOverlayText('Mapping coronal hole boundaries from SUVI 195Å EUV…');
-      }, 800));
-
-      timers.push(setTimeout(() => {
-        rerunOverlayPhaseRef.current = 2;
-        setRerunOverlayText('Computing Parker spiral HSS stream corridors…');
-      }, 2200));
-
-      timers.push(setTimeout(() => {
-        rerunOverlayPhaseRef.current = 3;
-        setRerunOverlayText('Propagating variable-speed solar wind to 1 AU (Vršnak DBM)…');
-      }, 3800));
-
-      timers.push(setTimeout(() => {
-        rerunOverlayPhaseRef.current = 4;
-        setRerunOverlayText('Resolving CME–CME trajectories — checking for preconditioning (Temmer 2017)…');
-      }, 5200));
-
-      timers.push(setTimeout(() => {
-        rerunOverlayPhaseRef.current = 5;
-        setRerunOverlayText('Evaluating CME–CME momentum exchange and cannibalism (Lugaz 2017)…');
-        rerunPhaseRef.current = 'cme-launching';
-        rerunPhaseStartRef.current = getClockElapsedTime();
-      }, 6500));
-
-      timers.push(setTimeout(() => {
-        rerunOverlayPhaseRef.current = 6;
-        setRerunOverlayText('Computing sheath pile-up at CME–HSS and CME–CME interfaces…');
-      }, 7800));
-
-      timers.push(setTimeout(() => {
-        rerunOverlayPhaseRef.current = 7;
-        setRerunOverlayText('Applying lateral deflection model (Shen 2012) and non-penetration constraints…');
-      }, 9200));
-
-      timers.push(setTimeout(() => {
-        // Final: reveal all CMEs and finish
-        rerunCmeDelayRef.current = false;
-        rerunPhaseRef.current = 'running';
-        // Clear old CME frame states so collision tracking starts fresh
-        cmeFrameStatesRef.current.clear();
-
-        // Reset simulation start times — all CMEs launch from their real-time positions
-        cmeGroupRef.current?.children.forEach((cm: any) => {
-          if (cm.userData?._isTail) return;
-          cm.userData.simulationStartTime = getClockElapsedTime();
-          cm.visible = true;
-          // Also show tails
-          if (cm.userData._tailMesh) cm.userData._tailMesh.visible = true;
-        });
-
-        // Build prediction line for the selected CME
-        if (THREE && sceneRef.current) {
-          const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
-          if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) {
-            const p = new THREE.Vector3();
-            celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p);
-            const l = new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]),
-              new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE })
-            );
-            l.computeLineDistances();
-            l.visible = true;
-            sceneRef.current.add(l);
-            predictionLineRef.current = l;
-          }
-        }
-
-        setRerunOverlayText('Physics Model running — CME–CME + CME–HSS interactions active');
-        setTimeout(() => { setRerunOverlayVisible(false); setRerunOverlayText(''); }, 2000);
-      }, 10600));
-
-      return () => timers.forEach(t => clearTimeout(t));
-    }
-
     // ── Normal (non-staged) CME selection/reset ──────────────────────────────
     cmeGroupRef.current.children.forEach((cm: any) => {
       if (cm.userData?._isTail) {
@@ -1702,11 +1505,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // ── Reset staged rerun state when the mode is turned off ─────────────────
   useEffect(() => {
     if (!rerunHssInteraction) {
-      rerunPhaseRef.current = 'idle';
-      rerunCmeDelayRef.current = false;
-      rerunHssOpacityRef.current = 1;
-      setRerunOverlayVisible(false);
-      setRerunOverlayText('');
       // Clear CME–CME collision tracking state
       cmeFrameStatesRef.current.clear();
       // Restore CH/HSS opacities to full
@@ -2030,41 +1828,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} className="w-full h-full" />
-      {rerunOverlayVisible && (
-        <div style={{
-          position: 'absolute', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
-          zIndex: 50, pointerEvents: 'none',
-          background: 'linear-gradient(135deg, rgba(15,10,40,0.92), rgba(20,15,50,0.88))',
-          border: '1px solid rgba(100,140,255,0.25)',
-          borderRadius: '12px', padding: '12px 22px',
-          backdropFilter: 'blur(12px)',
-          boxShadow: '0 4px 30px rgba(60,80,200,0.25), inset 0 1px 0 rgba(255,255,255,0.06)',
-          maxWidth: '440px', minWidth: '280px',
-          display: 'flex', alignItems: 'center', gap: '12px',
-        }}>
-          {/* Animated spinner */}
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-            <circle cx="12" cy="12" r="9" stroke="rgba(100,160,255,0.25)" strokeWidth="2.5" />
-            <path d="M21 12a9 9 0 00-9-9" stroke="rgba(120,170,255,0.9)" strokeWidth="2.5" strokeLinecap="round">
-              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite" />
-            </path>
-          </svg>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span style={{
-              color: 'rgba(160,190,255,0.95)', fontSize: '11px', fontWeight: 600,
-              letterSpacing: '0.04em', textTransform: 'uppercase',
-            }}>
-              CME–CME &amp; CME–HSS Physics Model
-            </span>
-            <span style={{
-              color: 'rgba(200,215,255,0.82)', fontSize: '12px', fontWeight: 400,
-              lineHeight: '1.4',
-            }}>
-              {rerunOverlayText}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

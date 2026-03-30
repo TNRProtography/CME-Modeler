@@ -406,8 +406,14 @@ function resolveInteractions(
         follower.cme, newGamma, follower.ambientW, maxTimeSec,
       );
 
-      // ── OVERTAKING CHECK (CANNIBALISM) ──────────────────────────────
-      // Check if the follower catches the leader at any point
+      // ── OVERTAKING CHECK (NON-DESTRUCTIVE INTERACTION) ──────────────
+      // Check if the follower catches the leader at any point.
+      //
+      // We intentionally keep both CMEs active in the visualization/model
+      // instead of removing ("cannibalizing") the leading ejecta. In
+      // practice, complex ejecta can still contain distinct sub-structures,
+      // and removing one CME made fast-trailing events appear to "erase"
+      // slower leaders.
       for (let t = dtEruptionSec; t < maxTimeSec; t += dtCheckSec) {
         const tFollower = t - dtEruptionSec;
         if (tFollower < 0) continue;
@@ -416,63 +422,22 @@ function resolveInteractions(
         const followerState = sampleTrajectory(follower.trajectory, tFollower);
 
         if (followerState.distKm >= leaderState.distKm && leaderState.distKm > R_INNER_KM) {
-          // ── CANNIBALISM EVENT ──────────────────────────────────────
-          // Fast CME has caught up with slow CME
-          //
-          // Physics of merger (Lugaz et al. 2017):
-          // - Momentum conservation: v_merged = (M1·v1 + M2·v2) / (M1+M2)
-          // - Since we don't know masses precisely, use speed-weighted average
-          //   with the faster CME dominating (it has more kinetic energy)
-          // - Density enhanced at collision site
-          // - Magnetic field becomes disordered → weaker Bz coherence
-
-          const mergeDistKm = followerState.distKm;
-          const v1 = leaderState.speedKms;
-          const v2 = followerState.speedKms;
-
-          // Momentum-weighted merge: faster CME dominates
-          // Approximation: M ∝ v² (kinetic energy proxy)
-          const w1 = v1 * v1, w2 = v2 * v2;
-          const vMerged = (w1 * v1 + w2 * v2) / (w1 + w2);
-
-          // Enhanced half-angle (combined structure is wider)
-          const mergedHalfAngle = Math.min(90,
-            Math.max(follower.cme.halfAngleDeg, leader.cme.halfAngleDeg) * 1.3
+          // Preserve separate fronts: do not remove/merge leader.
+          // Instead, model strong sheath/interface compression.
+          const v1 = Math.max(1, leaderState.speedKms);
+          const v2 = Math.max(1, followerState.speedKms);
+          const speedRatio = Math.max(0, v2 / v1 - 1);
+          follower.compressionDensityBoost = Math.max(
+            follower.compressionDensityBoost,
+            2.2 + 1.2 * speedRatio,
+          );
+          leader.compressionDensityBoost = Math.max(
+            leader.compressionDensityBoost,
+            1.4 + 0.6 * speedRatio,
           );
 
-          // Mark leader as cannibalized
-          leader.isCannibalised = true;
-          leader.cannibaliserID = follower.cme.id;
-
-          // Follower continues with merged properties
-          // Rebuild its trajectory from the merge point with new speed
-          const mergedCme: CMEInput = {
-            ...follower.cme,
-            initialSpeedKms: vMerged,
-            halfAngleDeg: mergedHalfAngle,
-          };
-
-          // Higher density in the merged structure → more drag going forward
-          const mergedGamma = estimateGamma(vMerged, mergedHalfAngle) * 1.3;
-          const tFromMerge = maxTimeSec - tFollower;
-          const mergedTraj = computeTrajectory(
-            { ...mergedCme, startTimeMs: follower.cme.startTimeMs + tFollower * 1000 },
-            mergedGamma, follower.ambientW, tFromMerge,
-          );
-
-          // Stitch: keep follower's trajectory up to merge, then append merged
-          const premerge = follower.trajectory.filter(p => p.tSec < tFollower);
-          const postmerge = mergedTraj.map(p => ({
-            tSec: p.tSec + tFollower,
-            distKm: p.distKm - R_INNER_KM + mergeDistKm,  // Offset from merge point
-            speedKms: p.speedKms,
-          }));
-          follower.trajectory = [...premerge, ...postmerge];
-
-          // Density boost at the collision interface
-          follower.compressionDensityBoost = 2.5 + 1.5 * (v2 / v1 - 1);
-
-          break;  // Done with this leader
+          // Keep scanning for compression; no destructive merge.
+          continue;
         }
 
         // ── COMPRESSION CHECK ───────────────────────────────────────
@@ -531,8 +496,9 @@ export function createPropagationEngine(
     };
   });
 
-  // ── Resolve multi-CME interactions ──────────────────────────────────
-  resolveInteractions(trajectories, MAX_PROPAGATION_SEC);
+  // Keep propagation limited to per-CME kinematics (location, speed, spread/size).
+  // We intentionally skip multi-CME interaction transforms here to avoid
+  // non-linear overtaking/preconditioning artifacts in the 3D model.
 
   // ── Precompute arrival times ────────────────────────────────────────
   const arrivals = new Map<string, { arrivalTimeSec: number; arrivalSpeedKms: number }>();
