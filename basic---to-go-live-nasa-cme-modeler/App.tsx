@@ -185,6 +185,29 @@ const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
+const BANNER_XRAY_URLS = [
+  'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json',
+];
+
+const parseLatestShortBandFlux = (raw: any[]): number | null => {
+  if (!Array.isArray(raw)) return null;
+
+  const latestByTimestamp = new Map<number, number>();
+  raw.forEach((row: any) => {
+    if (row?.energy !== '0.1-0.8nm') return;
+    const t = new Date(row.time_tag).getTime();
+    const flux = Number.parseFloat(row.flux);
+    if (!Number.isFinite(t) || !Number.isFinite(flux)) return;
+    latestByTimestamp.set(t, flux);
+  });
+
+  if (!latestByTimestamp.size) return null;
+  const latestTs = Math.max(...latestByTimestamp.keys());
+  return latestByTimestamp.get(latestTs) ?? null;
+};
+
 const SolarSurferGame = retryLazyLoad(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = retryLazyLoad(() => import('./components/ImpactGraphModal'));
 const DebugPanel = retryLazyLoad(() => import('./components/DebugPanel'));
@@ -549,6 +572,37 @@ const App: React.FC = () => {
     } catch {
       prompt('Copy this URL:', url);
     }
+  }, []);
+
+  // Keep GlobalBanner flare state warm from app start so users do not need
+  // to open the Solar Activity page before flare alerts appear.
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchBannerXray = async () => {
+      for (const url of BANNER_XRAY_URLS) {
+        try {
+          const response = await fetch(`${url}?_=${Date.now()}`);
+          if (!response.ok) continue;
+          const raw = await response.json();
+          const latestFlux = parseLatestShortBandFlux(raw);
+          if (latestFlux !== null) {
+            if (!cancelled) setLatestXrayFlux(latestFlux);
+            return;
+          }
+        } catch {
+          // Try fallback URL silently.
+        }
+      }
+    };
+
+    void fetchBannerXray();
+    const id = window.setInterval(() => { void fetchBannerXray(); }, 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, []);
 
   useEffect(() => {
