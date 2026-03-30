@@ -547,20 +547,74 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     cmeObject.visible = true;
     const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cmeObject.quaternion);
     const dist = Math.max(0, distTraveledInSceneUnits - sunRadius);
-    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + dist));
     const cme: any = cmeObject.userData;
-    const lateral = Math.max(dist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
-    cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
+
+    // ── Visual CME↔HSS non-penetration response ───────────────────────────
+    // When a CME propagates through the same angular corridor as a CH-driven
+    // HSS stream, keep the front from cleanly phasing through the stream arm.
+    // We render this as:
+    //   • radial holdback (acts like pile-up at HSS interface)
+    //   • lateral bending around the stream corridor
+    //   • cross-sectional compression + slight axial stretch
+    //   • weak rebound oscillation while overlap persists
+    // This is intentionally visual (not changing the DBM trajectory state).
+    let hssPressure = 0;
+    let hssBendSign = 1;
+    if (showHss && coronalHoles.length > 0) {
+      const cmeLat = Number.isFinite(cme.latitude) ? cme.latitude : 0;
+      const cmeLon = Number.isFinite(cme.longitude) ? cme.longitude : 0;
+
+      coronalHoles.forEach(ch => {
+        const coneDeg = Math.max(10, (ch.expansionHalfAngleDeg ?? ch.widthDeg * 0.45)) + (cme.halfAngle ?? 30) * 0.50;
+        const dLat = THREE.MathUtils.degToRad(cmeLat - ch.lat);
+        const dLon = THREE.MathUtils.degToRad(cmeLon - ch.lon);
+        const lat1 = THREE.MathUtils.degToRad(cmeLat);
+        const lat2 = THREE.MathUtils.degToRad(ch.lat);
+
+        const sinDLat = Math.sin(dLat * 0.5);
+        const sinDLon = Math.sin(dLon * 0.5);
+        const hav = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+        const angSepDeg = THREE.MathUtils.radToDeg(2 * Math.asin(Math.min(1, Math.sqrt(Math.max(0, hav)))));
+
+        if (angSepDeg >= coneDeg) return;
+
+        const angularOverlap = 1 - (angSepDeg / coneDeg);
+        const radialFrac = THREE.MathUtils.clamp(dist / (PLANET_DATA_MAP.EARTH.radius * 1.1), 0, 1);
+        const radialEnvelope = Math.pow(Math.sin(Math.PI * radialFrac), 1.2);
+        const pressure = angularOverlap * radialEnvelope;
+
+        if (pressure > hssPressure) {
+          hssPressure = pressure;
+          hssBendSign = Math.sign(cmeLon - ch.lon) || 1;
+        }
+      });
+    }
+
+    const rebound = hssPressure > 0.08
+      ? Math.max(0, Math.sin((timeSinceEventSeconds ?? 0) * 0.012)) * sunRadius * 0.10 * hssPressure
+      : 0;
+    const heldDist = Math.max(0, dist * (1 - 0.30 * hssPressure) - rebound);
+
+    const sideAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+    if (sideAxis.lengthSq() < 1e-6) sideAxis.set(1, 0, 0);
+    sideAxis.normalize();
+    const bendOffset = sideAxis.multiplyScalar(sunRadius * 0.22 * hssPressure * hssBendSign);
+
+    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + heldDist).add(bendOffset));
+    const lateral = Math.max(heldDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
+    const compression = 1 - 0.35 * hssPressure;
+    const sXZ = (lateral / GCS_ARC_RADIUS_FRAC) * compression;
+    const axialStretch = GCS_AXIAL_DEPTH_FRAC * (1 + 0.25 * hssPressure);
+    cmeObject.scale.set(sXZ, sXZ * axialStretch, sXZ);
 
     // ── TAIL POSITIONING ─────────────────────────────────────────────────────
     // The tail back edge travels at half the front speed, so the CME elongates
     // as it propagates outward.  tailBackDist ≈ frontDist × 0.5.
     if (tailMesh) {
-      const tailBackDist = dist * 0.5;
-      const tailLength   = dist - tailBackDist;  // = dist * 0.5
+      const tailBackDist = heldDist * 0.5;
+      const tailLength   = heldDist - tailBackDist;  // = heldDist * 0.5
       const minLen = sunRadius * 0.15;
-      if (tailLength < minLen || dist < sunRadius * 0.3) {
+      if (tailLength < minLen || heldDist < sunRadius * 0.3) {
         tailMesh.visible = false;
       } else {
         tailMesh.visible = cmeObject.visible;
@@ -590,7 +644,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (cmeObject.material) {
       const earthDist = PLANET_DATA_MAP.EARTH.radius;
       // 0 at Sun → 1 at Earth orbit
-      const distFrac = Math.min(1, dist / earthDist);
+      const distFrac = Math.min(1, heldDist / earthDist);
       // Floor speed: linear map from initial 300→2500 to floor 300→800
       const floorSpeed = 300 + (Math.min(cme.speed, 2500) - 300) / (2500 - 300) * 500;
       // Front lerps from initial speed → floor speed over Sun→Earth distance
@@ -605,7 +659,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.material.color.copy(tailColor);
       }
     }
-  }, []);
+  }, [coronalHoles, showHss]);
 
   useEffect(() => {
     if (!mountRef.current || rendererRef.current) return;
