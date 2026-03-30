@@ -514,13 +514,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return Math.min(1, timeSinceEventSeconds / total) * (PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE) * SCENE_SCALE;
   }, []);
 
-  // ── updateCMEShape — angular GCS expansion + live colour ─────────────────
+  // ── updateCMEShape — angular GCS expansion + tail + live colour ───────────
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
     const THREE = (window as any).THREE;
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
+    const tailMesh = cmeObject.userData?._tailMesh;
+
     if (distTraveledInSceneUnits < 0) {
       cmeObject.visible = false;
+      if (tailMesh) tailMesh.visible = false;
       return;
     }
     cmeObject.visible = true;
@@ -532,6 +535,27 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
     cmeObject.scale.set(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ);
 
+    // ── TAIL POSITIONING ─────────────────────────────────────────────────────
+    // The tail back edge travels at half the front speed, so the CME elongates
+    // as it propagates outward.  tailBackDist ≈ frontDist × 0.5.
+    if (tailMesh) {
+      const tailBackDist = dist * 0.5;
+      const tailLength   = dist - tailBackDist;  // = dist * 0.5
+      const minLen = sunRadius * 0.15;
+      if (tailLength < minLen || dist < sunRadius * 0.3) {
+        tailMesh.visible = false;
+      } else {
+        tailMesh.visible = cmeObject.visible;
+        // Position at the tail back (closest to the sun)
+        tailMesh.position.copy(dir.clone().multiplyScalar(sunRadius + tailBackDist));
+        tailMesh.quaternion.copy(cmeObject.quaternion);
+        // Scale: Y stretches along the propagation direction,
+        // XZ is a fraction of the front's lateral width for a tapered wake
+        const tailLateralScale = sXZ * 0.45;
+        tailMesh.scale.set(tailLateralScale, tailLength, tailLateralScale);
+      }
+    }
+
     // ── LIVE COLOUR TRANSITION ───────────────────────────────────────────────
     // Use the propagation engine's DBM speed, falling back to simple calc.
     // As the CME decelerates via quadratic drag, colour shifts through the speed key.
@@ -542,10 +566,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         liveSpeed = engine.getCurrentSpeed(cme.id, timeSinceEventSeconds);
       } else {
         const u = cme.speed, t = Math.max(0, timeSinceEventSeconds);
-        const w = 380, gamma = 0.5e-7;
+        const w = 380, gamma = 0.5e-7, dv = u - w;
         liveSpeed = u <= 300 ? u : w + dv / (1 + gamma * Math.abs(dv) * t);
       }
-      cmeObject.material.color = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
+      const liveColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, liveSpeed));
+      cmeObject.material.color = liveColor;
+      if (tailMesh?.material) tailMesh.material.color = liveColor;
     }
   }, []);
 
@@ -956,13 +982,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
 
       cmeGroupRef.current.children.forEach((c: any) => {
+        if (c.userData?._isTail) return; // tails are managed by updateCMEShape
         if (c.material) {
           const engine = propagationEngineRef.current;
           if (engine && engine.isCannibalized(c.userData.id)) {
             c.material.opacity = Math.max(0, c.material.opacity - 0.02);
-            if (c.material.opacity <= 0.01) { c.visible = false; return; }
+            if (c.material.opacity <= 0.01) { c.visible = false; if (c.userData._tailMesh) c.userData._tailMesh.visible = false; return; }
+            if (c.userData._tailMesh?.material) c.userData._tailMesh.material.opacity = c.material.opacity * 0.55;
           } else {
             c.material.opacity = getCmeOpacity(c.userData.speed);
+            if (c.userData._tailMesh?.material) c.userData._tailMesh.material.opacity = getCmeOpacity(c.userData.speed) * 0.55;
           }
         }
       });
@@ -977,9 +1006,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => { const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
+        cmeGroupRef.current.children.forEach((c: any) => { if (c.userData?._isTail) return; const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
       } else {
         cmeGroupRef.current.children.forEach((c: any) => {
+          if (c.userData?._isTail) return; // tails are managed by updateCMEShape
           let d = 0; let tSec = 0;
           if (currentlyModeledCMEId && c.userData.id === currentlyModeledCMEId) {
             const cme = c.userData, t = elapsedTime - (cme.simulationStartTime ?? elapsedTime);
@@ -1163,7 +1193,43 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
-      const system = new THREE.Points(geom, mat); system.userData = cme;
+      const system = new THREE.Points(geom, mat); system.userData = { ...cme };
+
+      // ── TAIL PARTICLE SYSTEM ─────────────────────────────────────────────
+      // Particles distributed from Y=0 (back, near sun) to Y=1 (front, near CME head).
+      // Conical taper: wider at the CME-head end, narrower toward the sun.
+      // updateCMEShape scales/positions this so the tail back travels at half the front speed.
+      const tailParticleCount = Math.floor(getCmeParticleCount(cme.speed) * 0.35);
+      const tailPos: number[] = [];
+      for (let i = 0; i < tailParticleCount; i++) {
+        // Y from 0 (back) to 1 (front) with bias toward the front (near the CME head)
+        const yNorm = Math.pow(Math.random(), 1.6);
+        // Conical spread: wider at the front (yNorm=1), narrower at the back (yNorm=0)
+        const spread = 0.12 + 0.30 * yNorm;
+        const rho = Math.sqrt(Math.random()) * spread;
+        const phi = Math.random() * 2 * Math.PI;
+        tailPos.push(
+          rho * Math.cos(phi),  // X
+          yNorm,                // Y (0→1, stretched by scale in updateCMEShape)
+          rho * Math.sin(phi)   // Z
+        );
+      }
+      const tailGeom = new THREE.BufferGeometry();
+      tailGeom.setAttribute('position', new THREE.Float32BufferAttribute(tailPos, 3));
+      const tailMat = new THREE.PointsMaterial({
+        size: getCmeParticleSize(cme.speed, SCENE_SCALE) * 0.72,
+        sizeAttenuation: true, map: pt, transparent: true,
+        opacity: getCmeOpacity(cme.speed) * 0.55,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        color: getCmeCoreColor(cme.speed)
+      });
+      const tailSystem = new THREE.Points(tailGeom, tailMat);
+      tailSystem.userData = { _isTail: true, _parentCmeId: cme.id };
+      tailSystem.visible = false; // hidden until CME propagates far enough
+
+      // Link the tail to the front so updateCMEShape can find it
+      system.userData._tailMesh = tailSystem;
+
       // Stonyhurst longitude 0° = toward Earth at eruption time.
       // Offset by Earth's true ecliptic longitude so the CME points
       // in the correct absolute direction in the scene.
@@ -1175,7 +1241,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         earthLonAtEruption + THREE.MathUtils.degToRad(cme.longitude)
       );
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      tailSystem.quaternion.copy(system.quaternion);
       cmeGroupRef.current.add(system);
+      cmeGroupRef.current.add(tailSystem);
     });
   }, [cmeData, getClockElapsedTime, threeReady]);
 
@@ -1183,6 +1251,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!cmeGroupRef.current) return;
     cmeGroupRef.current.children.forEach((cm: any) => {
+      if (cm.userData?._isTail) {
+        // Tail visibility is managed by its parent via updateCMEShape; 
+        // but when switching modeled CME, hide tails of non-selected CMEs
+        cm.visible = !currentlyModeledCMEId || cm.userData._parentCmeId === currentlyModeledCMEId;
+        return;
+      }
       cm.visible = !currentlyModeledCMEId || cm.userData.id === currentlyModeledCMEId;
       if (cm.userData.id === currentlyModeledCMEId) cm.userData.simulationStartTime = getClockElapsedTime();
     });
@@ -1307,6 +1381,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const cmeArrivals: CMEArrival[] = [];
       cmeGroupRef.current.children.forEach((co: any) => {
+        if (co.userData?._isTail) return;
         const cme = co.userData as ProcessedCME;
         if (!cme?.startTime || !cme.speed) return;
 
@@ -1468,7 +1543,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     let maxSpeed = 0;
     const p = new THREE.Vector3(); celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p);
     cmeGroupRef.current.children.forEach((c: any) => {
-      const d = c.userData; if (!d || !c.visible) return;
+      const d = c.userData; if (!d || d._isTail || !c.visible) return;
       const tip = c.position.clone().add(new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion).multiplyScalar(c.scale.x * GCS_ARC_RADIUS_FRAC));
       if (tip.distanceTo(p) < PLANET_DATA_MAP.EARTH.size * 2.2 && d.speed > maxSpeed) maxSpeed = d.speed;
     });
