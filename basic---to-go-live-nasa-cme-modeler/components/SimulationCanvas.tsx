@@ -676,7 +676,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    chHssAnchorEarthAngleRef.current = computeEclipticLongitude('EARTH', initTimeMs);
+    {
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+      }
+    }
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
     // Scene scale is 1 AU = SCENE_SCALE, so ring radii map directly.
@@ -877,11 +884,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // CH longitudes from SUVI are Earth-facing at detection time.
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
-      // earthAngle: use simulationTimeMs directly so CH/HSS phase is always
-      // in sync with the timeline — reading from mesh position lags one frame.
-      // Math.atan2(r·sin(lon), r·cos(lon)) === lon, so this is equivalent
-      // to the original mesh read but computed from the authoritative source.
-      let earthAngle = computeEclipticLongitude('EARTH', simulationTimeMs);
+      let earthAngle = 0;
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        earthAngle = Math.atan2(earthPos.x, earthPos.z);
+      }
       const chHssPhaseFromDetection = chDetectedAtMs != null
         ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
         : null;
@@ -1184,10 +1193,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
     {
-      const nowMs = (animPropsRef.current.timelineActive && animPropsRef.current.timelineMaxDate > animPropsRef.current.timelineMinDate)
-        ? animPropsRef.current.timelineMinDate + (animPropsRef.current.timelineMaxDate - animPropsRef.current.timelineMinDate) * (timelineValueRef.current / 1000)
-        : Date.now();
-      chHssAnchorEarthAngleRef.current = computeEclipticLongitude('EARTH', nowMs);
+      const earth = celestialBodiesRef.current.EARTH?.mesh;
+      if (earth) {
+        const earthPos = new THREE.Vector3();
+        earth.getWorldPosition(earthPos);
+        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+      }
     }
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
