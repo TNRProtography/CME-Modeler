@@ -1164,7 +1164,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
       const system = new THREE.Points(geom, mat); system.userData = cme;
-      const dir = new THREE.Vector3(); dir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - cme.latitude), THREE.MathUtils.degToRad(cme.longitude));
+      // Stonyhurst longitude 0° = toward Earth at eruption time.
+      // Offset by Earth's true ecliptic longitude so the CME points
+      // in the correct absolute direction in the scene.
+      const earthLonAtEruption = computeEclipticLongitude('EARTH', cme.startTime.getTime());
+      const dir = new THREE.Vector3();
+      dir.setFromSphericalCoords(
+        1,
+        THREE.MathUtils.degToRad(90 - cme.latitude),
+        earthLonAtEruption + THREE.MathUtils.degToRad(cme.longitude)
+      );
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       cmeGroupRef.current.add(system);
     });
