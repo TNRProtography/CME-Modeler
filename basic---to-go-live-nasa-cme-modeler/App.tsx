@@ -279,7 +279,7 @@ const App: React.FC = () => {
   const [showMoonL1, setShowMoonL1] = useState(false);
   const [showFluxRope, setShowFluxRope] = useState(false);
   const [showHss, setShowHss] = useState(false);
-  const [rerunHssInteraction, setRerunHssInteraction] = useState(false);
+  const [rerunHssInteraction] = useState(true);
   const [rerunToken, setRerunToken] = useState(0);
   const [rerunAwaitingHssData, setRerunAwaitingHssData] = useState(false);
   const [sharedSuvi195Url, setSharedSuvi195Url] = useState<string | null>(null);
@@ -359,14 +359,13 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const rerunHssStatusText = useMemo(() => {
-    if (!rerunHssInteraction) return '';
-    if (!currentlyModeledCMEId) return 'Select a CME to activate Physics Model.';
+    if (!currentlyModeledCMEId) return 'Select a CME to run interaction physics.';
     if (chDetectionStatus === 'loading' || rerunAwaitingHssData) return 'Loading SUVI coronal holes and building heliospheric interaction model…';
     if (chDetectionStatus === 'detected') return 'Physics Model active — CME–CME collisions + CME–HSS drag (Vršnak DBM).';
     if (chDetectionStatus === 'empty') return 'No coronal holes detected — running CME–CME physics with ambient wind only.';
     if (chDetectionStatus === 'error') return 'SUVI feed retrying — using last available heliospheric state.';
     return 'Preparing Physics Model…';
-  }, [rerunHssInteraction, currentlyModeledCMEId, chDetectionStatus, rerunAwaitingHssData]);
+  }, [currentlyModeledCMEId, chDetectionStatus, rerunAwaitingHssData]);
 
   const rerunHssBusy = rerunHssInteraction && (chDetectionStatus === 'loading' || rerunAwaitingHssData);
 
@@ -951,20 +950,7 @@ const App: React.FC = () => {
 
   const handleShowHssChange = useCallback((next: boolean) => {
     setShowHss(next);
-    if (!next) {
-      setRerunHssInteraction(false);
-      setRerunAwaitingHssData(false);
-    }
-  }, []);
-
-  const handleRerunHssInteractionChange = useCallback((enabled: boolean) => {
-    setRerunHssInteraction(enabled);
-    if (!enabled) {
-      setRerunAwaitingHssData(false);
-      return;
-    }
-    setShowHss(true);
-    setRerunAwaitingHssData(true);
+    if (!next) setRerunAwaitingHssData(false);
   }, []);
 
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
@@ -973,20 +959,15 @@ const App: React.FC = () => {
     // In Physics Model mode, render ALL CMEs so CME–CME interactions are visible.
     // The selected CME remains the "primary" (simulation clock is anchored to it)
     // but other CMEs propagate at their real-time positions.
-    if (currentlyModeledCMEId && rerunHssInteraction) {
+    if (currentlyModeledCMEId) {
       return filteredCmes;
     }
-    if (currentlyModeledCMEId) {
-      const singleCME = cmeData.find(c => c.id === currentlyModeledCMEId);
-      return singleCME ? [singleCME] : [];
-    }
     return filteredCmes;
-  }, [currentlyModeledCMEId, cmeData, filteredCmes, rerunHssInteraction]);
+  }, [currentlyModeledCMEId, filteredCmes]);
 
   const shouldShowTimelineControls = activePage === 'modeler';
 
   useEffect(() => {
-    if (!rerunHssInteraction) return;
     if (!currentlyModeledCMEId) return;
 
     const ready = chDetectionStatus === 'detected' || chDetectionStatus === 'empty' || chDetectionStatus === 'error';
@@ -995,15 +976,14 @@ const App: React.FC = () => {
     setRerunToken((v) => v + 1);
     setRerunAwaitingHssData(false);
     resetClock();
-  }, [rerunHssInteraction, currentlyModeledCMEId, chDetectionStatus, resetClock]);
+  }, [currentlyModeledCMEId, chDetectionStatus, resetClock]);
 
   useEffect(() => { if (currentlyModeledCMEId && !filteredCmes.find((c: ProcessedCME) => c.id === currentlyModeledCMEId)) { setCurrentlyModeledCMEId(null); setSelectedCMEForInfo(null); } }, [filteredCmes, currentlyModeledCMEId]);
 
   useEffect(() => {
-    if (!rerunHssInteraction) return;
     if (!currentlyModeledCMEId) return;
     setRerunAwaitingHssData(true);
-  }, [rerunHssInteraction, currentlyModeledCMEId]);
+  }, [currentlyModeledCMEId]);
 
   // Auto-select CME from ?cme= URL param once data has loaded.
   // Uses a ref so the ID is never lost when navigation strips the URL param.
@@ -1383,7 +1363,7 @@ const App: React.FC = () => {
               <Suspense fallback={null}>
               <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} chDetectionStatus={chDetectionStatus} rerunHssInteraction={rerunHssInteraction} onRerunHssInteractionChange={handleRerunHssInteractionChange} rerunHssBusy={rerunHssBusy} rerunHssStatusText={rerunHssStatusText} hasSelectedCme={!!currentlyModeledCMEId} />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} chDetectionStatus={chDetectionStatus} rerunHssBusy={rerunHssBusy} rerunHssStatusText={rerunHssStatusText} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
