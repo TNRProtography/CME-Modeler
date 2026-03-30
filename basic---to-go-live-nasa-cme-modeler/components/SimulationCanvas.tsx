@@ -373,6 +373,8 @@ interface SimulationCanvasProps {
   measuredWindSpeedKms?: number;
   /** Increment to force a selected-CME simulation restart. */
   rerunToken?: number;
+  /** Whether the re-run CME vs HSS interaction mode is active */
+  rerunHssInteraction?: boolean;
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -383,7 +385,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
     showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
-    measuredWindSpeedKms, rerunToken = 0,
+    measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -420,6 +422,16 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const spacecraftGroupRef = useRef<any>(null);
   const spacecraftPositionsRef = useRef<Record<string, {x:number;y:number;z:number;name:string;color:string}>>({});
 
+  // ── Staged Re-run state ──────────────────────────────────────────────────
+  // Phases: 'idle' → 'clearing' → 'hss-building' → 'cme-launching' → 'running'
+  const rerunPhaseRef      = useRef<'idle' | 'clearing' | 'hss-building' | 'cme-launching' | 'running'>('idle');
+  const rerunPhaseStartRef = useRef<number>(0);       // getClockElapsedTime() at phase start
+  const rerunHssOpacityRef = useRef<number>(1);        // opacity ramp for HSS during build
+  const rerunCmeDelayRef   = useRef<boolean>(false);   // true = CME hidden during HSS build
+  const [rerunOverlayText, setRerunOverlayText] = useState<string>('');
+  const [rerunOverlayVisible, setRerunOverlayVisible] = useState(false);
+  const rerunOverlayPhaseRef = useRef<number>(0);      // sub-step counter for status messages
+
   const timelineValueRef    = useRef(timelineValue);
   const lastTimeRef         = useRef(0);
   const raycasterRef        = useRef<any>(null);
@@ -430,17 +442,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
     timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-    showFluxRope, bzSouth, showHss,
+    showFluxRope, bzSouth, showHss, rerunHssInteraction,
   });
   useEffect(() => {
     animPropsRef.current = {
       onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, bzSouth, showHss,
+      showFluxRope, bzSouth, showHss, rerunHssInteraction,
     };
   }, [onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
       timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate,
-      showFluxRope, bzSouth, showHss]);
+      showFluxRope, bzSouth, showHss, rerunHssInteraction]);
 
   // --- Dynamic loader: only fetches Three.js + deps when the modeler first mounts ---
   const threeLoadedRef = useRef(false);
@@ -593,20 +605,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
 
     const rebound = hssPressure > 0.08
-      ? Math.max(0, Math.sin((timeSinceEventSeconds ?? 0) * 0.012)) * sunRadius * 0.10 * hssPressure
+      ? Math.max(0, Math.sin((timeSinceEventSeconds ?? 0) * 0.012)) * sunRadius * (rerunHssInteraction ? 0.18 : 0.10) * hssPressure
       : 0;
-    const heldDist = Math.max(0, dist * (1 - 0.30 * hssPressure) - rebound);
+    // In re-run mode, HSS acts as a hard barrier — much stronger holdback
+    const holdbackFactor = rerunHssInteraction ? 0.55 : 0.30;
+    const heldDist = Math.max(0, dist * (1 - holdbackFactor * hssPressure) - rebound);
 
     const sideAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
     if (sideAxis.lengthSq() < 1e-6) sideAxis.set(1, 0, 0);
     sideAxis.normalize();
-    const bendOffset = sideAxis.multiplyScalar(sunRadius * 0.22 * hssPressure * hssBendSign);
+    // Stronger lateral deflection in re-run mode (CME bends around HSS)
+    const bendStrength = rerunHssInteraction ? 0.38 : 0.22;
+    const bendOffset = sideAxis.multiplyScalar(sunRadius * bendStrength * hssPressure * hssBendSign);
 
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + heldDist).add(bendOffset));
     const lateral = Math.max(heldDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const compression = 1 - 0.35 * hssPressure;
+    const compressionFactor = rerunHssInteraction ? 0.50 : 0.35;
+    const compression = 1 - compressionFactor * hssPressure;
     const sXZ = (lateral / GCS_ARC_RADIUS_FRAC) * compression;
-    const axialStretch = GCS_AXIAL_DEPTH_FRAC * (1 + 0.25 * hssPressure);
+    const axialStretchFactor = rerunHssInteraction ? 0.45 : 0.25;
+    const axialStretch = GCS_AXIAL_DEPTH_FRAC * (1 + axialStretchFactor * hssPressure);
     cmeObject.scale.set(sXZ, sXZ * axialStretch, sXZ);
 
     // ── TAIL POSITIONING ─────────────────────────────────────────────────────
@@ -661,7 +679,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.material.color.copy(tailColor);
       }
     }
-  }, [coronalHoles, showHss]);
+  }, [coronalHoles, showHss, rerunHssInteraction]);
 
   useEffect(() => {
     if (!mountRef.current || rendererRef.current) return;
@@ -1032,6 +1050,53 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       if (hssAuRingsRef.current) hssAuRingsRef.current.visible = showHss;
 
+      // ── Staged re-run: progressive HSS/CH opacity build ────────────────────
+      if (rerunPhaseRef.current === 'hss-building' || rerunPhaseRef.current === 'cme-launching') {
+        const phaseElapsed = elapsedTime - rerunPhaseStartRef.current;
+        // HSS opacity ramps from 0 → 1 over ~4 seconds during hss-building phase
+        const targetOpacity = rerunPhaseRef.current === 'hss-building'
+          ? Math.min(1, phaseElapsed / 4.0)
+          : 1;
+        rerunHssOpacityRef.current = targetOpacity;
+
+        // Apply opacity to HSS shader materials
+        if (hssGroupRef.current) {
+          hssGroupRef.current.children.forEach((child: any) => {
+            const u = child.material?.uniforms;
+            if (u && u.uOpacity !== undefined) {
+              u.uOpacity.value = targetOpacity;
+            } else if (child.material) {
+              child.material.opacity = targetOpacity;
+              child.material.transparent = targetOpacity < 1;
+            }
+          });
+        }
+        // Apply opacity to CH patches + outlines
+        if (chGroupRef.current) {
+          chGroupRef.current.children.forEach((child: any) => {
+            if (child.material) {
+              child.material.opacity = targetOpacity;
+              child.material.transparent = targetOpacity < 1;
+            }
+          });
+        }
+        // AU rings also fade in
+        if (hssAuRingsRef.current) {
+          hssAuRingsRef.current.children.forEach((child: any) => {
+            if (child.material) {
+              child.material.opacity = targetOpacity * 0.35;
+            }
+          });
+        }
+      }
+      // Hide CMEs during staged rebuild
+      if (rerunCmeDelayRef.current && cmeGroupRef.current) {
+        cmeGroupRef.current.children.forEach((c: any) => {
+          c.visible = false;
+          if (c.userData?._tailMesh) c.userData._tailMesh.visible = false;
+        });
+      }
+
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh;
         // ── Real heliocentric orbital position (ecliptic longitude) ────────
@@ -1339,10 +1404,127 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!cmeGroupRef.current) return;
+
+    // ── Staged re-run: HSS first, then CME ────────────────────────────────
+    if (rerunHssInteraction && rerunToken > 0 && currentlyModeledCMEId) {
+      // Phase 1: Hide all CMEs immediately
+      cmeGroupRef.current.children.forEach((cm: any) => {
+        cm.visible = false;
+        if (cm.userData?._tailMesh) cm.userData._tailMesh.visible = false;
+      });
+      // Clear prediction line
+      if (THREE && sceneRef.current && predictionLineRef.current) {
+        sceneRef.current.remove(predictionLineRef.current);
+        predictionLineRef.current.geometry.dispose();
+        predictionLineRef.current.material.dispose();
+        predictionLineRef.current = null;
+      }
+
+      // Start the staged rebuild sequence
+      rerunPhaseRef.current = 'clearing';
+      rerunPhaseStartRef.current = getClockElapsedTime();
+      rerunHssOpacityRef.current = 0;
+      rerunCmeDelayRef.current = true;
+      rerunOverlayPhaseRef.current = 0;
+      setRerunOverlayVisible(true);
+      setRerunOverlayText('Initializing heliospheric model…');
+
+      // Set all HSS materials to transparent for fade-in
+      if (hssGroupRef.current) {
+        hssGroupRef.current.children.forEach((child: any) => {
+          if (child.material) {
+            child.material.transparent = true;
+            child.material.opacity = 0;
+          }
+        });
+      }
+      // Set CH patches to transparent for fade-in
+      if (chGroupRef.current) {
+        chGroupRef.current.children.forEach((child: any) => {
+          if (child.material) {
+            child.material.transparent = true;
+            child.material.opacity = 0;
+          }
+        });
+      }
+
+      // Staged message sequence driven by timeouts
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      timers.push(setTimeout(() => {
+        rerunPhaseRef.current = 'hss-building';
+        rerunPhaseStartRef.current = getClockElapsedTime();
+        rerunOverlayPhaseRef.current = 1;
+        setRerunOverlayText('Mapping coronal hole boundaries from SUVI EUV…');
+      }, 800));
+
+      timers.push(setTimeout(() => {
+        rerunOverlayPhaseRef.current = 2;
+        setRerunOverlayText('Computing Parker spiral HSS stream corridors…');
+      }, 2200));
+
+      timers.push(setTimeout(() => {
+        rerunOverlayPhaseRef.current = 3;
+        setRerunOverlayText('Propagating high-speed solar wind to 1 AU…');
+      }, 3800));
+
+      timers.push(setTimeout(() => {
+        rerunOverlayPhaseRef.current = 4;
+        setRerunOverlayText('HSS corridors established — injecting CME into heliosphere…');
+        rerunPhaseRef.current = 'cme-launching';
+        rerunPhaseStartRef.current = getClockElapsedTime();
+      }, 5200));
+
+      timers.push(setTimeout(() => {
+        rerunOverlayPhaseRef.current = 5;
+        setRerunOverlayText('Calculating CME↔HSS drag-based interaction model…');
+      }, 6200));
+
+      timers.push(setTimeout(() => {
+        rerunOverlayPhaseRef.current = 6;
+        setRerunOverlayText('Modelling sheath pile-up and deflection at HSS boundary…');
+      }, 7400));
+
+      timers.push(setTimeout(() => {
+        // Final: reveal CME and finish
+        rerunCmeDelayRef.current = false;
+        rerunPhaseRef.current = 'running';
+
+        // Reset CME simulation start time so it launches fresh
+        cmeGroupRef.current?.children.forEach((cm: any) => {
+          if (cm.userData?._isTail) return;
+          if (!currentlyModeledCMEId || cm.userData.id === currentlyModeledCMEId) {
+            cm.userData.simulationStartTime = getClockElapsedTime();
+            cm.visible = true;
+          }
+        });
+
+        // Build prediction line
+        if (THREE && sceneRef.current) {
+          const cme = cmeData.find(c => c.id === currentlyModeledCMEId);
+          if (cme && cme.isEarthDirected && celestialBodiesRef.current.EARTH) {
+            const p = new THREE.Vector3();
+            celestialBodiesRef.current.EARTH.mesh.getWorldPosition(p);
+            const l = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]),
+              new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE })
+            );
+            l.computeLineDistances();
+            l.visible = true;
+            sceneRef.current.add(l);
+            predictionLineRef.current = l;
+          }
+        }
+
+        setRerunOverlayText('CME↔HSS interaction model running');
+        setTimeout(() => { setRerunOverlayVisible(false); setRerunOverlayText(''); }, 1600);
+      }, 8600));
+
+      return () => timers.forEach(t => clearTimeout(t));
+    }
+
+    // ── Normal (non-staged) CME selection/reset ──────────────────────────────
     cmeGroupRef.current.children.forEach((cm: any) => {
       if (cm.userData?._isTail) {
-        // Tail visibility is managed by its parent via updateCMEShape; 
-        // but when switching modeled CME, hide tails of non-selected CMEs
         cm.visible = !currentlyModeledCMEId || cm.userData._parentCmeId === currentlyModeledCMEId;
         return;
       }
@@ -1357,7 +1539,35 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]), new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE }));
       l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l;
     }
-  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady, rerunToken]);
+  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady, rerunToken, rerunHssInteraction]);
+
+  // ── Reset staged rerun state when the mode is turned off ─────────────────
+  useEffect(() => {
+    if (!rerunHssInteraction) {
+      rerunPhaseRef.current = 'idle';
+      rerunCmeDelayRef.current = false;
+      rerunHssOpacityRef.current = 1;
+      setRerunOverlayVisible(false);
+      setRerunOverlayText('');
+      // Restore CH/HSS opacities to full
+      if (chGroupRef.current) {
+        chGroupRef.current.children.forEach((child: any) => {
+          if (child.material) {
+            child.material.opacity = 1;
+            child.material.transparent = false;
+          }
+        });
+      }
+      if (hssGroupRef.current) {
+        hssGroupRef.current.children.forEach((child: any) => {
+          if (child.material && !child.material.uniforms) {
+            child.material.opacity = 1;
+            child.material.transparent = true; // HSS shaders are always transparent
+          }
+        });
+      }
+    }
+  }, [rerunHssInteraction]);
 
   // ── Rebuild CH/HSS geometry when fresh SUVI data arrives ─────────────────
   useEffect(() => {
@@ -1657,7 +1867,46 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (atmo?.material?.uniforms) { (atmo.material as any).opacity = 0.12 + hit * 0.22; atmo.material.uniforms.uImpactTime.value = hit > 0 ? elapsed : 0; }
   }, []);
 
-  return <div ref={mountRef} className="w-full h-full" />;
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div ref={mountRef} className="w-full h-full" />
+      {rerunOverlayVisible && (
+        <div style={{
+          position: 'absolute', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, pointerEvents: 'none',
+          background: 'linear-gradient(135deg, rgba(15,10,40,0.92), rgba(20,15,50,0.88))',
+          border: '1px solid rgba(100,140,255,0.25)',
+          borderRadius: '12px', padding: '12px 22px',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 4px 30px rgba(60,80,200,0.25), inset 0 1px 0 rgba(255,255,255,0.06)',
+          maxWidth: '440px', minWidth: '280px',
+          display: 'flex', alignItems: 'center', gap: '12px',
+        }}>
+          {/* Animated spinner */}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="9" stroke="rgba(100,160,255,0.25)" strokeWidth="2.5" />
+            <path d="M21 12a9 9 0 00-9-9" stroke="rgba(120,170,255,0.9)" strokeWidth="2.5" strokeLinecap="round">
+              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite" />
+            </path>
+          </svg>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{
+              color: 'rgba(160,190,255,0.95)', fontSize: '11px', fontWeight: 600,
+              letterSpacing: '0.04em', textTransform: 'uppercase',
+            }}>
+              CME↔HSS Interaction Model
+            </span>
+            <span style={{
+              color: 'rgba(200,215,255,0.82)', fontSize: '12px', fontWeight: 400,
+              lineHeight: '1.4',
+            }}>
+              {rerunOverlayText}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default React.forwardRef(SimulationCanvas);

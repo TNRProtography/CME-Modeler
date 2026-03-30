@@ -62,11 +62,11 @@ const SPIRAL_TURNS           = 0.38;   // tighter winding — more pronounced sp
 // This caused the HSS spiral to appear offset — launching from the "gap"
 // between the inflated CH edge rather than from the CH itself.
 //
-// Now set to 1.0 (true size). The CH patches show their actual detected
-// boundary from SUVI, and the HSS spiral root aligns correctly with the
-// CH centroid. If CHs look too small at full zoom-out, consider a subtle
-// outline glow rather than inflating the geometry.
-const CH_OVEREMPHASIS        = 1.0;
+// Reduced from 1.0 to 0.72 — detected SUVI boundaries were visually
+// oversized relative to the solar disk at typical zoom levels.  0.72
+// keeps them clearly visible while better matching SDO/AIA reference
+// imagery.  The HSS spiral root still aligns to the CH centroid.
+const CH_OVEREMPHASIS        = 0.72;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
 const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
