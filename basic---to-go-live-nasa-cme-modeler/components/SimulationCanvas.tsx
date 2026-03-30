@@ -738,30 +738,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       });
     }
 
-    // ── Apply CME–CME lateral deflection (Shen et al. 2012) ──────────────
-    // When CMEs partially overlap in angle, the faster one deflects away
-    if (cmeCmePressure > 0.05) {
-      const cmeBendAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-      if (cmeBendAxis.lengthSq() < 1e-6) cmeBendAxis.set(1, 0, 0);
-      cmeBendAxis.normalize();
-      const cmeBendStrength = sunRadius * 0.30 * cmeCmePressure * cmeCmeBendSign;
-      bendOffset.addScaledVector(cmeBendAxis, cmeBendStrength);
-    }
-
-    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + heldDist).add(bendOffset));
-    const lateral = Math.max(heldDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
-    const compressionFactor = rerunHssInteraction ? 0.50 : 0.35;
-    // Combined compression from HSS + CME–CME sheath pile-up
-    // CME–CME compression squeezes the ejecta cross-section (Manchester et al. 2017)
-    const totalCompression = Math.max(0.25,
-      (1 - compressionFactor * hssPressure) * (1 - 0.40 * cmeCmeCompression)
-    );
-    const sXZ = (lateral / GCS_ARC_RADIUS_FRAC) * totalCompression;
-    const axialStretchFactor = rerunHssInteraction ? 0.45 : 0.25;
-    // CME–CME collision also causes axial pancaking (ejecta flattens at interface)
-    const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC
-      * (1 + axialStretchFactor * hssPressure)
-      * (1 + 0.35 * cmeCmeCompression);
+    // Keep position physics simple and stable:
+    // - location follows radial propagation distance
+    // - no lateral deflection / non-penetration offsets
+    const radialDist = Math.max(0, dist);
+    cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + radialDist));
+    const lateral = Math.max(radialDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
+    const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
+    const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC;
     cmeObject.scale.set(sXZ, sXZ * totalAxialStretch, sXZ);
 
     // ── Store this CME's frame state for CME–CME checks next frame ───────
@@ -769,7 +753,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeFrameStatesRef.current.set(cme.id, {
         position: cmeObject.position.clone(),
         dir: dir.clone(),
-        dist: sunRadius + heldDist,
+        dist: sunRadius + radialDist,
         speed: cme.speed ?? 400,
         halfAngle: cme.halfAngle ?? 30,
         latitude: Number.isFinite(cme.latitude) ? cme.latitude : 0,
@@ -782,10 +766,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // The tail back edge travels at half the front speed, so the CME elongates
     // as it propagates outward.  tailBackDist ≈ frontDist × 0.5.
     if (tailMesh) {
-      const tailBackDist = heldDist * 0.5;
-      const tailLength   = heldDist - tailBackDist;  // = heldDist * 0.5
+      const tailBackDist = radialDist * 0.5;
+      const tailLength   = radialDist - tailBackDist;  // = radialDist * 0.5
       const minLen = sunRadius * 0.15;
-      if (tailLength < minLen || heldDist < sunRadius * 0.3) {
+      if (tailLength < minLen || radialDist < sunRadius * 0.3) {
         tailMesh.visible = false;
       } else {
         tailMesh.visible = cmeObject.visible;

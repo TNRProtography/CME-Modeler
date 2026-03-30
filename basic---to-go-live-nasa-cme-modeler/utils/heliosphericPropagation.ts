@@ -496,8 +496,9 @@ export function createPropagationEngine(
     };
   });
 
-  // ── Resolve multi-CME interactions ──────────────────────────────────
-  resolveInteractions(trajectories, MAX_PROPAGATION_SEC);
+  // Keep propagation limited to per-CME kinematics (location, speed, spread/size).
+  // We intentionally skip multi-CME interaction transforms here to avoid
+  // non-linear overtaking/preconditioning artifacts in the 3D model.
 
   // ── Precompute arrival times ────────────────────────────────────────
   const arrivals = new Map<string, { arrivalTimeSec: number; arrivalSpeedKms: number }>();
