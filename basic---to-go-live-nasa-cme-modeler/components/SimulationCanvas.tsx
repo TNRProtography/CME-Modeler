@@ -565,7 +565,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5);
+    camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5); // Start at angled side view showing full inner solar system
     cameraRef.current = camera; onCameraReady(camera);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -676,8 +676,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     hssGroupRef.current = hssGroup;
     hssAuRingsRef.current = hssAuRings;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    // Use authoritative Keplerian longitude for anchor — same source as the
-    // per-frame earthAngle — so there is zero phase error at scene open.
     chHssAnchorEarthAngleRef.current = computeEclipticLongitude('EARTH', initTimeMs);
 
     // WSA-ENLIL style heliocentric distance rings in the ecliptic plane.
@@ -879,14 +877,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // CH longitudes from SUVI are Earth-facing at detection time.
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
-      // Single authoritative Earth longitude for this frame — used for both
-      // CH/HSS phase and Earth mesh position below. Using `let` (not `const`)
-      // prevents Terser's CSE from hoisting this into a TDZ with other
-      // identical const expressions elsewhere in the module.
-      // eslint-disable-next-line prefer-const
-      let earthLonNow = computeEclipticLongitude('EARTH', simulationTimeMs);
+      // earthAngle: use simulationTimeMs directly so CH/HSS phase is always
+      // in sync with the timeline — reading from mesh position lags one frame.
+      // Math.atan2(r·sin(lon), r·cos(lon)) === lon, so this is equivalent
+      // to the original mesh read but computed from the authoritative source.
+      let earthAngle = computeEclipticLongitude('EARTH', simulationTimeMs);
       const chHssPhaseFromDetection = chDetectedAtMs != null
-        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthLonNow - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
+        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
         : null;
       const chHssPhaseFromFallbackAnchor =
         CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD +
@@ -915,12 +912,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (celestialBodiesRef.current.EARTH) {
         const e = celestialBodiesRef.current.EARTH.mesh;
         // ── Real heliocentric orbital position (ecliptic longitude) ────────
-        // Reuse earthLonNow computed above — same simulationTimeMs, avoids
-        // a second const that Terser could merge into a TDZ-causing pattern.
+        const earthLon = computeEclipticLongitude('EARTH', simulationTimeMs);
+        const earthData = PLANET_DATA_MAP.EARTH;
         e.position.set(
-          PLANET_DATA_MAP.EARTH.radius * Math.sin(earthLonNow),
+          earthData.radius * Math.sin(earthLon),
           0,
-          PLANET_DATA_MAP.EARTH.radius * Math.cos(earthLonNow)
+          earthData.radius * Math.cos(earthLon)
         );
         // ── Real axial tilt (fixed — the tilt is baked into rotation.z at init)
         // ── Real sidereal rotation (GMST drives rotation.y) ─────────────────
@@ -1186,9 +1183,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    // Compute anchor from the current simulation time, not the mesh position.
-    // This keeps the CH/HSS phase consistent with the authoritative earthAngle
-    // used in the animation loop, even on first render or after a timeline jump.
     {
       const nowMs = (animPropsRef.current.timelineActive && animPropsRef.current.timelineMaxDate > animPropsRef.current.timelineMinDate)
         ? animPropsRef.current.timelineMinDate + (animPropsRef.current.timelineMaxDate - animPropsRef.current.timelineMinDate) * (timelineValueRef.current / 1000)
