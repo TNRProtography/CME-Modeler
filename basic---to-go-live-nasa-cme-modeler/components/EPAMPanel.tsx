@@ -457,7 +457,7 @@ const EPAMPanel: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="relative h-72 bg-neutral-900/40 rounded-lg p-2">
+        <div className="relative h-[576px] bg-neutral-900/40 rounded-lg p-2">
           <Line data={chartData!} options={chartOptions} />
         </div>
       )}
