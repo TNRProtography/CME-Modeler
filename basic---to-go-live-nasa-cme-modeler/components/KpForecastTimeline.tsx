@@ -202,7 +202,7 @@ function drawCanvas(
   if (COLS === 0) return;
   const DPR    = window.devicePixelRatio || 1;
   const COL_W  = W / COLS;
-  const H      = Math.round(Math.min(210, Math.max(150, W * 0.26)));
+  const H      = Math.round(Math.min(220, Math.max(160, W * 0.28)));
   const LBEL_H = 20;
   const SKY_H  = H - LBEL_H - 14;
   const HOR_Y  = LBEL_H + SKY_H;
@@ -312,12 +312,15 @@ function drawCanvas(
       ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
     }
 
-    // Column separator
+    // Column separator — only draw at 3h boundaries and day transitions
     if (i > 0) {
-      const isDayBound = (slots[i].dayIdx !== slots[i-1].dayIdx);
-      ctx.strokeStyle = isDayBound ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)';
-      ctx.lineWidth   = isDayBound ? 1 : 0.5;
-      ctx.beginPath(); ctx.moveTo(x, LBEL_H); ctx.lineTo(x, HOR_Y); ctx.stroke();
+      const isDayBound  = slots[i].dayIdx !== slots[i-1].dayIdx;
+      const is3hBound   = slots[i].nztHour % 3 === 0;
+      if (isDayBound || is3hBound) {
+        ctx.strokeStyle = isDayBound ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)';
+        ctx.lineWidth   = isDayBound ? 1 : 0.5;
+        ctx.beginPath(); ctx.moveTo(x, LBEL_H); ctx.lineTo(x, HOR_Y); ctx.stroke();
+      }
     }
   });
 
@@ -337,7 +340,7 @@ function drawCanvas(
     if (!dayGroups[s.dayIdx]) dayGroups[s.dayIdx] = {label:s.dayLabel,start:i,count:1};
     else dayGroups[s.dayIdx].count++;
   });
-  Object.values(dayGroups).forEach(({label,start,count}) => {
+  Object.values(dayGroups).sort((a, b) => a.start - b.start).forEach(({label,start,count}) => {
     ctx.font = '500 10px system-ui,sans-serif';
     ctx.fillStyle = 'rgba(200,212,224,0.9)';
     ctx.textAlign = 'center';
@@ -348,12 +351,15 @@ function drawCanvas(
     }
   });
 
-  // Time labels (bottom of canvas)
-  for (let i=0; i<COLS; i+=2) {
+  // Time labels — show every 3 hours so they don't crowd on 1h columns
+  for (let i=0; i<COLS; i++) {
     const h = slots[i].nztHour;
+    // Show at midnight (day transition) and every 3h
+    const showLabel = h % 3 === 0;
+    if (!showLabel) continue;
     const l = h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
-    ctx.font = '400 8.5px system-ui,sans-serif';
-    ctx.fillStyle = 'rgba(100,125,145,0.8)';
+    ctx.font = '400 8px system-ui,sans-serif';
+    ctx.fillStyle = h === 0 ? 'rgba(180,200,220,0.7)' : 'rgba(100,125,145,0.75)';
     ctx.textAlign = 'center';
     ctx.fillText(l, (i+0.5)*COL_W, H-2);
   }
@@ -441,7 +447,42 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         });
 
         if (out.length === 0) { setError(true); return; }
-        setSlots(out.slice(0, 27)); // up to 27 slots = ~81h, trimmed to 3 full days
+
+        // Interpolate the 3-hourly NOAA readings to 1-hour slots.
+        // For each pair of consecutive 3h anchors, linearly interpolate KP
+        // so the aurora band rises and falls smoothly across the canvas.
+        const hourly: KpSlot[] = [];
+        const HOUR_MS = 3600000;
+        for (let i = 0; i < out.length - 1; i++) {
+          const a = out[i];
+          const b = out[i + 1];
+          const steps = Math.round((b.utcMs - a.utcMs) / HOUR_MS); // usually 3
+          for (let s = 0; s < steps; s++) {
+            const t = s / steps;
+            const utcMs = a.utcMs + s * HOUR_MS;
+            // Smooth ease: use cosine interpolation for a gentle S-curve rise/fall
+            const ease = (1 - Math.cos(t * Math.PI)) / 2;
+            const kp = a.kp + (b.kp - a.kp) * ease;
+            const observed = s === 0 ? a.observed : (t < 0.5 ? a.observed : b.observed);
+            const nztMs  = utcMs + NZ_OFFSET_H * 3600000;
+            const nztD   = new Date(nztMs);
+            const nztH   = nztD.getUTCHours();
+            const dayKey = nztD.toISOString().slice(0, 10);
+            if (!dayLabels.includes(dayKey)) dayLabels.push(dayKey);
+            const dayIdx   = dayLabels.indexOf(dayKey);
+            const dayLabel = nztD.toLocaleDateString('en-NZ', {
+              weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+            });
+            hourly.push({ utcMs, nztHour: nztH, dayIdx, dayLabel, kp, observed });
+          }
+        }
+        // Add the final anchor point
+        if (out.length > 0) hourly.push(out[out.length - 1]);
+
+        // Trim to a clean 72-hour window from now
+        const trimmed = hourly.filter(s => s.utcMs >= windowStart && s.utcMs <= now + 72 * HOUR_MS);
+        if (trimmed.length === 0) { setError(true); return; }
+        setSlots(trimmed);
         setLoading(false);
       })
       .catch(() => { setError(true); setLoading(false); });
@@ -487,7 +528,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     : 0;
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
-  const fmtEnd = (h: number) => fmt((h+3)%24);
+  const fmtEnd = (h: number) => fmt((h+1)%24);
 
   function gScale(kp: number) {
     if (kp>=9) return 'G5'; if (kp>=8) return 'G4'; if (kp>=7) return 'G3';
