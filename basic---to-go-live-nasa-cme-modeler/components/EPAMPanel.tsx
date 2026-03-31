@@ -102,11 +102,82 @@ function filterByTimeRange(data: {time_tag: string}[], hours: TimeRange) {
   return data.filter(p => parseUTC(p.time_tag) > cutoff);
 }
 
+// ── Spike filter ─────────────────────────────────────────────────────────────
+// Removes 1–2 point data artifacts from a series before rendering.
+// On a log scale, a bad reading like 1e-20 (vs normal ~1e0) or a sudden
+// vertical spike that immediately returns to baseline is visually destructive —
+// it collapses the entire Y axis range so the real signal is unreadable.
+//
+// For each point we look at the WINDOW_SIZE readings on each side. We compute
+// the median of those neighbours on a log scale. If the point deviates by more
+// than THRESHOLD log units (e.g. 2.5 = 316×) from that median AND it is
+// isolated (the point immediately before AND after it are both also outliers),
+// we replace it with null. Chart.js spans nulls smoothly on log scales.
+//
+// Using 2 readings (ISOLATION = 2) means genuine 3+-reading elevated periods
+// are never removed — only genuine single/double-point glitches are filtered.
+function spikeFilter(
+  data: { x: number; y: number | null }[],
+  threshold = 2.5,   // log10 units — 10^2.5 ≈ 316× deviation required to qualify
+  isolation = 2,     // max consecutive outlier points to remove
+  windowSize = 5     // neighbours on each side used for median
+): { x: number; y: number | null }[] {
+  if (data.length < windowSize * 2 + 1) return data;
+
+  // Work in log10 space — EPAM data spans many decades
+  const logY = data.map(d =>
+    d.y !== null && d.y > 0 ? Math.log10(d.y) : null
+  );
+
+  // Compute neighbourhood median for each point
+  const neighbourMedian = logY.map((_, i) => {
+    const neighbours: number[] = [];
+    for (let j = Math.max(0, i - windowSize); j <= Math.min(logY.length - 1, i + windowSize); j++) {
+      if (j !== i && logY[j] !== null) neighbours.push(logY[j] as number);
+    }
+    if (neighbours.length < 3) return null;
+    const sorted = [...neighbours].sort((a, b) => a - b);
+    const m = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[m - 1] + sorted[m]) / 2 : sorted[m];
+  });
+
+  // Mark outliers: points that deviate by >threshold log units from their
+  // neighbourhood median AND are not part of a sustained run of ≥isolation+1
+  // consecutive elevated points.
+  const isOutlier = logY.map((v, i) => {
+    if (v === null || neighbourMedian[i] === null) return false;
+    return Math.abs(v - (neighbourMedian[i] as number)) > threshold;
+  });
+
+  // Walk runs of consecutive outliers — only suppress runs of ≤isolation length
+  const suppressed = [...isOutlier];
+  let runStart = -1;
+  for (let i = 0; i <= isOutlier.length; i++) {
+    if (i < isOutlier.length && isOutlier[i]) {
+      if (runStart === -1) runStart = i;
+    } else {
+      if (runStart !== -1) {
+        const runLen = i - runStart;
+        if (runLen > isolation) {
+          // Real sustained event — un-suppress the whole run
+          for (let j = runStart; j < i; j++) suppressed[j] = false;
+        }
+        runStart = -1;
+      }
+    }
+  }
+
+  return data.map((d, i) => suppressed[i] ? { x: d.x, y: null } : d);
+}
+
 const mkDs = (pts: any[], timeKey: string, valueKey: string, color: string, label: string, positiveOnly = true) => ({
   label, borderColor: color, backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0, tension: 0,
-  data: pts
-    .map(p => ({ x: parseUTC(String(p[timeKey])), y: p[valueKey] ?? null }))
-    .filter(d => d.y !== null && (!positiveOnly || (d.y as number) > 0)),
+  spanGaps: true,
+  data: spikeFilter(
+    pts
+      .map(p => ({ x: parseUTC(String(p[timeKey])), y: p[valueKey] ?? null }))
+      .filter(d => d.y !== null && (!positiveOnly || (d.y as number) > 0))
+  ),
 });
 
 // ACE raw: 5 proton channels
@@ -215,20 +286,20 @@ const EPAMPanel: React.FC = () => {
 
       // ACE average: geometric mean across 5 proton channels
       if (showAce && filteredEpam.length) {
-        const pts = rev(filteredEpam).map(p => ({
+        const pts = spikeFilter(rev(filteredEpam).map(p => ({
           x: parseUTC(p.time_tag),
           y: geoMeanRow([p.p1, p.p3, p.p5, p.p7, p.p8]),
-        })).filter(d => d.y !== null && d.y > 0);
-        datasets.push({ label: 'ACE EPAM (avg all channels)', borderColor: '#60a5fa', backgroundColor: '#60a5fa20', borderWidth: 2, pointRadius: 0, tension: 0.2, data: pts });
+        })).filter(d => d.y !== null && d.y > 0));
+        datasets.push({ label: 'ACE EPAM (avg all channels)', borderColor: '#60a5fa', backgroundColor: '#60a5fa20', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: true, data: pts });
       }
 
       // GOES average: geometric mean across available channels
       if (showGoes && filteredGoes.length) {
-        const pts = rev(filteredGoes).map(p => ({
+        const pts = spikeFilter(rev(filteredGoes).map(p => ({
           x: parseUTC(p.time_tag),
           y: geoMeanRow([p.ge1 ?? null, p.ge10 ?? null, p.ge100 ?? null, p.ge500 ?? null]),
-        })).filter(d => d.y !== null && d.y > 0);
-        datasets.push({ label: 'GOES SEISS (avg all channels)', borderColor: '#fde047', backgroundColor: '#fde04720', borderWidth: 2, pointRadius: 0, tension: 0.2, data: pts });
+        })).filter(d => d.y !== null && d.y > 0));
+        datasets.push({ label: 'GOES SEISS (avg all channels)', borderColor: '#fde047', backgroundColor: '#fde04720', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: true, data: pts });
       }
 
       // STEREO average: geometric mean of proton channels
