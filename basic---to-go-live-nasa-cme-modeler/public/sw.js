@@ -1,7 +1,7 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
- * @version 2.0.2
+ * @version 2.0.3
  */
 
 // Maps notification topic/tag to a specific icon
@@ -18,7 +18,6 @@ const TOPIC_ICONS = {
   'flare-X5':          '/icons/icon-flare-event.png',
   'flare-X10':         '/icons/icon-flare-event.png',
   'shock-detection':   '/icons/icon-shock-detection.png',
-  'cme-sheath':        '/icons/icon-cme-sheath.png',
   'ips-shock':         '/icons/icon-ips-shock.png',
   'aurora-40percent':  '/icons/icon_aurora.png',
   'aurora-50percent':  '/icons/icon_aurora.png',

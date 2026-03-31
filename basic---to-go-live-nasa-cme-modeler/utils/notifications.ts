@@ -24,7 +24,6 @@ const TOPIC_ICONS: Record<string, string> = {
   'flare-X5':          '/icons/icon-flare-event.png',
   'flare-X10':         '/icons/icon-flare-event.png',
   'shock-detection':   '/icons/icon-shock-detection.png',
-  'cme-sheath':        '/icons/icon-cme-sheath.png',
   'ips-shock':         '/icons/icon-ips-shock.png',
   'aurora-40percent':  '/icons/icon-aurora.png',
   'aurora-50percent':  '/icons/icon-aurora.png',
@@ -59,9 +58,7 @@ const NOTIFICATION_CATEGORIES = [
   'flare-event',
   // Shock detection
   'shock-detection',
-  // CME sheath arrival
-  'cme-sheath',
-  // IPS shock (interplanetary shock from DONKI) — was missing, causing it to never be sent
+// IPS shock (interplanetary shock from DONKI) — was missing, causing it to never be sent
   'ips-shock',
   // Legacy topics — kept for backwards compat, hidden from UI but still respected
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
@@ -442,9 +439,7 @@ const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
 // These are high-value actionable alerts that subscribers almost certainly want.
 const DEFAULT_ON_CATEGORIES = new Set([
   'overnight-watch',
-  'shock-detection',
-  'cme-sheath',
-  'ips-shock',
+
   'visibility-naked',
   'visibility-phone',
   'visibility-dslr',
