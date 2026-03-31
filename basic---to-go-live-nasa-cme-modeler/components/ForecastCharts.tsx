@@ -531,73 +531,78 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
 
     return (
         <div className="h-full flex flex-col justify-start overflow-y-auto pr-1">
-            <div className="bg-gradient-to-b from-[#0a1020]/95 to-[#070b15]/95 border border-cyan-500/25 rounded-xl p-4 shadow-[0_0_30px_rgba(6,182,212,0.12)]">
+            <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-xl p-4">
                 <div className={`text-sm font-semibold ${status.color}`}>{status.title}</div>
-                <p className="text-xs text-neutral-300 mt-1 leading-relaxed">{status.summary}</p>
+                <p className="text-xs text-neutral-400 mt-1 leading-relaxed">{status.summary}</p>
 
+                {/* Stat pills — uniform background, semantic label colours */}
                 <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-[11px]">
-                    <div className="rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-2 py-1.5"><span className="text-cyan-200">Clock</span><div className="text-white font-semibold">{latestClock != null ? `${latestClock.toFixed(0)}°` : '—'}</div></div>
-                    <div className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2 py-1.5"><span className="text-indigo-200">Band</span><div className="text-white font-semibold">{clockBandLabel}</div></div>
-                    <div className="rounded-lg border border-fuchsia-400/25 bg-fuchsia-500/10 px-2 py-1.5"><span className="text-fuchsia-200">By</span><div className="text-white font-semibold">{by != null ? `${by.toFixed(1)} nT` : '—'}</div></div>
-                    <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2 py-1.5"><span className="text-emerald-200">Bz</span><div className="text-white font-semibold">{bz != null ? `${bz.toFixed(1)} nT` : '—'}</div></div>
-                    <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2 py-1.5"><span className="text-amber-200">Bt</span><div className="text-white font-semibold">{bt != null ? `${bt.toFixed(1)} nT` : '—'}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Clock</span><div className="text-white font-semibold">{latestClock != null ? `${latestClock.toFixed(0)}°` : '—'}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Band</span><div className="text-white font-semibold">{clockBandLabel}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">By</span><div className="text-white font-semibold">{by != null ? `${by.toFixed(1)} nT` : '—'}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5">
+                        <span className="text-neutral-400">Bz</span>
+                        <div className="font-semibold" style={{ color: bz != null ? (bz <= -5 ? '#34d399' : bz >= 3 ? '#f87171' : '#e5e5e5') : '#e5e5e5' }}>
+                            {bz != null ? `${bz.toFixed(1)} nT` : '—'}
+                        </div>
+                    </div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Bt</span><div className="text-white font-semibold">{bt != null ? `${bt.toFixed(1)} nT` : '—'}</div></div>
                 </div>
 
                 <div className="mt-4 flex flex-col md:flex-row items-center gap-4">
-                    <div className="relative w-52 h-52 rounded-full border-2 border-cyan-300/40 bg-[#030711] shadow-inner shadow-cyan-500/20 overflow-hidden">
-                        <div className="absolute inset-0 rounded-full border border-emerald-400/30 animate-pulse" />
-                        <div className="absolute top-1/2 left-0 right-0 border-t border-neutral-700" />
-                        <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-700" />
+                    {/* Clock dial — neutral palette matching app cards */}
+                    <div className="relative w-52 h-52 rounded-full border border-neutral-600/50 bg-neutral-950 overflow-hidden flex-shrink-0">
+                        <div className="absolute top-1/2 left-0 right-0 border-t border-neutral-800" />
+                        <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-800" />
 
-                        {/* Earth-relative core graphic */}
-                        <div className="absolute left-1/2 top-1/2 w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-100/80 shadow-[0_0_12px_rgba(56,189,248,0.6)] bg-[radial-gradient(circle_at_30%_25%,#8ce3ff_0%,#4ea5d8_42%,#1f4f88_100%)] overflow-hidden">
+                        {/* Earth */}
+                        <div className="absolute left-1/2 top-1/2 w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-100/80 bg-[radial-gradient(circle_at_30%_25%,#8ce3ff_0%,#4ea5d8_42%,#1f4f88_100%)] overflow-hidden">
                             <div className="absolute left-[18%] top-[34%] w-[34%] h-[22%] rounded-[55%_45%_60%_40%] bg-emerald-300/85" />
                             <div className="absolute left-[50%] top-[22%] w-[26%] h-[18%] rounded-[45%_55%_40%_60%] bg-emerald-300/75" />
                             <div className="absolute left-[46%] top-[56%] w-[30%] h-[20%] rounded-[60%_40%_50%_50%] bg-emerald-200/70" />
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(255,255,255,0.35),rgba(255,255,255,0)_40%)]" />
                         </div>
-                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-amber-300">SUN →</div>
-                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-amber-300/80 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
-                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, -120%)' }} />
-                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-sky-300/70 to-fuchsia-300/0" style={{ transform: 'translate(10%, 20%)' }} />
-                        <div className="absolute left-[66%] top-[43%] text-[10px] uppercase tracking-wide text-fuchsia-200">magnetotail</div>
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-amber-400/80">SUN →</div>
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-amber-400/50 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-neutral-500/50 to-transparent" style={{ transform: 'translate(10%, -120%)' }} />
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-neutral-500/50 to-transparent" style={{ transform: 'translate(10%, 20%)' }} />
+                        <div className="absolute left-[66%] top-[43%] text-[10px] uppercase tracking-wide text-neutral-500">MAGNETOTAIL</div>
 
-                        <div className="absolute left-1/2 top-1/2 w-[3px] h-[4.9rem] origin-bottom bg-cyan-300 rounded-full shadow-[0_0_14px_rgba(34,211,238,0.9)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
-                        <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-100 border border-sky-300" />
-                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-300">North</div>
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-300">South (best)</div>
+                        {/* IMF pointer — sky/emerald encodes direction semantically */}
+                        <div className="absolute left-1/2 top-1/2 w-[3px] h-[4.9rem] origin-bottom bg-sky-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.5)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
+                        <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 border border-neutral-400" />
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-500">North</div>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-400">South (best)</div>
                     </div>
 
-                    <div className="text-xs text-neutral-200 space-y-1.5 w-full max-w-xs">
-                        <div className="text-fuchsia-200">By now appears in the quick-read row because negative By can reinforce auroral coupling when Bz is southward.</div>
-                        <div className="text-neutral-400">Core view: Earth in center, Sun on left, magnetotail extends right.</div>
-                        <p className="text-neutral-400 pt-2">
+                    <div className="text-xs text-neutral-400 space-y-1.5 w-full max-w-xs">
+                        <div className="text-neutral-300">By now appears in the quick-read row because negative By can reinforce auroral coupling when Bz is southward.</div>
+                        <div className="text-neutral-500">Core view: Earth in center, Sun on left, magnetotail extends right.</div>
+                        <p className="text-neutral-500 pt-2">
                             Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
                         </p>
                     </div>
                 </div>
 
-                <div className="mt-4 rounded-lg border border-violet-400/30 bg-violet-500/10 p-3">
-                    <div className={`text-[11px] uppercase tracking-wide font-semibold ${stormPhase.color}`}>Solar-wind phase estimate</div>
-                    <div className="text-sm text-white mt-1"><strong>{stormPhase.phase}</strong></div>
-                    <div className="text-xs text-neutral-200 mt-1">{stormPhase.explanation}</div>
+                {/* Solar-wind phase — matches app's section divider style */}
+                <div className="mt-4 rounded-lg border border-neutral-700/60 bg-neutral-800/40 p-3">
+                    <div className="text-[11px] uppercase tracking-wide font-semibold text-neutral-500">Solar-wind phase estimate</div>
+                    <div className="text-sm text-white mt-1 font-semibold">{stormPhase.phase}</div>
+                    <div className="text-xs text-neutral-400 mt-1">{stormPhase.explanation}</div>
 
-                    <div className="mt-3 rounded-xl border border-neutral-700/70 bg-gradient-to-r from-neutral-950 via-[#0b0a1a] to-neutral-950/95 relative overflow-hidden p-3">
-                        <div className="absolute -left-8 -top-10 h-24 w-24 rounded-full bg-violet-500/20 blur-2xl" />
-                        <div className="absolute right-0 top-0 h-full w-20 bg-gradient-to-l from-violet-500/10 to-transparent" />
-
-                        <div className="relative flex items-center gap-3">
-                            <div className={`h-12 w-12 rounded-full bg-gradient-to-br ${phaseVisual.orb} shadow-[0_0_18px] animate-pulse`} />
-                            <div className={`flex-1 rounded-full border ${phaseVisual.pillBorder} bg-black/35 px-4 py-2.5 backdrop-blur-sm`}>
+                    <div className="mt-3 rounded-lg border border-neutral-700/60 bg-neutral-950/60 p-3">
+                        <div className="flex items-center gap-3">
+                            <div className={`h-10 w-10 rounded-full flex-shrink-0 bg-gradient-to-br ${phaseVisual.orb}`} />
+                            <div>
                                 <div className={`text-sm font-semibold ${phaseVisual.pillText}`}>{phaseVisual.label}</div>
-                                <div className="text-[11px] text-neutral-300">{stormPhase.phase}</div>
+                                <div className="text-[11px] text-neutral-500">{stormPhase.phase}</div>
                             </div>
                         </div>
 
                         {stormPhase.graphic === 'fast-wind' && (
                             <div className="relative mt-2 h-4">
-                                <div className="absolute left-16 right-4 top-1 h-[2px] bg-cyan-300/80" />
-                                <div className="absolute left-20 right-8 top-3 h-[2px] bg-cyan-300/60" />
+                                <div className="absolute left-16 right-4 top-1 h-[2px] bg-neutral-600" />
+                                <div className="absolute left-20 right-8 top-3 h-[2px] bg-neutral-700" />
                             </div>
                         )}
                     </div>
