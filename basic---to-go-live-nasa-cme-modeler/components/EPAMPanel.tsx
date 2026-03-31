@@ -63,45 +63,11 @@ const STATUS_STYLES: Record<string,{dot:string;bg:string;border:string;text:stri
   QUIET:            {dot:'bg-green-500',  bg:'bg-neutral-900/60',border:'border-neutral-700/60',text:'text-neutral-400'},
 };
 
-// ── Arrival estimate ──────────────────────────────────────────────────────────
-// Deliberately conservative. The "2-6 hour" path previously fired on
-// trend < -1e-9 (essentially zero), causing constant flapping between the two
-// estimates on every 3-minute poll. Now it requires a meaningfully negative
-// log-spread trend AND channel compression to both be present simultaneously —
-// the double-signature of channels converging while flux is rising, which is
-// the reliable CME-approach pattern. Velocity dispersion alone (higher-energy
-// channels rising first) is an early, uncertain signal and only gets a generic
-// "watch" label with no specific timeframe.
-function estimateArrival(
-  status: string,
-  trend: number | null,
-  signatures?: { channel_compression: boolean; elevated_channels: number }
-): string | null {
-  if (status === 'SHOCK_PASSAGE') {
-    return '⏱ Shock at ACE now — ~45–60 min to Earth impact';
-  }
-  if (status === 'CME_WATCH') {
-    // Require: meaningful log-spread convergence (< -0.05) AND channel
-    // compression both confirmed. This prevents the 2-6h/6-24h flip-flop.
-    const strongTrend   = trend !== null && trend < -0.05;
-    const compression   = signatures?.channel_compression === true;
-    const multiChannel  = (signatures?.elevated_channels ?? 0) >= 3;
-    if (strongTrend && compression && multiChannel) {
-      return '⏱ Estimated arrival: within 2–6 hours';
-    }
-    return '⏱ Estimated arrival: within 6–24 hours';
-  }
-  if (status === 'COMPRESSION') {
-    return '⏱ Estimated arrival: within 12–24 hours';
-  }
-  if (status === 'DISPERSION') {
-    // Dispersion alone is an early, uncertain signal. Only show a timeframe
-    // if channel compression is also present — otherwise just flag it.
-    if (signatures?.channel_compression) {
-      return '⏱ Watch: possible arrival within 24 hours';
-    }
-    return null; // dispersion-only: informational, no arrival estimate
-  }
+function estimateArrival(status: string, trend: number|null): string|null {
+  if (status==='SHOCK_PASSAGE') return '⏱ Storm reaches Earth in ~45–60 minutes — watch Bz now';
+  if (status==='CME_WATCH') return (trend!==null&&trend<-1e-9) ? '⏱ Could reach Earth within 2–6 hours — keep watching' : '⏱ Could reach Earth within 6–24 hours';
+  if (status==='COMPRESSION') return '⏱ Possible arrival within 12–24 hours — check back later';
+  if (status==='DISPERSION') return '⏱ Watch: possible arrival within 24 hours';
   return null;
 }
 
@@ -162,10 +128,10 @@ const GOES_CH = [
 
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
-  'ace-raw':  {title: 'ACE EPAM — Raw Proton Flux (L1)', subtitle: 'All 5 proton energy channels at 5-minute resolution from ACE at L1, ~1.5 million km sunward of Earth. Watch for channel compression (lines converging on the log scale) and velocity dispersion (higher-energy channels rising before lower-energy ones) as early signatures of an approaching CME shock. ACE gives ~45–60 minutes of warning before Earth impact.'},
-  'goes-raw': {title: 'GOES SEISS — Integral Proton Flux (Geostationary)', subtitle: 'Real-time integral proton thresholds from the GOES geostationary satellite at 36,000 km altitude. The ≥10 MeV channel exceeding 10 pfu triggers a NOAA S1 Solar Radiation Storm alert. Use this to cross-check ACE EPAM — if both are elevated simultaneously, the particle event is confirmed real.'},
-  'stereo-raw': {title: 'STEREO-A — Energetic Particles + Solar Wind', subtitle: 'Low and high-energy particle flux from STEREO-A, plus solar wind speed and magnetic field strength.', note: '⚠ STEREO-A is NOT between the Sun and Earth. It orbits ~10–15° ahead of Earth on a different interplanetary magnetic field line. Elevated particles at STEREO do not reliably predict Earth-directed geomagnetic activity and should not be used as a primary indicator of impending storms. STEREO shows how wide a solar event is and whether it might be Earth-directed — but this requires forecaster judgement, not direct interpretation.'},
-  'combined': {title: 'Combined Average — All Sources', subtitle: 'Each line shows the geometric mean across all available channels from that source, giving a single trend line per spacecraft. Useful for comparing the overall particle environment across ACE (L1), GOES (geostationary), and STEREO-A (off-axis). Toggle sources on/off using the buttons below.'},
+  'ace-raw':  {title: 'Solar Storm Early Warning (L1 Satellite)', subtitle: 'Real-time particle readings from a satellite parked 1.5 million km in front of Earth — about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
+  'goes-raw': {title: 'GOES Satellite — Storm Confirmation', subtitle: 'A second satellite in a fixed orbit above Earth, used to confirm what the upstream L1 satellite is seeing. If both satellites are elevated at the same time, the solar storm signal is much more reliable. The ≥10 MeV line is the key one to watch — if it jumps sharply, a solar radiation storm is in progress.'},
+  'stereo-raw': {title: 'STEREO-A — Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun–Earth line.', note: '⚠ STEREO-A orbits about 10–15° ahead of Earth and sees the Sun from a different angle — so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you — useful context, but not a direct forecast for your location.'},
+  'combined': {title: 'All Satellites — Combined Overview', subtitle: 'One averaged trend line per satellite, making it easy to compare all three at a glance. If all three are rising together, that is the strongest possible signal. Toggle individual satellites on or off with the buttons below.'},
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -184,15 +150,6 @@ const EPAMPanel: React.FC = () => {
   const [showGoes,   setShowGoes]   = useState(true);
   const [showStereo, setShowStereo] = useState(false);
   const mountedRef = useRef(true);
-  // ── Persistence tracking ───────────────────────────────────────────────────
-  // Ring buffer of the last 3 analysis status values (one per 3-min poll).
-  // We only promote an elevated status to the UI when it has appeared in at
-  // least 2 of the last 3 readings. This kills single-poll false positives and
-  // the 2-6h / 6-24h flip-flop caused by a noisy trend metric near zero.
-  const statusHistoryRef = useRef<string[]>([]);
-  // The analysis snapshot we actually render — only updated when the status
-  // is stable enough to show (or when it clears back to QUIET/ELEVATED).
-  const [stableAnalysis, setStableAnalysis] = useState<AnalysisData|null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -208,28 +165,7 @@ const EPAMPanel: React.FC = () => {
       if (r1.status==='fulfilled' && r1.value?.data)              setEpamRaw(r1.value.data);
       if (r2.status==='fulfilled' && r2.value?.data)              setGoesRaw(r2.value.data);
       if (r3.status==='fulfilled' && r3.value?.data)              setStereoRaw(r3.value.data);
-      if (r4.status==='fulfilled' && r4.value?.status) {
-        const incoming = r4.value as AnalysisData;
-        setAnalysis(incoming); // always store raw value for metrics/signatures
-
-        // Persistence gate for high-urgency statuses
-        const HIGH_URGENCY = new Set(['CME_WATCH','DISPERSION','COMPRESSION','SHOCK_PASSAGE']);
-        const hist = statusHistoryRef.current;
-        hist.push(incoming.status);
-        if (hist.length > 3) hist.shift(); // keep last 3 only
-
-        if (!HIGH_URGENCY.has(incoming.status)) {
-          // Low-urgency clears immediately (QUIET, ELEVATED, SLIGHT_ELEVATION)
-          setStableAnalysis(incoming);
-        } else {
-          // High-urgency: require ≥2 of last 3 polls to agree before showing
-          const agreementCount = hist.filter(s => s === incoming.status).length;
-          if (agreementCount >= 2) {
-            setStableAnalysis(incoming);
-          }
-          // If only 1 poll so far, keep showing whatever was stable before
-        }
-      }
+      if (r4.status==='fulfilled' && r4.value?.status)            setAnalysis(r4.value);
       if (r5.status==='fulfilled' && r5.value?.cross_validation)  setCombined(r5.value);
       setLastUpdated(new Date());
     } catch {}
@@ -337,17 +273,8 @@ const EPAMPanel: React.FC = () => {
 
   const info    = VIEW_INFO[view];
   const isGoes  = view === 'goes-raw';
-  // Status banner uses the persistence-gated stable snapshot so a single
-  // noisy poll doesn't trigger or clear an alert.
-  const displayAnalysis = stableAnalysis;
-  const s       = STATUS_STYLES[displayAnalysis?.status ?? 'QUIET'] ?? STATUS_STYLES.QUIET;
-  const arrival = displayAnalysis
-    ? estimateArrival(
-        displayAnalysis.status,
-        displayAnalysis.metrics.log_spread_4h_trend,
-        displayAnalysis.signatures
-      )
-    : null;
+  const s       = STATUS_STYLES[analysis?.status ?? 'QUIET'] ?? STATUS_STYLES.QUIET;
+  const arrival = analysis ? estimateArrival(analysis.status, analysis.metrics.log_spread_4h_trend) : null;
   const noData  = !chartData;
 
   return (
@@ -356,7 +283,7 @@ const EPAMPanel: React.FC = () => {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold text-white">Energetic Particle Monitor</h2>
-          <p className="text-xs text-neutral-500 mt-0.5">ACE EPAM (L1) · GOES SEISS · STEREO-A</p>
+          <p className="text-xs text-neutral-500 mt-0.5">Solar storm early warning · Upstream satellites · Aurora potential indicator</p>
         </div>
         <div className="flex items-center gap-2">
           {lastUpdated && <span className="text-xs text-neutral-600">{lastUpdated.toLocaleTimeString('en-NZ',{timeZone:'Pacific/Auckland',hour:'2-digit',minute:'2-digit'})} NZT</span>}
@@ -367,29 +294,26 @@ const EPAMPanel: React.FC = () => {
       {/* Status banner */}
       {loading ? (
         <div className="h-14 bg-neutral-800/50 rounded-lg animate-pulse mb-4" />
-      ) : displayAnalysis && (
+      ) : analysis && (
         <div className={`${s.bg} border ${s.border} rounded-lg px-4 py-3 mb-4`}>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot} ${displayAnalysis.status==='SHOCK_PASSAGE'?'animate-ping':displayAnalysis.status==='CME_WATCH'?'animate-pulse':''}`} />
-            <span className={`text-sm font-semibold ${s.text}`}>{displayAnalysis.statusLabel}</span>
-            {/* Signature pills — only shown when confirmed by persistence gate */}
-            {displayAnalysis.signatures.velocity_dispersion && <span className="px-2 py-0.5 rounded-full bg-purple-900/50 border border-purple-700/40 text-purple-300 text-xs">Velocity Dispersion</span>}
-            {displayAnalysis.signatures.channel_compression && <span className="px-2 py-0.5 rounded-full bg-orange-900/50 border border-orange-700/40 text-orange-300 text-xs">Channel Compression</span>}
-            {displayAnalysis.signatures.sharp_spike         && <span className="px-2 py-0.5 rounded-full bg-red-900/50    border border-red-700/40    text-red-300    text-xs">Sharp Spike</span>}
-            {displayAnalysis.signatures.anisotropy_elevated && <span className="px-2 py-0.5 rounded-full bg-sky-900/50    border border-sky-700/40    text-sky-300    text-xs">Particle Beam</span>}
+            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot} ${analysis.status==='SHOCK_PASSAGE'?'animate-ping':analysis.status==='CME_WATCH'?'animate-pulse':''}`} />
+            <span className={`text-sm font-semibold ${s.text}`}>{analysis.statusLabel}</span>
+            {analysis.signatures.velocity_dispersion && <span className="px-2 py-0.5 rounded-full bg-purple-900/50 border border-purple-700/40 text-purple-300 text-xs">Early Storm Signal</span>}
+            {analysis.signatures.channel_compression && <span className="px-2 py-0.5 rounded-full bg-orange-900/50 border border-orange-700/40 text-orange-300 text-xs">Storm Building</span>}
+            {analysis.signatures.sharp_spike         && <span className="px-2 py-0.5 rounded-full bg-red-900/50    border border-red-700/40    text-red-300    text-xs">Shock Arriving</span>}
+            {analysis.signatures.anisotropy_elevated && <span className="px-2 py-0.5 rounded-full bg-sky-900/50    border border-sky-700/40    text-sky-300    text-xs">Particle Stream</span>}
           </div>
-          <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">{displayAnalysis.description}</p>
-          {/* Arrival estimate — only shown when both signatures confirm (see estimateArrival) */}
+          <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">{analysis.description}</p>
           {arrival && <p className="text-xs font-mono text-neutral-300 mt-1">{arrival}</p>}
-          {displayAnalysis.goes_validation?.available && (
+          {analysis.goes_validation?.available && (
             <p className="text-xs text-neutral-500 mt-1">
-              GOES cross-check: <span className={displayAnalysis.goes_validation.elevated?'text-orange-400':'text-green-400'}>{displayAnalysis.goes_validation.elevated?'elevated':'quiet'}</span>
-              {displayAnalysis.goes_validation.ge10_mev_flux!==null && <> — ≥10 MeV: {displayAnalysis.goes_validation.ge10_mev_flux.toExponential(1)} pfu</>}
-              {displayAnalysis.goes_validation.s1_alert && <span className="ml-1 text-yellow-400 font-semibold">· S1 Storm Active</span>}
+              Second satellite: <span className={analysis.goes_validation.elevated?'text-orange-400':'text-green-400'}>{analysis.goes_validation.elevated?'also elevated — confirms activity':'quiet — not yet confirmed'}</span>
+              {analysis.goes_validation.s1_alert && <span className="ml-1 text-yellow-400 font-semibold"> · Radiation storm in progress</span>}
             </p>
           )}
           {combined?.cross_validation.confidence!=='QUIET' && (
-            <p className="text-xs text-neutral-500 mt-0.5">Multi-spacecraft: {combined?.cross_validation.confidenceLabel}</p>
+            <p className="text-xs text-neutral-500 mt-0.5">{combined?.cross_validation.confidenceLabel}</p>
           )}
         </div>
       )}
@@ -457,7 +381,7 @@ const EPAMPanel: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="relative h-[576px] bg-neutral-900/40 rounded-lg p-2">
+        <div className="relative h-72 bg-neutral-900/40 rounded-lg p-2">
           <Line data={chartData!} options={chartOptions} />
         </div>
       )}
@@ -471,7 +395,7 @@ const EPAMPanel: React.FC = () => {
 
       {/* Footer */}
       <p className="text-xs text-neutral-700 mt-4 pt-3 border-t border-neutral-800 leading-relaxed">
-        Elevated particle flux alone does not guarantee aurora — the CME must have southward Bz after arrival at Earth. ·{' '}
+        Rising particle levels are a heads-up, not a guarantee — aurora depends on the solar wind direction when the storm arrives. ·{' '}
         <a href="https://www.swpc.noaa.gov" className="text-neutral-600 hover:text-sky-400" target="_blank" rel="noopener noreferrer">NOAA SWPC</a>
       </p>
     </div>
