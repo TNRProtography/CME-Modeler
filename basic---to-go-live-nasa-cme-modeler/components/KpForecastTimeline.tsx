@@ -7,11 +7,12 @@ const NZ_OFFSET_H   = 13;   // NZDT = UTC+13 (April daylight saving)
 const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
 
 interface KpSlot {
-  utcMs:   number;
-  nztHour: number;
-  dayIdx:  number;
-  dayLabel:string;
-  kp:      number;
+  utcMs:    number;
+  nztHour:  number;
+  dayIdx:   number;
+  dayLabel: string;
+  kp:       number;
+  observed: string; // 'observed' | 'estimated' | 'predicted'
 }
 interface PopupState { slotIdx: number; anchorX: number; }
 
@@ -301,6 +302,16 @@ function drawCanvas(
       ctx.closePath(); ctx.fill();
     }
 
+    // Past-observed dimming — slightly darken observed/estimated slots
+    // so the eye naturally reads left=past, right=future
+    if (slot.observed === 'observed') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
+    } else if (slot.observed === 'estimated') {
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
+    }
+
     // Column separator
     if (i > 0) {
       const isDayBound = (slots[i].dayIdx !== slots[i-1].dayIdx);
@@ -382,34 +393,55 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   useEffect(() => {
     fetch(NOAA_KP_URL)
       .then(r => r.json())
-      .then((raw: any[][]) => {
-        if (!Array.isArray(raw) || raw.length < 2) { setError(true); return; }
-        const hdr = raw[0] as string[];
-        const tIdx = hdr.indexOf('time_tag');
-        const kIdx = hdr.indexOf('kp');
-        const now  = Date.now();
+      .then((raw: any) => {
+        // The NOAA endpoint returns either:
+        //   • array-of-objects: [{time_tag, kp, observed, noaa_scale}, ...]
+        //   • array-of-arrays:  [["time_tag","kp",...], [val, val, ...], ...]
+        // Handle both formats gracefully.
+        if (!Array.isArray(raw) || raw.length === 0) { setError(true); return; }
+
+        // Detect format
+        const isObjects = typeof raw[0] === 'object' && !Array.isArray(raw[0]) && raw[0] !== null;
+
+        const now = Date.now();
+        // Show from 3h ago (so "now" marker isn't at the very left edge) through 72h ahead
+        const windowStart = now - 3 * 3600000;
+        const windowEnd   = now + 72 * 3600000;
+
         const dayLabels: string[] = [];
         const out: KpSlot[] = [];
 
-        raw.slice(1).forEach(row => {
-          const utcStr = (tIdx >= 0 ? row[tIdx] : row[0]) as string;
-          const kpStr  = (kIdx >= 0 ? row[kIdx] : row[1]) as string;
-          const utcMs  = new Date(utcStr.replace(' ','T')+'Z').getTime();
-          if (isNaN(utcMs) || utcMs < now - 3*3600000) return;
-          const kp = parseFloat(kpStr);
+        const rows = isObjects ? raw : raw.slice(1);
+        rows.forEach((row: any) => {
+          const utcStr: string = isObjects
+            ? (row.time_tag ?? '')
+            : (row[0] ?? '');
+          const kpVal = isObjects ? row.kp : row[1];
+
+          // time_tag has no Z suffix — append it to parse as UTC
+          const utcMs = new Date(String(utcStr).replace(' ', 'T') + (utcStr.includes('Z') ? '' : 'Z')).getTime();
+          if (isNaN(utcMs) || utcMs < windowStart || utcMs > windowEnd) return;
+
+          const kp = parseFloat(String(kpVal));
           if (isNaN(kp)) return;
 
-          const nztMs  = utcMs + NZ_OFFSET_H * 3600000;
-          const nztD   = new Date(nztMs);
-          const nztH   = nztD.getUTCHours();
-          const dayKey = nztD.toISOString().slice(0,10);
+          // Slot type: observed/estimated/predicted — used for opacity later
+          const observed: string = isObjects ? (row.observed ?? 'predicted') : 'predicted';
+
+          const nztMs   = utcMs + NZ_OFFSET_H * 3600000;
+          const nztD    = new Date(nztMs);
+          const nztH    = nztD.getUTCHours();
+          const dayKey  = nztD.toISOString().slice(0, 10);
           if (!dayLabels.includes(dayKey)) dayLabels.push(dayKey);
-          const dayIdx  = dayLabels.indexOf(dayKey);
-          const dayLabel = nztD.toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
-          out.push({ utcMs, nztHour: nztH, dayIdx, dayLabel, kp });
+          const dayIdx   = dayLabels.indexOf(dayKey);
+          const dayLabel = nztD.toLocaleDateString('en-NZ', {
+            weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+          });
+          out.push({ utcMs, nztHour: nztH, dayIdx, dayLabel, kp, observed });
         });
 
-        setSlots(out.slice(0, 24));
+        if (out.length === 0) { setError(true); return; }
+        setSlots(out.slice(0, 27)); // up to 27 slots = ~81h, trimmed to 3 full days
         setLoading(false);
       })
       .catch(() => { setError(true); setLoading(false); });
@@ -525,8 +557,17 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
             {/* Time + KP */}
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', marginBottom:4 }}>
-                {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} NZT
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, flexWrap:'wrap' }}>
+                <span style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)' }}>
+                  {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} NZT
+                </span>
+                <span style={{
+                  fontSize:10, padding:'1px 7px', borderRadius:10,
+                  background: sel.observed === 'observed' ? 'rgba(100,100,100,0.25)' : sel.observed === 'estimated' ? 'rgba(250,180,0,0.18)' : 'rgba(50,140,255,0.18)',
+                  color: sel.observed === 'observed' ? 'var(--color-text-tertiary)' : sel.observed === 'estimated' ? '#f0a030' : '#70b8ff',
+                }}>
+                  {sel.observed === 'observed' ? 'recorded' : sel.observed === 'estimated' ? 'estimated' : 'forecast'}
+                </span>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <span style={{ fontSize:20, fontWeight:500, color: gColor(sel.kp) }}>Kp {sel.kp.toFixed(1)}</span>
