@@ -372,16 +372,16 @@ const EPAMPanel: React.FC = () => {
 
       {/* Chart */}
       {loading ? (
-        <div className="h-72 bg-neutral-800/50 rounded-lg animate-pulse" />
+        <div className="h-[576px] bg-neutral-800/50 rounded-lg animate-pulse" />
       ) : noData ? (
-        <div className="h-72 flex flex-col items-center justify-center bg-neutral-800/30 rounded-lg border border-neutral-700/50">
+        <div className="h-[576px] flex flex-col items-center justify-center bg-neutral-800/30 rounded-lg border border-neutral-700/50">
           <p className="text-neutral-500 text-sm">{view==='combined'&&!showAce&&!showGoes&&!showStereo ? 'Enable at least one source above' : 'No data yet'}</p>
           <p className="text-neutral-600 text-xs mt-1">
             {view.startsWith('stereo') ? 'STEREO updates every ~18 minutes' : 'Check back after the first cron run'}
           </p>
         </div>
       ) : (
-        <div className="relative h-72 bg-neutral-900/40 rounded-lg p-2">
+        <div className="relative h-[576px] bg-neutral-900/40 rounded-lg p-2">
           <Line data={chartData!} options={chartOptions} />
         </div>
       )}
