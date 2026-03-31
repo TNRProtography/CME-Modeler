@@ -63,11 +63,45 @@ const STATUS_STYLES: Record<string,{dot:string;bg:string;border:string;text:stri
   QUIET:            {dot:'bg-green-500',  bg:'bg-neutral-900/60',border:'border-neutral-700/60',text:'text-neutral-400'},
 };
 
-function estimateArrival(status: string, trend: number|null): string|null {
-  if (status==='SHOCK_PASSAGE') return '⏱ Shock at ACE now — ~45–60 min to Earth impact';
-  if (status==='CME_WATCH') return (trend!==null&&trend<-1e-9) ? '⏱ Estimated arrival: within 2–6 hours' : '⏱ Estimated arrival: within 6–24 hours';
-  if (status==='COMPRESSION') return '⏱ Estimated arrival: within 12–24 hours';
-  if (status==='DISPERSION') return '⏱ Watch: possible arrival within 24 hours';
+// ── Arrival estimate ──────────────────────────────────────────────────────────
+// Deliberately conservative. The "2-6 hour" path previously fired on
+// trend < -1e-9 (essentially zero), causing constant flapping between the two
+// estimates on every 3-minute poll. Now it requires a meaningfully negative
+// log-spread trend AND channel compression to both be present simultaneously —
+// the double-signature of channels converging while flux is rising, which is
+// the reliable CME-approach pattern. Velocity dispersion alone (higher-energy
+// channels rising first) is an early, uncertain signal and only gets a generic
+// "watch" label with no specific timeframe.
+function estimateArrival(
+  status: string,
+  trend: number | null,
+  signatures?: { channel_compression: boolean; elevated_channels: number }
+): string | null {
+  if (status === 'SHOCK_PASSAGE') {
+    return '⏱ Shock at ACE now — ~45–60 min to Earth impact';
+  }
+  if (status === 'CME_WATCH') {
+    // Require: meaningful log-spread convergence (< -0.05) AND channel
+    // compression both confirmed. This prevents the 2-6h/6-24h flip-flop.
+    const strongTrend   = trend !== null && trend < -0.05;
+    const compression   = signatures?.channel_compression === true;
+    const multiChannel  = (signatures?.elevated_channels ?? 0) >= 3;
+    if (strongTrend && compression && multiChannel) {
+      return '⏱ Estimated arrival: within 2–6 hours';
+    }
+    return '⏱ Estimated arrival: within 6–24 hours';
+  }
+  if (status === 'COMPRESSION') {
+    return '⏱ Estimated arrival: within 12–24 hours';
+  }
+  if (status === 'DISPERSION') {
+    // Dispersion alone is an early, uncertain signal. Only show a timeframe
+    // if channel compression is also present — otherwise just flag it.
+    if (signatures?.channel_compression) {
+      return '⏱ Watch: possible arrival within 24 hours';
+    }
+    return null; // dispersion-only: informational, no arrival estimate
+  }
   return null;
 }
 
@@ -150,6 +184,15 @@ const EPAMPanel: React.FC = () => {
   const [showGoes,   setShowGoes]   = useState(true);
   const [showStereo, setShowStereo] = useState(false);
   const mountedRef = useRef(true);
+  // ── Persistence tracking ───────────────────────────────────────────────────
+  // Ring buffer of the last 3 analysis status values (one per 3-min poll).
+  // We only promote an elevated status to the UI when it has appeared in at
+  // least 2 of the last 3 readings. This kills single-poll false positives and
+  // the 2-6h / 6-24h flip-flop caused by a noisy trend metric near zero.
+  const statusHistoryRef = useRef<string[]>([]);
+  // The analysis snapshot we actually render — only updated when the status
+  // is stable enough to show (or when it clears back to QUIET/ELEVATED).
+  const [stableAnalysis, setStableAnalysis] = useState<AnalysisData|null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -165,7 +208,28 @@ const EPAMPanel: React.FC = () => {
       if (r1.status==='fulfilled' && r1.value?.data)              setEpamRaw(r1.value.data);
       if (r2.status==='fulfilled' && r2.value?.data)              setGoesRaw(r2.value.data);
       if (r3.status==='fulfilled' && r3.value?.data)              setStereoRaw(r3.value.data);
-      if (r4.status==='fulfilled' && r4.value?.status)            setAnalysis(r4.value);
+      if (r4.status==='fulfilled' && r4.value?.status) {
+        const incoming = r4.value as AnalysisData;
+        setAnalysis(incoming); // always store raw value for metrics/signatures
+
+        // Persistence gate for high-urgency statuses
+        const HIGH_URGENCY = new Set(['CME_WATCH','DISPERSION','COMPRESSION','SHOCK_PASSAGE']);
+        const hist = statusHistoryRef.current;
+        hist.push(incoming.status);
+        if (hist.length > 3) hist.shift(); // keep last 3 only
+
+        if (!HIGH_URGENCY.has(incoming.status)) {
+          // Low-urgency clears immediately (QUIET, ELEVATED, SLIGHT_ELEVATION)
+          setStableAnalysis(incoming);
+        } else {
+          // High-urgency: require ≥2 of last 3 polls to agree before showing
+          const agreementCount = hist.filter(s => s === incoming.status).length;
+          if (agreementCount >= 2) {
+            setStableAnalysis(incoming);
+          }
+          // If only 1 poll so far, keep showing whatever was stable before
+        }
+      }
       if (r5.status==='fulfilled' && r5.value?.cross_validation)  setCombined(r5.value);
       setLastUpdated(new Date());
     } catch {}
@@ -273,8 +337,17 @@ const EPAMPanel: React.FC = () => {
 
   const info    = VIEW_INFO[view];
   const isGoes  = view === 'goes-raw';
-  const s       = STATUS_STYLES[analysis?.status ?? 'QUIET'] ?? STATUS_STYLES.QUIET;
-  const arrival = analysis ? estimateArrival(analysis.status, analysis.metrics.log_spread_4h_trend) : null;
+  // Status banner uses the persistence-gated stable snapshot so a single
+  // noisy poll doesn't trigger or clear an alert.
+  const displayAnalysis = stableAnalysis;
+  const s       = STATUS_STYLES[displayAnalysis?.status ?? 'QUIET'] ?? STATUS_STYLES.QUIET;
+  const arrival = displayAnalysis
+    ? estimateArrival(
+        displayAnalysis.status,
+        displayAnalysis.metrics.log_spread_4h_trend,
+        displayAnalysis.signatures
+      )
+    : null;
   const noData  = !chartData;
 
   return (
@@ -294,23 +367,25 @@ const EPAMPanel: React.FC = () => {
       {/* Status banner */}
       {loading ? (
         <div className="h-14 bg-neutral-800/50 rounded-lg animate-pulse mb-4" />
-      ) : analysis && (
+      ) : displayAnalysis && (
         <div className={`${s.bg} border ${s.border} rounded-lg px-4 py-3 mb-4`}>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot} ${analysis.status==='SHOCK_PASSAGE'?'animate-ping':analysis.status==='CME_WATCH'?'animate-pulse':''}`} />
-            <span className={`text-sm font-semibold ${s.text}`}>{analysis.statusLabel}</span>
-            {analysis.signatures.velocity_dispersion && <span className="px-2 py-0.5 rounded-full bg-purple-900/50 border border-purple-700/40 text-purple-300 text-xs">Velocity Dispersion</span>}
-            {analysis.signatures.channel_compression && <span className="px-2 py-0.5 rounded-full bg-orange-900/50 border border-orange-700/40 text-orange-300 text-xs">Channel Compression</span>}
-            {analysis.signatures.sharp_spike         && <span className="px-2 py-0.5 rounded-full bg-red-900/50    border border-red-700/40    text-red-300    text-xs">Sharp Spike</span>}
-            {analysis.signatures.anisotropy_elevated && <span className="px-2 py-0.5 rounded-full bg-sky-900/50    border border-sky-700/40    text-sky-300    text-xs">Particle Beam</span>}
+            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot} ${displayAnalysis.status==='SHOCK_PASSAGE'?'animate-ping':displayAnalysis.status==='CME_WATCH'?'animate-pulse':''}`} />
+            <span className={`text-sm font-semibold ${s.text}`}>{displayAnalysis.statusLabel}</span>
+            {/* Signature pills — only shown when confirmed by persistence gate */}
+            {displayAnalysis.signatures.velocity_dispersion && <span className="px-2 py-0.5 rounded-full bg-purple-900/50 border border-purple-700/40 text-purple-300 text-xs">Velocity Dispersion</span>}
+            {displayAnalysis.signatures.channel_compression && <span className="px-2 py-0.5 rounded-full bg-orange-900/50 border border-orange-700/40 text-orange-300 text-xs">Channel Compression</span>}
+            {displayAnalysis.signatures.sharp_spike         && <span className="px-2 py-0.5 rounded-full bg-red-900/50    border border-red-700/40    text-red-300    text-xs">Sharp Spike</span>}
+            {displayAnalysis.signatures.anisotropy_elevated && <span className="px-2 py-0.5 rounded-full bg-sky-900/50    border border-sky-700/40    text-sky-300    text-xs">Particle Beam</span>}
           </div>
-          <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">{analysis.description}</p>
+          <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">{displayAnalysis.description}</p>
+          {/* Arrival estimate — only shown when both signatures confirm (see estimateArrival) */}
           {arrival && <p className="text-xs font-mono text-neutral-300 mt-1">{arrival}</p>}
-          {analysis.goes_validation?.available && (
+          {displayAnalysis.goes_validation?.available && (
             <p className="text-xs text-neutral-500 mt-1">
-              GOES cross-check: <span className={analysis.goes_validation.elevated?'text-orange-400':'text-green-400'}>{analysis.goes_validation.elevated?'elevated':'quiet'}</span>
-              {analysis.goes_validation.ge10_mev_flux!==null && <> — ≥10 MeV: {analysis.goes_validation.ge10_mev_flux.toExponential(1)} pfu</>}
-              {analysis.goes_validation.s1_alert && <span className="ml-1 text-yellow-400 font-semibold">· S1 Storm Active</span>}
+              GOES cross-check: <span className={displayAnalysis.goes_validation.elevated?'text-orange-400':'text-green-400'}>{displayAnalysis.goes_validation.elevated?'elevated':'quiet'}</span>
+              {displayAnalysis.goes_validation.ge10_mev_flux!==null && <> — ≥10 MeV: {displayAnalysis.goes_validation.ge10_mev_flux.toExponential(1)} pfu</>}
+              {displayAnalysis.goes_validation.s1_alert && <span className="ml-1 text-yellow-400 font-semibold">· S1 Storm Active</span>}
             </p>
           )}
           {combined?.cross_validation.confidence!=='QUIET' && (
@@ -373,16 +448,16 @@ const EPAMPanel: React.FC = () => {
 
       {/* Chart */}
       {loading ? (
-        <div className="h-[576px] bg-neutral-800/50 rounded-lg animate-pulse" />
+        <div className="h-72 bg-neutral-800/50 rounded-lg animate-pulse" />
       ) : noData ? (
-        <div className="h-[576px] flex flex-col items-center justify-center bg-neutral-800/30 rounded-lg border border-neutral-700/50">
+        <div className="h-72 flex flex-col items-center justify-center bg-neutral-800/30 rounded-lg border border-neutral-700/50">
           <p className="text-neutral-500 text-sm">{view==='combined'&&!showAce&&!showGoes&&!showStereo ? 'Enable at least one source above' : 'No data yet'}</p>
           <p className="text-neutral-600 text-xs mt-1">
             {view.startsWith('stereo') ? 'STEREO updates every ~18 minutes' : 'Check back after the first cron run'}
           </p>
         </div>
       ) : (
-        <div className="relative h-[576px] bg-neutral-900/40 rounded-lg p-2">
+        <div className="relative h-72 bg-neutral-900/40 rounded-lg p-2">
           <Line data={chartData!} options={chartOptions} />
         </div>
       )}
