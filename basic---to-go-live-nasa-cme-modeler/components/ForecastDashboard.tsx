@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import EPAMPanel from './EPAMPanel';
-import SolarWindQuickView from './SolarWindQuickView';
+import KpForecastTimeline from './KpForecastTimeline';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
 import { VisibilityForecastPanel } from './VisibilityForecastPanel';
@@ -642,6 +642,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
+                            <KpForecastTimeline
+                                moonIllumination={celestialTimes?.moon?.illumination ?? null}
+                                userLatitude={userLatitude}
+                            />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
@@ -677,6 +681,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 />
                             </div>
                             </div>
+                            <KpForecastTimeline
+                                moonIllumination={celestialTimes?.moon?.illumination ?? null}
+                                userLatitude={userLatitude}
+                            />
 {(() => {
                                 // Compute oval boundary for chart visibility probability
                                 const _newell60 = substormRiskData?.metrics?.solar_wind?.newell_avg_60m ?? 0;
@@ -794,14 +802,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <TipsSection />
                                 <CameraSettingsSection settings={cameraSettings} />
                             </div>
-
-                            <SolarWindQuickView
-                                magneticData={allMagneticData}
-                                clockData={allImfClockData}
-                                speedData={allSpeedData}
-                                densityData={allDensityData}
-                                tempData={allTempData}
-                            />
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
                                 <EPAMPanel />
