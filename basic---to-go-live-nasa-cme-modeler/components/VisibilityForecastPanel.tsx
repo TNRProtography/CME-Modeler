@@ -403,9 +403,13 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const bz            = substormRiskData?.metrics?.solar_wind?.bz;
   const southMin30    = substormRiskData?.metrics?.solar_wind?.southward_minutes_30m;
 
-  // Now slot: worker score is ground truth. Fall back to auroraScore only if
-  // the worker hasn't loaded yet.
-  const nowScore    = workerScore ?? auroraScore ?? 0;
+  // Now slot: anchored on auroraScore (the SpotTheAurora composite %) so it
+  // always matches the big % gauge shown elsewhere on the page.
+  // The substorm worker score drives the PROJECTED slots (15/30/60m) where its
+  // real-time energy signal is genuinely forward-looking — but for "right now"
+  // it measures magnetospheric loading, not aurora visibility directly, and can
+  // diverge significantly from the composite score, causing contradictions.
+  const nowScore    = auroraScore ?? workerScore ?? 0;
 
   // Forecast slots projected from raw (unadjusted) score, then each slot
   // gets the location penalty applied individually via locationAdjustedScore.

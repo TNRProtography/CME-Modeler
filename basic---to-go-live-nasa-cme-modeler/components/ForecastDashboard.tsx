@@ -386,9 +386,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const simpleViewStatus = useMemo(() => {
         const score = auroraScore ?? 0;
         if (score >= 80) return { text: 'Huge Aurora Visible', emoji: '🤩' };
-        if (score >= 50) return { text: 'Eye Visibility Possible', emoji: '👁️' };
-        if (score >= 35) return { text: 'Phone Visibility Possible', emoji: '📱' };
-        if (score >= 20) return { text: 'Camera Visibility Possible', emoji: '📷' };
+        if (score >= 65) return { text: 'Eye Visible', emoji: '👁️' };
+        if (score >= 50) return { text: 'Faint Eye Glow Possible', emoji: '👁️' };
+        if (score >= 40) return { text: 'Phone Camera Visible', emoji: '📱' };
+        if (score >= 25) return { text: 'Camera Detectable', emoji: '📷' };
         if (score >= 10) return { text: 'Minimal Activity', emoji: '😐' };
         return { text: 'No Aurora Expected', emoji: '😞' };
     }, [auroraScore]);
@@ -537,11 +538,42 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
         };
 
-        const s15 = Math.round(applyMods(raw15));
-        const s30 = Math.round(applyMods(raw30));
-        const s60 = Math.round(applyMods(raw60));
-        const s2h = Math.round(spotScore);
-        const sNow = Math.round(workerScore ?? auroraScore ?? 0);
+        // "Now" is anchored on auroraScore (the SpotTheAurora composite %) so it
+        // always matches the big gauge — the substorm score drives projected slots only.
+        const sNow = Math.round(auroraScore ?? 0);
+        const s2h  = Math.round(spotScore);
+
+        // Apply location adjustment to projected slots (mirrors VisibilityForecastPanel).
+        // Import the same IGRF-13 geomagnetic conversion inline so this memo has no
+        // extra dependencies.
+        const POLE_LAT_R =  80.65 * Math.PI / 180;
+        const POLE_LON_R = -72.68 * Math.PI / 180;
+        const applyLocAdj = (raw: number): number => {
+            const lat = userLatitude != null ? parseFloat(String(userLatitude)) : NaN;
+            const lon = userLongitude != null ? parseFloat(String(userLongitude)) : NaN;
+            if (!isFinite(lat) || !isFinite(lon) || !substormRiskData?.metrics) return raw;
+            const phi = lat * Math.PI / 180;
+            const lam = lon * Math.PI / 180;
+            const sin = Math.sin(phi) * Math.sin(POLE_LAT_R) + Math.cos(phi) * Math.cos(POLE_LAT_R) * Math.cos(lam - POLE_LON_R);
+            const userGmag = Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
+            const newell60 = substormRiskData.metrics.solar_wind?.newell_avg_60m ?? 0;
+            const newell30 = substormRiskData.metrics.solar_wind?.newell_avg_30m ?? 0;
+            const newell   = Math.max(newell60, newell30 * 0.85);
+            const bayOnset = substormRiskData.current?.bay_onset_flag ?? false;
+            let boundary = -(65.5 - newell / 1800);
+            boundary = Math.max(boundary, -76);
+            boundary = Math.min(boundary, -44);
+            if (bayOnset) boundary = Math.min(boundary, -47.2);
+            const visDeg = 9.0 + (Math.max(0, Math.min(raw, 100)) / 100) * 16.0;
+            const distFromVis = userGmag - (boundary + visDeg);
+            if (distFromVis <= 0) return raw;
+            const penalty = Math.min(1, distFromVis / 2.0);
+            return raw * (1 - penalty);
+        };
+
+        const s15 = Math.round(applyLocAdj(applyMods(raw15)));
+        const s30 = Math.round(applyLocAdj(applyMods(raw30)));
+        const s60 = Math.round(applyLocAdj(applyMods(raw60)));
 
         return [
             { label: 'Now',     score: sNow, ...getPhrase(sNow, 'high',          'Now'),     isNow: true  },
@@ -550,7 +582,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             { label: '1 hour',  score: s60,  ...getPhrase(s60,  slotConf('1h'),  '1 hour'),  isNow: false },
             { label: '2 hours', score: s2h,  ...getPhrase(s2h,  'low',           '2 hours'), isNow: false },
         ];
-    }, [auroraScore, substormForecast, substormRiskData]);
+    }, [auroraScore, substormForecast, substormRiskData, userLatitude, userLongitude]);
 
     if (isLoading) return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
 

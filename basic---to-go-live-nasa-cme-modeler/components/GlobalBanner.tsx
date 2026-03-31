@@ -88,7 +88,8 @@ const getOnsetTimingText = (level: string, score: number): string | null => {
 const getVisibilityLevel = (score?: number): string => {
   if (score === undefined || score === null) return 'Insignificant';
   if (score >= 80) return 'Clear Eye Visible';
-  if (score >= 50) return 'Faint Eye Visible';
+  if (score >= 65) return 'Eye Visible';
+  if (score >= 50) return 'Faint Eye Glow Possible';
   if (score >= 40) return 'Phone Camera Visible';
   if (score >= 25) return 'DSLR Camera Visible';
   return 'Insignificant';
