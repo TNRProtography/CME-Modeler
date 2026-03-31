@@ -227,10 +227,12 @@ function drawCanvas(
       bg = ctx.createLinearGradient(x, LBEL_H, x, HOR_Y);
       bg.addColorStop(0, '#0c2a50'); bg.addColorStop(0.5, '#1a4a80'); bg.addColorStop(1, '#2060a0');
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
-      const sy = LBEL_H + SKY_H * 0.3;
-      ctx.fillStyle = 'rgba(255,225,100,0.62)';
+      // Arc: sun rises at h=7, peaks at h=13, sets at h=19 (NZ April)
+      const sunFrac = Math.max(0, Math.sin(Math.PI * (slot.nztHour - 7) / 12));
+      const sy = HOR_Y - sunFrac * SKY_H * 0.82;
+      ctx.fillStyle = 'rgba(255,225,100,0.70)';
       ctx.beginPath(); ctx.arc(x+COL_W/2, sy, 4.5, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,225,100,0.13)';
+      ctx.fillStyle = 'rgba(255,225,100,0.14)';
       ctx.beginPath(); ctx.arc(x+COL_W/2, sy, 11, 0, Math.PI*2); ctx.fill();
     } else if (st === 'golden') {
       const eve = slot.nztHour >= 12;
@@ -241,9 +243,11 @@ function drawCanvas(
       bg.addColorStop(0.86, '#e07030');
       bg.addColorStop(1, '#f09040');
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
-      const sy = LBEL_H + SKY_H * 0.82;
-      ctx.fillStyle = 'rgba(255,200,60,0.65)';
-      ctx.beginPath(); ctx.arc(x+COL_W/2, sy, 4, 0, Math.PI*2); ctx.fill();
+      // Sun just at/near the horizon for golden hour
+      const gSunFrac = Math.max(0, Math.sin(Math.PI * (slot.nztHour - 7) / 12));
+      const gSunY = HOR_Y - gSunFrac * SKY_H * 0.82 - 3;
+      ctx.fillStyle = 'rgba(255,200,60,0.72)';
+      ctx.beginPath(); ctx.arc(x+COL_W/2, gSunY, 4, 0, Math.PI*2); ctx.fill();
       for (let s=0;s<6;s++){ctx.beginPath();ctx.arc(rand(i*400+s*7.3)*COL_W+x,LBEL_H+rand(i*500+s*13.7)*SKY_H*0.3,0.5,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${(0.2+rand(i*600+s*5.1)*0.4).toFixed(2)})`;ctx.fill();}
     } else if (st === 'civil') {
       bg = ctx.createLinearGradient(x, LBEL_H, x, HOR_Y);
@@ -515,17 +519,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     setPopup({ slotIdx: col, anchorX: (col + 0.5) * (canvasW / slots.length) });
   }, [slots, canvasW, popup]);
 
-  // Close on outside click
-  const handleWrapClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === wrapRef.current) setPopup(null);
-  }, []);
-
-  const POPUP_W = 300;
   const sel  = popup ? slots[popup.slotIdx] : null;
   const vis  = sel ? getVis(sel.kp, moon, userLatitude) : null;
-  const left = popup
-    ? Math.min(Math.max(0, popup.anchorX - POPUP_W / 2), canvasW - POPUP_W - 4)
-    : 0;
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
   const fmtEnd = (h: number) => fmt((h+1)%24);
@@ -560,8 +555,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         </span>
       </div>
 
-      {/* Canvas wrapper */}
-      <div ref={wrapRef} style={{ position: 'relative' }} onClick={handleWrapClick}>
+      {/* Canvas wrapper — no overflow constraints, clean click handling */}
+      <div ref={wrapRef} style={{ position: 'relative' }}>
         {loading && (
           <div className="h-40 bg-neutral-800/50 rounded-lg animate-pulse" />
         )}
@@ -577,52 +572,54 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             style={{ display: 'block', cursor: 'pointer', borderRadius: 8, width: '100%' }}
           />
         )}
+      </div>
 
-        {/* Popup */}
-        {popup && sel && vis && (
-          <div style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            left,
-            width: POPUP_W,
-            background: 'var(--color-background-primary)',
-            border: '0.5px solid var(--color-border-secondary)',
-            borderRadius: 12,
-            padding: '14px 16px',
-            zIndex: 30,
-          }}>
-            <button
-              onClick={() => setPopup(null)}
-              style={{ position:'absolute', top:10, right:12, background:'none', border:'none', cursor:'pointer', fontSize:18, lineHeight:1, color:'var(--color-text-tertiary)', padding:'0 4px' }}
-            >×</button>
-
-            {/* Time + KP */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, flexWrap:'wrap' }}>
-                <span style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)' }}>
+      {/* Detail panel — renders in-flow below canvas, no overflow/z-index issues */}
+      {popup && sel && vis && (
+        <div style={{
+          marginTop: 10,
+          background: 'var(--color-background-secondary)',
+          border: '0.5px solid var(--color-border-secondary)',
+          borderRadius: 12,
+          padding: '14px 16px',
+        }}>
+          {/* Header row: time, badge, KP, close */}
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:12 }}>
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }}>
+                <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text-primary)' }}>
                   {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} NZT
                 </span>
                 <span style={{
-                  fontSize:10, padding:'1px 7px', borderRadius:10,
+                  fontSize:10, padding:'2px 8px', borderRadius:10,
                   background: sel.observed === 'observed' ? 'rgba(100,100,100,0.25)' : sel.observed === 'estimated' ? 'rgba(250,180,0,0.18)' : 'rgba(50,140,255,0.18)',
                   color: sel.observed === 'observed' ? 'var(--color-text-tertiary)' : sel.observed === 'estimated' ? '#f0a030' : '#70b8ff',
                 }}>
                   {sel.observed === 'observed' ? 'recorded' : sel.observed === 'estimated' ? 'estimated' : 'forecast'}
                 </span>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontSize:20, fontWeight:500, color: gColor(sel.kp) }}>Kp {sel.kp.toFixed(1)}</span>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <span style={{ fontSize:22, fontWeight:500, color: gColor(sel.kp) }}>Kp {sel.kp.toFixed(1)}</span>
                 {gScale(sel.kp) && (
-                  <span style={{ fontSize:12, fontWeight:500, padding:'2px 9px', borderRadius:20, background:gColor(sel.kp)+'22', color:gColor(sel.kp) }}>
+                  <span style={{ fontSize:12, fontWeight:500, padding:'3px 10px', borderRadius:20, background:gColor(sel.kp)+'22', color:gColor(sel.kp) }}>
                     {gScale(sel.kp)}
                   </span>
                 )}
               </div>
             </div>
+            <button
+              onClick={() => setPopup(null)}
+              style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, lineHeight:1, color:'var(--color-text-tertiary)', padding:'2px 4px', marginTop:2 }}
+            >×</button>
+          </div>
 
-            {/* Visibility */}
-            <div style={{ borderTop:'0.5px solid var(--color-border-tertiary)', paddingTop:10, marginBottom:8 }}>
-              <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', marginBottom:4 }}>
+          {/* Two-column layout for details */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 20px' }}>
+
+            {/* Left col: visibility headline + detail */}
+            <div style={{ gridColumn: vis.regions.length > 0 ? '1' : '1 / -1' }}>
+              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Aurora visibility</div>
+              <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', marginBottom:6 }}>
                 {vis.headline}
               </div>
               <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.6 }}>
@@ -630,27 +627,36 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
               </div>
             </div>
 
+            {/* Right col: regions (only if any) */}
             {vis.regions.length > 0 && (
-              <div style={{ marginBottom:8 }}>
-                <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:3 }}>Regions likely to see aurora</div>
-                <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.55 }}>
-                  {vis.regions.join(' · ')}
+              <div>
+                <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likely regions</div>
+                <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.7 }}>
+                  {vis.regions.map((r, ri) => (
+                    <span key={r}>
+                      {r}{ri < vis.regions.length - 1 ? <span style={{ color:'var(--color-text-tertiary)' }}> · </span> : ''}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
 
-            <div style={{ marginBottom:8 }}>
-              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:2 }}>Moon</div>
-              <div style={{ fontSize:12, color:'var(--color-text-secondary)' }}>{vis.moonNote}</div>
-            </div>
+          </div>
 
-            <div style={{ borderTop:'0.5px solid var(--color-border-tertiary)', paddingTop:8 }}>
-              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:2 }}>What to do</div>
+          {/* Moon + tip row */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 20px', marginTop:10, paddingTop:10, borderTop:'0.5px solid var(--color-border-tertiary)' }}>
+            <div>
+              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Moon conditions</div>
+              <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.55 }}>{vis.moonNote}</div>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>What to do</div>
               <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.55 }}>{vis.tip}</div>
             </div>
           </div>
-        )}
-      </div>
+
+        </div>
+      )}
 
       {/* Legend */}
       <div className="mt-2 pt-2 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1 items-center">
