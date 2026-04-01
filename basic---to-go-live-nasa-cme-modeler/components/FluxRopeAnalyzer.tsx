@@ -26,6 +26,7 @@ interface RopeResult {
   bzForecast:    number[];
   thetaArr:      number[];
   thetaFit0:     number;
+  estDurMin:     number;
 }
 
 interface SlinkySeg {
@@ -168,19 +169,29 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[]) {
   const confidence = r2 * Math.min(1, minutesInRope / 90);
   if (r2 < 0.38 || minutesInRope < 15) return null;
 
-  const leading  = dirFromTheta(thetaFit0);
-  const axial    = dirFromTheta(thetaFit0 + omega * ROPE_DUR_MIN * 0.40);
-  const trailing = dirFromTheta(thetaFit0 + omega * ROPE_DUR_MIN * 0.80);
+  // Estimate actual rope duration from rotation rate.
+  // A full rotation of π radians (180°) spans roughly the leading→trailing arc.
+  // If omega is near 0, fall back to 15-hour default.
+  const estDurMin = Math.abs(omega) > 0.002
+    ? Math.min(1800, Math.max(360, Math.PI / Math.abs(omega)))
+    : ROPE_DUR_MIN;
 
-  const bzForecast = FORECAST_DT.map(dt =>
-    +(btMean * Math.cos(thetaNow + omega * dt)).toFixed(1)
-  );
+  const leading  = dirFromTheta(thetaFit0);
+  const axial    = dirFromTheta(thetaFit0 + omega * estDurMin * 0.40);
+  const trailing = dirFromTheta(thetaFit0 + omega * estDurMin * 0.80);
+
+  // Confidence-weighted forecast — confidence decays faster for further-out slots
+  const bzForecast = FORECAST_DT.map(dt => {
+    const confDecay = Math.pow(r2, 1 + dt / 120);
+    if (confDecay < 0.15) return 0;
+    return +(btMean * Math.cos(thetaNow + omega * dt)).toFixed(1);
+  });
 
   return {
     shockTime, ropeEntry, minutesInRope,
     thetaNow, omega, btMean, r2, confidence,
     leading, axial, trailing, orientCode: leading + axial + trailing,
-    bzForecast, thetaArr, thetaFit0,
+    bzForecast, thetaArr, thetaFit0, estDurMin,
   };
 }
 
@@ -207,8 +218,8 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   const CY  = H / 2 - 2;
 
   const X0 = 16, X1 = SW - 16, RLEN = X1 - X0;
-  const R = 70, N_FL = 6, N_COILS = 3.2, N_SEG = 300, TILT = 0.20;
-  const u_earth = Math.min(0.80, result.minutesInRope / ROPE_DUR_MIN);
+  const R = 74, N_FL = 4, N_COILS = 1.8, N_SEG = 220, TILT = 0.20;
+  const u_earth = Math.min(0.80, result.minutesInRope / result.estDurMin);
   const earthX  = X0 + u_earth * RLEN;
 
   const segs: any[] = [];
@@ -242,7 +253,7 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.strokeStyle='rgba(60,100,180,0.22)'; ctx.lineWidth=0.5; ctx.setLineDash([3,4]);
   ctx.beginPath(); ctx.moveTo(earthX, CY-R-15); ctx.lineTo(earthX, CY+R+15); ctx.stroke();
   ctx.setLineDash([]);
-  const eR = 11;
+  const eR = 15;
   ctx.fillStyle='#0d2244'; ctx.beginPath(); ctx.arc(earthX, CY, eR, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle='#2563eb'; ctx.lineWidth=2.5; ctx.stroke();
   for (let i = 0; i < 2; i++) {
@@ -276,9 +287,9 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.strokeStyle='rgba(80,110,160,0.2)'; ctx.lineWidth=0.5;
   ctx.beginPath(); ctx.moveTo(HX-HR,CY); ctx.lineTo(HX+HR,CY); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(HX,CY-HR); ctx.lineTo(HX,CY+HR); ctx.stroke();
-  ctx.fillStyle='rgba(120,155,195,0.82)'; ctx.font='500 10px system-ui'; ctx.textAlign='center';
-  ctx.fillText('N',HX,CY-HR-5);
-  ctx.fillStyle='rgba(210,75,75,0.92)'; ctx.fillText('S',HX,CY+HR+14);
+  ctx.fillStyle='rgba(180,80,80,0.82)'; ctx.font='500 10px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Bz+ (no aurora)',HX,CY-HR-5);
+  ctx.fillStyle='rgba(60,200,90,0.92)'; ctx.fillText('Bz− (aurora!)',HX,CY+HR+14);
   ctx.fillStyle='rgba(120,155,195,0.48)'; ctx.font='8px system-ui';
   ctx.textAlign='left'; ctx.fillText('By+',HX+HR+3,CY+3);
   ctx.textAlign='right'; ctx.fillText('By−',HX-HR-3,CY+3);
@@ -295,7 +306,7 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   const FDTS  = [15,30,60,180,360];
   const FLBLS = ['15m','30m','1h','3h','6h'];
   FDTS.forEach((dt, i) => {
-    const conf = Math.pow(result.confidence, 1 + i * 0.22);
+    const conf = Math.pow(result.confidence, 1 + i * 0.55);
     if (conf < 0.12) return;
     const th = result.thetaNow + result.omega * dt;
     const px = HX + Math.sin(th)*HR;
@@ -368,8 +379,10 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
   if (!result) return null;
 
   const confPct   = Math.round(result.confidence * 100);
-  const confLabel = confPct < 40 ? 'Low confidence' : confPct < 68 ? 'Moderate confidence' : 'Good confidence';
-  const confCls   = confPct < 40 ? 'text-amber-400' : confPct < 68 ? 'text-sky-400' : 'text-emerald-400';
+  const confLabel = confPct < 40 ? 'Early estimate — building'
+    : confPct < 68 ? 'Reasonable forecast'
+    : 'Reliable forecast';
+  const confCls = confPct < 40 ? 'text-amber-400' : confPct < 68 ? 'text-sky-400' : 'text-emerald-400';
   const hrsIn     = (result.minutesInRope / 60).toFixed(1);
 
   const rotDesc = Math.abs(result.omega) < 0.004
@@ -402,7 +415,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-medium px-2 py-1 rounded-full bg-neutral-800 ${confCls}`}>
-            {confLabel} ({confPct}%)
+            {confLabel}
           </span>
           <span className="text-xs font-mono font-semibold px-3 py-1 rounded-full bg-neutral-800 text-neutral-200 tracking-widest">
             {result.orientCode}
@@ -417,21 +430,18 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
         />
       </div>
 
-      {confPct < 45 && (
-        <div className="mb-3 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-700/30 text-xs text-amber-300/80 leading-relaxed">
-          Early estimate — the forecast improves as more rope data accumulates. Treat the further-out predictions with caution for now.
-        </div>
-      )}
-
       <div className="mb-3 text-xs text-neutral-400 leading-relaxed bg-neutral-900/50 rounded-lg px-3 py-2.5">
         <span className="font-semibold text-neutral-200 mr-1">{result.orientCode}:</span>
         {orientPlain}
+        {confPct < 55 && (
+          <span className="ml-1 text-amber-400/80"> Forecast confidence is still building — treat +3h and +6h as directional only.</span>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 mb-3">
         {FORECAST_LABELS.map((label, i) => {
           const bz   = result.bzForecast[i];
-          const conf = i === 0 ? 1 : Math.max(0.28, Math.pow(result.confidence, 1 + i*0.26));
+          const conf = i === 0 ? 1 : Math.pow(result.confidence, 1 + i * 0.55);
           const isAurora = bz < -2;
           return (
             <div
