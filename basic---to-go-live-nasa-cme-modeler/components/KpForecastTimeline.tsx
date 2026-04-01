@@ -110,9 +110,40 @@ function skyType(h: number): SkyT {
   return 'night';
 }
 
-function auroraH(kp: number, skyH: number): number {
-  if (kp <= KP_THRESHOLD) return 0;
-  return Math.pow((kp - KP_THRESHOLD) / (9 - KP_THRESHOLD), 0.70) * skyH * 0.92;
+// minKp: piecewise linear between calibrated NZ anchor points.
+// Northland/Auckland ~36°S → 6.3, Wellington ~41°S → 5.7,
+// Christchurch ~43.5°S → 5.0, Southland ~46°S → 4.5.
+// No GPS → conservative NZ-wide default of 4.67.
+function minKpForLocation(lat: number | null | undefined): number {
+  if (lat == null) return 4.67;
+  const a = Math.abs(lat);
+  // Anchors calibrated: Auckland(36.8°S)→6.3, Wellington(41.3°S)→5.7, Chch(43.5°S)→5.0
+  const anchors = [
+    [34,   6.5],
+    [36.8, 6.3],
+    [41.3, 5.7],
+    [43.5, 5.0],
+    [46,   4.5],
+    [48,   4.5],
+  ];
+  if (a <= anchors[0][0]) return anchors[0][1];
+  if (a >= anchors[anchors.length-1][0]) return anchors[anchors.length-1][1];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const [la, ka] = anchors[i];
+    const [lb, kb] = anchors[i+1];
+    if (a >= la && a <= lb) {
+      const t = (a - la) / (lb - la);
+      return ka + (kb - ka) * t;
+    }
+  }
+  return 4.67;
+}
+
+function auroraH(kp: number, skyH: number, minKp: number): number {
+  if (kp <= minKp) return 0;
+  // Bar fills from minKp to Kp 8 (where aurora is visible everywhere in NZ)
+  const fraction = Math.min(1, (kp - minKp) / (8.0 - minKp));
+  return Math.pow(fraction, 0.70) * skyH * 0.92;
 }
 
 // Always green (bottom) → pink (mid) → blue (top). Height + intensity vary by KP.
@@ -308,6 +339,7 @@ function drawCanvas(
   sunsetMs:   number | null | undefined,
   moonRiseMs: number | null | undefined,
   moonSetMs:  number | null | undefined,
+  minKp:      number,
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
@@ -402,55 +434,18 @@ function drawCanvas(
     }
 
     // Aurora overlay
-    if (slot.kp > KP_THRESHOLD) {
-      const ah  = auroraH(slot.kp, SKY_H);
+    if (slot.kp > minKp) {
+      const ah  = auroraH(slot.kp, SKY_H, minKp);
       const op  = st === 'night' ? 1.0 : st === 'nautical' ? 0.78 : st === 'civil' ? 0.52 : st === 'golden' ? 0.38 : 0.28;
       ctx.fillStyle = auroraGrad(ctx, x, HOR_Y - ah, HOR_Y, slot.kp, op);
       ctx.fillRect(x, HOR_Y - ah, COL_W, ah);
     }
 
-    // Sunrise / sunset arrows — use real timestamps when available
-    // Show arrow in the column where the sun crosses the horizon
-    const HOUR_MS_A = 3600000;
+    // Keep ARR_DAY/ARR_NZT/arSlotMid — used by moon arc below
     const ARR_DAY   = 86400000;
     const ARR_NZT   = NZ_OFFSET_H * 3600000;
     const arSlotNzt = slot.utcMs + ARR_NZT;
     const arSlotMid = arSlotNzt - (arSlotNzt % ARR_DAY);
-    const arRiseMs  = sunriseMs != null ? arSlotMid + ((sunriseMs + ARR_NZT) % ARR_DAY) - ARR_NZT : null;
-    const arSetMs   = sunsetMs  != null ? arSlotMid + ((sunsetMs  + ARR_NZT) % ARR_DAY) - ARR_NZT : null;
-    const isSet  = arSetMs != null
-      ? (slot.utcMs <= arSetMs && slot.utcMs + HOUR_MS_A > arSetMs)
-      : (slot.nztHour === 18 || slot.nztHour === 19);
-    const isRise = arRiseMs != null
-      ? (slot.utcMs <= arRiseMs && slot.utcMs + HOUR_MS_A > arRiseMs)
-      : (slot.nztHour === 6 || slot.nztHour === 7);
-    if (isSet || isRise) {
-      const cx = x + COL_W / 2;
-      const ay = HOR_Y - 7;
-      const sz = Math.min(6, COL_W * 0.32);
-      ctx.fillStyle = 'rgba(255,165,45,0.92)';
-      ctx.beginPath();
-      if (isSet) {
-        // Down arrow ↓
-        ctx.moveTo(cx,           ay + sz);
-        ctx.lineTo(cx - sz*0.65, ay - sz*0.35);
-        ctx.lineTo(cx - sz*0.22, ay - sz*0.35);
-        ctx.lineTo(cx - sz*0.22, ay - sz);
-        ctx.lineTo(cx + sz*0.22, ay - sz);
-        ctx.lineTo(cx + sz*0.22, ay - sz*0.35);
-        ctx.lineTo(cx + sz*0.65, ay - sz*0.35);
-      } else {
-        // Up arrow ↑
-        ctx.moveTo(cx,           ay - sz);
-        ctx.lineTo(cx + sz*0.65, ay + sz*0.35);
-        ctx.lineTo(cx + sz*0.22, ay + sz*0.35);
-        ctx.lineTo(cx + sz*0.22, ay + sz);
-        ctx.lineTo(cx - sz*0.22, ay + sz);
-        ctx.lineTo(cx - sz*0.22, ay + sz*0.35);
-        ctx.lineTo(cx - sz*0.65, ay + sz*0.35);
-      }
-      ctx.closePath(); ctx.fill();
-    }
 
     // Moon arc — disc follows a sine arc from moonrise to moonset, like the sun.
     // Uses per-day +55min offset. Checks a ±1 day window to catch the overnight
@@ -694,7 +689,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Draw
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
-    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs);
+    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs, minKpForLocation(userLatitude));
   }, [slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs]);
 
   // Click
@@ -879,7 +874,6 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
           { c:'#00dc3e', l:'Green (aurora base)' },
           { c:'#ff3c96', l:'Pink (active)' },
           { c:'#508cff', l:'Blue (intense, G3+)' },
-          { c:'#e07028', l:'Sunrise / sunset' },
           { c:'#d2daef', l:'Moonrise / moonset' },
         ].map(({c,l}) => (
           <span key={l} className="flex items-center gap-1.5 text-xs text-neutral-500">
@@ -887,7 +881,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             {l}
           </span>
         ))}
-        <span className="text-xs text-neutral-600 ml-auto">Below Kp 4.33 — not visible from New Zealand</span>
+        <span className="text-xs text-neutral-600 ml-auto">{userLatitude != null ? `Bar height calibrated to ${Math.abs(userLatitude).toFixed(1)}°${userLatitude < 0 ? 'S' : 'N'} — aurora threshold Kp ${minKpForLocation(userLatitude).toFixed(1)}` : 'No GPS — showing NZ-wide aurora threshold (Kp 4.67)'}</span>
       </div>
 
     </div>
