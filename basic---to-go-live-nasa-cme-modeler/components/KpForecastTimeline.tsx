@@ -466,7 +466,10 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             const utcMs = a.utcMs + s * HOUR_MS;
             // Smooth ease: use cosine interpolation for a gentle S-curve rise/fall
             const ease = (1 - Math.cos(t * Math.PI)) / 2;
-            const kp = a.kp + (b.kp - a.kp) * ease;
+            // KP is only valid in units of 1/3 (0, 0.33, 0.67, 1, 1.33, 1.67 ... 9)
+            // Snap the interpolated value to the nearest valid third
+            const kpRaw = a.kp + (b.kp - a.kp) * ease;
+            const kp = Math.round(kpRaw * 3) / 3;
             const observed = s === 0 ? a.observed : (t < 0.5 ? a.observed : b.observed);
             const nztMs  = utcMs + NZ_OFFSET_H * 3600000;
             const nztD   = new Date(nztMs);
