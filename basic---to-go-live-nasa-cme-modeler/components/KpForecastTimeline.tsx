@@ -334,6 +334,7 @@ function drawCanvas(
   W:         number,
   sunriseMs: number | null | undefined,
   sunsetMs:  number | null | undefined,
+  selectedIdx?: number | null,
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
@@ -553,6 +554,21 @@ function drawCanvas(
     ctx.font = '500 8px system-ui,sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('now', nx, LBEL_H+9);
   }
+
+  // Selected slot marker — make the chosen time segment visually obvious.
+  if (selectedIdx != null && selectedIdx >= 0 && selectedIdx < COLS) {
+    const sx = selectedIdx * COL_W;
+    // Brightened in-column overlay
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.12)';
+    ctx.fillRect(sx, LBEL_H, COL_W, SKY_H);
+    // High-contrast outline around full segment
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.95)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 1, LBEL_H + 1, Math.max(0, COL_W - 2), SKY_H - 2);
+    // Top cap for quick scan
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.95)';
+    ctx.fillRect(sx + 1, LBEL_H + 1, Math.max(0, COL_W - 2), 3);
+  }
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -682,8 +698,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Draw
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
-    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs);
-  }, [slots, canvasW, sunriseMs, sunsetMs]);
+    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx ?? null);
+  }, [slots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
