@@ -113,39 +113,39 @@ function auroraH(kp: number, skyH: number): number {
   return Math.pow((kp - KP_THRESHOLD) / (9 - KP_THRESHOLD), 0.70) * skyH * 0.92;
 }
 
-// Always green (bottom) → pink (mid) → blue (top). Height + intensity vary by KP.
+// Always green (bottom) → pink (mid) → purple (top, G3+). Height + intensity vary by KP.
 function auroraGrad(
   ctx: CanvasRenderingContext2D,
   x: number, topY: number, botY: number,
   kp: number, op: number
 ) {
   // Gradient runs top→bottom: [0]=top of band [1]=horizon
-  // so colour order from stop 0 to stop 1:  blue → pink → green → transparent
+  // so colour order from stop 0 to stop 1:  purple → pink → green → transparent
   const g = ctx.createLinearGradient(x, topY, x, botY);
   const a = (v: number) => Math.min(1, v * op).toFixed(3);
 
   if (kp >= 8) {                              // G4+ — all three bold
-    g.addColorStop(0,    `rgba(80,130,255,${a(0)})`);
-    g.addColorStop(0.04, `rgba(80,130,255,${a(0.80)})`);
-    g.addColorStop(0.28, `rgba(80,130,255,${a(0.85)})`);
+    g.addColorStop(0,    `rgba(170,105,255,${a(0)})`);
+    g.addColorStop(0.04, `rgba(170,105,255,${a(0.80)})`);
+    g.addColorStop(0.28, `rgba(170,105,255,${a(0.85)})`);
     g.addColorStop(0.42, `rgba(255,60,150,${a(0.85)})`);
     g.addColorStop(0.60, `rgba(255,60,150,${a(0.82)})`);
     g.addColorStop(0.72, `rgba(0,220,65,${a(0.90)})`);
     g.addColorStop(0.90, `rgba(0,220,65,${a(0.92)})`);
     g.addColorStop(1,    `rgba(0,220,65,${a(0.10)})`);
-  } else if (kp >= 7) {                       // G3 — blue cap, good pink, green main
-    g.addColorStop(0,    `rgba(80,125,255,${a(0)})`);
-    g.addColorStop(0.08, `rgba(80,125,255,${a(0.65)})`);
-    g.addColorStop(0.28, `rgba(80,125,255,${a(0.70)})`);
+  } else if (kp >= 7) {                       // G3 — purple cap, good pink, green main
+    g.addColorStop(0,    `rgba(162,96,255,${a(0)})`);
+    g.addColorStop(0.08, `rgba(162,96,255,${a(0.65)})`);
+    g.addColorStop(0.28, `rgba(162,96,255,${a(0.70)})`);
     g.addColorStop(0.42, `rgba(255,60,148,${a(0.78)})`);
     g.addColorStop(0.60, `rgba(255,60,148,${a(0.73)})`);
     g.addColorStop(0.72, `rgba(0,218,62,${a(0.85)})`);
     g.addColorStop(0.90, `rgba(0,218,62,${a(0.88)})`);
     g.addColorStop(1,    `rgba(0,218,62,${a(0.10)})`);
-  } else if (kp >= 6) {                       // G2 — hint of blue, pink band, green main
-    g.addColorStop(0,    `rgba(80,118,255,${a(0)})`);
-    g.addColorStop(0.10, `rgba(80,118,255,${a(0.40)})`);
-    g.addColorStop(0.25, `rgba(80,118,255,${a(0.42)})`);
+  } else if (kp >= 6) {                       // G2 — hint of purple, pink band, green main
+    g.addColorStop(0,    `rgba(155,92,245,${a(0)})`);
+    g.addColorStop(0.10, `rgba(155,92,245,${a(0.40)})`);
+    g.addColorStop(0.25, `rgba(155,92,245,${a(0.42)})`);
     g.addColorStop(0.40, `rgba(245,60,145,${a(0.68)})`);
     g.addColorStop(0.58, `rgba(245,60,145,${a(0.65)})`);
     g.addColorStop(0.70, `rgba(0,215,60,${a(0.82)})`);
@@ -875,7 +875,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         {[
           { c:'#00dc3e', l:'Green (aurora base)' },
           { c:'#ff3c96', l:'Pink (active)' },
-          { c:'#508cff', l:'Blue (intense, G3+)' },
+          { c:'#a569ff', l:'Purple (intense, G3+)' },
+          { c:'#2060a0', l:'Blue (daytime sky)' },
           { c:'#e07028', l:'Sunrise / sunset' },
         ].map(({c,l}) => (
           <span key={l} className="flex items-center gap-1.5 text-xs text-neutral-500">
