@@ -175,71 +175,124 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   //   Bt      ≥ 8 nT jump OR ≥ 50% from baseline, sustained ≥ 2 readings
   //   ≥ 2 of 3 parameters must fire simultaneously
   const shockDetection = useMemo(() => {
-    // Simple consecutive-reading jump detector.
-    // A shock is a discontinuity — one reading to the next. No windows needed.
-    // For each pair of consecutive readings in each series, check if the value
-    // jumps beyond threshold. If ≥2 parameters fire on the same timestamp,
-    // it's a shock. We then check if any such event occurred in the last 12h
-    // and show the alert if so (shocks stay elevated for hours).
+    // Detect any significant solar wind discontinuity — not just upward jumps.
+    // Types we care about:
+    //   Fast-forward shock (CME):  speed↑  density↑  temp↑  Bt↑
+    //   Reverse shock:             speed↓  density↓  temp↓  Bt may ↑ or ↓
+    //   IMF discontinuity:         Bt↑ and/or Bz sudden large rotation, plasma unchanged
+    //   Magnetic cloud boundary:   Bt↑,  density↓  temp↓  (enter smooth flux rope)
+    //
+    // Rule: use ABSOLUTE magnitude of reading-to-reading change, not sign.
+    // A jump of −60 km/s is just as significant as +60 km/s.
+    // Bz is checked separately — a large swing in Bz is always noteworthy
+    // even if Bt, speed and density are quiet.
+    //
+    // Thresholds (conservative to avoid noise, sensitive enough for weak CMEs):
+    //   Speed:   |Δ| ≥ 40 km/s in one step
+    //   Density: ratio ≥ 1.8× or ≤ 0.55× (up or down)
+    //   Temp:    ratio ≥ 2.5× or ≤ 0.4×
+    //   Bt:      |Δ| ≥ 5 nT
+    //   Bz:      |Δ| ≥ 8 nT (large IMF rotation)
+    //
+    // Require ≥ 2 of 5 parameters to fire within the same 3-min bucket.
+    // Exception: Bt + Bz together is enough (pure IMF shock — 1 plasma param not needed).
+    // Alert stays visible up to 12h after the event.
 
-    const LOOK_BACK = 12 * 3600000; // show alert up to 12h after impact
+    const LOOK_BACK = 12 * 3600000;
     const now = Date.now();
+    const BUCKET = 3 * 60000;
+    const bucket = (t: number) => Math.round(t / BUCKET) * BUCKET;
 
     const spdSorted = [...speedData  ].sort((a, b) => a.x    - b.x);
     const denSorted = [...densityData].sort((a, b) => a.x    - b.x);
     const tmpSorted = [...tempData   ].sort((a, b) => a.x    - b.x);
     const magSorted = [...magneticData].sort((a, b) => a.time - b.time);
 
-    if (spdSorted.length < 4) return null;
+    if (spdSorted.length < 4 || magSorted.length < 4) return null;
 
-    // Build jump maps keyed by approximate minute timestamp
-    // so we can correlate across series
-    const BUCKET = 3 * 60000; // 3-minute bucket to align different cadences
-
-    const bucket = (t: number) => Math.round(t / BUCKET) * BUCKET;
-
-    const spdJumps = new Map<number, number>();
-    const denJumps = new Map<number, number>();
-    const tmpJumps = new Map<number, number>();
-    const btJumps  = new Map<number, number>();
+    // Maps: bucket → jump magnitude (sign preserved for display)
+    const spdMap = new Map<number, number>();
+    const denMap = new Map<number, number>(); // ratio (>1 or <1)
+    const tmpMap = new Map<number, number>(); // ratio
+    const btMap  = new Map<number, number>(); // delta nT
+    const bzMap  = new Map<number, number>(); // delta nT (signed, for display)
 
     for (let i = 1; i < spdSorted.length; i++) {
-      const prev = spdSorted[i - 1]; const cur = spdSorted[i];
-      const jump = cur.y - prev.y;
-      if (jump >= 40) spdJumps.set(bucket(cur.x), jump); // ≥40 km/s step up
+      const delta = spdSorted[i].y - spdSorted[i-1].y;
+      if (Math.abs(delta) >= 40) spdMap.set(bucket(spdSorted[i].x), delta);
     }
     for (let i = 1; i < denSorted.length; i++) {
-      const prev = denSorted[i - 1]; const cur = denSorted[i];
-      if (prev.y > 0 && cur.y / prev.y >= 1.6) denJumps.set(bucket(cur.x), cur.y / prev.y);
+      const prev = denSorted[i-1].y; const cur = denSorted[i].y;
+      if (prev > 0) {
+        const ratio = cur / prev;
+        if (ratio >= 1.8 || ratio <= 0.55) denMap.set(bucket(denSorted[i].x), ratio);
+      }
     }
     for (let i = 1; i < tmpSorted.length; i++) {
-      const prev = tmpSorted[i - 1]; const cur = tmpSorted[i];
-      if (prev.y > 0 && cur.y / prev.y >= 2.5) tmpJumps.set(bucket(cur.x), cur.y / prev.y);
+      const prev = tmpSorted[i-1].y; const cur = tmpSorted[i].y;
+      if (prev > 0) {
+        const ratio = cur / prev;
+        if (ratio >= 2.5 || ratio <= 0.4) tmpMap.set(bucket(tmpSorted[i].x), ratio);
+      }
     }
     for (let i = 1; i < magSorted.length; i++) {
-      const prev = magSorted[i - 1]; const cur = magSorted[i];
-      const jump = cur.bt - prev.bt;
-      if (jump >= 5) btJumps.set(bucket(cur.time), jump);
+      const btDelta = magSorted[i].bt - magSorted[i-1].bt;
+      if (Math.abs(btDelta) >= 5) btMap.set(bucket(magSorted[i].time), btDelta);
+      const bzDelta = magSorted[i].bz - magSorted[i-1].bz;
+      if (Math.abs(bzDelta) >= 8) bzMap.set(bucket(magSorted[i].time), bzDelta);
     }
 
-    // Find any bucket in last 12h where ≥2 parameters jumped simultaneously
+    // Find best event in lookback window
     const allBuckets = new Set([
-      ...spdJumps.keys(), ...denJumps.keys(),
-      ...tmpJumps.keys(), ...btJumps.keys(),
+      ...spdMap.keys(), ...denMap.keys(),
+      ...tmpMap.keys(), ...btMap.keys(), ...bzMap.keys(),
     ]);
 
-    let bestEvent: { t: number; hits: number; spdJ: number; denR: number; tmpR: number; btJ: number } | null = null;
+    let bestEvent: {
+      t: number; hits: number; label: string;
+      spdJ: number; denR: number; tmpR: number; btJ: number; bzJ: number;
+    } | null = null;
 
     for (const t of allBuckets) {
       if (t < now - LOOK_BACK || t > now) continue;
-      const hits = [spdJumps.has(t), denJumps.has(t), tmpJumps.has(t), btJumps.has(t)].filter(Boolean).length;
-      if (hits >= 2 && (!bestEvent || hits > bestEvent.hits || (hits === bestEvent.hits && t > bestEvent.t))) {
+
+      const hasSPD = spdMap.has(t);
+      const hasDEN = denMap.has(t);
+      const hasTMP = tmpMap.has(t);
+      const hasBT  = btMap.has(t);
+      const hasBZ  = bzMap.has(t);
+
+      const hits = [hasSPD, hasDEN, hasTMP, hasBT, hasBZ].filter(Boolean).length;
+
+      // IMF-only exception: Bt + Bz together counts even without plasma change
+      const imfOnly = hasBT && hasBZ && !hasSPD && !hasDEN && !hasTMP;
+      if (hits < 2 && !imfOnly) continue;
+
+      // Classify the event type from which parameters fired and their direction
+      const spdVal  = spdMap.get(t) ?? 0;
+      const denVal  = denMap.get(t) ?? 1;
+      const btVal   = btMap.get(t)  ?? 0;
+      const bzVal   = bzMap.get(t)  ?? 0;
+
+      let label = 'Solar Wind Discontinuity';
+      if (hasSPD && hasDEN && hasTMP) {
+        label = spdVal > 0 ? 'CME Has Hit the Satellites!' : 'Reverse Shock Detected';
+      } else if (imfOnly || (hasBT && hasBZ && hits <= 2)) {
+        label = 'IMF Shock — Watch Bz';
+      } else if (hasBT && (hasDEN || hasTMP) && (denVal < 1 || (tmpMap.get(t) ?? 1) < 1)) {
+        label = 'Magnetic Cloud Boundary';
+      } else if (hasSPD && spdVal > 0) {
+        label = 'CME Has Hit the Satellites!';
+      }
+
+      if (!bestEvent || hits > bestEvent.hits || (hits === bestEvent.hits && t > bestEvent.t)) {
         bestEvent = {
-          t, hits,
-          spdJ: spdJumps.get(t) ?? 0,
-          denR: denJumps.get(t) ?? 0,
-          tmpR: tmpJumps.get(t) ?? 0,
-          btJ:  btJumps.get(t)  ?? 0,
+          t, hits, label,
+          spdJ: Math.round(spdMap.get(t) ?? 0),
+          denR: +(denMap.get(t) ?? 0).toFixed(1),
+          tmpR: +(tmpMap.get(t) ?? 0).toFixed(1),
+          btJ:  +(btMap.get(t)  ?? 0).toFixed(1),
+          bzJ:  +(bzMap.get(t)  ?? 0).toFixed(1),
         };
       }
     }
@@ -247,21 +300,11 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
     if (!bestEvent) return null;
 
     const ageMin = Math.round((now - bestEvent.t) / 60000);
-    const ageStr = ageMin < 60
-      ? `~${ageMin} min ago`
+    const ageStr = ageMin < 2   ? 'just now'
+      : ageMin < 60 ? `~${ageMin} min ago`
       : `~${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? ` ${ageMin % 60}min` : ''} ago`;
 
-    return {
-      ageStr,
-      spdJ:    Math.round(bestEvent.spdJ),
-      denR:    +bestEvent.denR.toFixed(1),
-      tmpR:    +bestEvent.tmpR.toFixed(0),
-      btJ:     +bestEvent.btJ.toFixed(1),
-      spdHit:  bestEvent.spdJ > 0,
-      denHit:  bestEvent.denR > 0,
-      tmpHit:  bestEvent.tmpR > 0,
-      btHit:   bestEvent.btJ  > 0,
-    };
+    return { ...bestEvent, ageStr };
   }, [speedData, densityData, tempData, magneticData]);
 
   // Options depend on rangeMs so they update when range changes
@@ -290,19 +333,19 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           style={{ background: 'rgba(220,38,38,0.12)', borderColor: 'rgba(220,38,38,0.45)' }}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-semibold text-red-400">CME Has Hit the Satellites!</span>
+              <span className="text-sm font-semibold text-red-400">{shockDetection.label}</span>
               <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ background: 'rgba(220,38,38,0.28)', color: '#f87171' }}>
-                Shock Arriving
+                {shockDetection.ageStr}
               </span>
             </div>
             <p className="text-xs text-red-300/80 leading-relaxed">
-              Sudden solar wind jump detected {shockDetection.ageStr} — consistent with an interplanetary shock.
-              {' '}{shockDetection.spdHit && `Speed +${shockDetection.spdJ} km/s. `}
-              {shockDetection.tmpHit && `Temperature ×${shockDetection.tmpR}. `}
-              {shockDetection.denHit && `Density ×${shockDetection.denR}. `}
-              {shockDetection.btHit  && `Bt +${shockDetection.btJ} nT. `}
-              Storm conditions may already be in progress — watch Bz closely.
+              {shockDetection.spdJ !== 0 && `Speed ${shockDetection.spdJ > 0 ? '+' : ''}${shockDetection.spdJ} km/s. `}
+              {shockDetection.denR !== 0 && `Density ×${shockDetection.denR}. `}
+              {shockDetection.tmpR !== 0 && `Temp ×${shockDetection.tmpR}. `}
+              {shockDetection.btJ  !== 0 && `Bt ${shockDetection.btJ > 0 ? '+' : ''}${shockDetection.btJ} nT. `}
+              {shockDetection.bzJ  !== 0 && `Bz ${shockDetection.bzJ > 0 ? '+' : ''}${shockDetection.bzJ} nT swing. `}
+              Watch Bz — if it turns south, aurora activity will follow.
             </p>
           </div>
         </div>
