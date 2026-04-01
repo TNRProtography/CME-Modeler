@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import EPAMPanel from './EPAMPanel';
+import SolarWindQuickView from './SolarWindQuickView';
 import KpForecastTimeline from './KpForecastTimeline';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
@@ -806,6 +807,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <TipsSection />
                                 <CameraSettingsSection settings={cameraSettings} />
                             </div>
+
+                            <SolarWindQuickView
+                                magneticData={allMagneticData}
+                                clockData={allImfClockData}
+                                speedData={allSpeedData}
+                                densityData={allDensityData}
+                                tempData={allTempData}
+                            />
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
                                 <EPAMPanel />
