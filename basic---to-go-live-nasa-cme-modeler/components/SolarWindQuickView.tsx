@@ -175,53 +175,94 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   //   Bt      ≥ 8 nT jump OR ≥ 50% from baseline, sustained ≥ 2 readings
   //   ≥ 2 of 3 parameters must fire simultaneously
   const shockDetection = useMemo(() => {
+    // ── Why 3-hour windows? ───────────────────────────────────────────────────
+    // The original 30-min algorithm failed on shocks that hit hours ago:
+    // both its "baseline" and "recent" windows fell inside the post-shock
+    // elevated period, so the comparison showed no change.
+    //
+    // A fast-forward IP shock creates a step-function that PERSISTS — speed,
+    // density, temperature and Bt all jump to a new level and stay there for
+    // hours (the CME sheath). We exploit this by:
+    //   • Baseline  = first 45 min of a 3-hour lookback (pre-shock conditions)
+    //   • Current   = last 30 min (wherever conditions are right now)
+    //   • If current is still significantly elevated vs the early baseline,
+    //     a shock has passed — whether 5 minutes ago or 5 hours ago.
+    //
+    // Four parameters (Cash et al. 2014 + temperature from Neugebauer et al.):
+    //   Speed       ≥ 40 km/s step from baseline, sustained ≥ 3 readings
+    //   Temperature ≥ 3× from baseline (proton temp is most reliable indicator)
+    //   Density     ≥ 1.8× from baseline
+    //   Bt          ≥ 6 nT jump OR ≥ 40% from baseline
+    //
+    // Require ≥ 2 of 4 parameters. This catches even weak shocks like small CMEs.
+
     const now = Date.now();
-    const RECENT_MS = 5 * 60000;
-    const SUSTAIN_N = 2;
-
-    const spdAll = speedData.filter(p => p.x > now - 30 * 60000).sort((a, b) => a.x - b.x);
-    const denAll = densityData.filter(p => p.x > now - 30 * 60000).sort((a, b) => a.x - b.x);
-    const magAll = magneticData.filter(p => p.time > now - 30 * 60000).sort((a, b) => a.time - b.time);
-
-    if (spdAll.length < 6 || denAll.length < 6 || magAll.length < 6) return null;
-
-    const spdBase = spdAll.filter(p => p.x < now - RECENT_MS).map(p => p.y);
-    const denBase = denAll.filter(p => p.x < now - RECENT_MS).map(p => p.y);
-    const magBase = magAll.filter(p => p.time < now - RECENT_MS).map(p => p.bt);
-    const spdRec  = spdAll.filter(p => p.x >= now - RECENT_MS).map(p => p.y);
-    const denRec  = denAll.filter(p => p.x >= now - RECENT_MS).map(p => p.y);
-    const magRec  = magAll.filter(p => p.time >= now - RECENT_MS).map(p => p.bt);
-
-    if (spdBase.length < 3 || denBase.length < 3 || magBase.length < 2) return null;
-    if (spdRec.length < SUSTAIN_N || denRec.length < SUSTAIN_N || magRec.length < SUSTAIN_N) return null;
+    const LOOK_BACK   = 3 * 3600000;  // 3 hours total lookback
+    const BASE_END    = now - (LOOK_BACK - 45 * 60000); // baseline = first 45 min
+    const CURRENT_START = now - 30 * 60000;              // current  = last 30 min
+    const MIN_PTS     = 3;
 
     const med = (arr: number[]) => {
+      if (!arr.length) return 0;
       const s = [...arr].sort((a, b) => a - b);
       const m = Math.floor(s.length / 2);
       return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
     };
 
+    // Pull 3 hours of each series
+    const spdAll = speedData  .filter(p => p.x    > now - LOOK_BACK).sort((a, b) => a.x    - b.x);
+    const denAll = densityData.filter(p => p.x    > now - LOOK_BACK).sort((a, b) => a.x    - b.x);
+    const tmpAll = tempData   .filter(p => p.x    > now - LOOK_BACK).sort((a, b) => a.x    - b.x);
+    const magAll = magneticData.filter(p => p.time > now - LOOK_BACK).sort((a, b) => a.time - b.time);
+
+    // Baseline: first 45 minutes of the 3-hour window (oldest data)
+    const spdBase = spdAll.filter(p => p.x    <= BASE_END).map(p => p.y);
+    const denBase = denAll.filter(p => p.x    <= BASE_END).map(p => p.y);
+    const tmpBase = tmpAll.filter(p => p.x    <= BASE_END).map(p => p.y);
+    const btBase  = magAll.filter(p => p.time <= BASE_END).map(p => p.bt);
+
+    // Current: last 30 minutes
+    const spdRec  = spdAll.filter(p => p.x    >= CURRENT_START).map(p => p.y);
+    const denRec  = denAll.filter(p => p.x    >= CURRENT_START).map(p => p.y);
+    const tmpRec  = tmpAll.filter(p => p.x    >= CURRENT_START).map(p => p.y);
+    const btRec   = magAll.filter(p => p.time >= CURRENT_START).map(p => p.bt);
+
+    if (spdBase.length < MIN_PTS || spdRec.length < MIN_PTS) return null;
+    if (denBase.length < MIN_PTS || denRec.length < MIN_PTS) return null;
+
     const basSpd = med(spdBase);
     const basDen = med(denBase);
-    const basBt  = med(magBase);
+    const basTmp = tmpBase.length >= MIN_PTS ? med(tmpBase) : 0;
+    const basBt  = btBase.length  >= MIN_PTS ? med(btBase)  : 0;
+
     const recSpd = med(spdRec);
     const recDen = med(denRec);
-    const recBt  = med(magRec);
+    const recTmp = tmpRec.length  >= MIN_PTS ? med(tmpRec)  : 0;
+    const recBt  = btRec.length   >= MIN_PTS ? med(btRec)   : 0;
 
-    const spdSustained = spdRec.filter(v => v > basSpd + 40).length >= SUSTAIN_N;
-    const denSustained = denRec.filter(v => basDen > 0 && v > basDen * 2.0).length >= SUSTAIN_N;
-    const btSustained  = magRec.filter(v => (v > basBt + 8) || (basBt > 0 && v > basBt * 1.5)).length >= SUSTAIN_N;
+    // Each parameter: is the current median genuinely elevated vs baseline?
+    const spdHit = basSpd > 0 && (recSpd - basSpd) >= 40;
+    const denHit = basDen > 0 && (recDen / basDen)  >= 1.8;
+    const tmpHit = basTmp > 0 && (recTmp / basTmp)  >= 3.0;  // temperature most reliable
+    const btHit  = basBt  > 0 && ((recBt - basBt) >= 6 || (recBt / basBt) >= 1.4);
 
-    if ([spdSustained, denSustained, btSustained].filter(Boolean).length < 2) return null;
+    const hits = [spdHit, denHit, tmpHit, btHit].filter(Boolean).length;
+    if (hits < 2) return null;
 
     return {
       spdJump:  Math.round(recSpd - basSpd),
       denRatio: basDen > 0 ? +(recDen / basDen).toFixed(1) : 0,
-      btJump:   +(recBt - basBt).toFixed(1),
+      tmpRatio: basTmp > 0 ? +(recTmp / basTmp).toFixed(0) : 0,
+      btJump:   basBt  > 0 ? +(recBt  - basBt).toFixed(1)  : 0,
       basSpd:   Math.round(basSpd),
       recSpd:   Math.round(recSpd),
+      hits,
+      tmpHit,
+      spdHit,
+      denHit,
+      btHit,
     };
-  }, [speedData, densityData, magneticData]);
+  }, [speedData, densityData, tempData, magneticData]);
 
   // Options depend on rangeMs so they update when range changes
   const bzbtOpts = useMemo(() => makeOptions('Bz / Bt (nT)', rangeMs, undefined, undefined, 'linear', false), [rangeMs]);
@@ -256,11 +297,12 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-red-300/80 leading-relaxed">
-              Solar wind shows a sudden step-change consistent with an interplanetary shock
-              — speed +{shockDetection.spdJump} km/s ({shockDetection.basSpd}→{shockDetection.recSpd} km/s)
-              {shockDetection.denRatio >= 1.5 && `, density ×${shockDetection.denRatio}`}
-              {shockDetection.btJump >= 5 && `, Bt +${shockDetection.btJump} nT`}.
-              {' '}Impact at Earth in ~30–60 min. Watch Bz closely.
+              Solar wind shows a sustained step-change consistent with an interplanetary shock.
+              {' '}{shockDetection.spdHit && `Speed +${shockDetection.spdJump} km/s (${shockDetection.basSpd}→${shockDetection.recSpd} km/s). `}
+              {shockDetection.tmpHit && `Temperature ×${shockDetection.tmpRatio} above baseline. `}
+              {shockDetection.denHit && `Density ×${shockDetection.denRatio} above baseline. `}
+              {shockDetection.btHit  && `Bt +${shockDetection.btJump} nT. `}
+              Storm conditions may already be in progress — watch Bz closely.
             </p>
           </div>
         </div>
