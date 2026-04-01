@@ -1,6 +1,6 @@
 // components/KpForecastTimeline.tsx
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 const NZ_OFFSET_H   = 13;   // NZDT = UTC+13 (April daylight saving)
@@ -607,6 +607,14 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const [canvasW, setCanvasW] = useState(700);
 
   const moon = moonIllumination ?? 50;
+  const isMobileCompressed = canvasW < 640;
+  const renderSlots = useMemo(() => {
+    if (!isMobileCompressed || slots.length <= 28) return slots;
+    const reduced = slots.filter((_, i) => i % 3 === 0);
+    const last = slots[slots.length - 1];
+    if (reduced.length === 0 || reduced[reduced.length - 1]?.utcMs !== last?.utcMs) reduced.push(last);
+    return reduced;
+  }, [slots, isMobileCompressed]);
 
   // Fetch KP data
   useEffect(() => {
@@ -722,16 +730,16 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
-    if (slots.length === 0) return;
+    if (renderSlots.length === 0) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const lx   = e.clientX - rect.left;
-    const col  = Math.floor(lx / (canvasW / slots.length));
-    if (col < 0 || col >= slots.length) return;
+    const col  = Math.floor(lx / (canvasW / renderSlots.length));
+    if (col < 0 || col >= renderSlots.length) return;
     if (popup?.slotIdx === col) { setPopup(null); return; }
-    setPopup({ slotIdx: col, anchorX: (col + 0.5) * (canvasW / slots.length) });
-  }, [slots, canvasW, popup]);
+    setPopup({ slotIdx: col, anchorX: (col + 0.5) * (canvasW / renderSlots.length) });
+  }, [renderSlots, canvasW, popup]);
 
-  const sel  = popup ? slots[popup.slotIdx] : null;
+  const sel  = popup ? renderSlots[popup.slotIdx] : null;
   const selSky = sel ? skyTypeFromMs(sel.utcMs, sunriseMs, sunsetMs) : 'night';
   const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky) : null;
   // For daytime/twilight slots with elevated KP, append the sun note to the tip
@@ -772,6 +780,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
           <h2 className="text-base font-semibold text-white">3-day aurora forecast</h2>
           <p className="text-xs text-neutral-500 mt-0.5">
             What the southern sky may look like from NZ over the next 72 hours · click any window for details
+            {isMobileCompressed ? ' · mobile view uses 3-hour steps for readability' : ''}
           </p>
         </div>
         <span className="text-xs text-neutral-600">
