@@ -1,43 +1,6 @@
 // --- START OF FILE App.tsx ---
 
-import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
-
-/**
- * Wraps React.lazy() with automatic stale-chunk recovery.
- *
- * After a new deployment, Vite generates new content-hashed filenames for every
- * JS chunk. If a user still has the old HTML loaded in their tab, any subsequent
- * lazy import will try to fetch the old (now-deleted) filename and throw
- * "Failed to fetch dynamically imported module". This wrapper catches that error
- * and reloads the page once — which fetches the fresh HTML and correct new URLs.
- * A sessionStorage flag prevents an infinite reload loop if the error persists
- * for an unrelated reason.
- */
-const CHUNK_RELOAD_KEY = 'sta_chunk_reload_attempted';
-function retryLazyLoad<T extends React.ComponentType<any>>(
-  importFn: () => Promise<{ default: T }>
-): React.LazyExoticComponent<T> {
-  return lazy(() =>
-    importFn().catch((err: unknown) => {
-      const isChunkError =
-        err instanceof Error &&
-        (err.message.includes('Failed to fetch dynamically imported module') ||
-          err.message.includes('Importing a module script failed') ||
-          err.message.includes('error loading dynamically imported module'));
-
-      if (isChunkError && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
-        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
-        window.location.reload();
-        // Return a never-resolving promise — the reload will take over
-        return new Promise<{ default: T }>(() => {});
-      }
-      // Not a chunk error, or already retried — clear flag and re-throw so
-      // the ErrorBoundary can display the real problem
-      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
-      throw err;
-    })
-  );
-}
+import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
 
 // Modeler-page-only components — lazy loaded so they never touch the initial bundle
 // for users landing on the forecast or solar activity pages.
@@ -93,6 +56,7 @@ import {
   TUTORIAL_PATH,
 } from './utils/navigation';
 import { useCoronalHoles } from './hooks/useCoronalHoles';
+import { BANNER_XRAY_URLS, getInitialRequiredTasks, InitialLoadTaskKey, logDev, parseLatestShortBandFlux, retryLazyLoad } from './utils/appShellHelpers';
 
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -122,91 +86,13 @@ interface IpsAlertData {
     };
 }
 
-type InitialLoadTaskKey =
-  | 'forecastData'
-  | 'forecastApi'
-  | 'solarWindApi'
-  | 'goes18Api'
-  | 'goes19Api'
-  | 'ipsApi'
-  | 'nzMagApi'
-  | 'solarData'
-  | 'solarXray'
-  | 'solarProton'
-  | 'solarFlares'
-  | 'solarRegions'
-  | 'modelerCmeData';
-
 type ForecastLoadPoint = 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi';
 type SolarLoadPoint = 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions';
-
-// Only block the loader on the 4 APIs that feed the core aurora score and solar wind display.
-// forecastData is structurally redundant (it fires milliseconds after the last API anyway).
-// ipsApi (IPS shocks) and nzMagApi (NZ magnetometer) feed secondary widgets — they load
-// silently in the background so the user reaches the forecast as fast as possible.
-const FORECAST_INITIAL_TASKS: InitialLoadTaskKey[] = [
-  'forecastApi',
-  'solarWindApi',
-  'goes18Api',
-  'goes19Api',
-];
-
-const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
-  'solarData',
-  'solarXray',
-  'solarProton',
-  'solarFlares',
-  'solarRegions',
-];
-
-const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
-
-const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
-  // Only require the tasks that belong to the page the user actually landed on.
-  // Previously this ignored `page` and required ALL tasks from all three pages,
-  // which caused the loader to hang forever once ForecastDashboard and
-  // SolarActivityDashboard became lazy — their callbacks never fired for unvisited pages.
-  switch (page) {
-    case 'forecast':      return new Set(FORECAST_INITIAL_TASKS);
-    case 'solar-activity': return new Set(SOLAR_INITIAL_TASKS);
-    case 'modeler':
-    default:              return new Set(MODELER_INITIAL_TASKS);
-  }
-};
-
-const logDev = (...args: unknown[]) => {
-  if (!import.meta.env.DEV) return;
-  console.info('[preload]', ...args);
-};
-
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
-
-const BANNER_XRAY_URLS = [
-  'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
-  'https://services.swpc.noaa.gov/json/goes/xrays-7-day.json',
-  'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json',
-];
-
-const parseLatestShortBandFlux = (raw: any[]): number | null => {
-  if (!Array.isArray(raw)) return null;
-
-  const latestByTimestamp = new Map<number, number>();
-  raw.forEach((row: any) => {
-    if (row?.energy !== '0.1-0.8nm') return;
-    const t = new Date(row.time_tag).getTime();
-    const flux = Number.parseFloat(row.flux);
-    if (!Number.isFinite(t) || !Number.isFinite(flux)) return;
-    latestByTimestamp.set(t, flux);
-  });
-
-  if (!latestByTimestamp.size) return null;
-  const latestTs = Math.max(...latestByTimestamp.keys());
-  return latestByTimestamp.get(latestTs) ?? null;
-};
 
 const SolarSurferGame = retryLazyLoad(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = retryLazyLoad(() => import('./components/ImpactGraphModal'));
