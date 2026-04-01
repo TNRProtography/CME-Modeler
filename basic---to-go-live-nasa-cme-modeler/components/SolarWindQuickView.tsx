@@ -175,92 +175,92 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   //   Bt      ≥ 8 nT jump OR ≥ 50% from baseline, sustained ≥ 2 readings
   //   ≥ 2 of 3 parameters must fire simultaneously
   const shockDetection = useMemo(() => {
-    // ── Why 3-hour windows? ───────────────────────────────────────────────────
-    // The original 30-min algorithm failed on shocks that hit hours ago:
-    // both its "baseline" and "recent" windows fell inside the post-shock
-    // elevated period, so the comparison showed no change.
-    //
-    // A fast-forward IP shock creates a step-function that PERSISTS — speed,
-    // density, temperature and Bt all jump to a new level and stay there for
-    // hours (the CME sheath). We exploit this by:
-    //   • Baseline  = first 45 min of a 3-hour lookback (pre-shock conditions)
-    //   • Current   = last 30 min (wherever conditions are right now)
-    //   • If current is still significantly elevated vs the early baseline,
-    //     a shock has passed — whether 5 minutes ago or 5 hours ago.
-    //
-    // Four parameters (Cash et al. 2014 + temperature from Neugebauer et al.):
-    //   Speed       ≥ 40 km/s step from baseline, sustained ≥ 3 readings
-    //   Temperature ≥ 3× from baseline (proton temp is most reliable indicator)
-    //   Density     ≥ 1.8× from baseline
-    //   Bt          ≥ 6 nT jump OR ≥ 40% from baseline
-    //
-    // Require ≥ 2 of 4 parameters. This catches even weak shocks like small CMEs.
+    // Simple consecutive-reading jump detector.
+    // A shock is a discontinuity — one reading to the next. No windows needed.
+    // For each pair of consecutive readings in each series, check if the value
+    // jumps beyond threshold. If ≥2 parameters fire on the same timestamp,
+    // it's a shock. We then check if any such event occurred in the last 12h
+    // and show the alert if so (shocks stay elevated for hours).
 
+    const LOOK_BACK = 12 * 3600000; // show alert up to 12h after impact
     const now = Date.now();
-    const LOOK_BACK   = 3 * 3600000;  // 3 hours total lookback
-    const BASE_END    = now - (LOOK_BACK - 45 * 60000); // baseline = first 45 min
-    const CURRENT_START = now - 30 * 60000;              // current  = last 30 min
-    const MIN_PTS     = 3;
 
-    const med = (arr: number[]) => {
-      if (!arr.length) return 0;
-      const s = [...arr].sort((a, b) => a - b);
-      const m = Math.floor(s.length / 2);
-      return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
-    };
+    const spdSorted = [...speedData  ].sort((a, b) => a.x    - b.x);
+    const denSorted = [...densityData].sort((a, b) => a.x    - b.x);
+    const tmpSorted = [...tempData   ].sort((a, b) => a.x    - b.x);
+    const magSorted = [...magneticData].sort((a, b) => a.time - b.time);
 
-    // Pull 3 hours of each series
-    const spdAll = speedData  .filter(p => p.x    > now - LOOK_BACK).sort((a, b) => a.x    - b.x);
-    const denAll = densityData.filter(p => p.x    > now - LOOK_BACK).sort((a, b) => a.x    - b.x);
-    const tmpAll = tempData   .filter(p => p.x    > now - LOOK_BACK).sort((a, b) => a.x    - b.x);
-    const magAll = magneticData.filter(p => p.time > now - LOOK_BACK).sort((a, b) => a.time - b.time);
+    if (spdSorted.length < 4) return null;
 
-    // Baseline: first 45 minutes of the 3-hour window (oldest data)
-    const spdBase = spdAll.filter(p => p.x    <= BASE_END).map(p => p.y);
-    const denBase = denAll.filter(p => p.x    <= BASE_END).map(p => p.y);
-    const tmpBase = tmpAll.filter(p => p.x    <= BASE_END).map(p => p.y);
-    const btBase  = magAll.filter(p => p.time <= BASE_END).map(p => p.bt);
+    // Build jump maps keyed by approximate minute timestamp
+    // so we can correlate across series
+    const BUCKET = 3 * 60000; // 3-minute bucket to align different cadences
 
-    // Current: last 30 minutes
-    const spdRec  = spdAll.filter(p => p.x    >= CURRENT_START).map(p => p.y);
-    const denRec  = denAll.filter(p => p.x    >= CURRENT_START).map(p => p.y);
-    const tmpRec  = tmpAll.filter(p => p.x    >= CURRENT_START).map(p => p.y);
-    const btRec   = magAll.filter(p => p.time >= CURRENT_START).map(p => p.bt);
+    const bucket = (t: number) => Math.round(t / BUCKET) * BUCKET;
 
-    if (spdBase.length < MIN_PTS || spdRec.length < MIN_PTS) return null;
-    if (denBase.length < MIN_PTS || denRec.length < MIN_PTS) return null;
+    const spdJumps = new Map<number, number>();
+    const denJumps = new Map<number, number>();
+    const tmpJumps = new Map<number, number>();
+    const btJumps  = new Map<number, number>();
 
-    const basSpd = med(spdBase);
-    const basDen = med(denBase);
-    const basTmp = tmpBase.length >= MIN_PTS ? med(tmpBase) : 0;
-    const basBt  = btBase.length  >= MIN_PTS ? med(btBase)  : 0;
+    for (let i = 1; i < spdSorted.length; i++) {
+      const prev = spdSorted[i - 1]; const cur = spdSorted[i];
+      const jump = cur.y - prev.y;
+      if (jump >= 40) spdJumps.set(bucket(cur.x), jump); // ≥40 km/s step up
+    }
+    for (let i = 1; i < denSorted.length; i++) {
+      const prev = denSorted[i - 1]; const cur = denSorted[i];
+      if (prev.y > 0 && cur.y / prev.y >= 1.6) denJumps.set(bucket(cur.x), cur.y / prev.y);
+    }
+    for (let i = 1; i < tmpSorted.length; i++) {
+      const prev = tmpSorted[i - 1]; const cur = tmpSorted[i];
+      if (prev.y > 0 && cur.y / prev.y >= 2.5) tmpJumps.set(bucket(cur.x), cur.y / prev.y);
+    }
+    for (let i = 1; i < magSorted.length; i++) {
+      const prev = magSorted[i - 1]; const cur = magSorted[i];
+      const jump = cur.bt - prev.bt;
+      if (jump >= 5) btJumps.set(bucket(cur.time), jump);
+    }
 
-    const recSpd = med(spdRec);
-    const recDen = med(denRec);
-    const recTmp = tmpRec.length  >= MIN_PTS ? med(tmpRec)  : 0;
-    const recBt  = btRec.length   >= MIN_PTS ? med(btRec)   : 0;
+    // Find any bucket in last 12h where ≥2 parameters jumped simultaneously
+    const allBuckets = new Set([
+      ...spdJumps.keys(), ...denJumps.keys(),
+      ...tmpJumps.keys(), ...btJumps.keys(),
+    ]);
 
-    // Each parameter: is the current median genuinely elevated vs baseline?
-    const spdHit = basSpd > 0 && (recSpd - basSpd) >= 40;
-    const denHit = basDen > 0 && (recDen / basDen)  >= 1.8;
-    const tmpHit = basTmp > 0 && (recTmp / basTmp)  >= 3.0;  // temperature most reliable
-    const btHit  = basBt  > 0 && ((recBt - basBt) >= 6 || (recBt / basBt) >= 1.4);
+    let bestEvent: { t: number; hits: number; spdJ: number; denR: number; tmpR: number; btJ: number } | null = null;
 
-    const hits = [spdHit, denHit, tmpHit, btHit].filter(Boolean).length;
-    if (hits < 2) return null;
+    for (const t of allBuckets) {
+      if (t < now - LOOK_BACK || t > now) continue;
+      const hits = [spdJumps.has(t), denJumps.has(t), tmpJumps.has(t), btJumps.has(t)].filter(Boolean).length;
+      if (hits >= 2 && (!bestEvent || hits > bestEvent.hits || (hits === bestEvent.hits && t > bestEvent.t))) {
+        bestEvent = {
+          t, hits,
+          spdJ: spdJumps.get(t) ?? 0,
+          denR: denJumps.get(t) ?? 0,
+          tmpR: tmpJumps.get(t) ?? 0,
+          btJ:  btJumps.get(t)  ?? 0,
+        };
+      }
+    }
+
+    if (!bestEvent) return null;
+
+    const ageMin = Math.round((now - bestEvent.t) / 60000);
+    const ageStr = ageMin < 60
+      ? `~${ageMin} min ago`
+      : `~${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? ` ${ageMin % 60}min` : ''} ago`;
 
     return {
-      spdJump:  Math.round(recSpd - basSpd),
-      denRatio: basDen > 0 ? +(recDen / basDen).toFixed(1) : 0,
-      tmpRatio: basTmp > 0 ? +(recTmp / basTmp).toFixed(0) : 0,
-      btJump:   basBt  > 0 ? +(recBt  - basBt).toFixed(1)  : 0,
-      basSpd:   Math.round(basSpd),
-      recSpd:   Math.round(recSpd),
-      hits,
-      tmpHit,
-      spdHit,
-      denHit,
-      btHit,
+      ageStr,
+      spdJ:    Math.round(bestEvent.spdJ),
+      denR:    +bestEvent.denR.toFixed(1),
+      tmpR:    +bestEvent.tmpR.toFixed(0),
+      btJ:     +bestEvent.btJ.toFixed(1),
+      spdHit:  bestEvent.spdJ > 0,
+      denHit:  bestEvent.denR > 0,
+      tmpHit:  bestEvent.tmpR > 0,
+      btHit:   bestEvent.btJ  > 0,
     };
   }, [speedData, densityData, tempData, magneticData]);
 
@@ -297,11 +297,11 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-red-300/80 leading-relaxed">
-              Solar wind shows a sustained step-change consistent with an interplanetary shock.
-              {' '}{shockDetection.spdHit && `Speed +${shockDetection.spdJump} km/s (${shockDetection.basSpd}→${shockDetection.recSpd} km/s). `}
-              {shockDetection.tmpHit && `Temperature ×${shockDetection.tmpRatio} above baseline. `}
-              {shockDetection.denHit && `Density ×${shockDetection.denRatio} above baseline. `}
-              {shockDetection.btHit  && `Bt +${shockDetection.btJump} nT. `}
+              Sudden solar wind jump detected {shockDetection.ageStr} — consistent with an interplanetary shock.
+              {' '}{shockDetection.spdHit && `Speed +${shockDetection.spdJ} km/s. `}
+              {shockDetection.tmpHit && `Temperature ×${shockDetection.tmpR}. `}
+              {shockDetection.denHit && `Density ×${shockDetection.denR}. `}
+              {shockDetection.btHit  && `Bt +${shockDetection.btJ} nT. `}
               Storm conditions may already be in progress — watch Bz closely.
             </p>
           </div>
