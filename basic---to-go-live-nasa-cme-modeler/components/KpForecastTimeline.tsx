@@ -175,6 +175,7 @@ function moonLabel(p: number) {
 interface VisInfo {
   headline: string; detail: string;
   regions:  string[]; moonNote: string; tip: string;
+  summary:  string; // single overarching sentence shown in compact panel
 }
 
 function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
@@ -199,6 +200,10 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     tip: sky === 'day' || sky === 'golden' || sky === 'civil'
       ? 'Check back after dark — aurora only becomes visible once the sky is fully dark.'
       : 'Check back when Kp reaches 5 or above.',
+    summary: sky === 'day' ? 'The sun is up — aurora cannot be seen in daylight.'
+      : sky === 'golden' || sky === 'civil' ? 'Too bright to see aurora — wait until fully dark.'
+      : sky === 'nautical' ? 'Sky nearly dark but Kp too low for NZ aurora tonight.'
+      : 'Activity is too low — aurora not expected to reach New Zealand.',
   };
 
   if (kp >= 8) return {
@@ -207,6 +212,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     regions:  ['Northland','Auckland','Waikato','Bay of Plenty','Wellington','Nelson','Canterbury','Otago','Southland'],
     moonNote: `${ml} — moon has no meaningful impact at this storm level.`,
     tip: 'Go outside and look in any direction — at G4+ aurora can appear overhead. Face south for the most dramatic display.',
+    summary: 'Major storm — aurora visible across all of New Zealand, moon is no obstacle.',
   };
 
   if (kp >= 7) {
@@ -223,6 +229,8 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
         ? `${ml} — may reduce North Island visibility slightly. South Island unaffected.`
         : ml,
       tip: 'Face south and look up. Green is most common; pink/red higher up indicates strong activity near you.',
+      summary: moon > 80 ? 'Strong storm — all NZ should see aurora; North Island: find dark skies to counter the full moon.'
+        : 'Strong storm — aurora visible the length of New Zealand tonight.',
     };
   }
 
@@ -233,6 +241,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson','Wellington (dark sites)'],
       moonNote: `${ml} — significantly reduces North Island chances.`,
       tip:      'South Island: any dark spot works. North Island: coastal headlands or hilltops away from light pollution.',
+      summary:  'Moderate storm — South Island clear, North Island needs dark skies to beat the full moon.',
     };
     return {
       headline: moon > 55 ? 'South Island to Northland — dark sites help in North Island' : 'Visible South Island to Northland',
@@ -242,6 +251,8 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       regions:  ['Southland','Otago','Canterbury','Nelson','Wellington','Manawatu','Auckland','Northland'],
       moonNote: moon > 55 ? `${ml} — North Island: prioritise dark sites.` : ml,
       tip:      "Point your phone camera south — it's more sensitive than your eyes and may reveal colours before you see them.",
+      summary:  moon > 55 ? 'Moderate storm — South Island to Northland; find dark spots in the North Island.'
+        : 'Moderate storm — good chance across South Island and up to Northland.',
     };
   }
 
@@ -252,6 +263,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       regions:  ['Southland (dark sky sites)','Otago (dark sky sites)'],
       moonNote: `${ml} — aurora is faint at G1 and the moon compounds this.`,
       tip:      'Use a camera on a tripod, 10–15 second exposure pointed south. Your eyes may see nothing but the camera might.',
+      summary:  'Minor storm — only extreme south NZ in very dark sites; full moon makes conditions tough.',
     };
     if (moon > 55) return {
       headline: 'South Island south of Christchurch',
@@ -259,6 +271,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       regions:  ['Southland','Otago','South Canterbury'],
       moonNote: `${ml} — reduces visibility in marginal locations.`,
       tip:      'Look for a green or pink brightening on the southern horizon before distinct curtains develop.',
+      summary:  'Minor storm — southern South Island has a fair chance from dark locations tonight.',
     };
     return {
       headline: 'South Island including Nelson',
@@ -266,6 +279,8 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson'],
       moonNote: moon > 25 ? `${ml} — aurora visible, but darker sites improve chances.` : ml,
       tip:      'Find a spot with a clear southern horizon — coastal beaches and hilltops are ideal. Look low on the horizon first.',
+      summary:  moon > 25 ? 'Minor storm — South Island to Nelson likely; dark skies improve your chances.'
+        : 'Minor storm — South Island to Nelson has a good chance from dark locations.',
     };
   }
 
@@ -276,6 +291,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     regions:  [],
     moonNote: ml,
     tip:      "Not worth going out specially. If Kp climbs to 5 the situation will improve quickly — keep the forecast open.",
+    summary:  'Marginal activity — aurora is not expected to be visible from New Zealand.',
   };
 }
 
@@ -718,85 +734,68 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         )}
       </div>
 
-      {/* Detail panel — renders in-flow below canvas, no overflow/z-index issues */}
+      {/* Detail panel */}
       {popup && sel && vis && (
         <div style={{
           marginTop: 10,
           background: 'var(--color-background-secondary)',
           border: '0.5px solid var(--color-border-secondary)',
           borderRadius: 12,
-          padding: '14px 16px',
+          padding: '12px 16px',
         }}>
-          {/* Header row: time, badge, KP, close */}
-          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:12 }}>
-            <div>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }}>
-                <span style={{ fontSize:14, fontWeight:500, color:'var(--color-text-primary)' }}>
+
+          {/* Stats row */}
+          <div style={{ display:'flex', alignItems:'center', gap:0, flexWrap:'wrap' }}>
+
+            {/* Time + badge */}
+            <div style={{ flex:'1 1 auto', minWidth:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
+                <span style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)' }}>
                   {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} NZT
                 </span>
                 <span style={{
-                  fontSize:10, padding:'2px 8px', borderRadius:10,
+                  fontSize:10, padding:'1px 7px', borderRadius:10,
                   background: sel.observed === 'observed' ? 'rgba(100,100,100,0.25)' : sel.observed === 'estimated' ? 'rgba(250,180,0,0.18)' : 'rgba(50,140,255,0.18)',
                   color: sel.observed === 'observed' ? 'var(--color-text-tertiary)' : sel.observed === 'estimated' ? '#f0a030' : '#70b8ff',
                 }}>
                   {sel.observed === 'observed' ? 'recorded' : sel.observed === 'estimated' ? 'estimated' : 'forecast'}
                 </span>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <span style={{ fontSize:22, fontWeight:500, color: gColor(sel.kp) }}>Kp {sel.kp.toFixed(1)}</span>
-                {gScale(sel.kp) && (
-                  <span style={{ fontSize:12, fontWeight:500, padding:'3px 10px', borderRadius:20, background:gColor(sel.kp)+'22', color:gColor(sel.kp) }}>
-                    {gScale(sel.kp)}
-                  </span>
-                )}
-              </div>
             </div>
+
+            {/* Stat pills */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginLeft:8 }}>
+              {/* KP */}
+              <span style={{ fontSize:13, fontWeight:500, color: gColor(sel.kp) }}>
+                Kp {sel.kp.toFixed(2).replace(/\.?0+$/, '') || '0'}
+              </span>
+              {gScale(sel.kp) && (
+                <span style={{ fontSize:11, fontWeight:500, padding:'2px 8px', borderRadius:20, background:gColor(sel.kp)+'22', color:gColor(sel.kp) }}>
+                  {gScale(sel.kp)}
+                </span>
+              )}
+              {/* Moon */}
+              <span style={{ fontSize:12, color:'var(--color-text-tertiary)', borderLeft:'0.5px solid var(--color-border-tertiary)', paddingLeft:8 }}>
+                Moon {Math.round(moon)}%
+              </span>
+              {/* Regions pill */}
+              {vis.regions.length > 0 && (
+                <span style={{ fontSize:11, color:'var(--color-text-secondary)', borderLeft:'0.5px solid var(--color-border-tertiary)', paddingLeft:8 }}>
+                  {vis.regions[0]}{vis.regions.length > 1 ? ` +${vis.regions.length - 1}` : ''}
+                </span>
+              )}
+            </div>
+
+            {/* Close */}
             <button
               onClick={() => setPopup(null)}
-              style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, lineHeight:1, color:'var(--color-text-tertiary)', padding:'2px 4px', marginTop:2 }}
+              style={{ background:'none', border:'none', cursor:'pointer', fontSize:18, lineHeight:1, color:'var(--color-text-tertiary)', padding:'2px 6px', marginLeft:8 }}
             >×</button>
           </div>
 
-          {/* Two-column layout for details */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 20px' }}>
-
-            {/* Left col: visibility headline + detail */}
-            <div style={{ gridColumn: vis.regions.length > 0 ? '1' : '1 / -1' }}>
-              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Aurora visibility</div>
-              <div style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)', marginBottom:6 }}>
-                {vis.headline}
-              </div>
-              <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.6 }}>
-                {vis.detail}
-              </div>
-            </div>
-
-            {/* Right col: regions (only if any) */}
-            {vis.regions.length > 0 && (
-              <div>
-                <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likely regions</div>
-                <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.7 }}>
-                  {vis.regions.map((r, ri) => (
-                    <span key={r}>
-                      {r}{ri < vis.regions.length - 1 ? <span style={{ color:'var(--color-text-tertiary)' }}> · </span> : ''}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          </div>
-
-          {/* Moon + tip row */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 20px', marginTop:10, paddingTop:10, borderTop:'0.5px solid var(--color-border-tertiary)' }}>
-            <div>
-              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Moon conditions</div>
-              <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.55 }}>{vis.moonNote}</div>
-            </div>
-            <div>
-              <div style={{ fontSize:11, color:'var(--color-text-tertiary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>What to do</div>
-              <div style={{ fontSize:12, color:'var(--color-text-secondary)', lineHeight:1.55 }}>{vis.tip}</div>
-            </div>
+          {/* Summary sentence */}
+          <div style={{ marginTop:9, paddingTop:9, borderTop:'0.5px solid var(--color-border-tertiary)', fontSize:13, color:'var(--color-text-secondary)', lineHeight:1.55 }}>
+            {vis.summary}
           </div>
 
         </div>
