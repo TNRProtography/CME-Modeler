@@ -19,6 +19,8 @@ interface PopupState { slotIdx: number; anchorX: number; }
 interface KpForecastTimelineProps {
   moonIllumination?: number | null; // 0–100
   userLatitude?:     number | null;
+  sunriseMs?:        number | null; // Unix ms UTC from celestialTimes.sun.rise
+  sunsetMs?:         number | null; // Unix ms UTC from celestialTimes.sun.set
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -26,6 +28,55 @@ interface KpForecastTimelineProps {
 function rand(s: number) { const x = Math.sin(s+1)*10000; return x - Math.floor(x); }
 
 type SkyT = 'day'|'golden'|'civil'|'nautical'|'night';
+
+// Compute sky state from actual sunrise/sunset Unix-ms timestamps when available,
+// falling back to NZ April heuristic (sunrise ~7am, sunset ~7pm) otherwise.
+// Twilight bands:
+//   golden   = within 30 min of horizon crossing
+//   civil    = 30–60 min from horizon
+//   nautical = 60–90 min from horizon
+function skyTypeFromMs(
+  slotUtcMs: number,
+  sunriseMs: number | null | undefined,
+  sunsetMs:  number | null | undefined,
+): SkyT {
+  // If we have real timestamps, use them
+  if (sunriseMs && sunsetMs) {
+    const GOLDEN_MS  = 30 * 60000;
+    const CIVIL_MS   = 60 * 60000;
+    const NAUTICAL_MS = 90 * 60000;
+
+    // Sun is above horizon
+    if (slotUtcMs >= sunriseMs && slotUtcMs <= sunsetMs) {
+      const fromRise = slotUtcMs - sunriseMs;
+      const toSet    = sunsetMs - slotUtcMs;
+      const margin   = Math.min(fromRise, toSet);
+      if (margin < GOLDEN_MS)  return 'golden';
+      return 'day';
+    }
+
+    // Sun is below horizon — compute distance to nearest horizon crossing
+    const toRise = sunriseMs - slotUtcMs; // positive = sunrise is ahead
+    const fromSet = slotUtcMs - sunsetMs; // positive = sunset was behind
+    const dist = slotUtcMs < sunriseMs ? toRise : fromSet;
+
+    if (dist < GOLDEN_MS)   return 'golden';
+    if (dist < CIVIL_MS)    return 'civil';
+    if (dist < NAUTICAL_MS) return 'nautical';
+    return 'night';
+  }
+
+  // Fallback: NZ April heuristic (sunrise ~6:30am, sunset ~6:30pm NZDT)
+  // slotUtcMs → NZT hour
+  const nztH = new Date(slotUtcMs + NZ_OFFSET_H * 3600000).getUTCHours();
+  if (nztH >= 8 && nztH < 18) return 'day';
+  if (nztH === 7 || nztH === 18) return 'golden';
+  if (nztH === 6 || nztH === 19) return 'civil';
+  if (nztH === 5 || nztH === 20) return 'nautical';
+  return 'night';
+}
+
+// Kept for backward compat inside drawCanvas which doesn't have the timestamps
 function skyType(h: number): SkyT {
   if (h >= 8 && h < 18) return 'day';
   if (h === 7 || h === 18) return 'golden';
@@ -103,14 +154,28 @@ interface VisInfo {
   regions:  string[]; moonNote: string; tip: string;
 }
 
-function getVis(kp: number, moon: number, lat: number | null | undefined): VisInfo {
+function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
   const ml = moonLabel(moon);
 
+  // Sky brightness note — added to tip for daytime/twilight slots
+  const skyNote =
+    sky === 'day'      ? ' Note: the sun is up — aurora is not visible in daylight regardless of activity level.' :
+    sky === 'golden'   ? ' Note: the sun is at or near the horizon — it will still be too bright to see aurora.' :
+    sky === 'civil'    ? ' Note: civil twilight — the sky is still quite bright. Aurora is unlikely to be visible yet.' :
+    sky === 'nautical' ? ' Note: nautical twilight — the sky is getting darker but faint aurora may still be washed out.' :
+    '';
+
   if (kp <= KP_THRESHOLD) return {
-    headline: 'Not visible from New Zealand',
-    detail:   'Activity is too low for aurora to reach New Zealand. The aurora oval sits well south of NZ at this level.',
+    headline: sky === 'day' ? 'Daytime — aurora not visible' : 'Not visible from New Zealand',
+    detail:   sky === 'day'
+      ? 'The sun is up. Aurora cannot be seen during daylight hours regardless of space weather conditions.'
+      : sky === 'golden' || sky === 'civil'
+      ? 'The sky is still too bright for aurora to be visible. Activity is also below the NZ threshold.'
+      : 'Activity is too low for aurora to reach New Zealand. The aurora oval sits well south of NZ at this level.',
     regions: [], moonNote: ml,
-    tip: 'Check back when Kp reaches 5 or above.',
+    tip: sky === 'day' || sky === 'golden' || sky === 'civil'
+      ? 'Check back after dark — aurora only becomes visible once the sky is fully dark.'
+      : 'Check back when Kp reaches 5 or above.',
   };
 
   if (kp >= 8) return {
@@ -194,9 +259,11 @@ function getVis(kp: number, moon: number, lat: number | null | undefined): VisIn
 // ── Canvas draw ───────────────────────────────────────────────────────────────
 
 function drawCanvas(
-  canvas: HTMLCanvasElement,
-  slots:  KpSlot[],
-  W:      number,
+  canvas:    HTMLCanvasElement,
+  slots:     KpSlot[],
+  W:         number,
+  sunriseMs: number | null | undefined,
+  sunsetMs:  number | null | undefined,
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
@@ -219,7 +286,7 @@ function drawCanvas(
   // ── Per-column sky + aurora ────────────────────────────────────────────────
   slots.forEach((slot, i) => {
     const x  = i * COL_W;
-    const st = skyType(slot.nztHour);
+    const st = skyTypeFromMs(slot.utcMs, sunriseMs, sunsetMs);
 
     // Sky background
     let bg: CanvasGradient;
@@ -228,7 +295,13 @@ function drawCanvas(
       bg.addColorStop(0, '#0c2a50'); bg.addColorStop(0.5, '#1a4a80'); bg.addColorStop(1, '#2060a0');
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
       // Arc: sun rises at h=7, peaks at h=13, sets at h=19 (NZ April)
-      const sunFrac = Math.max(0, Math.sin(Math.PI * (slot.nztHour - 7) / 12));
+      // Arc fraction: 0 at sunrise, 1 at solar noon, 0 at sunset
+      const dayLen = sunriseMs && sunsetMs ? (sunsetMs - sunriseMs) : 12 * 3600000;
+      const dayMid = sunriseMs && sunsetMs ? (sunriseMs + sunsetMs) / 2 : slot.utcMs;
+      const relPos = sunriseMs && sunsetMs
+        ? (slot.utcMs - sunriseMs) / dayLen
+        : (slot.nztHour - 7) / 12;
+      const sunFrac = Math.max(0, Math.sin(Math.PI * Math.max(0, Math.min(1, relPos))));
       const sy = HOR_Y - sunFrac * SKY_H * 0.82;
       ctx.fillStyle = 'rgba(255,225,100,0.70)';
       ctx.beginPath(); ctx.arc(x+COL_W/2, sy, 4.5, 0, Math.PI*2); ctx.fill();
@@ -244,7 +317,11 @@ function drawCanvas(
       bg.addColorStop(1, '#f09040');
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
       // Sun just at/near the horizon for golden hour
-      const gSunFrac = Math.max(0, Math.sin(Math.PI * (slot.nztHour - 7) / 12));
+      const gDayLen = sunriseMs && sunsetMs ? (sunsetMs - sunriseMs) : 12 * 3600000;
+      const gRelPos = sunriseMs && sunsetMs
+        ? (slot.utcMs - sunriseMs) / gDayLen
+        : (slot.nztHour - 7) / 12;
+      const gSunFrac = Math.max(0, Math.sin(Math.PI * Math.max(0, Math.min(1, gRelPos))));
       const gSunY = HOR_Y - gSunFrac * SKY_H * 0.82 - 3;
       ctx.fillStyle = 'rgba(255,200,60,0.72)';
       ctx.beginPath(); ctx.arc(x+COL_W/2, gSunY, 4, 0, Math.PI*2); ctx.fill();
@@ -275,9 +352,15 @@ function drawCanvas(
       ctx.fillRect(x, HOR_Y - ah, COL_W, ah);
     }
 
-    // Sunrise / sunset arrows (no text — arrow only)
-    const isSet  = slot.nztHour === 18 || slot.nztHour === 19;
-    const isRise = slot.nztHour === 6  || slot.nztHour === 7;
+    // Sunrise / sunset arrows — use real timestamps when available
+    // Show arrow in the column where the sun crosses the horizon
+    const HOUR_MS_A = 3600000;
+    const isSet  = sunsetMs
+      ? (slot.utcMs <= sunsetMs && slot.utcMs + HOUR_MS_A > sunsetMs)
+      : (slot.nztHour === 18 || slot.nztHour === 19);
+    const isRise = sunriseMs
+      ? (slot.utcMs <= sunriseMs && slot.utcMs + HOUR_MS_A > sunriseMs)
+      : (slot.nztHour === 6 || slot.nztHour === 7);
     if (isSet || isRise) {
       const cx = x + COL_W / 2;
       const ay = HOR_Y - 7;
@@ -388,6 +471,8 @@ function drawCanvas(
 const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   moonIllumination,
   userLatitude,
+  sunriseMs,
+  sunsetMs,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
@@ -508,8 +593,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Draw
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
-    drawCanvas(canvasRef.current, slots, canvasW);
-  }, [slots, canvasW]);
+    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs);
+  }, [slots, canvasW, sunriseMs, sunsetMs]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -523,7 +608,21 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   }, [slots, canvasW, popup]);
 
   const sel  = popup ? slots[popup.slotIdx] : null;
-  const vis  = sel ? getVis(sel.kp, moon, userLatitude) : null;
+  const selSky = sel ? skyTypeFromMs(sel.utcMs, sunriseMs, sunsetMs) : 'night';
+  const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky) : null;
+  // For daytime/twilight slots with elevated KP, append the sun note to the tip
+  const daySkyNote =
+    selSky === 'day'      ? 'The sun is currently up — aurora is not visible in daylight even during a storm.'
+    : selSky === 'golden' ? 'The sun is at the horizon — it will still be too bright to see aurora right now.'
+    : selSky === 'civil'  ? 'Civil twilight — the sky is still bright. Aurora will not be visible yet.'
+    : selSky === 'nautical' ? 'Nautical twilight — the sky is darkening but faint aurora may still be washed out by the remaining glow.'
+    : null;
+  // For day/twilight slots, prepend the sun note to the tip so users understand
+  // why they might not see aurora even during elevated activity
+  const vis = (() => {
+    if (!visRaw || !daySkyNote) return visRaw;
+    return { ...visRaw, tip: daySkyNote + (visRaw.tip ? ' ' + visRaw.tip : '') };
+  })();
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
   const fmtEnd = (h: number) => fmt((h+1)%24);

@@ -645,6 +645,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
+                                sunriseMs={celestialTimes?.sun?.rise ?? null}
+                                sunsetMs={celestialTimes?.sun?.set ?? null}
                             />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
@@ -684,6 +686,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
+                                sunriseMs={celestialTimes?.sun?.rise ?? null}
+                                sunsetMs={celestialTimes?.sun?.set ?? null}
                             />
 {(() => {
                                 // Compute oval boundary for chart visibility probability
