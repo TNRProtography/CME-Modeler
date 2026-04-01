@@ -452,56 +452,40 @@ function drawCanvas(
       ctx.closePath(); ctx.fill();
     }
 
-    // Moon rise / set arrows — silver, offset above sun arrows
-    // Moon rises ~55 min later each day; apply cumulative offset per forecast day.
-    // "Not when rise/set is next day": if the 55-min shift pushes it past midnight
-    // for that day, the moon naturally appears in the small hours of the next day.
-    // We use modulo so it anchors correctly to whichever NZT calendar day the slot is on.
-    const moonForecastStart = slots[0].utcMs;
-    const mnSlotNzt = slot.utcMs + ARR_NZT;
-    const mnSlotMid = mnSlotNzt - (mnSlotNzt % ARR_DAY);
-    const mnStartNzt = moonForecastStart + ARR_NZT;
+    // Moon arc — disc follows a sine arc from moonrise to moonset, like the sun.
+    // Uses per-day +55min offset. Checks a ±1 day window to catch the overnight
+    // case where the moon rose yesterday evening and sets this morning.
+    // "Not when rise/set is next day": if adding 55min pushes the time past midnight
+    // the % DAY wrapping places it naturally in the correct early-morning slot.
+    const mnStartNzt = slots[0].utcMs + ARR_NZT;
     const mnStartMid = mnStartNzt - (mnStartNzt % ARR_DAY);
+    const mnSlotMid  = arSlotMid; // same NZT midnight as sun arrows
     const mnDayIdx   = Math.round((mnSlotMid - mnStartMid) / ARR_DAY);
-    const mnOffsetMs = mnDayIdx * 55 * 60000;
 
-    const mnRiseMs = moonRiseMs != null
-      ? mnSlotMid + ((moonRiseMs + ARR_NZT) % ARR_DAY + mnOffsetMs) % ARR_DAY - ARR_NZT
-      : null;
-    const mnSetMs = moonSetMs != null
-      ? mnSlotMid + ((moonSetMs + ARR_NZT) % ARR_DAY + mnOffsetMs) % ARR_DAY - ARR_NZT
-      : null;
-    const isMoonRise = mnRiseMs != null
-      ? (slot.utcMs <= mnRiseMs && slot.utcMs + HOUR_MS_A > mnRiseMs)
-      : false;
-    const isMoonSet = mnSetMs != null
-      ? (slot.utcMs <= mnSetMs && slot.utcMs + HOUR_MS_A > mnSetMs)
-      : false;
-
-    if (isMoonRise || isMoonSet) {
-      const mcx = x + COL_W / 2;
-      const may = HOR_Y - 18; // above sun arrow
-      const msz = Math.min(5, COL_W * 0.28);
-      ctx.fillStyle = 'rgba(210,218,240,0.88)';
-      ctx.beginPath();
-      if (isMoonSet) {
-        ctx.moveTo(mcx,            may + msz);
-        ctx.lineTo(mcx - msz*0.65, may - msz*0.35);
-        ctx.lineTo(mcx - msz*0.22, may - msz*0.35);
-        ctx.lineTo(mcx - msz*0.22, may - msz);
-        ctx.lineTo(mcx + msz*0.22, may - msz);
-        ctx.lineTo(mcx + msz*0.22, may - msz*0.35);
-        ctx.lineTo(mcx + msz*0.65, may - msz*0.35);
-      } else {
-        ctx.moveTo(mcx,            may - msz);
-        ctx.lineTo(mcx + msz*0.65, may + msz*0.35);
-        ctx.lineTo(mcx + msz*0.22, may + msz*0.35);
-        ctx.lineTo(mcx + msz*0.22, may + msz);
-        ctx.lineTo(mcx - msz*0.22, may + msz);
-        ctx.lineTo(mcx - msz*0.22, may + msz*0.35);
-        ctx.lineTo(mcx - msz*0.65, may + msz*0.35);
+    if (moonRiseMs != null && moonSetMs != null) {
+      const mRiseTod = (moonRiseMs + ARR_NZT) % ARR_DAY;
+      const mSetTod  = (moonSetMs  + ARR_NZT) % ARR_DAY;
+      let moonArcFrac = -1;
+      for (let dOff = -1; dOff <= 0; dOff++) {
+        const chkMid  = mnSlotMid + dOff * ARR_DAY;
+        const chkIdx  = mnDayIdx + dOff;
+        const chkOff  = chkIdx * 55 * 60000;
+        const chkRise = chkMid + ((mRiseTod + chkOff) % ARR_DAY + ARR_DAY) % ARR_DAY - ARR_NZT;
+        const chkSet  = chkMid + ((mSetTod  + chkOff) % ARR_DAY + ARR_DAY) % ARR_DAY - ARR_NZT;
+        const chkSetAdj = chkSet < chkRise ? chkSet + ARR_DAY : chkSet;
+        if (chkSetAdj > chkRise + 1800000 && slot.utcMs >= chkRise && slot.utcMs <= chkSetAdj) {
+          moonArcFrac = Math.max(0, Math.sin(Math.PI * (slot.utcMs - chkRise) / (chkSetAdj - chkRise)));
+          break;
+        }
       }
-      ctx.closePath(); ctx.fill();
+      if (moonArcFrac >= 0) {
+        const moonY = HOR_Y - moonArcFrac * SKY_H * 0.80;
+        const moonX = x + COL_W / 2;
+        ctx.fillStyle = 'rgba(210,218,245,0.12)';
+        ctx.beginPath(); ctx.arc(moonX, moonY, 11, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(208,216,238,0.88)';
+        ctx.beginPath(); ctx.arc(moonX, moonY, 4.5, 0, Math.PI * 2); ctx.fill();
+      }
     }
 
     // Past-observed dimming — slightly darken observed/estimated slots
@@ -740,12 +724,19 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     const offM      = dayIdxM * 55 * 60000;
     const riseTodM  = (moonRiseMs + NZT_M) % DAY_MS_M;
     const setTodM   = (moonSetMs  + NZT_M) % DAY_MS_M;
-    const adjRiseM  = slotMidM + (riseTodM + offM) % DAY_MS_M - NZT_M;
-    const adjSetM   = slotMidM + (setTodM  + offM) % DAY_MS_M - NZT_M;
-    if (adjRiseM < adjSetM) {
-      return sel.utcMs >= adjRiseM && sel.utcMs < adjSetM;
+    // ±1 day window — same logic as canvas arc to handle overnight moon
+    for (let d = -1; d <= 0; d++) {
+      const chkMidM  = slotMidM + d * DAY_MS_M;
+      const chkIdxM  = dayIdxM + d;
+      const chkOffM  = chkIdxM * 55 * 60000;
+      const chkRiseM = chkMidM + ((riseTodM + chkOffM) % DAY_MS_M + DAY_MS_M) % DAY_MS_M - NZT_M;
+      const chkSetM  = chkMidM + ((setTodM  + chkOffM) % DAY_MS_M + DAY_MS_M) % DAY_MS_M - NZT_M;
+      const chkSetAdjM = chkSetM < chkRiseM ? chkSetM + DAY_MS_M : chkSetM;
+      if (chkSetAdjM > chkRiseM + 1800000 && sel.utcMs >= chkRiseM && sel.utcMs <= chkSetAdjM) {
+        return true;
+      }
     }
-    return sel.utcMs >= adjRiseM || sel.utcMs < adjSetM;
+    return false;
   })();
 
   const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky, selIsMoonUp) : null;
