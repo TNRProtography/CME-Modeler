@@ -59,6 +59,38 @@ interface ActiveSunspotRegion {
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
 
+
+const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | null }> = ({ summary }) => {
+  if (!summary) {
+    return (
+      <div className="card bg-neutral-950/80 p-4"> 
+        <h3 className="text-lg font-semibold text-white mb-2">Solar Activity Summary</h3>
+        <p className="text-sm text-neutral-400">Gathering latest solar activity metrics...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card bg-neutral-950/80 p-4">
+      <h3 className="text-lg font-semibold text-white mb-3">Solar Activity Summary</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+        <div className="rounded border border-neutral-700/60 p-3 bg-neutral-900/60">
+          <div className="text-neutral-400 text-xs">Peak X-ray</div>
+          <div className="text-white font-semibold mt-1">{summary.highestXray.class}</div>
+        </div>
+        <div className="rounded border border-neutral-700/60 p-3 bg-neutral-900/60">
+          <div className="text-neutral-400 text-xs">Peak Proton</div>
+          <div className="text-white font-semibold mt-1">{summary.highestProton.class}</div>
+        </div>
+        <div className="rounded border border-neutral-700/60 p-3 bg-neutral-900/60">
+          <div className="text-neutral-400 text-xs">24h M/X + CME-candidate flares</div>
+          <div className="text-white font-semibold mt-1">M {summary.flareCounts.m} · X {summary.flareCounts.x} · CME? {summary.flareCounts.potentialCMEs}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
