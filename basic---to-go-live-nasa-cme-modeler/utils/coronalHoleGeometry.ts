@@ -690,7 +690,11 @@ export function buildParkerSpiralMesh(
       // in the outer heliosphere, matching ENLIL visualizations.
       const tExpand = Math.pow(t, 0.7);
       const flare   = 1.0 + tExpand * (4.0 * widthFactor);  // 1× at sun → ~5–8× at Earth
-      const rTube   = tubeR0Clamped * flare;
+      // Requested visual: keep the root tied to the CH footprint on the Sun,
+      // then gradually thicken outward so the far end of the Parker spiral is
+      // about 2× wider than before.
+      const endBoost = 1.0 + tExpand; // 1.0 at Sun → 2.0 at far end
+      const rTube   = tubeR0Clamped * flare * endBoost;
 
       pos.push(
         curr.x + rTube * (cr * right.x + sr * up2.x),
@@ -947,7 +951,10 @@ export function buildTimeVaryingSpiralMesh(
     const widthFactor = THREE.MathUtils.clamp(chMaxExtentDeg / 30, 0.6, 1.8);
     const tExpand = Math.pow(t, 0.7);
     const flare   = 1.0 + tExpand * (8.0 * widthFactor);
-    const rTube   = tubeR0 * flare;
+    // Match static arm behaviour: CH-sized root at the Sun, then a smooth
+    // expansion to a doubled thickness near the end of the spiral.
+    const endBoost = 1.0 + tExpand; // 1.0 at Sun → 2.0 at far end
+    const rTube   = tubeR0 * flare * endBoost;
 
     for (let s = 0; s < sides; s++) {
       const a  = (s / sides) * Math.PI * 2;
