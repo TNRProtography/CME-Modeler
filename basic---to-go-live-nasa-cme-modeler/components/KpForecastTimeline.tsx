@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 const NZ_OFFSET_H   = 13;   // NZDT = UTC+13 (April daylight saving)
 const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
+const MOBILE_BREAKPOINT = 768;
+const MOBILE_MIN_SLOT_WIDTH = 28;
 
 interface KpSlot {
   utcMs:    number;
@@ -604,9 +606,13 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
   const [popup,   setPopup]   = useState<PopupState | null>(null);
-  const [canvasW, setCanvasW] = useState(700);
+  const [viewportW, setViewportW] = useState(700);
+  const [isMobile, setIsMobile] = useState(false);
 
   const moon = moonIllumination ?? 50;
+  const mobileScrollable = isMobile && slots.length > 0;
+  const mobileMinCanvasW = slots.length * MOBILE_MIN_SLOT_WIDTH;
+  const canvasW = mobileScrollable ? Math.max(viewportW, mobileMinCanvasW) : viewportW;
 
   // Fetch KP data
   useEffect(() => {
@@ -708,10 +714,20 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(entries => setCanvasW(Math.floor(entries[0].contentRect.width)));
+    const syncSizing = (width: number) => {
+      const safeW = Math.max(320, Math.floor(width || 700));
+      setViewportW(safeW);
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+    const ro = new ResizeObserver(entries => syncSizing(entries[0].contentRect.width));
     ro.observe(el);
-    setCanvasW(el.clientWidth || 700);
-    return () => ro.disconnect();
+    syncSizing(el.clientWidth || 700);
+    const onWindowResize = () => syncSizing(el.clientWidth || 700);
+    window.addEventListener('resize', onWindowResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+    };
   }, []);
 
   // Draw
@@ -785,7 +801,15 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
       </div>
 
       {/* Canvas wrapper — no overflow constraints, clean click handling */}
-      <div ref={wrapRef} style={{ position: 'relative' }}>
+      <div
+        ref={wrapRef}
+        style={{
+          position: 'relative',
+          overflowX: mobileScrollable ? 'auto' : 'visible',
+          WebkitOverflowScrolling: 'touch',
+          paddingBottom: mobileScrollable ? 6 : 0,
+        }}
+      >
         {loading && (
           <div className="h-40 bg-neutral-800/50 rounded-lg animate-pulse" />
         )}
@@ -795,13 +819,23 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
           </div>
         )}
         {!loading && !error && (
-          <canvas
-            ref={canvasRef}
-            onClick={handleClick}
-            style={{ display: 'block', cursor: 'pointer', borderRadius: 8, width: '100%' }}
-          />
+          <div style={{ width: mobileScrollable ? `${canvasW}px` : '100%' }}>
+            <canvas
+              ref={canvasRef}
+              onClick={handleClick}
+              style={{
+                display: 'block',
+                cursor: 'pointer',
+                borderRadius: 8,
+                width: mobileScrollable ? `${canvasW}px` : '100%',
+              }}
+            />
+          </div>
         )}
       </div>
+      {mobileScrollable && !loading && !error && (
+        <p className="mt-2 text-[11px] text-neutral-500">Swipe left/right to view later hours and future days.</p>
+      )}
 
       {/* Detail panel */}
       {popup && sel && vis && (
