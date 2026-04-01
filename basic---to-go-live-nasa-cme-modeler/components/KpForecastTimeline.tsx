@@ -212,6 +212,25 @@ function buildSlotSummary(
 function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
   const ml = moonLabel(moon);
 
+  // Daylight override: even with high KP, aurora cannot be seen until the sky
+  // is dark enough. Keep storm context, but make visibility guidance explicit.
+  if (sky === 'day' || sky === 'golden' || sky === 'civil') {
+    const stormBand = kp >= 8 ? 'major storm' : kp >= 7 ? 'strong storm' : kp >= 6 ? 'moderate storm' : kp >= 5 ? 'minor storm' : 'low activity';
+    const whenDark =
+      kp >= 7 ? 'Once fully dark, visibility is likely across most or all of New Zealand.'
+      : kp >= 6 ? 'Once fully dark, the South Island is favoured and parts of the North Island may also see it from dark sites.'
+      : kp >= 5 ? 'Once fully dark, southern South Island dark-sky locations are most favoured.'
+      : 'Even after dark, conditions are currently marginal for New Zealand.';
+    return {
+      headline: sky === 'day' ? 'Sun is up — aurora not visible yet' : 'Twilight — aurora likely not visible yet',
+      detail: `KP is elevated (${kp.toFixed(2).replace(/\.?0+$/, '')}), indicating ${stormBand} conditions, but the sky is still too bright for visual aurora right now. ${whenDark}`,
+      regions: kp >= 5 ? ['Southland','Otago','Canterbury','Nelson','Wellington','Auckland'] : [],
+      moonNote: ml,
+      tip: 'Use this slot as a readiness signal: check cloud cover and be ready to observe once full darkness begins.',
+      summary: 'High geomagnetic activity can exist in daylight, but aurora viewing must wait until full darkness.',
+    };
+  }
+
   // Sky brightness note — added to tip for daytime/twilight slots
   const skyNote =
     sky === 'day'      ? ' Note: the sun is up — aurora is not visible in daylight regardless of activity level.' :
