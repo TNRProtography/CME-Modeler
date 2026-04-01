@@ -35,30 +35,47 @@ type SkyT = 'day'|'golden'|'civil'|'nautical'|'night';
 //   golden   = within 30 min of horizon crossing
 //   civil    = 30–60 min from horizon
 //   nautical = 60–90 min from horizon
+// Extract just the UTC time-of-day in ms from a timestamp
+// e.g. 6:43am UTC → 6*3600000 + 43*60000
+function timeOfDayMs(ts: number): number {
+  const DAY_MS = 86400000;
+  return ((ts % DAY_MS) + DAY_MS) % DAY_MS;
+}
+
 function skyTypeFromMs(
   slotUtcMs: number,
   sunriseMs: number | null | undefined,
   sunsetMs:  number | null | undefined,
 ): SkyT {
-  // If we have real timestamps, use them
   if (sunriseMs && sunsetMs) {
-    const GOLDEN_MS  = 30 * 60000;
-    const CIVIL_MS   = 60 * 60000;
+    const GOLDEN_MS   = 30 * 60000;
+    const CIVIL_MS    = 60 * 60000;
     const NAUTICAL_MS = 90 * 60000;
+    const DAY_MS      = 86400000;
 
-    // Sun is above horizon
-    if (slotUtcMs >= sunriseMs && slotUtcMs <= sunsetMs) {
-      const fromRise = slotUtcMs - sunriseMs;
-      const toSet    = sunsetMs - slotUtcMs;
-      const margin   = Math.min(fromRise, toSet);
-      if (margin < GOLDEN_MS)  return 'golden';
+    // Re-anchor today's sunrise/sunset time-of-day onto the slot's calendar day.
+    // This means the same rise/set time repeats for day 2 and day 3, which is
+    // accurate enough over a 3-day window (times shift < 3 minutes per day).
+    const slotDayStart = slotUtcMs - (slotUtcMs % DAY_MS);
+    const riseToday = slotDayStart + timeOfDayMs(sunriseMs);
+    const setToday  = slotDayStart + timeOfDayMs(sunsetMs);
+
+    // Handle the case where sunset is on a different UTC calendar day than sunrise
+    // (e.g. NZ summer: sunrise 06:00 UTC, sunset 08:30 UTC next day after NZDT offset)
+    // If set appears before rise on the same day, push it forward one day.
+    const riseAdj = riseToday;
+    const setAdj  = setToday < riseToday ? setToday + DAY_MS : setToday;
+
+    if (slotUtcMs >= riseAdj && slotUtcMs <= setAdj) {
+      const margin = Math.min(slotUtcMs - riseAdj, setAdj - slotUtcMs);
+      if (margin < GOLDEN_MS) return 'golden';
       return 'day';
     }
 
-    // Sun is below horizon — compute distance to nearest horizon crossing
-    const toRise = sunriseMs - slotUtcMs; // positive = sunrise is ahead
-    const fromSet = slotUtcMs - sunsetMs; // positive = sunset was behind
-    const dist = slotUtcMs < sunriseMs ? toRise : fromSet;
+    // Distance to nearest horizon crossing (rise or set)
+    const toRise  = riseAdj - slotUtcMs;
+    const fromSet = slotUtcMs - setAdj;
+    const dist    = toRise > 0 ? toRise : fromSet > 0 ? fromSet : Math.min(Math.abs(toRise), Math.abs(fromSet));
 
     if (dist < GOLDEN_MS)   return 'golden';
     if (dist < CIVIL_MS)    return 'civil';
@@ -66,8 +83,7 @@ function skyTypeFromMs(
     return 'night';
   }
 
-  // Fallback: NZ April heuristic (sunrise ~6:30am, sunset ~6:30pm NZDT)
-  // slotUtcMs → NZT hour
+  // Fallback: NZ April heuristic
   const nztH = new Date(slotUtcMs + NZ_OFFSET_H * 3600000).getUTCHours();
   if (nztH >= 8 && nztH < 18) return 'day';
   if (nztH === 7 || nztH === 18) return 'golden';
@@ -294,12 +310,16 @@ function drawCanvas(
       bg = ctx.createLinearGradient(x, LBEL_H, x, HOR_Y);
       bg.addColorStop(0, '#0c2a50'); bg.addColorStop(0.5, '#1a4a80'); bg.addColorStop(1, '#2060a0');
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
-      // Arc: sun rises at h=7, peaks at h=13, sets at h=19 (NZ April)
-      // Arc fraction: 0 at sunrise, 1 at solar noon, 0 at sunset
-      const dayLen = sunriseMs && sunsetMs ? (sunsetMs - sunriseMs) : 12 * 3600000;
-      const dayMid = sunriseMs && sunsetMs ? (sunriseMs + sunsetMs) / 2 : slot.utcMs;
-      const relPos = sunriseMs && sunsetMs
-        ? (slot.utcMs - sunriseMs) / dayLen
+      // Arc: 0 at sunrise, peaks at solar noon, 0 at sunset.
+      // Re-anchor today's rise/set time onto this slot's calendar day.
+      const DAY_MS_A = 86400000;
+      const slotDay  = slot.utcMs - (slot.utcMs % DAY_MS_A);
+      const riseA = sunriseMs ? slotDay + ((sunriseMs % DAY_MS_A + DAY_MS_A) % DAY_MS_A) : null;
+      const setA  = sunsetMs  ? slotDay + ((sunsetMs  % DAY_MS_A + DAY_MS_A) % DAY_MS_A) : null;
+      const setAAdj = (riseA && setA && setA < riseA) ? setA + DAY_MS_A : setA;
+      const dayLen = (riseA && setAAdj) ? (setAAdj - riseA) : 12 * 3600000;
+      const relPos = (riseA && setAAdj)
+        ? (slot.utcMs - riseA) / dayLen
         : (slot.nztHour - 7) / 12;
       const sunFrac = Math.max(0, Math.sin(Math.PI * Math.max(0, Math.min(1, relPos))));
       const sy = HOR_Y - sunFrac * SKY_H * 0.82;
@@ -317,9 +337,14 @@ function drawCanvas(
       bg.addColorStop(1, '#f09040');
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
       // Sun just at/near the horizon for golden hour
-      const gDayLen = sunriseMs && sunsetMs ? (sunsetMs - sunriseMs) : 12 * 3600000;
-      const gRelPos = sunriseMs && sunsetMs
-        ? (slot.utcMs - sunriseMs) / gDayLen
+      const gDAY   = 86400000;
+      const gSlotDay = slot.utcMs - (slot.utcMs % gDAY);
+      const gRiseA = sunriseMs ? gSlotDay + ((sunriseMs % gDAY + gDAY) % gDAY) : null;
+      const gSetA  = sunsetMs  ? gSlotDay + ((sunsetMs  % gDAY + gDAY) % gDAY) : null;
+      const gSetAdj = (gRiseA && gSetA && gSetA < gRiseA) ? gSetA + gDAY : gSetA;
+      const gDayLen = (gRiseA && gSetAdj) ? (gSetAdj - gRiseA) : 12 * 3600000;
+      const gRelPos = (gRiseA && gSetAdj)
+        ? (slot.utcMs - gRiseA) / gDayLen
         : (slot.nztHour - 7) / 12;
       const gSunFrac = Math.max(0, Math.sin(Math.PI * Math.max(0, Math.min(1, gRelPos))));
       const gSunY = HOR_Y - gSunFrac * SKY_H * 0.82 - 3;
@@ -355,11 +380,15 @@ function drawCanvas(
     // Sunrise / sunset arrows — use real timestamps when available
     // Show arrow in the column where the sun crosses the horizon
     const HOUR_MS_A = 3600000;
-    const isSet  = sunsetMs
-      ? (slot.utcMs <= sunsetMs && slot.utcMs + HOUR_MS_A > sunsetMs)
+    const DAY_MS_B  = 86400000;
+    const arSlotDay = slot.utcMs - (slot.utcMs % DAY_MS_B);
+    const arRiseMs  = sunriseMs ? arSlotDay + ((sunriseMs % DAY_MS_B + DAY_MS_B) % DAY_MS_B) : null;
+    const arSetMs   = sunsetMs  ? arSlotDay + ((sunsetMs  % DAY_MS_B + DAY_MS_B) % DAY_MS_B) : null;
+    const isSet  = arSetMs
+      ? (slot.utcMs <= arSetMs && slot.utcMs + HOUR_MS_A > arSetMs)
       : (slot.nztHour === 18 || slot.nztHour === 19);
-    const isRise = sunriseMs
-      ? (slot.utcMs <= sunriseMs && slot.utcMs + HOUR_MS_A > sunriseMs)
+    const isRise = arRiseMs
+      ? (slot.utcMs <= arRiseMs && slot.utcMs + HOUR_MS_A > arRiseMs)
       : (slot.nztHour === 6 || slot.nztHour === 7);
     if (isSet || isRise) {
       const cx = x + COL_W / 2;
