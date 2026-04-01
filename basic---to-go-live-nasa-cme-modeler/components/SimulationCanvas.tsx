@@ -1080,8 +1080,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       window.removeEventListener('resize', handleResize);
       if (rendererRef.current?.domElement) { rendererRef.current.domElement.removeEventListener('pointerdown', handlePointerDown); rendererRef.current.domElement.removeEventListener('pointerup', handlePointerUp); }
       if (mountRef.current && rendererRef.current) mountRef.current.removeChild(rendererRef.current.domElement);
-      if (particleTextureCache) { particleTextureCache.dispose?.(); particleTextureCache = null; }
-      if (arrowTextureCache)    { arrowTextureCache.dispose?.();    arrowTextureCache    = null; }
       try { rendererRef.current?.dispose(); } catch {}
       cancelAnimationFrame(animationFrameId);
       sceneRef.current?.traverse((o: any) => {
