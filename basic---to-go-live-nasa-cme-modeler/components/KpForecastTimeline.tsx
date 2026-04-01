@@ -178,6 +178,37 @@ interface VisInfo {
   summary:  string; // single overarching sentence shown in compact panel
 }
 
+function getSkyNarrative(sky: SkyT): string {
+  if (sky === 'day') return 'Sun above horizon, so aurora is not visible yet.';
+  if (sky === 'golden') return 'Sun at the horizon, and twilight is still too bright for aurora.';
+  if (sky === 'civil') return 'Civil twilight remains bright, which suppresses faint aurora.';
+  if (sky === 'nautical') return 'Nautical twilight is improving, but faint aurora can still wash out.';
+  return 'Full darkness gives the best chance to see faint detail.';
+}
+
+function getLocationNarrative(userLatitude?: number | null): string {
+  if (userLatitude == null) return 'Using New Zealand-wide visibility guidance.';
+  if (userLatitude <= -45) return 'Your southern location boosts visibility compared with most of NZ.';
+  if (userLatitude <= -41) return 'Your location is favourable for this activity level.';
+  if (userLatitude <= -38) return 'Your location is moderate; dark skies and a clear southern horizon matter more.';
+  return 'Your northern location needs stronger activity and very dark skies.';
+}
+
+function buildSlotSummary(
+  slot: KpSlot,
+  moon: number,
+  sky: SkyT,
+  vis: VisInfo,
+  userLatitude?: number | null,
+): string {
+  const kpTxt = `KP ${slot.kp.toFixed(2).replace(/\.?0+$/, '') || '0'}`;
+  const moonTxt = `Moon ${Math.round(moon)}%`;
+  const regionTxt = vis.regions.length > 0
+    ? `Best visibility: ${vis.regions.slice(0, 3).join(', ')}${vis.regions.length > 3 ? ` +${vis.regions.length - 3} more` : ''}.`
+    : 'No NZ region is strongly favoured at this level.';
+  return `${kpTxt} · ${moonTxt}. ${getSkyNarrative(sky)} ${vis.detail} ${regionTxt} ${getLocationNarrative(userLatitude)} Overall: ${vis.summary}`;
+}
+
 function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
   const ml = moonLabel(moon);
 
@@ -681,6 +712,9 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     if (!visRaw || !daySkyNote) return visRaw;
     return { ...visRaw, tip: daySkyNote + (visRaw.tip ? ' ' + visRaw.tip : '') };
   })();
+  const enrichedSummary = sel && vis
+    ? buildSlotSummary(sel, moon, selSky, vis, userLatitude)
+    : null;
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
   const fmtEnd = (h: number) => fmt((h+1)%24);
@@ -795,7 +829,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
           {/* Summary sentence */}
           <div style={{ marginTop:9, paddingTop:9, borderTop:'0.5px solid var(--color-border-tertiary)', fontSize:13, color:'var(--color-text-secondary)', lineHeight:1.55 }}>
-            {vis.summary}
+            {enrichedSummary}
           </div>
 
         </div>
