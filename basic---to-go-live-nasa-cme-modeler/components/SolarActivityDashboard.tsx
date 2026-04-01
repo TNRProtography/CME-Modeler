@@ -13,7 +13,6 @@ import {
 } from '../services/nasaService';
 import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
-import { ACTIVE_REGION_MAX_AGE_MS, ACTIVE_REGION_MIN_AREA_MSH, CCOR1_VIDEO_URL, CLOSEUP_OFFSET_X_PX, CLOSEUP_OFFSET_Y_PX, devLog, DISK_LABEL_OFFSET_X_PX, DISK_LABEL_OFFSET_Y_PX, enqueueImageLoad, extractTargetUrlFromProxy, fetchWithTimeoutAndRetry, HMI_IMAGE_SIZE, isEarthFacingCoordinate, isEarthVisibleCoordinate, isLikelySameOriginOrProxy, isValidSunspotRegion, NOAA_ACTIVE_REGIONS_TEXT_URL, NOAA_ACTIVE_REGIONS_URLS, NOAA_PROTON_FLUX_URLS, NOAA_SOLAR_PROBABILITIES_URL, NOAA_XRAY_FLUX_URLS, normalizeSolarLongitude, parseNoaaUtcTimestamp, REFRESH_INTERVAL_MS, releaseImageLoadSlot, resolveSdoImageUrl, SDO_HMI_B_1024_FALLBACK, SDO_HMI_B_1024_URL, SDO_HMI_B_4096_FALLBACK, SDO_HMI_B_4096_URL, SDO_HMI_BC_1024_FALLBACK, SDO_HMI_BC_1024_URL, SDO_HMI_BC_4096_FALLBACK, SDO_HMI_BC_4096_URL, SDO_HMI_IF_1024_FALLBACK, SDO_HMI_IF_1024_URL, SDO_HMI_IF_4096_FALLBACK, SDO_HMI_IF_4096_URL, SDO_HMI_NATIVE_CX, SDO_HMI_NATIVE_CY, SDO_HMI_NATIVE_RADIUS, SOLAR_IMAGE_CACHE_TTL_MS, solarImageCache, SUVI_131_INDEX_URL, SUVI_131_URL, SUVI_195_INDEX_URL, SUVI_195_URL, SUVI_304_INDEX_URL, SUVI_304_URL, SUVI_FRAME_INTERVAL_MINUTES, toNzEpochMs } from '../utils/solarActivityHelpers';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
@@ -55,42 +54,780 @@ interface ActiveSunspotRegion {
   source: string | null;
 }
 
+const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
+  return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
+};
+
+const isEarthVisibleCoordinate = (latitude: number | null, longitude: number | null): boolean => {
+  if (latitude === null || longitude === null) return false;
+  return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 90;
+};
+
+const isEarthFacingCoordinate = (latitude: number | null, longitude: number | null): boolean => {
+  if (latitude === null || longitude === null) return false;
+  return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 80;
+};
+
+
+const parseNoaaUtcTimestamp = (value: unknown): number | null => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // NOAA feeds are UTC; if the timestamp lacks an explicit zone, force UTC.
+  const hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const normalized = hasExplicitZone ? raw : `${raw}Z`;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getNzOffsetMs = (timestamp: number): number => {
+  const parts = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: 'Pacific/Auckland',
+    timeZoneName: 'shortOffset',
+    hour: '2-digit',
+  }).formatToParts(new Date(timestamp));
+  const label = parts.find((part) => part.type === 'timeZoneName')?.value || 'UTC+0';
+  const match = label.match(/(?:GMT|UTC)([+-])(\d{1,2})(?::(\d{2}))?/i);
+  if (!match) return 0;
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2]) || 0;
+  const minutes = Number(match[3] || '0');
+  return sign * ((hours * 60 + minutes) * 60 * 1000);
+};
+
+const toNzEpochMs = (timestamp: number): number => timestamp + getNzOffsetMs(timestamp);
+
+const normalizeSolarLongitude = (value: number | null): number | null => {
+  if (value === null || !Number.isFinite(value)) return null;
+  let normalized = value;
+  if (Math.abs(normalized) > 360) return null;
+  if (normalized > 180) normalized -= 360;
+  if (normalized < -180) normalized += 360;
+  return Math.max(-180, Math.min(180, normalized));
+};
+
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
 
+// --- CONSTANTS ---
+const NOAA_XRAY_FLUX_URLS = [
+  'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json',
+];
+const NOAA_PROTON_FLUX_URLS = [
+  'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/integral-protons-plot-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
+];
+const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
+const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
+const NOAA_ACTIVE_REGIONS_URLS = [
+  'https://services.swpc.noaa.gov/json/sunspot_report.json',
+  'https://services.swpc.noaa.gov/json/solar_regions.json',
+  'https://services.swpc.noaa.gov/products/solar-region-summary.json',
+];
+const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
+const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
+const SUVI_195_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
+const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
+const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
+const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
+const SUVI_FRAME_INTERVAL_MINUTES = 4;
+const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
+// HMI images — JSOC primary, NASA SDO fallback
+const JSOC_HMI_BASE = 'https://jsoc1.stanford.edu/data/hmi/images/latest';
+const NASA_SDO_BASE = 'https://sdo.gsfc.nasa.gov/assets/img/latest';
 
-const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | null }> = ({ summary }) => {
-  if (!summary) {
-    return (
-      <div className="card bg-neutral-950/80 p-4"> 
-        <h3 className="text-lg font-semibold text-white mb-2">Solar Activity Summary</h3>
-        <p className="text-sm text-neutral-400">Gathering latest solar activity metrics...</p>
-      </div>
-    );
+// Primary URLs (used for display)
+const SDO_HMI_BC_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_1024x1024.jpg`;
+const SDO_HMI_B_1024_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_1024x1024.gif`;
+const SDO_HMI_IF_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_1024x1024.jpg`;
+const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg`;
+const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.gif`;
+const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_4096x4096.jpg`;
+
+// Fallback URLs (NASA SDO direct — old version source that worked)
+const SDO_HMI_BC_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMIBC.jpg`;
+const SDO_HMI_B_1024_FALLBACK  = `${NASA_SDO_BASE}/latest_1024_HMIB.jpg`;
+const SDO_HMI_IF_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMII.jpg`;
+const SDO_HMI_BC_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMIBC.jpg`;
+const SDO_HMI_B_4096_FALLBACK  = `${NASA_SDO_BASE}/latest_4096_HMIB.jpg`;
+const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
+
+// Load directly — no Worker dependency, no domain-matching issues.
+const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
+const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
+const HMI_IMAGE_SIZE = 4096;
+const SDO_HMI_NATIVE_CX = 2048;
+const SDO_HMI_NATIVE_CY = 2048;
+const SDO_HMI_NATIVE_RADIUS = 1980;
+const DISK_LABEL_OFFSET_X_PX = 200;
+const DISK_LABEL_OFFSET_Y_PX = -200;
+const CLOSEUP_OFFSET_X_PX = 200;
+const CLOSEUP_OFFSET_Y_PX = -200;
+const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_REGION_MIN_AREA_MSH = 0;
+const SOLAR_IMAGE_CACHE_TTL_MS = 60 * 60 * 1000;
+const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
+
+const FETCH_TIMEOUT_MS = 12000;
+const MAX_FETCH_RETRIES = 2;
+const IMAGE_CONCURRENCY_LIMIT = 4;
+let inFlightImageLoads = 0;
+const queuedImageLoads: Array<() => void> = [];
+
+const devLog = (...args: unknown[]) => {
+  if (!import.meta.env.DEV) return;
+  console.info('[solar-preload]', ...args);
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Thrown when a proxy request gets a definitive 404 — no point retrying.
+class ProxyUnavailableError extends Error {
+  constructor(url: string) {
+    super(`Proxy unavailable (404) for ${url}`);
+    this.name = 'ProxyUnavailableError';
+  }
+}
+
+const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 'blob' = 'json') => {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal, cache: 'default' });
+      if (!response.ok) {
+        // 404 on a proxy URL means the Worker isn't deployed on this domain — skip retries.
+        if (response.status === 404 && url.includes('/api/proxy/')) {
+          throw new ProxyUnavailableError(url);
+        }
+        throw new Error(`HTTP ${response.status} for ${url}`);
+      }
+      if (parseAs === 'json') return await response.json();
+      if (parseAs === 'blob') return await response.blob();
+      return await response.text();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      // Don't retry proxy 404s — fall through immediately to the direct-URL fallback.
+      if (lastError instanceof ProxyUnavailableError) break;
+      if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+  throw lastError ?? new Error(`Failed to fetch ${url}`);
+};
+
+const enqueueImageLoad = (task: () => void) => {
+  if (inFlightImageLoads < IMAGE_CONCURRENCY_LIMIT) {
+    inFlightImageLoads++;
+    task();
+    return;
+  }
+  queuedImageLoads.push(task);
+};
+
+
+const extractTargetUrlFromProxy = (url: string): string | null => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const encoded = parsed.searchParams.get('url');
+    return encoded ? decodeURIComponent(encoded) : null;
+  } catch {
+    return null;
+  }
+};
+
+const isLikelySameOriginOrProxy = (url: string): boolean => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin
+      || parsed.pathname.startsWith('/api/proxy/');
+  } catch {
+    return false;
+  }
+};
+
+const releaseImageLoadSlot = () => {
+  inFlightImageLoads = Math.max(0, inFlightImageLoads - 1);
+  const next = queuedImageLoads.shift();
+  if (next) {
+    inFlightImageLoads++;
+    next();
+  }
+};
+
+
+// --- HELPERS ---
+const getCssVar = (name: string): string => {
+  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch { return ''; }
+};
+
+const getColorForFlux = (value: number, opacity: number = 1): string => {
+  let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94';
+  if (value >= 5e-4) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180';
+  else if (value >= 1e-4) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';
+  else if (value >= 1e-5) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';
+  else if (value >= 1e-6) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11';
+  return `rgba(${rgb}, ${opacity})`;
+};
+
+const getColorForProtonFlux = (value: number, opacity: number = 1): string => {
+  let rgb = getCssVar('--solar-flare-ab-rgb') || '34, 197, 94';
+  if (value >= 10) rgb = getCssVar('--solar-flare-c-rgb') || '245, 158, 11';
+  if (value >= 100) rgb = getCssVar('--solar-flare-m-rgb') || '255, 69, 0';
+  if (value >= 1000) rgb = getCssVar('--solar-flare-x-rgb') || '147, 112, 219';
+  if (value >= 10000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180';
+  if (value >= 100000) rgb = getCssVar('--solar-flare-x5plus-rgb') || '255, 20, 147';
+  return `rgba(${rgb}, ${opacity})`;
+};
+
+const getColorForFlareClass = (classType: string): { background: string, text: string } => {
+  const type = classType ? classType[0].toUpperCase() : 'U';
+  const magnitude = parseFloat(classType.substring(1));
+  if (type === 'X') {
+    if (magnitude >= 5) return { background: `rgba(${getCssVar('--solar-flare-x5plus-rgb') || '255, 105, 180'}, 1)`, text: 'text-white' };
+    return { background: `rgba(${getCssVar('--solar-flare-x-rgb') || '147, 112, 219'}, 1)`, text: 'text-white' };
+  }
+  if (type === 'M') return { background: `rgba(${getCssVar('--solar-flare-m-rgb') || '255, 69, 0'}, 1)`, text: 'text-white' };
+  if (type === 'C') return { background: `rgba(${getCssVar('--solar-flare-c-rgb') || '245, 158, 11'}, 1)`, text: 'text-black' };
+  return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
+};
+
+const formatNZTimestamp = (isoString: string | null | number) => {
+  if (!isoString) return 'N/A';
+  try { 
+    const d = new Date(isoString); 
+    return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); 
+  } catch { 
+    return "Invalid Date"; 
+  }
+};
+
+const getXrayClass = (value: number | null): string => {
+  if (value === null) return 'N/A';
+  if (value >= 1e-4) return `X${(value / 1e-4).toFixed(1)}`;
+  if (value >= 1e-5) return `M${(value / 1e-5).toFixed(1)}`;
+  if (value >= 1e-6) return `C${(value / 1e-6).toFixed(1)}`;
+  if (value >= 1e-7) return `B${(value / 1e-7).toFixed(1)}`;
+  return `A${(value / 1e-8).toFixed(1)}`;
+};
+
+const getProtonClass = (value: number | null): string => {
+  if (value === null) return 'N/A';
+  if (value >= 100000) return 'S5';
+  if (value >= 10000) return 'S4';
+  if (value >= 1000) return 'S3';
+  if (value >= 100) return 'S2';
+  if (value >= 10) return 'S1';
+  return 'S0';
+};
+
+const getOverallActivityStatus = (xrayClass: string, protonClass: string): 'Quiet' | 'Moderate' | 'High' | 'Very High' | 'N/A' => {
+  if (xrayClass === 'N/A' && protonClass === 'N/A') return 'N/A';
+  let activityLevel: 'Quiet' | 'Moderate' | 'High' | 'Very High' = 'Quiet';
+  if (xrayClass.startsWith('X')) activityLevel = 'Very High';
+  else if (xrayClass.startsWith('M')) activityLevel = 'High';
+  else if (xrayClass.startsWith('C')) activityLevel = 'Moderate';
+
+  if (protonClass === 'S5' || protonClass === 'S4') activityLevel = 'Very High';
+  else if (protonClass === 'S3' || protonClass === 'S2') {
+    if (activityLevel !== 'Very High') activityLevel = 'High';
+  } else if (protonClass === 'S1') {
+    if (activityLevel === 'Quiet') activityLevel = 'Moderate';
+  }
+  return activityLevel;
+};
+
+// Parse source location like "N12W15", "S18E05" to a signed longitude in degrees (E negative, W positive)
+const parseLongitude = (loc?: string | null): number | null => {
+  if (!loc) return null;
+  const m = String(loc).match(/^[NS]\d{1,2}(E|W)(\d{1,3})$/i);
+  if (!m) return null;
+  const hemi = m[1].toUpperCase();
+  const deg = parseInt(m[2], 10);
+  if (isNaN(deg)) return null;
+  // Define East as negative, West as positive relative to Earth view (central meridian at 0)
+  return hemi === 'W' ? +deg : -deg;
+};
+
+
+const parseLatitudeLongitude = (location?: string | null): { latitude: number | null; longitude: number | null } => {
+  if (!location) return { latitude: null, longitude: null };
+  const normalized = String(location).toUpperCase().replace(/\s+/g, '');
+  const m = normalized.match(/([NS])(\d{1,2})([EW])(\d{1,3})/i);
+  if (!m) return { latitude: null, longitude: null };
+  const latMag = parseInt(m[2], 10);
+  const lonMag = parseInt(m[4], 10);
+  if (!Number.isFinite(latMag) || !Number.isFinite(lonMag)) return { latitude: null, longitude: null };
+  const latitude = m[1].toUpperCase() === 'N' ? latMag : -latMag;
+  const longitude = m[3].toUpperCase() === 'W' ? lonMag : -lonMag;
+  return { latitude, longitude };
+};
+
+const clampToRange = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+const constrainToSolarDiskBounds = (
+  x: number,
+  y: number,
+  geometry: { cx: number; cy: number; radius: number }
+): { x: number; y: number } => {
+  const minX = geometry.cx - geometry.radius;
+  const maxX = geometry.cx + geometry.radius;
+  const minY = geometry.cy - geometry.radius;
+  const maxY = geometry.cy + geometry.radius;
+  return {
+    x: clampToRange(x, minX, maxX),
+    y: clampToRange(y, minY, maxY),
+  };
+};
+
+const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy: number, radius: number) => {
+  const latRad = latitude * (Math.PI / 180);
+  const lonRad = longitude * (Math.PI / 180);
+  const x = cx + radius * Math.cos(latRad) * Math.sin(lonRad);
+  const y = cy - radius * Math.sin(latRad);
+  const visibleHemisphere = Math.cos(latRad) * Math.cos(lonRad) >= 0;
+  const onDisk = visibleHemisphere && ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2);
+  return { x, y, onDisk };
+};
+
+const detectSolarDiskGeometry = (source: HTMLImageElement): { width: number; height: number; cx: number; cy: number; radius: number } => {
+  const width = source.naturalWidth || HMI_IMAGE_SIZE;
+  const height = source.naturalHeight || HMI_IMAGE_SIZE;
+  const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return fallback;
+
+    ctx.drawImage(source, 0, 0, width, height);
+    const imageData = ctx.getImageData(0, 0, width, height).data;
+    const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
+
+    const isDiskPixel = (x: number, y: number) => {
+      const i = (y * width + x) * 4;
+      const r = imageData[i];
+      const g = imageData[i + 1];
+      const b = imageData[i + 2];
+      const a = imageData[i + 3];
+      return a > 0 && (r + g + b) > 24;
+    };
+
+    let left = width;
+    let right = 0;
+    let top = height;
+    let bottom = 0;
+
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
+        if (isDiskPixel(x, y)) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+      }
+    }
+
+    if (left >= right || top >= bottom) return fallback;
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+    const radius = Math.max((right - left), (bottom - top)) / 2;
+    return { width, height, cx, cy, radius };
+  } catch {
+    return fallback;
+  }
+};
+
+const getSunspotClassColor = (magneticClass?: string | null): string => {
+  const c = String(magneticClass || '').toUpperCase();
+  if (c.includes('DELTA') || c.includes('GAMMA')) return '#ef4444';
+  if (c.includes('BETA')) return '#f97316';
+  if (c.includes('ALPHA')) return '#22c55e';
+  return '#facc15';
+};
+
+const getSunspotLabelStyle = (region: ActiveSunspotRegion): { background: string; text: string } => {
+  const magneticTone = getSunspotClassColor(region.magneticClass);
+  const maxFlareOdds = Math.max(region.cFlareProbability ?? 0, region.mFlareProbability ?? 0, region.xFlareProbability ?? 0);
+
+  if (maxFlareOdds >= 50 || (region.magneticClass || '').toUpperCase().includes('DELTA')) {
+    return { background: '#ef4444', text: '#ffffff' };
+  }
+  if (maxFlareOdds >= 25 || (region.magneticClass || '').toUpperCase().includes('GAMMA')) {
+    return { background: '#f97316', text: '#111827' };
+  }
+  if (maxFlareOdds >= 10) {
+    return { background: '#facc15', text: '#111827' };
   }
 
+  return { background: magneticTone, text: magneticTone === '#22c55e' ? '#052e16' : '#111827' };
+};
+
+const getSunspotRiskBand = (region: ActiveSunspotRegion): { label: string; color: string } => {
+  const c = String(region.magneticClass || '').toUpperCase();
+  const m = region.mFlareProbability ?? 0;
+  const x = region.xFlareProbability ?? 0;
+  if (c.includes('DELTA') || x >= 10 || m >= 50) return { label: 'HIGH', color: '#ef4444' };
+  if (c.includes('GAMMA') || m >= 20 || x >= 3) return { label: 'MODERATE', color: '#f97316' };
+  if (c.includes('BETA') || m >= 10) return { label: 'LOW', color: '#facc15' };
+  return { label: 'MINIMAL', color: '#22c55e' };
+};
+
+const normalizeMagneticClass = (value?: string | null): string | null => {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return null;
+  const compact = raw.replace(/[^A-Z]/g, '');
+  const map: Record<string, string> = {
+    A: 'ALPHA',
+    ALPHA: 'ALPHA',
+    B: 'BETA',
+    BETA: 'BETA',
+    BG: 'BETA-GAMMA',
+    BETAGAMMA: 'BETA-GAMMA',
+    BD: 'BETA-DELTA',
+    BETADELTA: 'BETA-DELTA',
+    BGD: 'BETA-GAMMA-DELTA',
+    BETAGAMMADELTA: 'BETA-GAMMA-DELTA',
+    G: 'GAMMA',
+    GAMMA: 'GAMMA',
+    D: 'DELTA',
+    DELTA: 'DELTA',
+  };
+  return map[compact] || raw;
+};
+
+const toNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/%/g, '').replace(/,/g, '');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const getNumberFromAliases = (item: Record<string, unknown>, aliases: string[]): number | null => {
+  const keysByNormalized = new Map<string, string>();
+  Object.keys(item).forEach((key) => keysByNormalized.set(key.toLowerCase().replace(/[^a-z0-9]/g, ''), key));
+
+  for (const alias of aliases) {
+    const directValue = item[alias];
+    const directParsed = toNumberOrNull(directValue);
+    if (directParsed !== null) return directParsed;
+
+    const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matchedKey = keysByNormalized.get(normalizedAlias);
+    if (matchedKey) {
+      const parsed = toNumberOrNull(item[matchedKey]);
+      if (parsed !== null) return parsed;
+    }
+  }
+
+  return null;
+};
+
+const deriveProbabilityFromMagneticClass = (
+  magneticClass: string | null,
+  flareType: 'c' | 'm' | 'x',
+): number | null => {
+  if (!magneticClass) return null;
+  const normalized = magneticClass.toUpperCase().replace(/[^A-Z]/g, '');
+  const hasDelta = normalized.includes('DELTA') || normalized.endsWith('D');
+  const hasGamma = normalized.includes('GAMMA') || normalized.includes('G');
+  const hasBeta = normalized.includes('BETA') || normalized.includes('B');
+
+  if (flareType === 'x') {
+    if (hasDelta && hasGamma) return 15;
+    if (hasDelta) return 8;
+    if (hasGamma) return 4;
+    return hasBeta ? 1 : 0;
+  }
+
+  if (flareType === 'm') {
+    if (hasDelta && hasGamma) return 55;
+    if (hasDelta) return 35;
+    if (hasGamma) return 18;
+    return hasBeta ? 8 : 3;
+  }
+
+  if (hasDelta && hasGamma) return 85;
+  if (hasDelta) return 70;
+  if (hasGamma) return 55;
+  return hasBeta ? 35 : 15;
+};
+
+const extractRegionFromAny = (item: any): string => {
+  const rawRegion = item?.region ?? item?.region_number ?? item?.regionNum ?? item?.noaa ?? item?.ar ?? item?.activeRegionNum;
+  return rawRegion !== undefined && rawRegion !== null ? String(rawRegion).replace(/[^0-9A-Za-z]/g, '') : '';
+};
+
+const extractActiveRegionEntries = (raw: any, source: string) => {
+  const regionArray = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.regions)
+      ? raw.regions
+      : Array.isArray(raw?.activeRegions)
+        ? raw.activeRegions
+        : [];
+
+  return regionArray
+    .map((item: any, idx: number) => {
+      const region = extractRegionFromAny(item);
+      if (!region) return null;
+
+      const location = (item?.location ?? item?.lat_long ?? item?.latLong ?? '').toString().trim().toUpperCase();
+      const coords = parseLatitudeLongitude(location);
+
+      const lat = toNumberOrNull(item?.latitude ?? item?.lat ?? item?.helio_lat ?? item?.hpc_lat ?? item?.latitude_heliographic);
+      const lon = normalizeSolarLongitude(toNumberOrNull(item?.longitude ?? item?.lon ?? item?.helio_lon ?? item?.hpc_lon ?? item?.longitude_heliographic));
+      const observedTime = parseNoaaUtcTimestamp(item?.observed ?? item?.observed_time ?? item?.obs_time ?? item?.issue_datetime ?? item?.issue_time ?? item?.time_tag ?? item?.date);
+
+      const magneticClass = normalizeMagneticClass(item?.magnetic_classification ?? item?.mag_class ?? item?.magneticClass ?? item?.zurich_classification);
+
+      const cFlareProbability = getNumberFromAliases(item, [
+        'c_flare_probability', 'cFlareProbability', 'cflare_probability', 'flare_probability_c', 'prob_c', 'c_prob', 'cclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'c');
+
+      const mFlareProbability = getNumberFromAliases(item, [
+        'm_flare_probability', 'mFlareProbability', 'mflare_probability', 'flare_probability_m', 'prob_m', 'm_prob', 'mclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'm');
+
+      const xFlareProbability = getNumberFromAliases(item, [
+        'x_flare_probability', 'xFlareProbability', 'xflare_probability', 'flare_probability_x', 'prob_x', 'x_prob', 'xclass_probability'
+      ]) ?? deriveProbabilityFromMagneticClass(magneticClass, 'x');
+
+      return {
+        region,
+        location: location || 'N/A',
+        area: toNumberOrNull(item?.area ?? item?.spot_area ?? item?.spotArea ?? item?.area_millionths),
+        spotCount: toNumberOrNull(item?.spot_count ?? item?.spotCount ?? item?.number_spots),
+        magneticClass,
+        classification: (item?.classification ?? item?.region_classification ?? item?.zurich_classification ?? '').toString().trim() || null,
+        latitude: coords.latitude ?? lat,
+        longitude: normalizeSolarLongitude(coords.longitude ?? lon),
+        observedTime,
+        cFlareProbability,
+        mFlareProbability,
+        xFlareProbability,
+        protonProbability: getNumberFromAliases(item, ['proton_probability', 'protonProbability', 's1_probability', 'sep_probability', 'prob_s1', 's1_prob']),
+        cFlareEvents24h: toNumberOrNull(item?.c_flare_events_24h ?? item?.c_flare_events ?? item?.cflare_events_24h ?? item?.c_events_24h ?? item?.c_event_count),
+        mFlareEvents24h: toNumberOrNull(item?.m_flare_events_24h ?? item?.m_flare_events ?? item?.mflare_events_24h ?? item?.m_events_24h ?? item?.m_event_count),
+        xFlareEvents24h: toNumberOrNull(item?.x_flare_events_24h ?? item?.x_flare_events ?? item?.xflare_events_24h ?? item?.x_events_24h ?? item?.x_event_count),
+        previousActivity: (item?.previous_activity ?? item?.recent_activity ?? item?.activity_summary ?? item?.flare_history ?? item?.recent_events ?? '').toString().trim() || null,
+        _sourceIndex: idx,
+        source,
+      };
+    })
+    .filter(isValidSunspotRegion);
+};
+
+const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number })[] => {
+  const lines = raw.split(/\r?\n/);
+  return lines
+    .map((line, idx) => {
+      const l = line.trim();
+      if (!/^\d{4,5}\s+/.test(l)) return null;
+      const parts = l.split(/\s+/);
+      if (parts.length < 8) return null;
+
+      const region = String(parts[0]).replace(/[^0-9A-Za-z]/g, '');
+      const location = String(parts[1] || '').toUpperCase();
+      const coords = parseLatitudeLongitude(location);
+
+      const area = Number.isFinite(Number(parts[3])) ? Number(parts[3]) : null;
+      const spotCount = Number.isFinite(Number(parts[6])) ? Number(parts[6]) : null;
+      const magneticClass = normalizeMagneticClass(parts[7] || null);
+
+      if (!region || coords.latitude === null || coords.longitude === null) return null;
+
+      return {
+        region,
+        location,
+        area,
+        magneticClass,
+        spotCount,
+        latitude: coords.latitude,
+        longitude: normalizeSolarLongitude(coords.longitude),
+        observedTime: null,
+        cFlareProbability: null,
+        mFlareProbability: null,
+        xFlareProbability: null,
+        protonProbability: null,
+        cFlareEvents24h: null,
+        mFlareEvents24h: null,
+        xFlareEvents24h: null,
+        previousActivity: null,
+        classification: null,
+        source: 'solar-regions.txt',
+        _sourceIndex: idx,
+      };
+    })
+    .filter((item): item is Omit<ActiveSunspotRegion, 'trend'> => Boolean(item));
+};
+
+// Heuristic: Potential earth-directed if a CME is linked and source longitude within ±30°
+const isPotentialEarthDirected = (flare: SolarFlare): boolean => {
+  // @ts-ignore - we compute hasCME when processing flares
+  if (!flare.hasCME) return false;
+  const lon = parseLongitude(flare.sourceLocation);
+  if (lon === null) return false;
+  return Math.abs(lon) <= 30; // tweak if you want stricter/looser
+};
+
+
+const getFirstNumber = (entries: Array<any>, selector: (entry: any) => number | null): number | null => {
+  for (const entry of entries) {
+    const value = selector(entry);
+    if (value !== null && Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+const getFirstText = (entries: Array<any>, selector: (entry: any) => string | null): string | null => {
+  for (const entry of entries) {
+    const value = selector(entry);
+    if (value && value.trim()) return value;
+  }
+  return null;
+};
+
+
+const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>): number => {
+  let score = 0;
+  if (entry.magneticClass) score++;
+  if (entry.classification) score++;
+  if (entry.area !== null) score++;
+  if (entry.spotCount !== null) score++;
+  if (entry.mFlareProbability !== null) score++;
+  if (entry.xFlareProbability !== null) score++;
+  if (entry.protonProbability !== null) score++;
+  if (entry.previousActivity) score++;
+  if (entry.cFlareEvents24h !== null || entry.mFlareEvents24h !== null || entry.xFlareEvents24h !== null) score++;
+  return score;
+};
+
+// --- REUSABLE COMPONENTS ---
+const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
+  const timeRanges = [
+    { label: '1 Hr', hours: 1 },
+    { label: '3 Hr', hours: 3 },
+    { label: '6 Hr', hours: 6 },
+    { label: '12 Hr', hours: 12 },
+    { label: '1 Day', hours: 24 },
+    { label: '3 Day', hours: 72 },
+    { label: '5 Day', hours: 120 },
+    { label: '7 Day', hours: 168 },
+  ];
   return (
-    <div className="card bg-neutral-950/80 p-4">
-      <h3 className="text-lg font-semibold text-white mb-3">Solar Activity Summary</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-        <div className="rounded border border-neutral-700/60 p-3 bg-neutral-900/60">
-          <div className="text-neutral-400 text-xs">Peak X-ray</div>
-          <div className="text-white font-semibold mt-1">{summary.highestXray.class}</div>
+    <div className="flex justify-center gap-2 my-2 flex-wrap">
+      {timeRanges.map(({ label, hours }) => (
+        <button
+          key={hours}
+          onClick={() => onSelect(hours * 3600000)}
+          className={`px-3 py-1 text-xs rounded transition-colors ${selected === hours * 3600000 ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+          title={`Show data for the last ${hours} hours`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-        <div className="rounded border border-neutral-700/60 p-3 bg-neutral-900/60">
-          <div className="text-neutral-400 text-xs">Peak Proton</div>
-          <div className="text-white font-semibold mt-1">{summary.highestProton.class}</div>
-        </div>
-        <div className="rounded border border-neutral-700/60 p-3 bg-neutral-900/60">
-          <div className="text-neutral-400 text-xs">24h M/X + CME-candidate flares</div>
-          <div className="text-white font-semibold mt-1">M {summary.flareCounts.m} · X {summary.flareCounts.x} · CME? {summary.flareCounts.potentialCMEs}</div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
         </div>
       </div>
     </div>
   );
 };
 
+const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
+  <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-neutral-400 italic">
+    <svg className="animate-spin h-8 w-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+    {message && <p className="mt-2 text-sm">{message}</p>}
+  </div>
+);
+
+const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | null }> = ({ summary }) => {
+  if (!summary) {
+    return (
+      <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
+        Calculating 24-hour summary...
+      </div>
+    );
+  }
+  const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
+      <h2 className="text-2xl font-bold text-white text-center">24-Hour Solar Summary</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+          <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak X-ray Flux</h3>
+          <p className="text-5xl font-bold" style={{ color: getColorForFlux(summary.highestXray.flux) }}>
+            {summary.highestXray.class}
+          </p>
+          <p className="text-sm text-neutral-400 mt-1">at {formatTime(summary.highestXray.timestamp)}</p>
+        </div>
+
+        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+          <h3 className="text-lg font-semibold text-neutral-200 mb-2">Solar Flares</h3>
+          <div className="flex justify-center items-center gap-6 text-2xl font-bold">
+            <div>
+              <p style={{ color: `rgba(${getCssVar('--solar-flare-x-rgb')})` }}>{summary.flareCounts.x}</p>
+              <p className="text-sm font-normal">X-Class</p>
+            </div>
+            <div>
+              <p style={{ color: `rgba(${getCssVar('--solar-flare-m-rgb')})` }}>{summary.flareCounts.m}</p>
+              <p className="text-sm font-normal">M-Class</p>
+            </div>
+            <div>
+              <p className="text-sky-300">{summary.flareCounts.potentialCMEs}</p>
+              <p className="text-sm font-normal">Potential Earth-Directed CMEs</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+          <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak Proton Flux</h3>
+          <p className="text-5xl font-bold" style={{ color: getColorForProtonFlux(summary.highestProton.flux) }}>
+            {summary.highestProton.class}
+          </p>
+          <p className="text-sm text-neutral-400 mt-1">at {formatTime(summary.highestProton.timestamp)}</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- COMPONENT ---
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
