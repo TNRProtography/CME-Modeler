@@ -13,7 +13,9 @@ import { useForecastData } from '../hooks/useForecastData';
 import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
+import FluxRopePanel from './FluxRopePanel';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { analyzeFluxRope } from '../utils/fluxRopeModel';
 
 import {
     TipsSection,
@@ -290,6 +292,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
         </div>
     `;
+
+
+    const latestShockEpochMs = useMemo(() => {
+      const latestShock = interplanetaryShockData?.[0];
+      if (!latestShock?.eventTime) return undefined;
+      const t = new Date(latestShock.eventTime).getTime();
+      if (!Number.isFinite(t)) return undefined;
+      if (Date.now() - t > 24 * 3600_000) return undefined;
+      return t;
+    }, [interplanetaryShockData]);
+
+    const fluxRopeAnalysis = useMemo(() => analyzeFluxRope(allMagneticData, allSpeedData, allTempData, latestShockEpochMs), [allMagneticData, allSpeedData, allTempData, latestShockEpochMs]);
 
     const tooltipContent = useMemo(() => ({
         'unified-forecast': buildStatTooltip(
@@ -807,6 +821,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <TipsSection />
                                 <CameraSettingsSection settings={cameraSettings} />
                             </div>
+
+                            <FluxRopePanel analysis={fluxRopeAnalysis} />
 
                             <SolarWindQuickView
                                 magneticData={allMagneticData}
