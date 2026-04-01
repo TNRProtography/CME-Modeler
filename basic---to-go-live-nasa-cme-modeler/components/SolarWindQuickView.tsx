@@ -166,6 +166,63 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
 
   const hasData = mag.length > 0 || spd.length > 0;
 
+  // ── Interplanetary shock detector ─────────────────────────────────────────
+  // Fast-forward IP shock (CME shockwave at L1) shows as a SIMULTANEOUS
+  // step-change in speed, density and Bt that SUSTAINS over multiple readings.
+  // Based on Cash et al. (2014) and Vorotnikov et al. (2008):
+  //   Speed   ≥ 40 km/s jump from 20-min baseline, sustained ≥ 2 readings
+  //   Density ≥ 2× from baseline, sustained ≥ 2 readings
+  //   Bt      ≥ 8 nT jump OR ≥ 50% from baseline, sustained ≥ 2 readings
+  //   ≥ 2 of 3 parameters must fire simultaneously
+  const shockDetection = useMemo(() => {
+    const now = Date.now();
+    const RECENT_MS = 5 * 60000;
+    const SUSTAIN_N = 2;
+
+    const spdAll = speedData.filter(p => p.x > now - 30 * 60000).sort((a, b) => a.x - b.x);
+    const denAll = densityData.filter(p => p.x > now - 30 * 60000).sort((a, b) => a.x - b.x);
+    const magAll = magneticData.filter(p => p.time > now - 30 * 60000).sort((a, b) => a.time - b.time);
+
+    if (spdAll.length < 6 || denAll.length < 6 || magAll.length < 6) return null;
+
+    const spdBase = spdAll.filter(p => p.x < now - RECENT_MS).map(p => p.y);
+    const denBase = denAll.filter(p => p.x < now - RECENT_MS).map(p => p.y);
+    const magBase = magAll.filter(p => p.time < now - RECENT_MS).map(p => p.bt);
+    const spdRec  = spdAll.filter(p => p.x >= now - RECENT_MS).map(p => p.y);
+    const denRec  = denAll.filter(p => p.x >= now - RECENT_MS).map(p => p.y);
+    const magRec  = magAll.filter(p => p.time >= now - RECENT_MS).map(p => p.bt);
+
+    if (spdBase.length < 3 || denBase.length < 3 || magBase.length < 2) return null;
+    if (spdRec.length < SUSTAIN_N || denRec.length < SUSTAIN_N || magRec.length < SUSTAIN_N) return null;
+
+    const med = (arr: number[]) => {
+      const s = [...arr].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
+    };
+
+    const basSpd = med(spdBase);
+    const basDen = med(denBase);
+    const basBt  = med(magBase);
+    const recSpd = med(spdRec);
+    const recDen = med(denRec);
+    const recBt  = med(magRec);
+
+    const spdSustained = spdRec.filter(v => v > basSpd + 40).length >= SUSTAIN_N;
+    const denSustained = denRec.filter(v => basDen > 0 && v > basDen * 2.0).length >= SUSTAIN_N;
+    const btSustained  = magRec.filter(v => (v > basBt + 8) || (basBt > 0 && v > basBt * 1.5)).length >= SUSTAIN_N;
+
+    if ([spdSustained, denSustained, btSustained].filter(Boolean).length < 2) return null;
+
+    return {
+      spdJump:  Math.round(recSpd - basSpd),
+      denRatio: basDen > 0 ? +(recDen / basDen).toFixed(1) : 0,
+      btJump:   +(recBt - basBt).toFixed(1),
+      basSpd:   Math.round(basSpd),
+      recSpd:   Math.round(recSpd),
+    };
+  }, [speedData, densityData, magneticData]);
+
   // Options depend on rangeMs so they update when range changes
   const bzbtOpts = useMemo(() => makeOptions('Bz / Bt (nT)', rangeMs, undefined, undefined, 'linear', false), [rangeMs]);
   const phiOpts  = useMemo(() => makeOptions('Phi (°)',      rangeMs, 0, 360,    'linear',       false), [rangeMs]);
@@ -185,6 +242,29 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Interplanetary shock alert — matches notification label */}
+      {shockDetection && (
+        <div className="mt-2 mb-1 flex items-start gap-3 px-3 py-2.5 rounded-lg border"
+          style={{ background: 'rgba(220,38,38,0.12)', borderColor: 'rgba(220,38,38,0.45)' }}>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-sm font-semibold text-red-400">CME Has Hit the Satellites!</span>
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(220,38,38,0.28)', color: '#f87171' }}>
+                Shock Arriving
+              </span>
+            </div>
+            <p className="text-xs text-red-300/80 leading-relaxed">
+              Solar wind shows a sudden step-change consistent with an interplanetary shock
+              — speed +{shockDetection.spdJump} km/s ({shockDetection.basSpd}→{shockDetection.recSpd} km/s)
+              {shockDetection.denRatio >= 1.5 && `, density ×${shockDetection.denRatio}`}
+              {shockDetection.btJump >= 5 && `, Bt +${shockDetection.btJump} nT`}.
+              {' '}Impact at Earth in ~30–60 min. Watch Bz closely.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Time range — same style as rest of app */}
       <div className="flex justify-center gap-2 my-2 flex-wrap">
