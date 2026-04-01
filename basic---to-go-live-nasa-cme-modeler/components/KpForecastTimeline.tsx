@@ -724,14 +724,9 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
   // Draw
   useEffect(() => {
-    if (!canvasRef.current || renderSlots.length === 0) return;
-    drawCanvas(canvasRef.current, renderSlots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx ?? null);
-  }, [renderSlots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx]);
-
-  // If slot compression changes (desktop↔mobile), close popup to avoid index mismatch.
-  useEffect(() => {
-    setPopup(null);
-  }, [isMobileCompressed]);
+    if (!canvasRef.current || slots.length === 0) return;
+    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx ?? null);
+  }, [slots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
