@@ -5,8 +5,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 const NZ_OFFSET_H   = 13;   // NZDT = UTC+13 (April daylight saving)
 const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
-const MOBILE_BREAKPOINT = 768;
-const MOBILE_MIN_SLOT_WIDTH = 28;
 
 interface KpSlot {
   utcMs:    number;
@@ -23,6 +21,8 @@ interface KpForecastTimelineProps {
   userLatitude?:     number | null;
   sunriseMs?:        number | null; // Unix ms UTC from celestialTimes.sun.rise
   sunsetMs?:         number | null; // Unix ms UTC from celestialTimes.sun.set
+  moonRiseMs?:       number | null; // Unix ms UTC from celestialTimes.moon.rise
+  moonSetMs?:        number | null; // Unix ms UTC from celestialTimes.moon.set
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -115,39 +115,39 @@ function auroraH(kp: number, skyH: number): number {
   return Math.pow((kp - KP_THRESHOLD) / (9 - KP_THRESHOLD), 0.70) * skyH * 0.92;
 }
 
-// Always green (bottom) → pink (mid) → purple (top, G3+). Height + intensity vary by KP.
+// Always green (bottom) → pink (mid) → blue (top). Height + intensity vary by KP.
 function auroraGrad(
   ctx: CanvasRenderingContext2D,
   x: number, topY: number, botY: number,
   kp: number, op: number
 ) {
   // Gradient runs top→bottom: [0]=top of band [1]=horizon
-  // so colour order from stop 0 to stop 1:  purple → pink → green → transparent
+  // so colour order from stop 0 to stop 1:  blue → pink → green → transparent
   const g = ctx.createLinearGradient(x, topY, x, botY);
   const a = (v: number) => Math.min(1, v * op).toFixed(3);
 
   if (kp >= 8) {                              // G4+ — all three bold
-    g.addColorStop(0,    `rgba(170,105,255,${a(0)})`);
-    g.addColorStop(0.04, `rgba(170,105,255,${a(0.80)})`);
-    g.addColorStop(0.28, `rgba(170,105,255,${a(0.85)})`);
+    g.addColorStop(0,    `rgba(80,130,255,${a(0)})`);
+    g.addColorStop(0.04, `rgba(80,130,255,${a(0.80)})`);
+    g.addColorStop(0.28, `rgba(80,130,255,${a(0.85)})`);
     g.addColorStop(0.42, `rgba(255,60,150,${a(0.85)})`);
     g.addColorStop(0.60, `rgba(255,60,150,${a(0.82)})`);
     g.addColorStop(0.72, `rgba(0,220,65,${a(0.90)})`);
     g.addColorStop(0.90, `rgba(0,220,65,${a(0.92)})`);
     g.addColorStop(1,    `rgba(0,220,65,${a(0.10)})`);
-  } else if (kp >= 7) {                       // G3 — purple cap, good pink, green main
-    g.addColorStop(0,    `rgba(162,96,255,${a(0)})`);
-    g.addColorStop(0.08, `rgba(162,96,255,${a(0.65)})`);
-    g.addColorStop(0.28, `rgba(162,96,255,${a(0.70)})`);
+  } else if (kp >= 7) {                       // G3 — blue cap, good pink, green main
+    g.addColorStop(0,    `rgba(80,125,255,${a(0)})`);
+    g.addColorStop(0.08, `rgba(80,125,255,${a(0.65)})`);
+    g.addColorStop(0.28, `rgba(80,125,255,${a(0.70)})`);
     g.addColorStop(0.42, `rgba(255,60,148,${a(0.78)})`);
     g.addColorStop(0.60, `rgba(255,60,148,${a(0.73)})`);
     g.addColorStop(0.72, `rgba(0,218,62,${a(0.85)})`);
     g.addColorStop(0.90, `rgba(0,218,62,${a(0.88)})`);
     g.addColorStop(1,    `rgba(0,218,62,${a(0.10)})`);
-  } else if (kp >= 6) {                       // G2 — hint of purple, pink band, green main
-    g.addColorStop(0,    `rgba(155,92,245,${a(0)})`);
-    g.addColorStop(0.10, `rgba(155,92,245,${a(0.40)})`);
-    g.addColorStop(0.25, `rgba(155,92,245,${a(0.42)})`);
+  } else if (kp >= 6) {                       // G2 — hint of blue, pink band, green main
+    g.addColorStop(0,    `rgba(80,118,255,${a(0)})`);
+    g.addColorStop(0.10, `rgba(80,118,255,${a(0.40)})`);
+    g.addColorStop(0.25, `rgba(80,118,255,${a(0.42)})`);
     g.addColorStop(0.40, `rgba(245,60,145,${a(0.68)})`);
     g.addColorStop(0.58, `rgba(245,60,145,${a(0.65)})`);
     g.addColorStop(0.70, `rgba(0,215,60,${a(0.82)})`);
@@ -180,58 +180,9 @@ interface VisInfo {
   summary:  string; // single overarching sentence shown in compact panel
 }
 
-function getSkyNarrative(sky: SkyT): string {
-  if (sky === 'day') return 'Sun above horizon, so aurora is not visible yet.';
-  if (sky === 'golden') return 'Sun at the horizon, and twilight is still too bright for aurora.';
-  if (sky === 'civil') return 'Civil twilight remains bright, which suppresses faint aurora.';
-  if (sky === 'nautical') return 'Nautical twilight is improving, but faint aurora can still wash out.';
-  return 'Full darkness gives the best chance to see faint detail.';
-}
-
-function getLocationNarrative(userLatitude?: number | null): string {
-  if (userLatitude == null) return 'Using New Zealand-wide visibility guidance.';
-  if (userLatitude <= -45) return 'Your southern location boosts visibility compared with most of NZ.';
-  if (userLatitude <= -41) return 'Your location is favourable for this activity level.';
-  if (userLatitude <= -38) return 'Your location is moderate; dark skies and a clear southern horizon matter more.';
-  return 'Your northern location needs stronger activity and very dark skies.';
-}
-
-function buildSlotSummary(
-  slot: KpSlot,
-  moon: number,
-  sky: SkyT,
-  vis: VisInfo,
-  userLatitude?: number | null,
-): string {
-  const kpTxt = `KP ${slot.kp.toFixed(2).replace(/\.?0+$/, '') || '0'}`;
-  const moonTxt = `Moon ${Math.round(moon)}%`;
-  const regionTxt = vis.regions.length > 0
-    ? `Best visibility: ${vis.regions.slice(0, 3).join(', ')}${vis.regions.length > 3 ? ` +${vis.regions.length - 3} more` : ''}.`
-    : 'No NZ region is strongly favoured at this level.';
-  return `${kpTxt} · ${moonTxt}. ${getSkyNarrative(sky)} ${vis.detail} ${regionTxt} ${getLocationNarrative(userLatitude)} Overall: ${vis.summary}`;
-}
-
-function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
-  const ml = moonLabel(moon);
-
-  // Daylight override: even with high KP, aurora cannot be seen until the sky
-  // is dark enough. Keep storm context, but make visibility guidance explicit.
-  if (sky === 'day' || sky === 'golden' || sky === 'civil') {
-    const stormBand = kp >= 8 ? 'major storm' : kp >= 7 ? 'strong storm' : kp >= 6 ? 'moderate storm' : kp >= 5 ? 'minor storm' : 'low activity';
-    const whenDark =
-      kp >= 7 ? 'Once fully dark, visibility is likely across most or all of New Zealand.'
-      : kp >= 6 ? 'Once fully dark, the South Island is favoured and parts of the North Island may also see it from dark sites.'
-      : kp >= 5 ? 'Once fully dark, southern South Island dark-sky locations are most favoured.'
-      : 'Even after dark, conditions are currently marginal for New Zealand.';
-    return {
-      headline: sky === 'day' ? 'Sun is up — aurora not visible yet' : 'Twilight — aurora likely not visible yet',
-      detail: `KP is elevated (${kp.toFixed(2).replace(/\.?0+$/, '')}), indicating ${stormBand} conditions, but the sky is still too bright for visual aurora right now. ${whenDark}`,
-      regions: kp >= 5 ? ['Southland','Otago','Canterbury','Nelson','Wellington','Auckland'] : [],
-      moonNote: ml,
-      tip: 'Use this slot as a readiness signal: check cloud cover and be ready to observe once full darkness begins.',
-      summary: 'High geomagnetic activity can exist in daylight, but aurora viewing must wait until full darkness.',
-    };
-  }
+function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night', isMoonUp = true): VisInfo {
+  // Only report moon interference when the moon is actually above the horizon
+  const ml = isMoonUp ? moonLabel(moon) : 'Moon is below the horizon — no interference';
 
   // Sky brightness note — added to tip for daytime/twilight slots
   const skyNote =
@@ -350,12 +301,13 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
 // ── Canvas draw ───────────────────────────────────────────────────────────────
 
 function drawCanvas(
-  canvas:    HTMLCanvasElement,
-  slots:     KpSlot[],
-  W:         number,
-  sunriseMs: number | null | undefined,
-  sunsetMs:  number | null | undefined,
-  selectedIdx?: number | null,
+  canvas:     HTMLCanvasElement,
+  slots:      KpSlot[],
+  W:          number,
+  sunriseMs:  number | null | undefined,
+  sunsetMs:   number | null | undefined,
+  moonRiseMs: number | null | undefined,
+  moonSetMs:  number | null | undefined,
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
@@ -500,6 +452,58 @@ function drawCanvas(
       ctx.closePath(); ctx.fill();
     }
 
+    // Moon rise / set arrows — silver, offset above sun arrows
+    // Moon rises ~55 min later each day; apply cumulative offset per forecast day.
+    // "Not when rise/set is next day": if the 55-min shift pushes it past midnight
+    // for that day, the moon naturally appears in the small hours of the next day.
+    // We use modulo so it anchors correctly to whichever NZT calendar day the slot is on.
+    const moonForecastStart = slots[0].utcMs;
+    const mnSlotNzt = slot.utcMs + ARR_NZT;
+    const mnSlotMid = mnSlotNzt - (mnSlotNzt % ARR_DAY);
+    const mnStartNzt = moonForecastStart + ARR_NZT;
+    const mnStartMid = mnStartNzt - (mnStartNzt % ARR_DAY);
+    const mnDayIdx   = Math.round((mnSlotMid - mnStartMid) / ARR_DAY);
+    const mnOffsetMs = mnDayIdx * 55 * 60000;
+
+    const mnRiseMs = moonRiseMs != null
+      ? mnSlotMid + ((moonRiseMs + ARR_NZT) % ARR_DAY + mnOffsetMs) % ARR_DAY - ARR_NZT
+      : null;
+    const mnSetMs = moonSetMs != null
+      ? mnSlotMid + ((moonSetMs + ARR_NZT) % ARR_DAY + mnOffsetMs) % ARR_DAY - ARR_NZT
+      : null;
+    const isMoonRise = mnRiseMs != null
+      ? (slot.utcMs <= mnRiseMs && slot.utcMs + HOUR_MS_A > mnRiseMs)
+      : false;
+    const isMoonSet = mnSetMs != null
+      ? (slot.utcMs <= mnSetMs && slot.utcMs + HOUR_MS_A > mnSetMs)
+      : false;
+
+    if (isMoonRise || isMoonSet) {
+      const mcx = x + COL_W / 2;
+      const may = HOR_Y - 18; // above sun arrow
+      const msz = Math.min(5, COL_W * 0.28);
+      ctx.fillStyle = 'rgba(210,218,240,0.88)';
+      ctx.beginPath();
+      if (isMoonSet) {
+        ctx.moveTo(mcx,            may + msz);
+        ctx.lineTo(mcx - msz*0.65, may - msz*0.35);
+        ctx.lineTo(mcx - msz*0.22, may - msz*0.35);
+        ctx.lineTo(mcx - msz*0.22, may - msz);
+        ctx.lineTo(mcx + msz*0.22, may - msz);
+        ctx.lineTo(mcx + msz*0.22, may - msz*0.35);
+        ctx.lineTo(mcx + msz*0.65, may - msz*0.35);
+      } else {
+        ctx.moveTo(mcx,            may - msz);
+        ctx.lineTo(mcx + msz*0.65, may + msz*0.35);
+        ctx.lineTo(mcx + msz*0.22, may + msz*0.35);
+        ctx.lineTo(mcx + msz*0.22, may + msz);
+        ctx.lineTo(mcx - msz*0.22, may + msz);
+        ctx.lineTo(mcx - msz*0.22, may + msz*0.35);
+        ctx.lineTo(mcx - msz*0.65, may + msz*0.35);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+
     // Past-observed dimming — slightly darken observed/estimated slots
     // so the eye naturally reads left=past, right=future
     if (slot.observed === 'observed') {
@@ -575,21 +579,6 @@ function drawCanvas(
     ctx.font = '500 8px system-ui,sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('now', nx, LBEL_H+9);
   }
-
-  // Selected slot marker — make the chosen time segment visually obvious.
-  if (selectedIdx != null && selectedIdx >= 0 && selectedIdx < COLS) {
-    const sx = selectedIdx * COL_W;
-    // Brightened in-column overlay
-    ctx.fillStyle = 'rgba(52, 211, 153, 0.12)';
-    ctx.fillRect(sx, LBEL_H, COL_W, SKY_H);
-    // High-contrast outline around full segment
-    ctx.strokeStyle = 'rgba(52, 211, 153, 0.95)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sx + 1, LBEL_H + 1, Math.max(0, COL_W - 2), SKY_H - 2);
-    // Top cap for quick scan
-    ctx.fillStyle = 'rgba(52, 211, 153, 0.95)';
-    ctx.fillRect(sx + 1, LBEL_H + 1, Math.max(0, COL_W - 2), 3);
-  }
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -599,6 +588,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   userLatitude,
   sunriseMs,
   sunsetMs,
+  moonRiseMs,
+  moonSetMs,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
@@ -606,13 +597,9 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
   const [popup,   setPopup]   = useState<PopupState | null>(null);
-  const [viewportW, setViewportW] = useState(700);
-  const [isMobile, setIsMobile] = useState(false);
+  const [canvasW, setCanvasW] = useState(700);
 
   const moon = moonIllumination ?? 50;
-  const mobileScrollable = isMobile && slots.length > 0;
-  const mobileMinCanvasW = slots.length * MOBILE_MIN_SLOT_WIDTH;
-  const canvasW = mobileScrollable ? Math.max(viewportW, mobileMinCanvasW) : viewportW;
 
   // Fetch KP data
   useEffect(() => {
@@ -714,27 +701,17 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const syncSizing = (width: number) => {
-      const safeW = Math.max(320, Math.floor(width || 700));
-      setViewportW(safeW);
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-    const ro = new ResizeObserver(entries => syncSizing(entries[0].contentRect.width));
+    const ro = new ResizeObserver(entries => setCanvasW(Math.floor(entries[0].contentRect.width)));
     ro.observe(el);
-    syncSizing(el.clientWidth || 700);
-    const onWindowResize = () => syncSizing(el.clientWidth || 700);
-    window.addEventListener('resize', onWindowResize);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', onWindowResize);
-    };
+    setCanvasW(el.clientWidth || 700);
+    return () => ro.disconnect();
   }, []);
 
   // Draw
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
-    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx ?? null);
-  }, [slots, canvasW, sunriseMs, sunsetMs, popup?.slotIdx]);
+    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs);
+  }, [slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -749,7 +726,29 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
   const sel  = popup ? slots[popup.slotIdx] : null;
   const selSky = sel ? skyTypeFromMs(sel.utcMs, sunriseMs, sunsetMs) : 'night';
-  const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky) : null;
+
+  // Compute whether the moon is above the horizon for the selected slot
+  const selIsMoonUp = (() => {
+    if (!sel || !moonRiseMs || !moonSetMs) return true; // assume up if no data
+    const DAY_MS_M = 86400000;
+    const NZT_M    = NZ_OFFSET_H * 3600000;
+    const slotNztM = sel.utcMs + NZT_M;
+    const slotMidM = slotNztM - (slotNztM % DAY_MS_M);
+    const startNztM = (slots[0]?.utcMs ?? sel.utcMs) + NZT_M;
+    const startMidM = startNztM - (startNztM % DAY_MS_M);
+    const dayIdxM   = Math.round((slotMidM - startMidM) / DAY_MS_M);
+    const offM      = dayIdxM * 55 * 60000;
+    const riseTodM  = (moonRiseMs + NZT_M) % DAY_MS_M;
+    const setTodM   = (moonSetMs  + NZT_M) % DAY_MS_M;
+    const adjRiseM  = slotMidM + (riseTodM + offM) % DAY_MS_M - NZT_M;
+    const adjSetM   = slotMidM + (setTodM  + offM) % DAY_MS_M - NZT_M;
+    if (adjRiseM < adjSetM) {
+      return sel.utcMs >= adjRiseM && sel.utcMs < adjSetM;
+    }
+    return sel.utcMs >= adjRiseM || sel.utcMs < adjSetM;
+  })();
+
+  const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky, selIsMoonUp) : null;
   // For daytime/twilight slots with elevated KP, append the sun note to the tip
   const daySkyNote =
     selSky === 'day'      ? 'The sun is currently up — aurora is not visible in daylight even during a storm.'
@@ -763,9 +762,6 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     if (!visRaw || !daySkyNote) return visRaw;
     return { ...visRaw, tip: daySkyNote + (visRaw.tip ? ' ' + visRaw.tip : '') };
   })();
-  const enrichedSummary = sel && vis
-    ? buildSlotSummary(sel, moon, selSky, vis, userLatitude)
-    : null;
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
   const fmtEnd = (h: number) => fmt((h+1)%24);
@@ -801,15 +797,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
       </div>
 
       {/* Canvas wrapper — no overflow constraints, clean click handling */}
-      <div
-        ref={wrapRef}
-        style={{
-          position: 'relative',
-          overflowX: mobileScrollable ? 'auto' : 'visible',
-          WebkitOverflowScrolling: 'touch',
-          paddingBottom: mobileScrollable ? 6 : 0,
-        }}
-      >
+      <div ref={wrapRef} style={{ position: 'relative' }}>
         {loading && (
           <div className="h-40 bg-neutral-800/50 rounded-lg animate-pulse" />
         )}
@@ -819,23 +807,13 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
           </div>
         )}
         {!loading && !error && (
-          <div style={{ width: mobileScrollable ? `${canvasW}px` : '100%' }}>
-            <canvas
-              ref={canvasRef}
-              onClick={handleClick}
-              style={{
-                display: 'block',
-                cursor: 'pointer',
-                borderRadius: 8,
-                width: mobileScrollable ? `${canvasW}px` : '100%',
-              }}
-            />
-          </div>
+          <canvas
+            ref={canvasRef}
+            onClick={handleClick}
+            style={{ display: 'block', cursor: 'pointer', borderRadius: 8, width: '100%' }}
+          />
         )}
       </div>
-      {mobileScrollable && !loading && !error && (
-        <p className="mt-2 text-[11px] text-neutral-500">Swipe left/right to view later hours and future days.</p>
-      )}
 
       {/* Detail panel */}
       {popup && sel && vis && (
@@ -898,7 +876,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
           {/* Summary sentence */}
           <div style={{ marginTop:9, paddingTop:9, borderTop:'0.5px solid var(--color-border-tertiary)', fontSize:13, color:'var(--color-text-secondary)', lineHeight:1.55 }}>
-            {enrichedSummary}
+            {vis.summary}
           </div>
 
         </div>
@@ -909,9 +887,9 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         {[
           { c:'#00dc3e', l:'Green (aurora base)' },
           { c:'#ff3c96', l:'Pink (active)' },
-          { c:'#a569ff', l:'Purple (intense, G3+)' },
-          { c:'#2060a0', l:'Blue (daytime sky)' },
+          { c:'#508cff', l:'Blue (intense, G3+)' },
           { c:'#e07028', l:'Sunrise / sunset' },
+          { c:'#d2daef', l:'Moonrise / moonset' },
         ].map(({c,l}) => (
           <span key={l} className="flex items-center gap-1.5 text-xs text-neutral-500">
             <span style={{ width:10, height:10, background:c, borderRadius:2, display:'inline-block', flexShrink:0 }} />
