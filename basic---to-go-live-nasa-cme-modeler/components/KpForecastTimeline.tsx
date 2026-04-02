@@ -338,26 +338,29 @@ function drawCanvas(
   sunriseMs:  number | null | undefined,
   sunsetMs:   number | null | undefined,
   moonRiseMs: number | null | undefined,
-  moonSetMs:  number | null | undefined,
-  minKp:      number,
+  moonSetMs:   number | null | undefined,
+  minKp:       number,
+  selectedCol: number,
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
   const DPR    = window.devicePixelRatio || 1;
-  const COL_W  = W / COLS;
-  const H      = Math.round(Math.min(220, Math.max(160, W * 0.28)));
+  const MIN_COL = 22; // minimum px per column — keeps slots tappable on mobile
+  const COL_W  = Math.max(MIN_COL, W / COLS);
+  const totalW = COL_W * COLS;
+  const H      = Math.round(Math.min(220, Math.max(160, totalW * 0.18)));
   const LBEL_H = 20;
   const SKY_H  = H - LBEL_H - 14;
   const HOR_Y  = LBEL_H + SKY_H;
 
-  canvas.width  = Math.round(W * DPR);
+  canvas.width  = Math.round(totalW * DPR);
   canvas.height = Math.round(H * DPR);
-  canvas.style.width  = `${W}px`;
+  canvas.style.width  = `${totalW}px`;
   canvas.style.height = `${H}px`;
 
   const ctx = canvas.getContext('2d')!;
   ctx.scale(DPR, DPR);
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, totalW, H);
 
   // ── Per-column sky + aurora ────────────────────────────────────────────────
   slots.forEach((slot, i) => {
@@ -493,6 +496,20 @@ function drawCanvas(
       ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
     }
 
+    // Selection highlight
+    if (i === selectedCol) {
+      ctx.fillStyle = 'rgba(100,185,255,0.18)';
+      ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
+      ctx.fillStyle = 'rgba(120,200,255,0.95)';
+      ctx.fillRect(x, LBEL_H, COL_W, 3);
+      ctx.strokeStyle = 'rgba(120,200,255,0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, LBEL_H+3); ctx.lineTo(x, HOR_Y);
+      ctx.moveTo(x+COL_W, LBEL_H+3); ctx.lineTo(x+COL_W, HOR_Y);
+      ctx.stroke();
+    }
+
     // Column separator — only draw at 3h boundaries and day transitions
     if (i > 0) {
       const isDayBound  = slots[i].dayIdx !== slots[i-1].dayIdx;
@@ -507,15 +524,15 @@ function drawCanvas(
 
   // Ground silhouette
   ctx.fillStyle = '#020609';
-  ctx.fillRect(0, HOR_Y, W, H - HOR_Y + 2);
+  ctx.fillRect(0, HOR_Y, totalW, H - HOR_Y + 2);
   ctx.beginPath(); ctx.moveTo(0, HOR_Y);
-  [[0,0],[0.08,2.5],[0.18,-1],[0.28,3],[0.4,1.5],[0.52,4],[0.64,2],[0.77,-0.5],[0.88,3],[1,1.5]].forEach(([px,py]) => ctx.lineTo((px as number)*W, HOR_Y - (py as number)));
-  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  [[0,0],[0.08,2.5],[0.18,-1],[0.28,3],[0.4,1.5],[0.52,4],[0.64,2],[0.77,-0.5],[0.88,3],[1,1.5]].forEach(([px,py]) => ctx.lineTo((px as number)*totalW, HOR_Y - (py as number)));
+  ctx.lineTo(totalW, H); ctx.lineTo(0, H); ctx.closePath();
   ctx.fillStyle = '#030810'; ctx.fill();
 
   // Day-label strip
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillRect(0, 0, W, LBEL_H);
+  ctx.fillRect(0, 0, totalW, LBEL_H);
   const dayGroups: Record<number, { label: string; start: number; count: number }> = {};
   slots.forEach((s,i) => {
     if (!dayGroups[s.dayIdx]) dayGroups[s.dayIdx] = {label:s.dayLabel,start:i,count:1};
@@ -689,18 +706,20 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Draw
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
-    drawCanvas(canvasRef.current, slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs, minKpForLocation(userLatitude));
-  }, [slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs]);
+    const drawW = Math.max(canvasW, slots.length * 22);
+    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs, minKpForLocation(userLatitude), popup?.slotIdx ?? -1);
+  }, [slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs, popup]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (slots.length === 0) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const lx   = e.clientX - rect.left;
-    const col  = Math.floor(lx / (canvasW / slots.length));
+    const colW = Math.max(canvasW, slots.length * 22) / slots.length;
+    const col  = Math.floor(lx / colW);
     if (col < 0 || col >= slots.length) return;
     if (popup?.slotIdx === col) { setPopup(null); return; }
-    setPopup({ slotIdx: col, anchorX: (col + 0.5) * (canvasW / slots.length) });
+    setPopup({ slotIdx: col, anchorX: (col + 0.5) * colW });
   }, [slots, canvasW, popup]);
 
   const sel  = popup ? slots[popup.slotIdx] : null;
@@ -782,8 +801,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         </span>
       </div>
 
-      {/* Canvas wrapper — no overflow constraints, clean click handling */}
-      <div ref={wrapRef} style={{ position: 'relative' }}>
+      {/* Canvas wrapper — horizontally scrollable for mobile */}
+      <div ref={wrapRef} style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
         {loading && (
           <div className="h-40 bg-neutral-800/50 rounded-lg animate-pulse" />
         )}
@@ -796,7 +815,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
           <canvas
             ref={canvasRef}
             onClick={handleClick}
-            style={{ display: 'block', cursor: 'pointer', borderRadius: 8, width: '100%' }}
+            style={{ display: 'block', cursor: 'pointer', borderRadius: 8 }}
           />
         )}
       </div>
