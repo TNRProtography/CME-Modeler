@@ -651,6 +651,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 sunsetMs={celestialTimes?.sun?.set ?? null}
                                 moonRiseMs={celestialTimes?.moon?.rise ?? null}
                                 moonSetMs={celestialTimes?.moon?.set ?? null}
+                                moonWaxing={celestialTimes?.moon?.waxing ?? null}
                             />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
@@ -694,6 +695,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 sunsetMs={celestialTimes?.sun?.set ?? null}
                                 moonRiseMs={celestialTimes?.moon?.rise ?? null}
                                 moonSetMs={celestialTimes?.moon?.set ?? null}
+                                moonWaxing={celestialTimes?.moon?.waxing ?? null}
                             />
 {(() => {
                                 // Compute oval boundary for chart visibility probability

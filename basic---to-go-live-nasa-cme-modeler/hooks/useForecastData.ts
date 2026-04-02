@@ -9,14 +9,14 @@ import {
 
 // --- Type Definitions ---
 interface CelestialTimeData {
-  moon?: { rise: number | null, set: number | null, illumination?: number };
+  moon?: { rise: number | null, set: number | null, illumination?: number; waxing?: boolean };
   sun?: { rise: number | null, set: number | null };
 }
 
 interface DailyHistoryEntry {
   date: string;
   sun?: { rise: number | null, set: number | null };
-  moon?: { rise: number | null, set: number | null, illumination?: number };
+  moon?: { rise: number | null, set: number | null, illumination?: number; waxing?: boolean };
 }
 
 interface OwmDailyForecastEntry {
@@ -668,7 +668,16 @@ export const useForecastData = (
 
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
-      setCelestialTimes({ moon: currentForecast?.moon, sun: currentForecast?.sun });
+      const todayMoonPhase = Array.isArray(owmDailyForecast) && owmDailyForecast[0]?.moon_phase != null
+        ? owmDailyForecast[0].moon_phase
+        : null;
+      const moonWaxing = todayMoonPhase != null ? todayMoonPhase < 0.5 : null;
+      setCelestialTimes({
+        sun: currentForecast?.sun,
+        moon: currentForecast?.moon
+          ? { ...currentForecast.moon, waxing: moonWaxing ?? undefined }
+          : undefined,
+      });
 
       const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
       setBaseAuroraScore(baseScore);

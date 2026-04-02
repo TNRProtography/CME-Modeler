@@ -23,6 +23,7 @@ interface KpForecastTimelineProps {
   sunsetMs?:         number | null; // Unix ms UTC from celestialTimes.sun.set
   moonRiseMs?:       number | null; // Unix ms UTC from celestialTimes.moon.rise
   moonSetMs?:        number | null; // Unix ms UTC from celestialTimes.moon.set
+  moonWaxing?:       boolean | null; // true=growing, false=shrinking, null=unknown
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -211,9 +212,14 @@ interface VisInfo {
   summary:  string; // single overarching sentence shown in compact panel
 }
 
-function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night', isMoonUp = true): VisInfo {
+function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night', isMoonUp = true, dayIndex = 0, waxing: boolean | null = null): VisInfo {
+  // Adjust illumination by ±4% per forecast day (moon gains/loses ~4%/day)
+  // waxing=true → growing (+4%/day), waxing=false → shrinking (-4%/day)
+  const moonAdj = dayIndex > 0 && waxing != null
+    ? Math.max(0, Math.min(100, moon + dayIndex * (waxing ? 4 : -4)))
+    : moon;
   // Only report moon interference when the moon is actually above the horizon
-  const ml = isMoonUp ? moonLabel(moon) : 'Moon is below the horizon — no interference';
+  const ml = isMoonUp ? moonLabel(moonAdj) : 'Moon is below the horizon — no interference';
 
   // Sky brightness note — added to tip for daytime/twilight slots
   const skyNote =
@@ -586,6 +592,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   sunsetMs,
   moonRiseMs,
   moonSetMs,
+  moonWaxing,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
@@ -753,7 +760,15 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     return false;
   })();
 
-  const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky, selIsMoonUp) : null;
+  // Day index: how many NZT calendar days from now to the selected slot
+  const selDayIndex = (() => {
+    if (!sel) return 0;
+    const NZT_D = NZ_OFFSET_H * 3600000;
+    const nowMid  = Date.now() + NZT_D; const nowDay = nowMid - (nowMid % 86400000);
+    const selMid  = sel.utcMs + NZT_D;  const selDay = selMid - (selMid % 86400000);
+    return Math.max(0, Math.round((selDay - nowDay) / 86400000));
+  })();
+  const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky, selIsMoonUp, selDayIndex, moonWaxing ?? null) : null;
   // For daytime/twilight slots with elevated KP, append the sun note to the tip
   const daySkyNote =
     selSky === 'day'      ? 'The sun is currently up — aurora is not visible in daylight even during a storm.'
