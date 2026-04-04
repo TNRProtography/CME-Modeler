@@ -20,6 +20,9 @@ interface VisibilityForecastPanelProps {
   substormRiskData: SubstormRiskData | null;
   recentSightings: SightingReport[];
   isDaylight: boolean;
+  moonIllumination?: number | null;
+  moonRiseMs?: number | null;
+  moonSetMs?: number | null;
   userLatitude?: number | null;
   userLongitude?: number | null;
 }
@@ -378,6 +381,9 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   substormRiskData,
   recentSightings,
   isDaylight,
+  moonIllumination,
+  moonRiseMs,
+  moonSetMs,
   userLatitude,
   userLongitude,
 }) => {
@@ -452,6 +458,26 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
   const vis120 = useMemo(() => getVisibilityPhrase(score120, 'low'), [score120]);
 
+  const daylightNowLine = useMemo(() => {
+    const score = Math.round(nowScore);
+    const level = workerLevel ?? 'Unknown';
+    const bzTxt = bz != null ? `${bz > 0 ? '+' : ''}${bz.toFixed(1)} nT` : 'n/a';
+    return `Current activity: score ${score}/100 · ${level} · IMF Bz ${bzTxt}.`;
+  }, [nowScore, workerLevel, bz]);
+
+  const daylightMoonLine = useMemo(() => {
+    const now = Date.now();
+    const illum = moonIllumination != null ? `${Math.round(moonIllumination)}% illuminated` : 'illumination unavailable';
+    if (moonRiseMs == null || moonSetMs == null) return `Moon data: ${illum}.`;
+
+    const moonUp = moonRiseMs <= moonSetMs
+      ? now >= moonRiseMs && now <= moonSetMs
+      : now >= moonRiseMs || now <= moonSetMs;
+    return moonUp
+      ? `Moon is currently up (${illum}) — this may wash out faint aurora later.`
+      : `Moon is currently down (${illum}) — darker sky expected when night begins.`;
+  }, [moonIllumination, moonRiseMs, moonSetMs]);
+
   // Always show forecast slots when it's dark — phrases reflect location.
   const showForecast = true;
 
@@ -459,9 +485,13 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     return (
       <div className="col-span-12 card bg-neutral-950/80 p-5 h-full flex flex-col">
         <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
-        <div className="flex items-center gap-3 text-neutral-400 text-sm">
+        <div className="flex items-start gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
-          <span>It's still daylight — aurora is only visible after dark. Come back after dark.</span>
+          <div className="space-y-1">
+            <p>It&apos;s still daylight — aurora is only visible after dark. Come back after sunset.</p>
+            <p className="text-xs text-neutral-500">{daylightNowLine}</p>
+            <p className="text-xs text-neutral-500">{daylightMoonLine}</p>
+          </div>
         </div>
       </div>
     );

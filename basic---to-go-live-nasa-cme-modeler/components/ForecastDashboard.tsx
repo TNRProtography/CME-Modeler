@@ -542,6 +542,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     substormRiskData={substormRiskData}
                                     recentSightings={recentSightings}
                                     isDaylight={isDaylight}
+                                    moonIllumination={celestialTimes?.moon?.illumination ?? null}
+                                    moonRiseMs={celestialTimes?.moon?.rise ?? null}
+                                    moonSetMs={celestialTimes?.moon?.set ?? null}
                                     userLatitude={userLatitude}
                                     userLongitude={userLongitude}
                                 />
@@ -584,6 +587,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     substormRiskData={substormRiskData}
                                     recentSightings={recentSightings}
                                     isDaylight={isDaylight}
+                                    moonIllumination={celestialTimes?.moon?.illumination ?? null}
+                                    moonRiseMs={celestialTimes?.moon?.rise ?? null}
+                                    moonSetMs={celestialTimes?.moon?.set ?? null}
                                     userLatitude={userLatitude}
                                     userLongitude={userLongitude}
                                 />
