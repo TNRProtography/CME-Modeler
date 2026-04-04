@@ -11,7 +11,6 @@ import AuroraSightings from './AuroraSightings';
 import { VisibilityForecastPanel } from './VisibilityForecastPanel';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
-import { UnifiedForecastPanel } from './UnifiedForecastPanel';
 import ForecastChartPanel from './ForecastChartPanel';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
@@ -94,12 +93,6 @@ interface Camera {
 }
 
 // --- HELPER FUNCTIONS ---
-const getForecastScoreColorKey = (score: number) => {
-    if (score >= 80) return 'pink'; if (score >= 50) return 'purple'; if (score >= 40) return 'red';
-    if (score >= 25) return 'orange'; if (score >= 10) return 'yellow';
-    return 'gray';
-};
-
 const getGaugeStyle = (
     value: number | null,
     type: 'power' | 'speed' | 'density' | 'bt' | 'bz'
@@ -132,16 +125,6 @@ const getGaugeStyle = (
     const percentage = Math.max(0, Math.min(100, (Math.abs(value) / maxExpected) * 100));
 
     return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
-};
-
-const getAuroraEmoji = (score: number | null) => {
-    if (score === null) return '❓';
-    if (score >= 80) return '🤩';
-    if (score >= 50) return '🌌';
-    if (score >= 35) return '📱';
-    if (score >= 20) return '📷';
-    if (score >= 10) return '😐';
-    return '😴';
 };
 
 const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
@@ -217,7 +200,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
-        owmDailyForecast, locationBlurb, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
+        owmDailyForecast, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
         userLatitude, userLongitude, locationFailed, isOutsideNZ
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
@@ -386,73 +369,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const densityLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allDensityData)), [allDensityData]);
     const tempLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allTempData)), [allTempData]);
 
-    const simpleViewStatus = useMemo(() => {
-        const score = auroraScore ?? 0;
-        if (score >= 80) return { text: 'Huge Aurora Visible', emoji: '🤩' };
-        if (score >= 50) return { text: 'Eye Visibility Possible', emoji: '👁️' };
-        if (score >= 35) return { text: 'Phone Visibility Possible', emoji: '📱' };
-        if (score >= 20) return { text: 'Camera Visibility Possible', emoji: '📷' };
-        if (score >= 10) return { text: 'Minimal Activity', emoji: '😐' };
-        return { text: 'No Aurora Expected', emoji: '😞' };
-    }, [auroraScore]);
-
-    const forecastLines = useMemo(() => {
-        const now = Date.now();
-        const sunrise = celestialTimes?.sun?.rise ?? null;
-        const sunset = celestialTimes?.sun?.set ?? null;
-        const moonrise = celestialTimes?.moon?.rise ?? null;
-        const moonset = celestialTimes?.moon?.set ?? null;
-        const darkBufferMs = 90 * 60 * 1000;
-        const sunUp = sunrise && sunset ? now >= sunrise && now <= sunset : isDaylight;
-        const formatTime = (ts: number | null) =>
-            ts ? new Date(ts).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' }) : '—';
-        const sunriseText = formatTime(sunrise);
-        const sunsetText = formatTime(sunset);
-        const darkStart = sunset ? sunset + darkBufferMs : null;
-        const darkEnd = sunrise ? sunrise - darkBufferMs : null;
-        const darkText = darkStart && darkEnd
-            ? `Dark enough ~${formatTime(darkStart)}–${formatTime(darkEnd)}`
-            : 'Darkness window unavailable';
-
-        const score = auroraScore ?? 0;
-        let actionLine = 'Low odds tonight—stay home unless you are already outside.';
-        if (sunUp) {
-            actionLine = 'The sun is up—stay home for now and check back after dark.';
-        } else if (substormForecast.status === 'ONSET') {
-            actionLine = 'Aurora is happening now—get outside and look south immediately.';
-        } else if (substormForecast.status === 'IMMINENT_30') {
-            actionLine = 'Substorm is about to happen—go to your viewing spot and be ready.';
-        } else if (substormForecast.status === 'LIKELY_60') {
-            actionLine = 'Be on alert—substorm activity is likely within the next hour.';
-        } else if (score >= 50) {
-            actionLine = 'Good conditions—go to your viewing spot and stay ready.';
-        } else if (score >= 35) {
-            actionLine = 'Phone/camera chances—be on alert in a dark location.';
-        } else if (score >= 20) {
-            actionLine = 'Camera-only chances—consider a quick check if you are nearby.';
-        }
-
-        const sunLine = sunrise && sunset
-            ? `Sunrise ${sunriseText} · Sunset ${sunsetText}`
-            : 'Sunrise/Sunset times unavailable';
-
-        const moonIllumination = celestialTimes?.moon?.illumination;
-        const moonTimes = moonrise && moonset
-            ? `Moonrise ${formatTime(moonrise)} · Moonset ${formatTime(moonset)}`
-            : 'Moonrise/Moonset times unavailable';
-        const moonLine = moonIllumination !== undefined
-            ? `${moonTimes} · Illumination ${Math.round(moonIllumination)}%`
-            : `${moonTimes} · Illumination unavailable`;
-
-        return [
-            sunUp ? 'The sun is up right now.' : 'The sun is down right now.',
-            actionLine,
-            sunLine,
-            darkText,
-            moonLine
-        ];
-    }, [auroraScore, celestialTimes, isDaylight, substormForecast.status]);
-
     // ── Simple view timeline slots ────────────────────────────────────────────
     // 15 / 30 / 60 min — same plain-english phrases as VisibilityForecastPanel
     // 2 hr              — SpotTheAurora score, lower confidence phrasing
@@ -617,21 +533,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             )}
-                            {/* Score + What to expect — side by side, equal height */}
+                            {/* What to expect — full width */}
                             <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
-                            <div className="col-span-12 lg:col-span-5 card bg-neutral-950/80 p-6 text-center flex flex-col justify-center">
-                                <div className="text-7xl font-extrabold" style={{color: GAUGE_COLORS[getForecastScoreColorKey(auroraScore ?? 0)].solid}}>{(auroraScore ?? 0).toFixed(1)}%</div>
-                                <div className="text-2xl mt-2 font-semibold">{simpleViewStatus.emoji} {simpleViewStatus.text}</div>
-                                <div className="mt-6 bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-left">
-                                    <div className="text-sm font-semibold text-amber-300 mb-2">Tonight's Forecast</div>
-                                    <div className="space-y-2 text-sm text-neutral-200">
-                                        {forecastLines.map((line) => (
-                                            <p key={line} className="leading-relaxed">{line}</p>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="col-span-12 lg:col-span-7 flex flex-col">
+                            <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
                                     substormForecast={substormForecast}
@@ -671,12 +575,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             )}
-                            {/* Score + What to expect side by side, equal height */}
+                            {/* What to expect — full width */}
                             <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
-                            <div className="col-span-12 lg:col-span-5 flex flex-col">
-                                <UnifiedForecastPanel score={auroraScore} isDaylight={isDaylight} forecastLines={forecastLines} lastUpdated={lastUpdated} locationBlurb={locationBlurb} getGaugeStyle={getGaugeStyle} getScoreColorKey={getForecastScoreColorKey} getAuroraEmoji={getAuroraEmoji} gaugeColors={GAUGE_COLORS} onOpenModal={() => openModal('unified-forecast')} substormForecast={substormForecast} />
-                            </div>
-                            <div className="col-span-12 lg:col-span-7 flex flex-col">
+                            <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
                                     substormForecast={substormForecast}
