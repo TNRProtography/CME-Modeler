@@ -353,7 +353,15 @@ const EPAMPanel: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-semibold text-white">Energetic Particle Monitor</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-white">Energetic Particle Monitor</h2>
+            <button
+              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+              title="Energetic Particle Monitor: upstream particle channels (ACE/GOES/STEREO) used as early context for incoming solar disturbances. Elevated particles support storm-watch context but are not a direct aurora-brightness forecast."
+            >
+              ?
+            </button>
+          </div>
           <p className="text-xs text-neutral-500 mt-0.5">Solar storm early warning · Upstream satellites · Aurora potential indicator</p>
         </div>
         <div className="flex items-center gap-2">

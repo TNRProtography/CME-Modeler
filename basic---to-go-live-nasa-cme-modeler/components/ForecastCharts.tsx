@@ -982,10 +982,10 @@ interface ForecastTrendChartProps {
 // are calibrated by observation rather than first principles.
 function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): number {
   if (bayOnset || substormScore >= 85) return 1.00; // ONSET — full release
-  if (substormScore >= 70)             return 0.85; // IMMINENT_30
-  if (substormScore >= 50)             return 0.65; // LIKELY_60
-  if (substormScore >= 30)             return 0.45; // WATCH
-  return 0.20; // QUIET — minimal steady-state convection, energy not releasing
+  if (substormScore >= 70)             return 0.90; // IMMINENT_30
+  if (substormScore >= 50)             return 0.75; // LIKELY_60
+  if (substormScore >= 30)             return 0.55; // WATCH
+  return 0.38; // QUIET — keep a non-zero baseline for weak steady auroral arcs
 }
 
 // Take the PEAK substorm score within a ±10 minute window around a given timestamp.
@@ -1018,7 +1018,7 @@ function peakSubstormNearTs(
 function computeVisibilityPct(
   rawScore: number,
   moonIllum: number | null | undefined,
-  substormMult: number = 0.20, // default: quiet / no substorm data
+  substormMult: number = 0.38, // default: quiet / no substorm data
 ): number {
   // The rawScore already has location adjustment applied by the server.
   // This function only applies the substorm release multiplier and moon penalty.
@@ -1033,9 +1033,10 @@ function computeVisibilityPct(
   // for this chart — location is already handled upstream in the score itself.
 
   // ── Moon penalty ──────────────────────────────────────────────────────────
-  // Bright moon reduces visibility probability. Full moon = -25% on the score.
+  // Keep this gentle: moonlight can wash out faint structure, but should not
+  // fully erase real aurora potential. Full moon penalty capped to ~12%.
   if (moonIllum != null) {
-    const moonPenalty = (moonIllum / 100) * 0.25;
+    const moonPenalty = Math.sqrt(Math.max(0, Math.min(100, moonIllum)) / 100) * 0.12;
     pct = pct * (1 - moonPenalty);
   }
 
@@ -1137,7 +1138,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         // of the aurora potential was actually released by substorm activity.
         const visData = auroraScoreHistory.map(d => {
             const sub = substormHistory ? peakSubstormNearTs(d.timestamp, substormHistory) : null;
-            const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.20;
+            const mult = sub ? substormReleaseMultiplier(sub.score, sub.bay_onset_flag) : 0.38;
             return {
                 x: d.timestamp,
                 y: computeVisibilityPct(d.finalScore, moonIllumination, mult),

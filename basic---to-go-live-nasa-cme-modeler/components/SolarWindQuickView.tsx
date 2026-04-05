@@ -167,132 +167,121 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   const hasData = mag.length > 0 || spd.length > 0;
 
   // ── Interplanetary shock detector ─────────────────────────────────────────
-  // Fast-forward IP shock (CME shockwave at L1) shows as a SIMULTANEOUS
-  // step-change in speed, density and Bt that SUSTAINS over multiple readings.
-  // Based on Cash et al. (2014) and Vorotnikov et al. (2008):
-  //   Speed   ≥ 40 km/s jump from 20-min baseline, sustained ≥ 2 readings
-  //   Density ≥ 2× from baseline, sustained ≥ 2 readings
-  //   Bt      ≥ 8 nT jump OR ≥ 50% from baseline, sustained ≥ 2 readings
-  //   ≥ 2 of 3 parameters must fire simultaneously
+  // This detector is intentionally conservative:
+  // - uses median pre/post windows (robust to spikes/gaps),
+  // - requires multi-parameter compression/rarefaction consistency,
+  // - and limits visible events to recent windows.
+  //
+  // Practical science intent:
+  // - Forward IP shock (CME/SIR front): V↑, N↑, Pdyn↑, usually |B|↑ and Tp↑.
+  // - Reverse IP shock / trailing rarefaction edge: V↓, N↓, Pdyn↓.
+  // - IMF enhancement/discontinuity: strong magnetic step/rotation with little plasma jump.
   const shockDetection = useMemo(() => {
-    // Detect any significant solar wind discontinuity — not just upward jumps.
-    // Types we care about:
-    //   Fast-forward shock (CME):  speed↑  density↑  temp↑  Bt↑
-    //   Reverse shock:             speed↓  density↓  temp↓  Bt may ↑ or ↓
-    //   IMF discontinuity:         Bt↑ and/or Bz sudden large rotation, plasma unchanged
-    //   Magnetic cloud boundary:   Bt↑,  density↓  temp↓  (enter smooth flux rope)
-    //
-    // Rule: use ABSOLUTE magnitude of reading-to-reading change, not sign.
-    // A jump of −60 km/s is just as significant as +60 km/s.
-    // Bz is checked separately — a large swing in Bz is always noteworthy
-    // even if Bt, speed and density are quiet.
-    //
-    // Thresholds (conservative to avoid noise, sensitive enough for weak CMEs):
-    //   Speed:   |Δ| ≥ 40 km/s in one step
-    //   Density: ratio ≥ 1.8× or ≤ 0.55× (up or down)
-    //   Temp:    ratio ≥ 2.5× or ≤ 0.4×
-    //   Bt:      |Δ| ≥ 5 nT
-    //   Bz:      |Δ| ≥ 8 nT (large IMF rotation)
-    //
-    // Require ≥ 2 of 5 parameters to fire within the same 3-min bucket.
-    // Exception: Bt + Bz together is enough (pure IMF shock — 1 plasma param not needed).
-    // Alert stays visible up to 12h after the event.
-
-    const LOOK_BACK = 12 * 3600000;
+    const LOOK_BACK = 6 * 3600000; // UI alerts should represent very recent structure only
+    const CANDIDATE_STEP = 3 * 60000;
+    const PRE_WIN = 18 * 60000;
+    const POST_WIN = 12 * 60000;
     const now = Date.now();
-    const BUCKET = 3 * 60000;
-    const bucket = (t: number) => Math.round(t / BUCKET) * BUCKET;
 
-    const spdSorted = [...speedData  ].sort((a, b) => a.x    - b.x);
-    const denSorted = [...densityData].sort((a, b) => a.x    - b.x);
-    const tmpSorted = [...tempData   ].sort((a, b) => a.x    - b.x);
+    const spdSorted = [...speedData].sort((a, b) => a.x - b.x);
+    const denSorted = [...densityData].sort((a, b) => a.x - b.x);
+    const tmpSorted = [...tempData].sort((a, b) => a.x - b.x);
     const magSorted = [...magneticData].sort((a, b) => a.time - b.time);
+    if (spdSorted.length < 10 || denSorted.length < 10 || magSorted.length < 10) return null;
 
-    if (spdSorted.length < 4 || magSorted.length < 4) return null;
-
-    // Maps: bucket → jump magnitude (sign preserved for display)
-    const spdMap = new Map<number, number>();
-    const denMap = new Map<number, number>(); // ratio (>1 or <1)
-    const tmpMap = new Map<number, number>(); // ratio
-    const btMap  = new Map<number, number>(); // delta nT
-    const bzMap  = new Map<number, number>(); // delta nT (signed, for display)
-
-    for (let i = 1; i < spdSorted.length; i++) {
-      const delta = spdSorted[i].y - spdSorted[i-1].y;
-      if (Math.abs(delta) >= 40) spdMap.set(bucket(spdSorted[i].x), delta);
-    }
-    for (let i = 1; i < denSorted.length; i++) {
-      const prev = denSorted[i-1].y; const cur = denSorted[i].y;
-      if (prev > 0) {
-        const ratio = cur / prev;
-        if (ratio >= 1.8 || ratio <= 0.55) denMap.set(bucket(denSorted[i].x), ratio);
-      }
-    }
-    for (let i = 1; i < tmpSorted.length; i++) {
-      const prev = tmpSorted[i-1].y; const cur = tmpSorted[i].y;
-      if (prev > 0) {
-        const ratio = cur / prev;
-        if (ratio >= 2.5 || ratio <= 0.4) tmpMap.set(bucket(tmpSorted[i].x), ratio);
-      }
-    }
-    for (let i = 1; i < magSorted.length; i++) {
-      const btDelta = magSorted[i].bt - magSorted[i-1].bt;
-      if (Math.abs(btDelta) >= 5) btMap.set(bucket(magSorted[i].time), btDelta);
-      const bzDelta = magSorted[i].bz - magSorted[i-1].bz;
-      if (Math.abs(bzDelta) >= 8) bzMap.set(bucket(magSorted[i].time), bzDelta);
-    }
-
-    // Find best event in lookback window
-    const allBuckets = new Set([
-      ...spdMap.keys(), ...denMap.keys(),
-      ...tmpMap.keys(), ...btMap.keys(), ...bzMap.keys(),
-    ]);
+    const median = (vals: number[]): number => {
+      if (!vals.length) return NaN;
+      const v = [...vals].sort((a, b) => a - b);
+      const m = Math.floor(v.length / 2);
+      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+    };
+    const sample = (arr: { x: number; y: number }[], a: number, b: number): number[] =>
+      arr.filter(p => p.x >= a && p.x < b).map(p => p.y).filter(n => Number.isFinite(n));
+    const sampleMag = (a: number, b: number): { bt: number[]; bz: number[] } => ({
+      bt: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bt).filter(n => Number.isFinite(n)),
+      bz: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bz).filter(n => Number.isFinite(n)),
+    });
 
     let bestEvent: {
-      t: number; hits: number; label: string;
+      t: number; score: number; label: string;
       spdJ: number; denR: number; tmpR: number; btJ: number; bzJ: number;
     } | null = null;
 
-    for (const t of allBuckets) {
-      if (t < now - LOOK_BACK || t > now) continue;
+    const tStart = Math.max(now - LOOK_BACK, spdSorted[0].x + PRE_WIN);
+    for (let t = tStart; t <= now - POST_WIN; t += CANDIDATE_STEP) {
+      const preSpd = sample(spdSorted, t - PRE_WIN, t);
+      const postSpd = sample(spdSorted, t, t + POST_WIN);
+      const preDen = sample(denSorted, t - PRE_WIN, t);
+      const postDen = sample(denSorted, t, t + POST_WIN);
+      const preTmp = sample(tmpSorted, t - PRE_WIN, t);
+      const postTmp = sample(tmpSorted, t, t + POST_WIN);
+      const preMag = sampleMag(t - PRE_WIN, t);
+      const postMag = sampleMag(t, t + POST_WIN);
+      if (preSpd.length < 3 || postSpd.length < 3 || preDen.length < 3 || postDen.length < 3 || preMag.bt.length < 3 || postMag.bt.length < 3) continue;
 
-      const hasSPD = spdMap.has(t);
-      const hasDEN = denMap.has(t);
-      const hasTMP = tmpMap.has(t);
-      const hasBT  = btMap.has(t);
-      const hasBZ  = bzMap.has(t);
+      const spd1 = median(preSpd), spd2 = median(postSpd);
+      const den1 = median(preDen), den2 = median(postDen);
+      const tmp1 = median(preTmp), tmp2 = median(postTmp);
+      const bt1 = median(preMag.bt), bt2 = median(postMag.bt);
+      const bz1 = median(preMag.bz), bz2 = median(postMag.bz);
+      if (![spd1, spd2, den1, den2, bt1, bt2, bz1, bz2].every(Number.isFinite)) continue;
 
-      const hits = [hasSPD, hasDEN, hasTMP, hasBT, hasBZ].filter(Boolean).length;
+      const pDyn1 = den1 > 0 ? den1 * spd1 * spd1 : NaN; // proportional dynamic pressure proxy
+      const pDyn2 = den2 > 0 ? den2 * spd2 * spd2 : NaN;
+      const spdDelta = spd2 - spd1;
+      const denRatio = den1 > 0 ? den2 / den1 : NaN;
+      const tmpRatio = tmp1 > 0 ? tmp2 / tmp1 : NaN;
+      const btDelta = bt2 - bt1;
+      const btRatio = bt1 > 0 ? bt2 / bt1 : NaN;
+      const bzDelta = bz2 - bz1;
+      const pDynRatio = pDyn1 > 0 ? pDyn2 / pDyn1 : NaN;
+      if (![denRatio, tmpRatio, btRatio, pDynRatio].every(Number.isFinite)) continue;
 
-      // IMF-only exception: Bt + Bz together counts even without plasma change
-      const imfOnly = hasBT && hasBZ && !hasSPD && !hasDEN && !hasTMP;
-      if (hits < 2 && !imfOnly) continue;
+      const fSpd = spdDelta >= 25;
+      const fDen = denRatio >= 1.5;
+      const fTmp = tmpRatio >= 1.2;
+      const fBt = btDelta >= 3 || btRatio >= 1.3;
+      const fP = pDynRatio >= 1.8;
+      const forwardCore = Number(fSpd) + Number(fDen) + Number(fP);
+      const forwardSupport = Number(fTmp) + Number(fBt);
 
-      // Classify the event type from which parameters fired and their direction
-      const spdVal  = spdMap.get(t) ?? 0;
-      const denVal  = denMap.get(t) ?? 1;
-      const btVal   = btMap.get(t)  ?? 0;
-      const bzVal   = bzMap.get(t)  ?? 0;
+      const rSpd = spdDelta <= -25;
+      const rDen = denRatio <= 0.75;
+      const rTmp = tmpRatio <= 0.85;
+      const rP = pDynRatio <= 0.65;
+      const reverseHits = Number(rSpd) + Number(rDen) + Number(rTmp) + Number(rP);
 
-      let label = 'Solar Wind Discontinuity';
-      if (hasSPD && hasDEN && hasTMP) {
-        label = spdVal > 0 ? 'CME Has Hit the Satellites!' : 'Reverse Shock Detected';
-      } else if (imfOnly || (hasBT && hasBZ && hits <= 2)) {
-        label = 'IMF Shock — Watch Bz';
-      } else if (hasBT && (hasDEN || hasTMP) && (denVal < 1 || (tmpMap.get(t) ?? 1) < 1)) {
-        label = 'Magnetic Cloud Boundary';
-      } else if (hasSPD && spdVal > 0) {
-        label = 'CME Has Hit the Satellites!';
+      const imfEnhancement =
+        (btDelta >= 4 || btRatio >= 1.4 || Math.abs(bzDelta) >= 8) &&
+        Math.abs(spdDelta) < 20 &&
+        denRatio > 0.75 && denRatio < 1.35 &&
+        pDynRatio > 0.7 && pDynRatio < 1.5;
+
+      let label = '';
+      let score = 0;
+      if (forwardCore >= 2 && (forwardCore + forwardSupport) >= 3) {
+        label = 'Forward Interplanetary Shock (IPS)';
+        score = forwardCore * 2 + forwardSupport;
+      } else if (reverseHits >= 3) {
+        label = 'Reverse Interplanetary Shock';
+        score = reverseHits * 2;
+      } else if (imfEnhancement) {
+        label = 'IMF Enhancement / Discontinuity';
+        score = 3 + Number(Math.abs(bzDelta) >= 8);
+      } else {
+        continue;
       }
 
-      if (!bestEvent || hits > bestEvent.hits || (hits === bestEvent.hits && t > bestEvent.t)) {
+      if (!bestEvent || score > bestEvent.score || (score === bestEvent.score && t > bestEvent.t)) {
         bestEvent = {
-          t, hits, label,
-          spdJ: Math.round(spdMap.get(t) ?? 0),
-          denR: +(denMap.get(t) ?? 0).toFixed(1),
-          tmpR: +(tmpMap.get(t) ?? 0).toFixed(1),
-          btJ:  +(btMap.get(t)  ?? 0).toFixed(1),
-          bzJ:  +(bzMap.get(t)  ?? 0).toFixed(1),
+          t,
+          score,
+          label,
+          spdJ: Math.round(spdDelta),
+          denR: +denRatio.toFixed(2),
+          tmpR: +tmpRatio.toFixed(2),
+          btJ: +btDelta.toFixed(1),
+          bzJ: +bzDelta.toFixed(1),
         };
       }
     }
@@ -300,6 +289,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
     if (!bestEvent) return null;
 
     const ageMin = Math.round((now - bestEvent.t) / 60000);
+    if (ageMin > 360) return null;
     const ageStr = ageMin < 2   ? 'just now'
       : ageMin < 60 ? `~${ageMin} min ago`
       : `~${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? ` ${ageMin % 60}min` : ''} ago`;
@@ -320,7 +310,15 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h2 className="text-base font-semibold text-white">Solar Wind — Quick View</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-white">Solar Wind Quick View</h2>
+            <button
+              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+              title="Solar Wind Quick View: live L1 magnetic field and plasma context (Bz/Bt, speed, density, temperature) used to assess near-term aurora-driving conditions and shock/compression signatures."
+            >
+              ?
+            </button>
+          </div>
           <p className="text-xs text-neutral-500 mt-0.5">
             ACE MAG &amp; SWEPAM · Each dot = one reading
           </p>
