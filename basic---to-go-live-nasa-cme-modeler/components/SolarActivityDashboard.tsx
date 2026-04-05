@@ -911,6 +911,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const CORONAGRAPH_DIFF_GAIN = 8.5;
   const CORONAGRAPH_DIFF_NOISE_FLOOR = 8;
   const CORONAGRAPH_DIFF_GAMMA = 0.45;
+  const SUVI_DIFF_GAIN = 10.0;
+  const SUVI_DIFF_NOISE_FLOOR = 6;
+  const SUVI_DIFF_GAMMA = 0.42;
 
   const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
     const t = Math.min(1, Math.max(0, normalized));
@@ -2308,9 +2311,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
           const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
           const rawDelta = Math.abs(bGray - aGray);
-          const aboveNoise = Math.max(0, rawDelta - CORONAGRAPH_DIFF_NOISE_FLOOR);
-          const amplified = Math.min(255, aboveNoise * CORONAGRAPH_DIFF_GAIN);
-          const normalized = Math.pow(amplified / 255, CORONAGRAPH_DIFF_GAMMA);
+          const aboveNoise = Math.max(0, rawDelta - SUVI_DIFF_NOISE_FLOOR);
+          const amplified = Math.min(255, aboveNoise * SUVI_DIFF_GAIN);
+          const normalized = Math.pow(amplified / 255, SUVI_DIFF_GAMMA);
           const [r, g, b] = colorizeCoronagraphDelta(normalized);
           out.data[i] = r;
           out.data[i + 1] = g;
