@@ -1,7 +1,6 @@
 // --- START OF FILE src/components/ForecastChartPanel.tsx ---
 
 import React from 'react';
-import GuideIcon from './icons/GuideIcon';
 
 interface ForecastChartPanelProps {
   title: string;
@@ -49,10 +48,10 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
           )}
           <button 
             onClick={onOpenModal} 
-            className="p-1 text-neutral-400 hover:text-neutral-100" 
+            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" 
             title={`About ${title}`}
           >
-            <GuideIcon className="w-5 h-5" />
+            ?
           </button>
         </div>
         <div className="text-right">
