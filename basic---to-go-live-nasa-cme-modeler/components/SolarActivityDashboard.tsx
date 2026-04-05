@@ -800,7 +800,7 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message }) => (
   </div>
 );
 
-const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | null }> = ({ summary }) => {
+const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | null; onOpenModal: (id: string) => void }> = ({ summary, onOpenModal }) => {
   if (!summary) {
     return (
       <div className="col-span-12 card bg-neutral-950/80 p-6 text-center text-neutral-400 italic">
@@ -812,9 +812,12 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-6 space-y-4">
-      <h2 className="text-2xl font-bold text-white text-center">24-Hour Solar Summary</h2>
+      <div className="flex items-center justify-center gap-2">
+        <h2 className="text-2xl font-bold text-white text-center">24-Hour Solar Summary</h2>
+        <button onClick={() => onOpenModal('solar-summary')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="About 24-hour summary metrics">?</button>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center" title="Peak X-ray class over the last 24h. Higher classes indicate stronger flare energy and elevated CME risk context.">
           <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak X-ray Flux</h3>
           <p className="text-5xl font-bold" style={{ color: getColorForFlux(summary.highestXray.flux) }}>
             {summary.highestXray.class}
@@ -822,7 +825,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
           <p className="text-sm text-neutral-400 mt-1">at {formatTime(summary.highestXray.timestamp)}</p>
         </div>
 
-        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center" title="Counts of stronger flares and potential Earth-directed CME-linked events in the last 24h.">
           <h3 className="text-lg font-semibold text-neutral-200 mb-2">Solar Flares</h3>
           <div className="flex justify-center items-center gap-6 text-2xl font-bold">
             <div>
@@ -840,7 +843,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
           </div>
         </div>
 
-        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center">
+        <div className="bg-neutral-900/70 p-4 rounded-lg border border-neutral-700/60 text-center" title="Peak >10 MeV proton flux over the last 24h. Elevated proton environments indicate disturbed heliospheric conditions.">
           <h3 className="text-lg font-semibold text-neutral-200 mb-2">Peak Proton Flux</h3>
           <p className="text-5xl font-bold" style={{ color: getColorForProtonFlux(summary.highestProton.flux) }}>
             {summary.highestProton.class}
@@ -1124,6 +1127,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   `;
 
   const tooltipContent = useMemo(() => ({
+    'current-status': buildStatTooltip(
+      'Current Solar Status',
+      'A blended now-cast combining live X-ray class, flare probabilities, and active-region load.',
+      'Higher status tiers generally mean a more eruption-prone Sun and greater chance of aurora-relevant CME/solar-wind disturbances in coming days.',
+      'This is a context score (not a direct aurora forecast): Earth impact still depends on CME trajectory, speed, and IMF orientation on arrival.'
+    ),
+    'solar-summary': buildStatTooltip(
+      '24-Hour Solar Summary',
+      'A compact digest of the strongest X-ray activity, strongest proton conditions, and flare/CME counts from the last day.',
+      'Helps quickly gauge whether the Sun has recently been quiet, moderately active, or highly eruptive.',
+      'Use with coronagraph and in-situ solar-wind data: strong recent activity can raise risk windows, but timing and geoeffectiveness vary.'
+    ),
     'xray-flux': buildStatTooltip(
       'GOES X-ray Flux',
       'A live measure of solar X-ray output from flares.',
@@ -1196,7 +1211,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const contentData = tooltipContent[id as keyof typeof tooltipContent];
     if (contentData) {
       let title = '';
-      if (id === 'xray-flux') title = 'About GOES X-ray Flux';
+      if (id === 'current-status') title = 'About Current Solar Status';
+      else if (id === 'solar-summary') title = 'About 24-Hour Solar Summary';
+      else if (id === 'xray-flux') title = 'About GOES X-ray Flux';
       else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
       else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
       else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
@@ -2120,13 +2137,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           <main className="grid grid-cols-12 gap-5">
             <div className="col-span-12 card bg-neutral-950/80 p-4 mb-4 flex flex-col sm:flex-row justify-between items-center text-sm">
               <div className="flex-1 text-center sm:text-left mb-2 sm:mb-0">
-                <h3 className="text-neutral-200 font-semibold mb-1">
+                <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
+                  <h3 className="text-neutral-200 font-semibold">
                   Current Status: <span className={`font-bold ${
                     solarStatus.label === 'Quiet' ? 'text-green-400' :
                     solarStatus.label === 'Moderate' ? 'text-yellow-400' :
                     solarStatus.label === 'High' ? 'text-orange-400' : 'text-red-500'
                   }`}>{solarStatus.label}</span>
-                </h3>
+                  </h3>
+                  <button onClick={() => openModal('current-status')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="About current solar status">?</button>
+                </div>
                 <p>X-ray Flux: <span className="font-mono text-cyan-300">{currentXraySummary.flux !== null ? currentXraySummary.flux.toExponential(2) : 'N/A'}</span> ({currentXraySummary.class || 'N/A'})</p>
                 <p>Overall C flare probability: <span className="font-mono text-yellow-300">{solarStatus.overallCFlareProbability.toFixed(0)}%</span> · Overall M flare probability: <span className="font-mono text-orange-300">{solarStatus.overallMFlareProbability.toFixed(0)}%</span> · Overall X flare probability: <span className="font-mono text-red-300">{solarStatus.overallXFlareProbability.toFixed(0)}%</span></p>
                 <p>Sunspot regions: <span className="font-mono text-emerald-300">{solarStatus.sunspotCount}</span></p>
@@ -2137,7 +2157,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
             </div>
 
-            <SolarActivitySummaryDisplay summary={activitySummary} />
+            <SolarActivitySummaryDisplay summary={activitySummary} onOpenModal={openModal} />
 
             {/* --- SOLAR IMAGERY (Full Width) --- */}
             <div className="col-span-12 card bg-neutral-950/80 p-4 h-[700px] flex flex-col">
