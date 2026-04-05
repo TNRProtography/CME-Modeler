@@ -310,7 +310,15 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h2 className="text-base font-semibold text-white">Solar Wind — Quick View</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-white">Solar Wind Quick View</h2>
+            <button
+              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+              title="Solar Wind Quick View: live L1 magnetic field and plasma context (Bz/Bt, speed, density, temperature) used to assess near-term aurora-driving conditions and shock/compression signatures."
+            >
+              ?
+            </button>
+          </div>
           <p className="text-xs text-neutral-500 mt-0.5">
             ACE MAG &amp; SWEPAM · Each dot = one reading
           </p>

@@ -408,7 +408,15 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
     <div className="col-span-12 card bg-neutral-950/80 p-4">
       <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
         <div>
-          <h2 className="text-base font-semibold text-white">CME flux rope structure</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-white">CME flux rope structure</h2>
+            <button
+              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+              title="CME flux rope structure: in-situ magnetic-field rotation pattern used to infer rope orientation and estimate when southward Bz windows may occur (key for aurora intensity)."
+            >
+              ?
+            </button>
+          </div>
           <p className="text-xs text-neutral-500 mt-0.5">
             Inside magnetic flux rope · {hrsIn}h of rope data · {rotDesc}
           </p>
