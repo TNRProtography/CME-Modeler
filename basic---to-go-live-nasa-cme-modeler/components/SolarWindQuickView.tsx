@@ -135,6 +135,20 @@ function zeroLine(minT: number, maxT: number) {
   };
 }
 
+function shockLine(t: number, yMin: number, yMax: number) {
+  return {
+    label: 'Shock marker',
+    data: [{ x: t, y: yMin }, { x: t, y: yMax }],
+    borderColor: 'rgba(250, 204, 21, 0.95)',
+    borderWidth: 1.4,
+    borderDash: [5, 4],
+    pointRadius: 0,
+    showLine: true,
+    tension: 0,
+    order: 50,
+  };
+}
+
 const DOT   = 1.5;
 const HOVER = 4;
 
@@ -305,6 +319,37 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   const denOpts  = useMemo(() => makeOptions('n (/cm³)',     rangeMs, undefined, undefined, 'logarithmic', false), [rangeMs]);
   const spdOpts  = useMemo(() => makeOptions('km/s',         rangeMs, undefined, undefined, 'linear',       false), [rangeMs]);
   const tmpOpts  = useMemo(() => makeOptions('Temp (K)',     rangeMs, undefined, undefined, 'logarithmic', true),  [rangeMs]);
+  const shockT = shockDetection?.t && shockDetection.t >= cutoff && shockDetection.t <= maxT ? shockDetection.t : null;
+  const bzBtRange = useMemo(() => {
+    const vals = [...bzPts.map((p) => p.y), ...btPts.map((p) => p.y)].filter((v) => Number.isFinite(v));
+    if (!vals.length) return { min: -20, max: 20 };
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const pad = Math.max(2, (max - min) * 0.15);
+    return { min: min - pad, max: max + pad };
+  }, [bzPts, btPts]);
+  const denRange = useMemo(() => {
+    const vals = den.map((p) => p.y).filter((v) => Number.isFinite(v) && v > 0);
+    if (!vals.length) return { min: 0.1, max: 10 };
+    const min = Math.max(1e-3, Math.min(...vals) * 0.85);
+    const max = Math.max(min * 1.5, Math.max(...vals) * 1.2);
+    return { min, max };
+  }, [den]);
+  const spdRange = useMemo(() => {
+    const vals = spd.map((p) => p.y).filter((v) => Number.isFinite(v));
+    if (!vals.length) return { min: 300, max: 650 };
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const pad = Math.max(15, (max - min) * 0.15);
+    return { min: min - pad, max: max + pad };
+  }, [spd]);
+  const tmpRange = useMemo(() => {
+    const vals = tmp.map((p) => p.y).filter((v) => Number.isFinite(v) && v > 0);
+    if (!vals.length) return { min: 1e4, max: 1e6 };
+    const min = Math.max(1e3, Math.min(...vals) * 0.85);
+    const max = Math.max(min * 1.5, Math.max(...vals) * 1.2);
+    return { min, max };
+  }, [tmp]);
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-4">
@@ -316,7 +361,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             <h2 className="text-base font-semibold text-white">Solar Wind Quick View</h2>
             <button
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              title="Solar Wind Quick View: live L1 magnetic field and plasma context (Bz/Bt, speed, density, temperature) used to assess near-term aurora-driving conditions and shock/compression signatures."
+              title={`Solar Wind Quick View:\nLive L1 magnetic + plasma context from ACE (Bz/Bt, Phi, density, speed, temperature).\n\nHow to read shocks:\n• Forward Interplanetary Shock (IPS): compression front (speed↑, density↑, pressure↑; often Bt↑/Temp↑).\n• Reverse Interplanetary Shock: trailing/rarefaction-style drop (speed↓, density↓, pressure↓).\n• IMF Enhancement / Discontinuity: magnetic step/rotation with weaker plasma jump.\n\nWhen a shock is detected, a yellow dashed marker is drawn through all subplots at the detected time.`}
             >
               ?
             </button>
@@ -379,6 +424,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
               data={{
                 datasets: [
                   zeroLine(cutoff, maxT),
+                  ...(shockT != null ? [shockLine(shockT, bzBtRange.min, bzBtRange.max)] : []),
                   {
                     label: 'Bt (nT)',
                     data: btPts,
@@ -420,7 +466,9 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBackgroundColor: '#22d3ee',
                   pointBorderColor: 'transparent',
                   showLine: false,
-                }],
+                },
+                ...(shockT != null ? [shockLine(shockT, 0, 360)] : []),
+                ],
               }}
               options={phiOpts}
             />
@@ -439,7 +487,9 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBackgroundColor: '#fb923c',
                   pointBorderColor: 'transparent',
                   showLine: false,
-                }],
+                },
+                ...(shockT != null ? [shockLine(shockT, denRange.min, denRange.max)] : []),
+                ],
               }}
               options={denOpts}
             />
@@ -458,7 +508,9 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBackgroundColor: '#facc15',
                   pointBorderColor: 'transparent',
                   showLine: false,
-                }],
+                },
+                ...(shockT != null ? [shockLine(shockT, spdRange.min, spdRange.max)] : []),
+                ],
               }}
               options={spdOpts}
             />
@@ -477,7 +529,9 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBackgroundColor: '#4ade80',
                   pointBorderColor: 'transparent',
                   showLine: false,
-                }],
+                },
+                ...(shockT != null ? [shockLine(shockT, tmpRange.min, tmpRange.max)] : []),
+                ],
               }}
               options={tmpOpts}
             />
@@ -498,6 +552,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           { color: 'bg-orange-400',  label: 'Density' },
           { color: 'bg-yellow-400',  label: 'Speed' },
           { color: 'bg-green-400',   label: 'Temp' },
+          { color: 'bg-yellow-300',  label: 'Shock marker (detected)' },
         ].map(({ color, label }) => (
           <span key={label} className="flex items-center gap-1.5 text-xs text-neutral-500">
             <span className={`w-2 h-2 rounded-full ${color} inline-block flex-shrink-0`} />
