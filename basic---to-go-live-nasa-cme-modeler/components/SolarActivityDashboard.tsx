@@ -54,6 +54,24 @@ interface ActiveSunspotRegion {
   source: string | null;
 }
 
+type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1';
+interface CoronagraphFrame {
+  key: string;
+  ts: string;
+  fetched_at?: string | null;
+  url: string;
+}
+interface CoronagraphSourceState {
+  label: string;
+  frames: CoronagraphFrame[];
+  latest_meta?: { ts?: string | null } | null;
+}
+interface CoronagraphStateResponse {
+  ok: boolean;
+  updated_utc?: string;
+  sources?: Partial<Record<CoronagraphSourceKey, CoronagraphSourceState>>;
+}
+
 const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
   return Boolean(value && typeof value === 'object' && typeof value.region === 'string' && value.region.length > 0);
 };
@@ -136,7 +154,14 @@ const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
-const CCOR1_VIDEO_URL = 'https://services.swpc.noaa.gov/products/ccor1/mp4s/ccor1_last_24hrs.mp4';
+const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
+const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
+const CORONAGRAPH_SOURCES: { key: CoronagraphSourceKey; label: string }[] = [
+  { key: 'ccor1', label: 'GOES-19 CCOR-1' },
+  { key: 'soho_c2', label: 'SOHO LASCO C2' },
+  { key: 'soho_c3', label: 'SOHO LASCO C3' },
+  { key: 'stereo_cor2', label: 'STEREO-A COR2' },
+];
 // HMI images — JSOC primary, NASA SDO fallback
 const JSOC_HMI_BASE = 'https://jsoc1.stanford.edu/data/hmi/images/latest';
 const NASA_SDO_BASE = 'https://sdo.gsfc.nasa.gov/assets/img/latest';
@@ -847,7 +872,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [sdoHmiB4096, setSdoHmiB4096] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiIf4096, setSdoHmiIf4096] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [suvi195, setSuvi195] = useState({ url: null as string | null, loading: 'Loading image...' });
-  const [ccor1Video, setCcor1Video] = useState({ url: '', loading: 'Loading video...' });
+  const [coronagraphState, setCoronagraphState] = useState<CoronagraphStateResponse | null>(null);
+  const [coronagraphLoading, setCoronagraphLoading] = useState<string | null>('Loading coronagraph data...');
+  const [coronagraphSource, setCoronagraphSource] = useState<CoronagraphSourceKey>('ccor1');
+  const [coronagraphIndex, setCoronagraphIndex] = useState<number>(0);
+  const [coronagraphDifference, setCoronagraphDifference] = useState<boolean>(true);
+  const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
+  const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   useEffect(() => {
@@ -1135,11 +1166,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       'Helpful for monitoring evolving coronal regions and disturbances that can precede space-weather changes.',
       '195 Å imagery is useful for tracking coronal morphology over time and identifying evolving active regions.'
     ),
-    'ccor1-video': buildStatTooltip(
-      'CCOR1 Coronagraph',
-      'A coronagraph view that reveals CMEs leaving the Sun.',
-      'Earth-directed CMEs are one of the main drivers of major aurora episodes after 1–3 days travel time.',
-      'Coronagraph kinematics (plane-of-sky speed/width) require projection-aware interpretation for true geoeffective trajectory.'
+    'coronagraphy': buildStatTooltip(
+      'Multi-source Coronagraphy',
+      'A 6-hour rolling stack of coronagraph frames from CCOR-1, SOHO LASCO, and STEREO-A COR2.',
+      'Lets you inspect CME fronts and compare viewpoints to assess possible Earth-directed structure.',
+      'Difference imagery highlights motion, but off-axis viewpoints (especially STEREO when far from Earth longitude) can mislead halo interpretation.'
     ),
     'solar-flares': buildStatTooltip(
       'Solar Flares List',
@@ -1172,7 +1203,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
       else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
       else if (id === 'suvi-195') title = 'About SUVI 195Å Imagery';
-      else if (id === 'ccor1-video') title = 'About CCOR1 Coronagraph Video';
+      else if (id === 'coronagraphy') title = 'About Multi-source Coronagraphy';
       else if (id === 'solar-flares') title = 'About Solar Flares';
       else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
       else if (id === 'active-sunspots') title = 'About Active Sunspot Regions';
@@ -1548,7 +1579,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false, SDO_HMI_B_1024_FALLBACK);
     fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false, SDO_HMI_IF_1024_FALLBACK);
     fetchImage(SUVI_195_URL, setSuvi195);
-    fetchImage(CCOR1_VIDEO_URL, setCcor1Video, true);
     fetchXrayFlux();
     fetchProtonFlux();
     fetchFlares();
@@ -1556,10 +1586,39 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     fetchNoaaSolarProbabilities();
   }, [fetchFlares, fetchImage, fetchNoaaSolarProbabilities, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
 
+  const fetchCoronagraphState = useCallback(async () => {
+    try {
+      setCoronagraphLoading((prev) => prev ?? 'Refreshing coronagraph data...');
+      const data = await fetchWithTimeoutAndRetry(`${CORONAGRAPHY_WORKER_BASE}/api/state`, 'json') as CoronagraphStateResponse;
+      if (!data?.ok) throw new Error('Worker state returned not-ok response');
+      setCoronagraphState(data);
+      setCoronagraphLoading(null);
+    } catch (error) {
+      console.error('Error fetching coronagraph worker state:', error);
+      setCoronagraphLoading(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, []);
+
+  const fetchStereoEarthSeparation = useCallback(async () => {
+    try {
+      const data = await fetchWithTimeoutAndRetry(`${SOLO_BASE}/solo/position`, 'json') as any;
+      const sep = data?.positions?.derived?.stereo_earth_lon_sep_deg;
+      setStereoEarthSeparationDeg(Number.isFinite(sep) ? Number(sep) : null);
+    } catch {
+      setStereoEarthSeparationDeg(null);
+    }
+  }, []);
+
   useEffect(() => {
     runAllUpdates();
-    return registerDatasetTicker('solar-activity-data', () => runAllUpdates(), REFRESH_INTERVAL_MS);
-  }, [runAllUpdates]);
+    fetchCoronagraphState();
+    fetchStereoEarthSeparation();
+    return registerDatasetTicker('solar-activity-data', () => {
+      runAllUpdates();
+      fetchCoronagraphState();
+      fetchStereoEarthSeparation();
+    }, REFRESH_INTERVAL_MS);
+  }, [runAllUpdates, fetchCoronagraphState, fetchStereoEarthSeparation]);
 
 
   useEffect(() => {
@@ -1574,7 +1633,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     runAllUpdates();
-  }, [refreshSignal, runAllUpdates]);
+    fetchCoronagraphState();
+    fetchStereoEarthSeparation();
+  }, [refreshSignal, runAllUpdates, fetchCoronagraphState, fetchStereoEarthSeparation]);
 
 
   useEffect(() => {
@@ -1954,6 +2015,93 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       sunspotCount,
     };
   }, [currentXraySummary.flux, displayedSunspotRegions, noaaOverallFlareProbabilities]);
+
+  const coronagraphSourceState = coronagraphState?.sources?.[coronagraphSource] ?? null;
+  const coronagraphFrames = coronagraphSourceState?.frames ?? [];
+  const clampedCoronagraphIndex = Math.min(coronagraphIndex, Math.max(0, coronagraphFrames.length - 1));
+  const activeCoronagraphFrame = coronagraphFrames[clampedCoronagraphIndex] ?? null;
+  const previousCoronagraphFrame = coronagraphFrames[Math.max(0, clampedCoronagraphIndex - 1)] ?? null;
+
+  const resolveCoronagraphUrl = useCallback((url: string | null | undefined): string | null => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `${CORONAGRAPHY_WORKER_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
+  }, []);
+
+  const activeCoronagraphUrl = resolveCoronagraphUrl(activeCoronagraphFrame?.url);
+  const previousCoronagraphUrl = resolveCoronagraphUrl(previousCoronagraphFrame?.url);
+
+  const stereoAlignmentLabel = useMemo(() => {
+    if (stereoEarthSeparationDeg == null) return 'STEREO-A alignment unknown right now.';
+    if (stereoEarthSeparationDeg <= 25) return `STEREO-A is near Earth line (${stereoEarthSeparationDeg.toFixed(1)}°) — halo interpretation is more reliable.`;
+    if (stereoEarthSeparationDeg <= 60) return `STEREO-A is moderately off-axis (${stereoEarthSeparationDeg.toFixed(1)}°) — halo shape can be skewed.`;
+    return `STEREO-A is strongly off-axis (${stereoEarthSeparationDeg.toFixed(1)}°) — poor for Earth-directed halo signatures.`;
+  }, [stereoEarthSeparationDeg]);
+
+  useEffect(() => {
+    if (coronagraphFrames.length === 0) {
+      setCoronagraphIndex(0);
+      return;
+    }
+    setCoronagraphIndex(coronagraphFrames.length - 1);
+  }, [coronagraphSource, coronagraphFrames.length]);
+
+  useEffect(() => {
+    const canvas = coronagraphCanvasRef.current;
+    if (!canvas || !coronagraphDifference || !activeCoronagraphUrl || !previousCoronagraphUrl || activeCoronagraphUrl === previousCoronagraphUrl) return;
+    let cancelled = false;
+
+    const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+
+    (async () => {
+      try {
+        const [prevImg, currImg] = await Promise.all([loadImage(previousCoronagraphUrl), loadImage(activeCoronagraphUrl)]);
+        if (cancelled) return;
+        const width = Math.min(prevImg.naturalWidth || prevImg.width, currImg.naturalWidth || currImg.width);
+        const height = Math.min(prevImg.naturalHeight || prevImg.height, currImg.naturalHeight || currImg.height);
+        if (!width || !height) return;
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+
+        const tempA = document.createElement('canvas');
+        const tempB = document.createElement('canvas');
+        tempA.width = tempB.width = width;
+        tempA.height = tempB.height = height;
+        const aCtx = tempA.getContext('2d', { willReadFrequently: true });
+        const bCtx = tempB.getContext('2d', { willReadFrequently: true });
+        if (!aCtx || !bCtx) return;
+        aCtx.drawImage(prevImg, 0, 0, width, height);
+        bCtx.drawImage(currImg, 0, 0, width, height);
+
+        const dataA = aCtx.getImageData(0, 0, width, height);
+        const dataB = bCtx.getImageData(0, 0, width, height);
+        const out = ctx.createImageData(width, height);
+        for (let i = 0; i < dataA.data.length; i += 4) {
+          const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
+          const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
+          const delta = Math.min(255, Math.abs(bGray - aGray) * 3.0);
+          out.data[i] = delta;
+          out.data[i + 1] = delta;
+          out.data[i + 2] = delta;
+          out.data[i + 3] = 255;
+        }
+        ctx.putImageData(out, 0, 0);
+      } catch {
+        // Silent fallback: UI remains on raw frame if diff generation fails.
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [coronagraphDifference, activeCoronagraphUrl, previousCoronagraphUrl]);
 
   // --- RENDER ---
   return (
@@ -2417,23 +2565,77 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastFlaresUpdate || 'N/A'}</div>
             </div>
 
-            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
-              <div className="flex justify-center items-center gap-2">
-                <h2 className="text-xl font-semibold text-white text-center mb-4">CCOR1 Coronagraph Video</h2>
-                <button onClick={() => openModal('ccor1-video')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about CCOR1 Coronagraph Video.">?</button>
+            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[620px] flex flex-col">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>
+                  <button onClick={() => openModal('coronagraphy')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Coronagraphy.">?</button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {CORONAGRAPH_SOURCES.map((src) => (
+                    <button
+                      key={src.key}
+                      onClick={() => setCoronagraphSource(src.key)}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${coronagraphSource === src.key ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                    >
+                      {src.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div
-                onClick={() => ccor1Video.url && setViewerMedia({ url: ccor1Video.url, type: 'video' })}
-                className="flex-grow flex justify-center items-center cursor-pointer relative min-h-0 w-full h-full"
-                title={tooltipContent['ccor1-video']}
-              >
-                {ccor1Video.loading && <LoadingSpinner message={ccor1Video.loading} />}
-                {ccor1Video.url && !ccor1Video.loading ? (
-                  <video controls muted loop className="max-w-full max-h-full object-contain rounded-lg">
-                    <source src={ccor1Video.url} type="video/mp4" />
-                    Your browser does not support the video tag.
-                  </video>
-                ) : (!ccor1Video.loading && <p className="text-neutral-400 italic">Video not available.</p>)}
+
+              {coronagraphSource === 'stereo_cor2' && (
+                <div className="mb-3 px-3 py-2 rounded border border-violet-700/40 bg-violet-900/20 text-xs text-violet-200">
+                  {stereoAlignmentLabel}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <label className="flex items-center gap-2 text-xs text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={coronagraphDifference}
+                    onChange={(e) => setCoronagraphDifference(e.target.checked)}
+                    className="accent-sky-500"
+                  />
+                  Difference imagery
+                </label>
+                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last 6h</span>
+              </div>
+
+              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[360px]">
+                {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
+                {!coronagraphLoading && !activeCoronagraphUrl && (
+                  <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No coronagraph imagery available for this source.</div>
+                )}
+                {activeCoronagraphUrl && (
+                  <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeCoronagraphUrl, type: 'image' })}>
+                    {!coronagraphDifference ? (
+                      <img src={activeCoronagraphUrl} alt="Coronagraph frame" className="w-full h-full object-contain" />
+                    ) : (
+                      <>
+                        <canvas ref={coronagraphCanvasRef} className="w-full h-full object-contain" />
+                        {!previousCoronagraphUrl && (
+                          <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400 bg-black/40">Need at least 2 frames for difference view.</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, coronagraphFrames.length - 1)}
+                  value={clampedCoronagraphIndex}
+                  onChange={(e) => setCoronagraphIndex(Number(e.target.value))}
+                  className="w-full"
+                />
+                <div className="mt-1 text-xs text-neutral-500 text-right">
+                  {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : '—'}` : 'No frame selected'}
+                </div>
               </div>
             </div>
 
