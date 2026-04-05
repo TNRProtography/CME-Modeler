@@ -179,6 +179,13 @@ const SolarWindQuickViewInfoModal: React.FC<{ onClose: () => void }> = ({ onClos
 
           <div className="border-t border-neutral-700/60 pt-3">
             <p className="text-white font-medium mb-1">How to read shocks</p>
+            <p className="text-neutral-400 mb-2">
+              In the signatures below:
+              <span className="text-neutral-200"> N</span> = plasma density,
+              <span className="text-neutral-200"> T</span> = plasma temperature,
+              <span className="text-neutral-200"> B</span> = magnetic field strength (|B| / Bt),
+              <span className="text-neutral-200"> V</span> = solar wind speed.
+            </p>
             <ul className="space-y-1">
               <li><span className="text-neutral-200 font-medium">Fast Forward (FF)</span> — N↑ T↑ B↑ V↑ across the shock.</li>
               <li><span className="text-neutral-200 font-medium">Slow Forward (SF)</span> — N↑ T↑ B↓ V↑ across the shock.</li>
