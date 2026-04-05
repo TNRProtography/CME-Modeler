@@ -82,6 +82,8 @@ interface ForecastDashboardProps {
   onInitialLoadProgress?: (task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => void;
   viewMode: 'simple' | 'advanced';
   onViewModeChange: (mode: 'simple' | 'advanced') => void;
+  modalSlug?: string | null;
+  onModalSlugChange?: (slug: string | null) => void;
   refreshSignal: number;
 }
 
@@ -196,7 +198,7 @@ const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp
 
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -385,9 +387,35 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         if (contentData) {
             let title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
             setModalState({ isOpen: true, title: title, content: contentData });
+            onModalSlugChange?.(`${id}-tooltip`);
         }
-    }, [tooltipContent]);
-    const closeModal = useCallback(() => setModalState(null), []);
+    }, [onModalSlugChange, tooltipContent]);
+    const closeModal = useCallback(() => {
+      setModalState(null);
+      onModalSlugChange?.(null);
+    }, [onModalSlugChange]);
+
+    useEffect(() => {
+      if (!modalSlug) {
+        setModalState(null);
+        setIsFaqOpen(false);
+        return;
+      }
+      if (modalSlug === 'faq') {
+        setModalState(null);
+        setIsFaqOpen(true);
+        return;
+      }
+      setIsFaqOpen(false);
+      const id = modalSlug.endsWith('-tooltip')
+        ? modalSlug.slice(0, -'-tooltip'.length)
+        : modalSlug;
+      const contentData = tooltipContent[id as keyof typeof tooltipContent];
+      if (contentData) {
+        const title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
+        setModalState({ isOpen: true, title, content: contentData });
+      }
+    }, [modalSlug, tooltipContent]);
 
     // ... [Calculated Values] ...
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
@@ -786,13 +814,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
                         <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides a 2-hour aurora forecast for the whole of New Zealand and specifically for the West Coast of New Zealand. The proprietary "Spot The Aurora Forecast" combines live solar wind data with local factors like astronomical darkness and lunar phase to generate a more nuanced prediction than global models.</p>
                         <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> The aurora is a natural and unpredictable phenomenon. This forecast is an indication of potential activity, not a guarantee of a visible display. Conditions can change rapidly.</p>
-                        <div className="mt-6"><button onClick={() => setIsFaqOpen(true)} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors"><GuideIcon className="w-5 h-5" /><span>Frequently Asked Questions</span></button></div>
+                        <div className="mt-6"><button onClick={() => onModalSlugChange?.('faq')} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors"><GuideIcon className="w-5 h-5" /><span>Frequently Asked Questions</span></button></div>
                         <div className="mt-8 text-xs text-neutral-500"><p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a> | Weather & Cloud data by <a href="https://www.windy.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Windy.com</a></p><p className="mt-2">Forecast algorithm, visualization and development by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">TNR Protography</a></p></div>
                     </footer>
                  </div>
             </div>
             {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
-            <InfoModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" content={faqContent} />
+            <InfoModal isOpen={isFaqOpen} onClose={() => onModalSlugChange?.(null)} title="Frequently Asked Questions" content={faqContent} />
         </div>
     );
 };
