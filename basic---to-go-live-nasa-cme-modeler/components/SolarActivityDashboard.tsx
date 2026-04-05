@@ -217,6 +217,8 @@ const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
 
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_FETCH_RETRIES = 2;
+const SUVI_WORKER_FETCH_TIMEOUT_MS = 30000;
+const DIFF_WATERMARK_URL = '/icons/icon-default.png';
 const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
@@ -236,13 +238,26 @@ class ProxyUnavailableError extends Error {
   }
 }
 
-const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 'blob' = 'json') => {
+type FetchRetryOptions = {
+  timeoutMs?: number;
+  retries?: number;
+  cache?: RequestCache;
+};
+
+const fetchWithTimeoutAndRetry = async (
+  url: string,
+  parseAs: 'json' | 'text' | 'blob' = 'json',
+  options: FetchRetryOptions = {}
+) => {
+  const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const maxRetries = options.retries ?? MAX_FETCH_RETRIES;
+  const cacheMode = options.cache ?? 'default';
   let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { signal: controller.signal, cache: 'default' });
+      const response = await fetch(url, { signal: controller.signal, cache: cacheMode });
       if (!response.ok) {
         // 404 on a proxy URL means the Worker isn't deployed on this domain — skip retries.
         if (response.status === 404 && url.includes('/api/proxy/')) {
@@ -254,10 +269,14 @@ const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 
       if (parseAs === 'blob') return await response.blob();
       return await response.text();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      if (controller.signal.aborted) {
+        lastError = new Error(`Request timed out after ${timeoutMs}ms for ${url}`);
+      } else {
+        lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      }
       // Don't retry proxy 404s — fall through immediately to the direct-URL fallback.
       if (lastError instanceof ProxyUnavailableError) break;
-      if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
+      if (attempt < maxRetries) await wait(350 * (attempt + 1));
     } finally {
       window.clearTimeout(timeout);
     }
@@ -898,6 +917,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviDifference, setSuviDifference] = useState<boolean>(false);
   const [suviPlaying, setSuviPlaying] = useState<boolean>(false);
   const suviCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const diffWatermarkRef = useRef<HTMLImageElement | null>(null);
   const [coronagraphState, setCoronagraphState] = useState<CoronagraphStateResponse | null>(null);
   const [coronagraphLoading, setCoronagraphLoading] = useState<string | null>('Loading coronagraph data...');
   const [coronagraphSource, setCoronagraphSource] = useState<CoronagraphSourceKey>('ccor1');
@@ -908,12 +928,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
-  const CORONAGRAPH_DIFF_GAIN = 8.5;
-  const CORONAGRAPH_DIFF_NOISE_FLOOR = 8;
-  const CORONAGRAPH_DIFF_GAMMA = 0.45;
-  const SUVI_DIFF_GAIN = 10.0;
-  const SUVI_DIFF_NOISE_FLOOR = 6;
-  const SUVI_DIFF_GAMMA = 0.42;
+  // Difference-imagery defaults tuned to match provided reference settings.
+  // GOES-19 CCOR-1
+  const CORONAGRAPH_DIFF_GAIN = 11.5;
+  const CORONAGRAPH_DIFF_NOISE_FLOOR = 0;
+  const CORONAGRAPH_DIFF_GAMMA = 0.8;
+  // SUVI defaults are channel-specific (195 / 304 / 131).
+  const SUVI_DIFF_CONFIG_BY_SOURCE: Record<SuviWorkerSourceKey, { gain: number; noiseFloor: number; gamma: number }> = {
+    suvi_195_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
+    suvi_304_secondary: { gain: 9.0,  noiseFloor: 1, gamma: 0.30 },
+    suvi_131_secondary: { gain: 15.5, noiseFloor: 7, gamma: 0.90 },
+  };
 
   const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
     const t = Math.min(1, Math.max(0, normalized));
@@ -1673,7 +1698,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const fetchSuviWorkerState = useCallback(async () => {
     try {
       setSuviWorkerLoading((prev) => prev ?? 'Refreshing SUVI timeline...');
-      const data = await fetchWithTimeoutAndRetry(`${SUVI_DIFF_WORKER_BASE}/api/state`, 'json') as SuviWorkerStateResponse;
+      const data = await fetchWithTimeoutAndRetry(
+        `${SUVI_DIFF_WORKER_BASE}/api/state`,
+        'json',
+        { timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS, retries: 1, cache: 'no-store' }
+      ) as SuviWorkerStateResponse;
       if (!data?.ok) throw new Error('SUVI worker state returned not-ok response');
       setSuviWorkerState(data);
       setSuviWorkerLoading(null);
@@ -2136,6 +2165,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     : activeSunImage === 'SUVI_304'
       ? suviSourceKeyByMode.SUVI_304
       : suviSourceKeyByMode.SUVI_131;
+  const activeSuviDiffConfig = SUVI_DIFF_CONFIG_BY_SOURCE[activeSuviSourceKey] ?? SUVI_DIFF_CONFIG_BY_SOURCE.suvi_131_secondary;
   const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
   const suviFrames = activeSuviSourceState?.frames ?? [];
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
@@ -2214,6 +2244,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [canStepSuviFrames, suviFrames.length]);
 
   const downloadSuviFrame = useCallback(() => {
+    if (suviDifference && suviCanvasRef.current) {
+      const sourceLabel = activeSuviSourceState?.label ?? activeSuviSourceKey;
+      const timestampPart = activeSuviFrame?.ts
+        ? activeSuviFrame.ts.replace(/[:.]/g, '-')
+        : String(Date.now());
+      const fileName = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${timestampPart}-diff.png`;
+      const link = document.createElement('a');
+      link.href = suviCanvasRef.current.toDataURL('image/png');
+      link.download = fileName;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
     if (!activeSuviFrameUrl) return;
     const sourceLabel = activeSuviSourceState?.label ?? activeSuviSourceKey;
     const timestampPart = activeSuviFrame?.ts
@@ -2228,7 +2274,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [activeSuviFrame?.ts, activeSuviFrameUrl, activeSuviSourceKey, activeSuviSourceState?.label]);
+  }, [activeSuviFrame?.ts, activeSuviFrameUrl, activeSuviSourceKey, activeSuviSourceState?.label, suviDifference]);
 
   useEffect(() => {
     if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
@@ -2252,6 +2298,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [canStepCoronagraphFrames, coronagraphFrames.length]);
 
   const downloadCoronagraphFrame = useCallback(() => {
+    if (coronagraphDifference && coronagraphCanvasRef.current) {
+      const sourceLabel = coronagraphSourceState?.label ?? coronagraphSource;
+      const timestampPart = activeCoronagraphFrame?.ts
+        ? activeCoronagraphFrame.ts.replace(/[:.]/g, '-')
+        : String(Date.now());
+      const fileName = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${timestampPart}-diff.png`;
+      const link = document.createElement('a');
+      link.href = coronagraphCanvasRef.current.toDataURL('image/png');
+      link.download = fileName;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
     if (!activeCoronagraphUrl) return;
     const sourceLabel = coronagraphSourceState?.label ?? coronagraphSource;
     const timestampPart = activeCoronagraphFrame?.ts
@@ -2266,7 +2328,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [activeCoronagraphFrame?.ts, activeCoronagraphUrl, coronagraphSource, coronagraphSourceState?.label]);
+  }, [activeCoronagraphFrame?.ts, activeCoronagraphUrl, coronagraphSource, coronagraphSourceState?.label, coronagraphDifference]);
 
   useEffect(() => {
     const canvas = suviCanvasRef.current;
@@ -2283,6 +2345,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     (async () => {
       try {
+        const getWatermark = () => new Promise<HTMLImageElement>((resolve, reject) => {
+          if (diffWatermarkRef.current?.complete) {
+            resolve(diffWatermarkRef.current);
+            return;
+          }
+          const img = diffWatermarkRef.current ?? new Image();
+          diffWatermarkRef.current = img;
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          if (!img.src) img.src = DIFF_WATERMARK_URL;
+        });
         const [prevImg, currImg] = await Promise.all([loadImage(previousSuviFrameUrl), loadImage(activeSuviFrameUrl)]);
         if (cancelled) return;
         const width = Math.min(prevImg.naturalWidth || prevImg.width, currImg.naturalWidth || currImg.width);
@@ -2311,9 +2385,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
           const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
           const rawDelta = Math.abs(bGray - aGray);
-          const aboveNoise = Math.max(0, rawDelta - SUVI_DIFF_NOISE_FLOOR);
-          const amplified = Math.min(255, aboveNoise * SUVI_DIFF_GAIN);
-          const normalized = Math.pow(amplified / 255, SUVI_DIFF_GAMMA);
+          const aboveNoise = Math.max(0, rawDelta - activeSuviDiffConfig.noiseFloor);
+          const amplified = Math.min(255, aboveNoise * activeSuviDiffConfig.gain);
+          const normalized = Math.pow(amplified / 255, activeSuviDiffConfig.gamma);
           const [r, g, b] = colorizeCoronagraphDelta(normalized);
           out.data[i] = r;
           out.data[i + 1] = g;
@@ -2321,13 +2395,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           out.data[i + 3] = 255;
         }
         ctx.putImageData(out, 0, 0);
+
+        const watermark = await getWatermark();
+        if (!cancelled && watermark?.naturalWidth && watermark?.naturalHeight) {
+          const targetWidth = Math.max(48, Math.round(width * 0.12));
+          const ratio = watermark.naturalHeight / watermark.naturalWidth;
+          const targetHeight = Math.max(20, Math.round(targetWidth * ratio));
+          const pad = Math.max(8, Math.round(width * 0.015));
+          const x = width - targetWidth - pad;
+          const y = height - targetHeight - pad;
+          ctx.save();
+          ctx.globalAlpha = 0.88;
+          ctx.drawImage(watermark, x, y, targetWidth, targetHeight);
+          ctx.restore();
+        }
       } catch {
         // Silent fallback: UI remains on raw frame if diff generation fails.
       }
     })();
 
     return () => { cancelled = true; };
-  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta]);
+  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta, activeSuviDiffConfig]);
 
   useEffect(() => {
     const canvas = coronagraphCanvasRef.current;
@@ -2344,6 +2432,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     (async () => {
       try {
+        const getWatermark = () => new Promise<HTMLImageElement>((resolve, reject) => {
+          if (diffWatermarkRef.current?.complete) {
+            resolve(diffWatermarkRef.current);
+            return;
+          }
+          const img = diffWatermarkRef.current ?? new Image();
+          diffWatermarkRef.current = img;
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          if (!img.src) img.src = DIFF_WATERMARK_URL;
+        });
         const [prevImg, currImg] = await Promise.all([loadImage(previousCoronagraphUrl), loadImage(activeCoronagraphUrl)]);
         if (cancelled) return;
         const width = Math.min(prevImg.naturalWidth || prevImg.width, currImg.naturalWidth || currImg.width);
@@ -2382,6 +2482,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           out.data[i + 3] = 255;
         }
         ctx.putImageData(out, 0, 0);
+
+        const watermark = await getWatermark();
+        if (!cancelled && watermark?.naturalWidth && watermark?.naturalHeight) {
+          const targetWidth = Math.max(48, Math.round(width * 0.12));
+          const ratio = watermark.naturalHeight / watermark.naturalWidth;
+          const targetHeight = Math.max(20, Math.round(targetWidth * ratio));
+          const pad = Math.max(8, Math.round(width * 0.015));
+          const x = width - targetWidth - pad;
+          const y = height - targetHeight - pad;
+          ctx.save();
+          ctx.globalAlpha = 0.88;
+          ctx.drawImage(watermark, x, y, targetWidth, targetHeight);
+          ctx.restore();
+        }
       } catch {
         // Silent fallback: UI remains on raw frame if diff generation fails.
       }

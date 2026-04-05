@@ -9,8 +9,12 @@ interface GoesPoint { time_tag: string; ge1?: number|null; ge10?: number|null; g
 interface StereoPoint { time_tag: string; speed?: number|null; density?: number|null; bz?: number|null; bt?: number|null; sep_lo?: number|null; sep_hi?: number|null; }
 interface AnalysisData { status: string; statusLabel: string; description: string; signatures: { velocity_dispersion: boolean; channel_compression: boolean; sharp_spike: boolean; anisotropy_elevated: boolean; elevated_channels: number }; metrics: { anisotropy_index: number|null; log_spread_4h_trend: number|null }; goes_validation?: { available: boolean; ge10_mev_flux: number|null; s1_alert: boolean; elevated: boolean }; }
 interface CombinedData { cross_validation: { confidence: string; confidenceLabel: string; ace_epam_elevated: boolean; goes_s1_alert: boolean; stereo_elevated: boolean }; }
+interface SolarWindPoint { x: number; y: number; }
+interface SolarMagPoint { time: number; bt: number; bz: number; }
+interface ShockEvent { t: number; label: string; score: number; }
 
 const EPAM_BASE = 'https://epam.thenamesrock.workers.dev';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 
 // Views: raw charts per source + one combined averaged chart
 type ViewKey = 'ace-raw' | 'goes-raw' | 'stereo-raw' | 'combined';
@@ -33,8 +37,17 @@ const baseOptions = (yType: 'logarithmic'|'linear', yLabel: string): ChartOption
   responsive: true, maintainAspectRatio: false, animation: false,
   interaction: { mode: 'index', intersect: false },
   plugins: {
-    legend: { position: 'top', align: 'end', labels: { color: '#a3a3a3', boxWidth: 24, boxHeight: 2, padding: 10, font: { size: 11 } } },
-    tooltip: { backgroundColor: '#1a1a1a', borderColor: '#3f3f46', borderWidth: 1, titleColor: '#e5e5e5', bodyColor: '#a3a3a3' },
+    legend: {
+      position: 'top', align: 'end',
+      labels: {
+        color: '#a3a3a3', boxWidth: 24, boxHeight: 2, padding: 10, font: { size: 11 },
+        filter: (item) => String(item.text ?? '') !== '__shock__',
+      },
+    },
+    tooltip: {
+      backgroundColor: '#1a1a1a', borderColor: '#3f3f46', borderWidth: 1, titleColor: '#e5e5e5', bodyColor: '#a3a3a3',
+      filter: (ctx) => String(ctx.dataset?.label ?? '') !== '__shock__',
+    },
   },
   scales: {
     x: { type: 'time', time: { tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { color: '#71717a', maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { color: '#27272a' }, title: { display: true, text: 'NZT', color: '#52525b', font: { size: 9 } } },
@@ -197,6 +210,117 @@ const GOES_CH = [
   {k:'ge500',c:'#991b1b',l:'≥500 MeV'},
 ];
 
+const SHOCK_COLORS: Record<string, string> = {
+  'Fast Forward Shock (FF)': 'rgba(239, 68, 68, 0.95)',
+  'Slow Forward Shock (SF)': 'rgba(249, 115, 22, 0.95)',
+  'Fast Reverse Shock (FR)': 'rgba(59, 130, 246, 0.95)',
+  'Slow Reverse Shock (SR)': 'rgba(14, 165, 233, 0.95)',
+  'IMF Enhancement / Discontinuity': 'rgba(250, 204, 21, 0.95)',
+};
+
+function shockMarkerDataset(t: number, yMin: number, yMax: number, color: string) {
+  return {
+    label: '__shock__',
+    data: [{ x: t, y: yMin }, { x: t, y: yMax }],
+    borderColor: color,
+    borderWidth: 1.3,
+    borderDash: [5, 4],
+    pointRadius: 0,
+    showLine: true,
+    tension: 0,
+    order: 50,
+  };
+}
+
+function deriveShockEvents(speed: SolarWindPoint[], density: SolarWindPoint[], temp: SolarWindPoint[], mag: SolarMagPoint[]): ShockEvent[] {
+  const now = Date.now();
+  const LOOK_BACK = 6 * 3600000;
+  const CANDIDATE_STEP = 3 * 60000;
+  const PRE_WIN = 18 * 60000;
+  const POST_WIN = 12 * 60000;
+  const spdSorted = [...speed].sort((a, b) => a.x - b.x);
+  const denSorted = [...density].sort((a, b) => a.x - b.x);
+  const tmpSorted = [...temp].sort((a, b) => a.x - b.x);
+  const magSorted = [...mag].sort((a, b) => a.time - b.time);
+  if (spdSorted.length < 10 || denSorted.length < 10 || magSorted.length < 10) return [];
+
+  const median = (vals: number[]): number => {
+    if (!vals.length) return NaN;
+    const v = [...vals].sort((a, b) => a - b);
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+  const sample = (arr: { x: number; y: number }[], a: number, b: number): number[] =>
+    arr.filter(p => p.x >= a && p.x < b).map(p => p.y).filter(n => Number.isFinite(n));
+  const sampleMag = (a: number, b: number): { bt: number[]; bz: number[] } => ({
+    bt: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bt).filter(n => Number.isFinite(n)),
+    bz: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bz).filter(n => Number.isFinite(n)),
+  });
+
+  const events: ShockEvent[] = [];
+  const tStart = Math.max(now - LOOK_BACK, spdSorted[0].x + PRE_WIN);
+  for (let t = tStart; t <= now - POST_WIN; t += CANDIDATE_STEP) {
+    const preSpd = sample(spdSorted, t - PRE_WIN, t);
+    const postSpd = sample(spdSorted, t, t + POST_WIN);
+    const preDen = sample(denSorted, t - PRE_WIN, t);
+    const postDen = sample(denSorted, t, t + POST_WIN);
+    const preTmp = sample(tmpSorted, t - PRE_WIN, t);
+    const postTmp = sample(tmpSorted, t, t + POST_WIN);
+    const preMag = sampleMag(t - PRE_WIN, t);
+    const postMag = sampleMag(t, t + POST_WIN);
+    if (preSpd.length < 3 || postSpd.length < 3 || preDen.length < 3 || postDen.length < 3 || preMag.bt.length < 3 || postMag.bt.length < 3) continue;
+
+    const spd1 = median(preSpd), spd2 = median(postSpd);
+    const den1 = median(preDen), den2 = median(postDen);
+    const tmp1 = median(preTmp), tmp2 = median(postTmp);
+    const bt1 = median(preMag.bt), bt2 = median(postMag.bt);
+    const bz1 = median(preMag.bz), bz2 = median(postMag.bz);
+    if (![spd1, spd2, den1, den2, bt1, bt2, bz1, bz2].every(Number.isFinite)) continue;
+
+    const pDyn1 = den1 > 0 ? den1 * spd1 * spd1 : NaN;
+    const pDyn2 = den2 > 0 ? den2 * spd2 * spd2 : NaN;
+    const spdDelta = spd2 - spd1;
+    const denRatio = den1 > 0 ? den2 / den1 : NaN;
+    const tmpRatio = tmp1 > 0 ? tmp2 / tmp1 : NaN;
+    const btDelta = bt2 - bt1;
+    const btRatio = bt1 > 0 ? bt2 / bt1 : NaN;
+    const bzDelta = bz2 - bz1;
+    const pDynRatio = pDyn1 > 0 ? pDyn2 / pDyn1 : NaN;
+    if (![denRatio, tmpRatio, btRatio, pDynRatio].every(Number.isFinite)) continue;
+
+    const vUp = spdDelta >= 20;
+    const nUp = denRatio >= 1.35;
+    const nDown = denRatio <= 0.75;
+    const tUp = tmpRatio >= 1.2;
+    const tDown = tmpRatio <= 0.85;
+    const bUp = btRatio >= 1.15 || btDelta >= 1.5;
+    const bDown = btRatio <= 0.88 || btDelta <= -1.5;
+
+    let label = '';
+    let score = 0;
+    if (vUp && nUp && tUp && bUp) { label = 'Fast Forward Shock (FF)'; score = 8 + Number(pDynRatio >= 1.8); }
+    else if (vUp && nUp && tUp && bDown) { label = 'Slow Forward Shock (SF)'; score = 7 + Number(pDynRatio >= 1.6); }
+    else if (vUp && nDown && tDown && bDown) { label = 'Fast Reverse Shock (FR)'; score = 7 + Number(pDynRatio <= 0.75); }
+    else if (vUp && nDown && tDown && bUp) { label = 'Slow Reverse Shock (SR)'; score = 6 + Number(pDynRatio <= 0.8); }
+    else if ((Math.abs(btDelta) >= 4 || btRatio >= 1.4 || Math.abs(bzDelta) >= 8) && Math.abs(spdDelta) < 25 && denRatio > 0.75 && denRatio < 1.35) {
+      label = 'IMF Enhancement / Discontinuity';
+      score = 3 + Number(Math.abs(bzDelta) >= 8);
+    } else continue;
+
+    events.push({ t, label, score });
+  }
+
+  const dedupeWindowMs = 20 * 60000;
+  return events
+    .sort((a, b) => b.score - a.score || b.t - a.t)
+    .reduce<ShockEvent[]>((acc, ev) => {
+      if (!acc.some((e) => Math.abs(e.t - ev.t) < dedupeWindowMs)) acc.push(ev);
+      return acc;
+    }, [])
+    .slice(0, 4)
+    .sort((a, b) => a.t - b.t);
+}
+
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
   'ace-raw':  {title: 'Solar Storm Early Warning (L1 Satellite)', subtitle: 'Real-time particle readings from a satellite parked 1.5 million km in front of Earth — about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
@@ -220,17 +344,23 @@ const EPAMPanel: React.FC = () => {
   const [showAce,    setShowAce]    = useState(true);
   const [showGoes,   setShowGoes]   = useState(true);
   const [showStereo, setShowStereo] = useState(false);
+  const [showShockMarkers, setShowShockMarkers] = useState(true);
+  const [speedRaw,   setSpeedRaw]   = useState<SolarWindPoint[]>([]);
+  const [densityRaw, setDensityRaw] = useState<SolarWindPoint[]>([]);
+  const [tempRaw,    setTempRaw]    = useState<SolarWindPoint[]>([]);
+  const [magRaw,     setMagRaw]     = useState<SolarMagPoint[]>([]);
   const mountedRef = useRef(true);
 
   const fetchAll = useCallback(async () => {
     if (!mountedRef.current) return;
     try {
-      const [r1,r2,r3,r4,r5] = await Promise.allSettled([
+      const [r1,r2,r3,r4,r5,r6] = await Promise.allSettled([
         fetch(`${EPAM_BASE}/epam/raw`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/goes`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/stereo`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/analysis`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/combined`).then(r=>r.ok?r.json():null),
+        fetch(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`).then(r=>r.ok?r.json():null),
       ]);
       if (!mountedRef.current) return;
       if (r1.status==='fulfilled' && r1.value?.data)              setEpamRaw(r1.value.data);
@@ -238,6 +368,16 @@ const EPAMPanel: React.FC = () => {
       if (r3.status==='fulfilled' && r3.value?.data)              setStereoRaw(r3.value.data);
       if (r4.status==='fulfilled' && r4.value?.status)            setAnalysis(r4.value);
       if (r5.status==='fulfilled' && r5.value?.cross_validation)  setCombined(r5.value);
+      if (r6.status==='fulfilled' && r6.value) {
+        const s = Array.isArray((r6.value as any).speed) ? (r6.value as any).speed : [];
+        const d = Array.isArray((r6.value as any).density) ? (r6.value as any).density : [];
+        const t = Array.isArray((r6.value as any).temp) ? (r6.value as any).temp : [];
+        const m = Array.isArray((r6.value as any).mag) ? (r6.value as any).mag : [];
+        setSpeedRaw(s.filter((p: any) => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
+        setDensityRaw(d.filter((p: any) => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
+        setTempRaw(t.filter((p: any) => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
+        setMagRaw(m.filter((p: any) => Number.isFinite(p?.time) && Number.isFinite(p?.bt) && Number.isFinite(p?.bz)));
+      }
       setLastUpdated(new Date());
     } catch {}
     finally { if (mountedRef.current) setLoading(false); }
@@ -254,19 +394,37 @@ const EPAMPanel: React.FC = () => {
   const filteredEpam   = useMemo(() => filterByTimeRange(epamRaw,   timeRange), [epamRaw,   timeRange]);
   const filteredGoes   = useMemo(() => filterByTimeRange(goesRaw,   timeRange), [goesRaw,   timeRange]);
   const filteredStereo = useMemo(() => filterByTimeRange(stereoRaw, timeRange), [stereoRaw, timeRange]);
+  const shockEvents = useMemo(() => deriveShockEvents(speedRaw, densityRaw, tempRaw, magRaw), [speedRaw, densityRaw, tempRaw, magRaw]);
+  const visibleShockEvents = useMemo(() => {
+    const cutoff = Date.now() - timeRange * 3600 * 1000;
+    return shockEvents.filter((e) => e.t >= cutoff);
+  }, [shockEvents, timeRange]);
 
   // ── Build chart data ────────────────────────────────────────────────────────
   const chartData = useMemo((): ChartData<'line'>|null => {
     const rev = (a: any[]) => [...a].reverse();
+    const withShockMarkers = (datasets: any[]) => {
+      if (!showShockMarkers || view === 'stereo-raw' || !visibleShockEvents.length) return datasets;
+      const values = datasets.flatMap((ds: any) => (Array.isArray(ds?.data) ? ds.data : []))
+        .map((p: any) => Number(p?.y))
+        .filter((n: number) => Number.isFinite(n) && n > 0);
+      if (!values.length) return datasets;
+      const yMin = Math.max(1e-6, Math.min(...values) * 0.8);
+      const yMax = Math.max(yMin * 1.2, Math.max(...values) * 1.25);
+      const markers = visibleShockEvents.map((e) =>
+        shockMarkerDataset(e.t, yMin, yMax, SHOCK_COLORS[e.label] ?? 'rgba(250, 204, 21, 0.95)')
+      );
+      return [...datasets, ...markers];
+    };
 
     if (view === 'ace-raw') {
       if (!filteredEpam.length) return null;
-      return { datasets: ACE_CH.map(c => mkDs(rev(filteredEpam), 'time_tag', c.k, c.c, c.l)) };
+      return { datasets: withShockMarkers(ACE_CH.map(c => mkDs(rev(filteredEpam), 'time_tag', c.k, c.c, c.l))) };
     }
 
     if (view === 'goes-raw') {
       if (!filteredGoes.length) return null;
-      return { datasets: GOES_CH.map(c => mkDs(rev(filteredGoes), 'time_tag', c.k, c.c, c.l)) };
+      return { datasets: withShockMarkers(GOES_CH.map(c => mkDs(rev(filteredGoes), 'time_tag', c.k, c.c, c.l))) };
     }
 
     if (view === 'stereo-raw') {
@@ -311,11 +469,11 @@ const EPAMPanel: React.FC = () => {
         datasets.push({ label: 'STEREO-A (avg particle channels)', borderColor: '#a78bfa', backgroundColor: '#a78bfa20', borderWidth: 2, pointRadius: 0, tension: 0.2, borderDash: [4,3], data: pts });
       }
 
-      return datasets.length ? { datasets } : null;
+      return datasets.length ? { datasets: withShockMarkers(datasets) } : null;
     }
 
     return null;
-  }, [view, filteredEpam, filteredGoes, filteredStereo, showAce, showGoes, showStereo]);
+  }, [view, filteredEpam, filteredGoes, filteredStereo, showAce, showGoes, showStereo, showShockMarkers, visibleShockEvents]);
 
   // ── Chart options ─────────────────────────────────────────────────────────
   const chartOptions: ChartOptions<'line'> = useMemo(() => {
@@ -416,6 +574,21 @@ const EPAMPanel: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* Shock marker toggle (ACE / GOES / Combined only) */}
+      {view !== 'stereo-raw' && (
+        <div className="flex justify-center mb-3">
+          <button
+            onClick={() => setShowShockMarkers(v => !v)}
+            className={`px-3 py-1 text-xs rounded border transition-colors ${
+              showShockMarkers ? 'bg-yellow-600/20 border-yellow-600/60 text-yellow-300' : 'bg-neutral-800/50 border-neutral-700 text-neutral-500'
+            }`}
+          >
+            {showShockMarkers ? '✓ Shock markers on' : 'Shock markers off'}
+            {showShockMarkers && visibleShockEvents.length > 0 ? ` (${visibleShockEvents.length})` : ''}
+          </button>
+        </div>
+      )}
 
       {/* Chart title + subtitle */}
       <div className="mb-3">
