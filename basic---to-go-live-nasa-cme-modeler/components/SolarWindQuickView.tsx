@@ -10,6 +10,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import type { ChartOptions } from 'chart.js';
 
@@ -151,6 +152,57 @@ function shockLine(t: number, yMin: number, yMax: number, color = 'rgba(250, 204
 
 const DOT   = 1.5;
 const HOVER = 4;
+
+const SolarWindQuickViewInfoModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto styled-scrollbar"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <h3 className="text-lg font-semibold text-white">About “Solar Wind Quick View”</h3>
+          <button onClick={onClose} className="text-neutral-400 hover:text-white flex-shrink-0 text-xl leading-none">✕</button>
+        </div>
+
+        <div className="space-y-3 text-sm text-neutral-300 leading-relaxed">
+          <p>
+            This panel shows live upstream <strong className="text-white">L1 solar wind context</strong> from ACE: Bz/Bt, clock angle (Phi),
+            density, speed, and temperature. It helps explain why aurora conditions are changing.
+          </p>
+
+          <div className="border-t border-neutral-700/60 pt-3">
+            <p className="text-white font-medium mb-1">How to read shocks</p>
+            <ul className="space-y-1">
+              <li><span className="text-neutral-200 font-medium">Forward Interplanetary Shock (IPS)</span> — a compression front (speed↑, density↑, pressure↑; often Bt↑/Temp↑).</li>
+              <li><span className="text-neutral-200 font-medium">Reverse Interplanetary Shock</span> — trailing/rarefaction-style drop (speed↓, density↓, pressure↓).</li>
+              <li><span className="text-neutral-200 font-medium">IMF Enhancement / Discontinuity</span> — magnetic step/rotation with weaker plasma jump.</li>
+            </ul>
+          </div>
+
+          <div className="border-t border-neutral-700/60 pt-3">
+            <p className="text-white font-medium mb-1">Chart markers</p>
+            <p>
+              Detected shocks are drawn as <span className="text-yellow-300">yellow dashed vertical markers</span> across all subplots.
+              If multiple shocks are detected in the selected window, multiple markers are shown.
+            </p>
+          </div>
+
+          <div className="border-t border-neutral-700/60 pt-3 text-xs text-neutral-500">
+            Data source: NOAA/ACE MAG + SWEPAM near-real-time streams.
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 // ── Main component ────────────────────────────────────────────────────────────
 const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
@@ -385,19 +437,6 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
               ?
             </button>
           </div>
-          {showInfo && (
-            <div className="mt-2 text-xs text-neutral-300 bg-neutral-900/95 border border-neutral-700 rounded-lg p-3 max-w-2xl leading-relaxed">
-              <p className="font-medium text-neutral-100 mb-1">About Solar Wind Quick View</p>
-              <p className="mb-2">Live L1 magnetic + plasma context from ACE (Bz/Bt, Phi, density, speed, temperature).</p>
-              <p className="font-medium text-neutral-100 mb-1">Shock types</p>
-              <ul className="list-disc ml-4 space-y-1 text-neutral-300">
-                <li><span className="text-neutral-100">Forward Interplanetary Shock (IPS):</span> compression front (speed↑, density↑, pressure↑; often Bt↑/Temp↑).</li>
-                <li><span className="text-neutral-100">Reverse Interplanetary Shock:</span> trailing/rarefaction-style drop (speed↓, density↓, pressure↓).</li>
-                <li><span className="text-neutral-100">IMF Enhancement / Discontinuity:</span> magnetic step/rotation with weaker plasma jump.</li>
-              </ul>
-              <p className="mt-2 text-neutral-400">Detected shocks are shown as yellow dashed markers across all subplots.</p>
-            </div>
-          )}
           <p className="text-xs text-neutral-500 mt-0.5">
             ACE MAG &amp; SWEPAM · Each dot = one reading
           </p>
@@ -595,6 +634,8 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           </span>
         ))}
       </div>
+
+      {showInfo && <SolarWindQuickViewInfoModal onClose={() => setShowInfo(false)} />}
 
     </div>
   );
