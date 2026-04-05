@@ -347,6 +347,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'Short-lived magnetic energy releases in Earth’s magnetosphere.',
             'Substorms often cause sudden aurora brightening, expansion, and faster movement in the sky.',
             'Substorm onset is tied to nightside current-sheet instability and unloading after magnetotail energy storage.'
+        ),
+        'simple-view': buildStatTooltip(
+            'Simple View',
+            'A streamlined forecast layout focused on what to expect right now and in the next short window.',
+            'Best for quick go/no-go aurora decisions with minimal interpretation overhead.',
+            'Prioritises concise decision support over full diagnostic depth; switch to Advanced View for full physics context.'
+        ),
+        'advanced-view': buildStatTooltip(
+            'Advanced View',
+            'A full diagnostic layout with IMF, solar wind, coupling, pressure, and substorm context charts.',
+            'Helps refine confidence by showing whether favorable upstream conditions are sustained and geoeffective.',
+            'Designed for experienced users who want to inspect drivers (Bz/Bt/pressure/Newell) behind the headline forecast.'
         )
     }), []);
     
@@ -519,6 +531,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           <button onClick={() => onViewModeChange('simple')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Simple View</button>
                           <button onClick={() => onViewModeChange('advanced')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'advanced' ? 'bg-gradient-to-r from-purple-500/80 to-fuchsia-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Advanced View</button>
                         </div>
+                        <button
+                          onClick={() => openModal(viewMode === 'simple' ? 'simple-view' : 'advanced-view')}
+                          className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
+                          title={`About ${viewMode === 'simple' ? 'Simple View' : 'Advanced View'}`}
+                        >
+                          ?
+                        </button>
                     </div>
 
                     {viewMode === 'simple' ? (
