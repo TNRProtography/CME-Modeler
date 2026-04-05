@@ -2063,6 +2063,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const coronagraphSourceState = coronagraphState?.sources?.[coronagraphSource] ?? null;
   const coronagraphFrames = coronagraphSourceState?.frames ?? [];
+  const latestCoronagraphFrame = useMemo(() => {
+    if (coronagraphFrames.length === 0) return null;
+    return coronagraphFrames.reduce((latest, frame) => {
+      const latestTs = latest?.ts ? new Date(latest.ts).getTime() : -Infinity;
+      const frameTs = frame?.ts ? new Date(frame.ts).getTime() : -Infinity;
+      return frameTs > latestTs ? frame : latest;
+    }, coronagraphFrames[0] ?? null);
+  }, [coronagraphFrames]);
   const clampedCoronagraphIndex = Math.min(coronagraphIndex, Math.max(0, coronagraphFrames.length - 1));
   const activeCoronagraphFrame = coronagraphFrames[clampedCoronagraphIndex] ?? null;
   const previousCoronagraphFrame = coronagraphFrames[Math.max(0, clampedCoronagraphIndex - 1)] ?? null;
@@ -2075,22 +2083,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const activeCoronagraphUrl = resolveCoronagraphUrl(activeCoronagraphFrame?.url);
   const previousCoronagraphUrl = resolveCoronagraphUrl(previousCoronagraphFrame?.url);
-  const activeCoronagraphAgeMs = useMemo(() => {
-    if (!activeCoronagraphFrame?.ts) return null;
-    const ts = new Date(activeCoronagraphFrame.ts).getTime();
+  const latestCoronagraphAgeMs = useMemo(() => {
+    if (!latestCoronagraphFrame?.ts) return null;
+    const ts = new Date(latestCoronagraphFrame.ts).getTime();
     if (Number.isNaN(ts)) return null;
     return Math.max(0, Date.now() - ts);
-  }, [activeCoronagraphFrame?.ts]);
+  }, [latestCoronagraphFrame?.ts]);
   const coronagraphStalenessNotice = useMemo(() => {
-    if (activeCoronagraphAgeMs == null || activeCoronagraphAgeMs < 60 * 60 * 1000) return null;
-    const totalMinutes = Math.floor(activeCoronagraphAgeMs / 60000);
+    if (latestCoronagraphAgeMs == null || latestCoronagraphAgeMs < 60 * 60 * 1000) return null;
+    const totalMinutes = Math.floor(latestCoronagraphAgeMs / 60000);
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     const ageLabel = hours > 0
       ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
       : `${minutes}m`;
-    return `Latest frame is ${ageLabel} old. Coronagraph feeds commonly have outages or delays for a few hours, and occasionally up to about a day.`;
-  }, [activeCoronagraphAgeMs]);
+    return `Latest available frame is ${ageLabel} old. Coronagraph feeds commonly have outages or delays for a few hours, and occasionally up to about a day.`;
+  }, [latestCoronagraphAgeMs]);
 
   const stereoAlignmentLabel = useMemo(() => {
     if (stereoEarthSeparationDeg == null) return 'STEREO-A alignment unknown right now.';
