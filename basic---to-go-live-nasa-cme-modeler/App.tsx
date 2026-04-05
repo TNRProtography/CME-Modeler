@@ -86,7 +86,11 @@ import {
   DEFAULT_FORECAST_VIEW_KEY,
   DEFAULT_MAIN_PAGE_KEY,
   DEBUG_PATH,
+  getForecastModalSlugFromSlug,
+  getForecastPath,
+  getForecastViewFromSlug,
   getForecastViewFromSearch,
+  getPageAndSlugFromPathname,
   getPageFromPathname,
   PAGE_PATHS,
   SETTINGS_PATH,
@@ -266,6 +270,8 @@ const App: React.FC = () => {
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
+  const [forecastModalSlug, setForecastModalSlug] = useState<string | null>(null);
+  const [solarModalSlug, setSolarModalSlug] = useState<string | null>(null);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [isGameOpen, setIsGameOpen] = useState(false);
@@ -407,7 +413,7 @@ const App: React.FC = () => {
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
       const url = new URL(path, window.location.origin);
-      const mainPage = getPageFromPathname(url.pathname);
+      const { page: mainPage, slug: pageSlug } = getPageAndSlugFromPathname(url.pathname);
       const isSettingsPath = url.pathname === SETTINGS_PATH;
       const isTutorialPath = url.pathname === TUTORIAL_PATH;
       const isDebugPath = url.pathname === DEBUG_PATH;
@@ -416,19 +422,30 @@ const App: React.FC = () => {
         lastMainPageRef.current = mainPage;
         setActivePage(mainPage);
         if (mainPage === 'forecast') {
-          const viewFromUrl = getForecastViewFromSearch(url.search);
+          const viewFromPath = getForecastViewFromSlug(pageSlug);
+          const viewFromSearch = getForecastViewFromSearch(url.search);
+          const viewFromUrl = viewFromPath ?? viewFromSearch;
           const targetView = viewFromUrl ?? defaultForecastView;
           setForecastViewMode(targetView);
+          setForecastModalSlug(getForecastModalSlugFromSlug(pageSlug));
+          setSolarModalSlug(null);
 
-          if (!viewFromUrl) {
-            const updated = new URL(url.href);
-            updated.searchParams.set('view', targetView);
-            const updatedPath = updated.pathname + updated.search;
-            const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
-            if (updatedPath !== path) {
-              window.history[method]({}, '', updatedPath);
-            }
+          const canonicalPath = getForecastPath(targetView, getForecastModalSlugFromSlug(pageSlug));
+          const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
+          if (url.pathname !== canonicalPath || url.search) {
+            window.history[method]({}, '', canonicalPath);
           }
+        } else {
+          const overlaySlug = pageSlug ?? null;
+          setForecastModalSlug(null);
+          setSolarModalSlug(mainPage === 'solar-activity' ? overlaySlug : null);
+          setIsControlsOpen(mainPage === 'modeler' && overlaySlug === 'controls-panel');
+          setIsCmeListOpen(mainPage === 'modeler' && overlaySlug === 'cme-list');
+          setIsForecastModelsModalOpen(mainPage === 'modeler' && overlaySlug === 'forecast-models');
+          setIsImpactGraphOpen(mainPage === 'modeler' && overlaySlug === 'impact-graph');
+          setIsGameOpen(mainPage === 'modeler' && overlaySlug === 'solar-surfer-game');
+          setIsFirstVisitTutorialOpen(mainPage === 'modeler' && overlaySlug === 'first-visit-tutorial');
+          setIsCmeTutorialOpen(mainPage === 'modeler' && overlaySlug === 'cme-modeler-tutorial');
         }
       } else if (!isSettingsPath && !isTutorialPath && !isDebugPath) {
         // If a ?cme= param is present on an unrecognised path, route to the
@@ -437,7 +454,7 @@ const App: React.FC = () => {
         const fallbackPath = hasCmeParam
           ? PAGE_PATHS.modeler
           : lastMainPageRef.current === 'forecast'
-            ? `${PAGE_PATHS.forecast}?view=${forecastViewMode}`
+            ? getForecastPath(forecastViewMode)
             : PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast;
         if (path !== fallbackPath) {
           const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
@@ -471,18 +488,25 @@ const App: React.FC = () => {
   const navigateToPage = useCallback(
     (page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
       if (page === 'forecast') {
-        const url = new URL(window.location.href);
-        url.pathname = PAGE_PATHS.forecast;
-        url.search = '';
-        url.searchParams.set('view', forecastViewMode);
-        navigateToPath(url.pathname + url.search, replaceHistory);
+        navigateToPath(getForecastPath(forecastViewMode, forecastModalSlug), replaceHistory);
         return;
       }
 
       navigateToPath(PAGE_PATHS[page], replaceHistory);
     },
-    [forecastViewMode, navigateToPath]
+    [forecastModalSlug, forecastViewMode, navigateToPath]
   );
+
+  const navigateToModelerOverlay = useCallback((overlaySlug: string | null, replaceHistory = false) => {
+    const suffix = overlaySlug ? `-${overlaySlug}` : '';
+    const search = window.location.search;
+    navigateToPath(`${PAGE_PATHS.modeler}${suffix}${search}`, replaceHistory);
+  }, [navigateToPath]);
+
+  const navigateToSolarOverlay = useCallback((overlaySlug: string | null, replaceHistory = false) => {
+    const suffix = overlaySlug ? `-${overlaySlug}` : '';
+    navigateToPath(`${PAGE_PATHS['solar-activity']}${suffix}`, replaceHistory);
+  }, [navigateToPath]);
 
   useEffect(() => {
     syncStateWithPath(window.location.href, true);
@@ -622,11 +646,11 @@ const App: React.FC = () => {
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
       // Delay the tutorial so new users can orient themselves before being interrupted
-      const tutorialTimer = setTimeout(() => setIsFirstVisitTutorialOpen(true), 30000);
+      const tutorialTimer = setTimeout(() => navigateToModelerOverlay('first-visit-tutorial'), 30000);
       return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); clearTimeout(tutorialTimer); };
     }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
-  }, []);
+  }, [navigateToModelerOverlay]);
 
   // Silently refresh GPS location for push notification worker on every app load.
   // Non-blocking — if GPS is denied or there's no subscription, this is a no-op.
@@ -689,10 +713,10 @@ const App: React.FC = () => {
     ) {
       const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
       if (!hasSeenCmeTutorial) {
-        setTimeout(() => setIsCmeTutorialOpen(true), 200);
+        setTimeout(() => navigateToModelerOverlay('cme-modeler-tutorial'), 200);
       }
     }
-  }, [activePage, isLoading, isFirstVisitTutorialOpen, isTutorialOpen]);
+  }, [activePage, isLoading, isFirstVisitTutorialOpen, isTutorialOpen, navigateToModelerOverlay]);
 
   useEffect(() => {
     if (navigationTarget) {
@@ -710,18 +734,18 @@ const App: React.FC = () => {
   
   const handleCloseFirstVisitTutorial = useCallback(() => {
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
-    setIsFirstVisitTutorialOpen(false);
+    navigateToModelerOverlay(null);
     setHighlightedElementId(null);
     if (window.location.pathname === TUTORIAL_PATH) {
       navigateToPage(lastMainPageRef.current);
     }
-  }, [navigateToPage]);
+  }, [navigateToModelerOverlay, navigateToPage]);
 
   const handleCloseCmeTutorial = useCallback(() => {
     localStorage.setItem(CME_TUTORIAL_KEY, 'true');
-    setIsCmeTutorialOpen(false);
+    navigateToModelerOverlay(null);
     setHighlightedElementId(null);
-  }, []);
+  }, [navigateToModelerOverlay]);
 
   const handleTutorialStepChange = useCallback((id: string | null) => {
     setHighlightedElementId(id);
@@ -730,14 +754,14 @@ const App: React.FC = () => {
   const handleForecastViewChange = useCallback(
     (mode: 'simple' | 'advanced') => {
       setForecastViewMode(mode);
-      const url = new URL(window.location.href);
-      url.pathname = PAGE_PATHS.forecast;
-      url.search = '';
-      url.searchParams.set('view', mode);
-      navigateToPath(url.pathname + url.search);
+      navigateToPath(getForecastPath(mode, forecastModalSlug));
     },
-    [navigateToPath]
+    [forecastModalSlug, navigateToPath]
   );
+
+  const handleForecastModalSlugChange = useCallback((slug: string | null) => {
+    navigateToPath(getForecastPath(forecastViewMode, slug));
+  }, [forecastViewMode, navigateToPath]);
 
   const handleDefaultMainPageChange = useCallback((page: 'forecast' | 'solar-activity' | 'modeler') => {
     setDefaultMainPage(page);
@@ -769,11 +793,10 @@ const App: React.FC = () => {
   }, [navigateToPage]);
 
   const handleOpenTutorial = useCallback(() => {
-    setIsFirstVisitTutorialOpen(false);
-    setIsCmeTutorialOpen(false);
+    navigateToModelerOverlay(null, true);
     navigateToPath(TUTORIAL_PATH);
     setIsTutorialOpen(true);
-  }, [navigateToPath]);
+  }, [navigateToModelerOverlay, navigateToPath]);
 
   const handleCloseTutorial = useCallback(() => {
     setIsTutorialOpen(false);
@@ -906,10 +929,9 @@ const App: React.FC = () => {
 
   const handleShowTutorial = useCallback(() => {
     setIsTutorialOpen(false);
-    setIsCmeTutorialOpen(false);
-    setIsFirstVisitTutorialOpen(true);
+    navigateToModelerOverlay('first-visit-tutorial');
     navigateToPath(TUTORIAL_PATH);
-  }, [navigateToPath]);
+  }, [navigateToModelerOverlay, navigateToPath]);
 
   useEffect(() => {
     if (activePage !== 'modeler') return;
@@ -1023,7 +1045,11 @@ const App: React.FC = () => {
       url.searchParams.delete('cme');
     }
     window.history.replaceState({}, '', url.pathname + url.search);
-    setIsCmeListOpen(false);
+    if (activePage === 'modeler') {
+      navigateToModelerOverlay(null, true);
+    } else {
+      setIsCmeListOpen(false);
+    }
 
     if (cme) {
       setTimelineActive(true);
@@ -1047,20 +1073,20 @@ const App: React.FC = () => {
       setTimelineMaxDate(maxDate);
       setTimelineScrubberValue(getScrubberValueForNow(minDate, maxDate));
     }
-  }, [cmeData, activeTimeRange, getTimelineRangeFromData, getScrubberValueForNow]);
+  }, [activePage, activeTimeRange, cmeData, getTimelineRangeFromData, getScrubberValueForNow, navigateToModelerOverlay]);
 
   const handleCMEClickFromCanvas = useCallback((cme: ProcessedCME) => {
     handleSelectCMEForModeling(cme);
-    setIsCmeListOpen(true);
-  }, [handleSelectCMEForModeling]);
+    navigateToModelerOverlay('cme-list');
+  }, [handleSelectCMEForModeling, navigateToModelerOverlay]);
 
   const handleOpenGame = useCallback(() => {
-    setIsGameOpen(true);
-  }, []);
+    navigateToModelerOverlay('solar-surfer-game');
+  }, [navigateToModelerOverlay]);
 
   const handleCloseGame = useCallback(() => {
-    setIsGameOpen(false);
-  }, []);
+    navigateToModelerOverlay(null);
+  }, [navigateToModelerOverlay]);
 
 
   const handleTimelinePlayPause = useCallback(() => {
@@ -1177,10 +1203,10 @@ const App: React.FC = () => {
       const data = canvasRef.current.calculateImpactProfile();
       if (data) {
         setImpactGraphData(data);
-        setIsImpactGraphOpen(true);
+        navigateToModelerOverlay('impact-graph');
       }
     }
-  }, []);
+  }, [navigateToModelerOverlay]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
     navigateToPage('modeler');
@@ -1188,8 +1214,8 @@ const App: React.FC = () => {
     if (cmeToModel) {
       handleSelectCMEForModeling(cmeToModel);
     }
-    setIsCmeListOpen(true);
-  }, [cmeData, handleSelectCMEForModeling, navigateToPage]);
+    navigateToModelerOverlay('cme-list');
+  }, [cmeData, handleSelectCMEForModeling, navigateToModelerOverlay, navigateToPage]);
 
   const handleFlareAlertClick = useCallback(() => {
     setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
@@ -1350,7 +1376,7 @@ const App: React.FC = () => {
               <Suspense fallback={null}>
               <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => setIsControlsOpen(false)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} chDetectionStatus={chDetectionStatus} />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => navigateToModelerOverlay(null)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} chDetectionStatus={chDetectionStatus} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
@@ -1445,7 +1471,7 @@ const App: React.FC = () => {
                             <div className="flex flex-col items-center w-16 lg:hidden">
                                 <button
                                   id="mobile-controls-button"
-                                  onClick={() => setIsControlsOpen(true)}
+                                  onClick={() => navigateToModelerOverlay('controls-panel')}
                                   className="p-3 rounded-2xl bg-white/10 border border-white/15 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
                                   title="Open Settings"
                                 >
@@ -1467,7 +1493,7 @@ const App: React.FC = () => {
                             <div className="flex flex-col items-center w-16">
                                 <button
                                   id="forecast-models-button"
-                                  onClick={() => setIsForecastModelsModalOpen(true)}
+                                  onClick={() => navigateToModelerOverlay('forecast-models')}
                                   className="p-3 rounded-2xl bg-gradient-to-br from-sky-500/70 via-cyan-500/70 to-emerald-500/70 border border-white/20 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
                                   title="Open CME Forecast Models"
                                 >
@@ -1480,7 +1506,7 @@ const App: React.FC = () => {
                             <div className="flex flex-col items-center w-16 lg:hidden">
                                 <button
                                   id="mobile-cme-list-button"
-                                  onClick={() => setIsCmeListOpen(true)}
+                                  onClick={() => navigateToModelerOverlay('cme-list')}
                                   className="p-3 rounded-2xl bg-white/10 border border-white/15 text-white shadow-xl backdrop-blur-xl active:scale-95 transition-transform hover:-translate-y-0.5"
                                   title="Open CME List"
                                 >
@@ -1493,10 +1519,10 @@ const App: React.FC = () => {
                 </main>
 
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
-                    <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => setIsCmeListOpen(false)} />
+                    <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => navigateToModelerOverlay(null)} />
                 </div>
                   
-                  {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => { setIsControlsOpen(false); setIsCmeListOpen(false); }} />)}
+                  {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => navigateToModelerOverlay(null)} />)}
                   {isLoading && activePage === 'modeler' && <LoadingOverlay />}
                   <TutorialModal isOpen={isTutorialOpen} onClose={handleCloseTutorial} />
               </div>
@@ -1516,6 +1542,8 @@ const App: React.FC = () => {
                         onInitialLoadProgress={handleForecastLoadPoint}
                         viewMode={forecastViewMode}
                         onViewModeChange={handleForecastViewChange}
+                        modalSlug={forecastModalSlug}
+                        onModalSlugChange={handleForecastModalSlugChange}
                         refreshSignal={manualRefreshKey}
                     />
                   </Suspense>
@@ -1530,6 +1558,8 @@ const App: React.FC = () => {
                         onViewCMEInVisualization={handleViewCMEInVisualization}
                         onSuvi195ImageUrlChange={setSharedSuvi195Url}
                         navigationTarget={navigationTarget}
+                        modalSlug={solarModalSlug}
+                        onModalSlugChange={(slug) => navigateToSolarOverlay(slug)}
                         refreshSignal={manualRefreshKey}
                         onInitialLoad={handleSolarInitialLoad}
                         onInitialLoadProgress={handleSolarLoadPoint}
@@ -1601,7 +1631,7 @@ const App: React.FC = () => {
           <Suspense fallback={null}>
             <ForecastModelsModal
                 isOpen={isForecastModelsModalOpen}
-                onClose={() => setIsForecastModelsModalOpen(false)}
+                onClose={() => navigateToModelerOverlay(null)}
                 setViewerMedia={setViewerMedia}
             />
           </Suspense>
@@ -1610,7 +1640,7 @@ const App: React.FC = () => {
             {/* --- NEW: Render the ImpactGraphModal --- */}
             <ImpactGraphModal
               isOpen={isImpactGraphOpen}
-              onClose={() => setIsImpactGraphOpen(false)}
+              onClose={() => navigateToModelerOverlay(null)}
               data={impactGraphData}
             />
 

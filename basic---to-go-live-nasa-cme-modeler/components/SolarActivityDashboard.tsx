@@ -23,6 +23,8 @@ interface SolarActivityDashboardProps {
   onSuvi195ImageUrlChange?: (url: string | null) => void;
   onInitialLoad?: () => void;
   onInitialLoadProgress?: (task: 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions') => void;
+  modalSlug?: string | null;
+  onModalSlugChange?: (slug: string | null) => void;
 }
 
 interface SolarActivitySummary {
@@ -892,7 +894,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
 
@@ -1305,10 +1307,44 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       else if (id === 'active-sunspots') title = 'About Active Sunspot Regions';
       else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
       setModalState({ isOpen: true, title: title, content: contentData });
+      onModalSlugChange?.(`${id}-tooltip`);
     }
-  }, [tooltipContent]);
+  }, [onModalSlugChange, tooltipContent]);
 
-  const closeModal = useCallback(() => setModalState(null), []);
+  const closeModal = useCallback(() => {
+    setModalState(null);
+    onModalSlugChange?.(null);
+  }, [onModalSlugChange]);
+
+  useEffect(() => {
+    if (!modalSlug) {
+      setModalState(null);
+      return;
+    }
+    const id = modalSlug.endsWith('-tooltip')
+      ? modalSlug.slice(0, -'-tooltip'.length)
+      : modalSlug;
+    const contentData = tooltipContent[id as keyof typeof tooltipContent];
+    if (!contentData) return;
+
+    let title = '';
+    if (id === 'current-status') title = 'About Current Solar Status';
+    else if (id === 'solar-summary') title = 'About 24-Hour Solar Summary';
+    else if (id === 'xray-flux') title = 'About GOES X-ray Flux';
+    else if (id === 'proton-flux') title = 'About GOES Proton Flux (>=10 MeV)';
+    else if (id === 'suvi-131') title = 'About SUVI 131Å Imagery';
+    else if (id === 'suvi-304') title = 'About SUVI 304Å Imagery';
+    else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
+    else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
+    else if (id === 'suvi-195') title = 'About SUVI 195Å Imagery';
+    else if (id === 'coronagraphy') title = 'About Multi-source Coronagraphy';
+    else if (id === 'solar-flares') title = 'About Solar Flares';
+    else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
+    else if (id === 'active-sunspots') title = 'About Active Sunspot Regions';
+    else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
+
+    setModalState({ isOpen: true, title, content: contentData });
+  }, [modalSlug, tooltipContent]);
 
   const fetchImage = useCallback(async (url: string, setState: React.Dispatch<React.SetStateAction<{url: string | null, loading: string | null}>>, isVideo: boolean = false, addCacheBuster: boolean = true, fallbackUrl?: string) => {
     const cacheKey = `${url}::${isVideo ? 'video' : 'image'}`;
