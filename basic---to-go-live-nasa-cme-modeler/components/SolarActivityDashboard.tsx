@@ -2681,7 +2681,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastFlaresUpdate || 'N/A'}</div>
             </div>
 
-            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] md:h-[620px] flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>
@@ -2724,7 +2724,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </div>
               )}
 
-              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[280px] md:min-h-[360px]">
+              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
                 {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
                 {!coronagraphLoading && !activeCoronagraphUrl && (
                   <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No coronagraph imagery available for this source.</div>
@@ -2745,7 +2745,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 )}
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-2 flex-shrink-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={goToPreviousCoronagraphFrame}
