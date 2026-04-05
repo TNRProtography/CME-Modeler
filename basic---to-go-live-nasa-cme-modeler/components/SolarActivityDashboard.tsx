@@ -926,12 +926,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
-  const CORONAGRAPH_DIFF_GAIN = 8.5;
-  const CORONAGRAPH_DIFF_NOISE_FLOOR = 8;
-  const CORONAGRAPH_DIFF_GAMMA = 0.45;
-  const SUVI_DIFF_GAIN = 10.0;
-  const SUVI_DIFF_NOISE_FLOOR = 6;
-  const SUVI_DIFF_GAMMA = 0.42;
+  // Difference-imagery defaults tuned to match provided reference settings.
+  // GOES-19 CCOR-1
+  const CORONAGRAPH_DIFF_GAIN = 11.5;
+  const CORONAGRAPH_DIFF_NOISE_FLOOR = 0;
+  const CORONAGRAPH_DIFF_GAMMA = 0.8;
+  // SUVI defaults are channel-specific (195 / 304 / 131).
+  const SUVI_DIFF_CONFIG_BY_SOURCE: Record<SuviWorkerSourceKey, { gain: number; noiseFloor: number; gamma: number }> = {
+    suvi_195_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
+    suvi_304_secondary: { gain: 9.0,  noiseFloor: 1, gamma: 0.30 },
+    suvi_131_secondary: { gain: 15.5, noiseFloor: 7, gamma: 0.90 },
+  };
 
   const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
     const t = Math.min(1, Math.max(0, normalized));
@@ -2158,6 +2163,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     : activeSunImage === 'SUVI_304'
       ? suviSourceKeyByMode.SUVI_304
       : suviSourceKeyByMode.SUVI_131;
+  const activeSuviDiffConfig = SUVI_DIFF_CONFIG_BY_SOURCE[activeSuviSourceKey] ?? SUVI_DIFF_CONFIG_BY_SOURCE.suvi_131_secondary;
   const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
   const suviFrames = activeSuviSourceState?.frames ?? [];
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
@@ -2333,9 +2339,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
           const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
           const rawDelta = Math.abs(bGray - aGray);
-          const aboveNoise = Math.max(0, rawDelta - SUVI_DIFF_NOISE_FLOOR);
-          const amplified = Math.min(255, aboveNoise * SUVI_DIFF_GAIN);
-          const normalized = Math.pow(amplified / 255, SUVI_DIFF_GAMMA);
+          const aboveNoise = Math.max(0, rawDelta - activeSuviDiffConfig.noiseFloor);
+          const amplified = Math.min(255, aboveNoise * activeSuviDiffConfig.gain);
+          const normalized = Math.pow(amplified / 255, activeSuviDiffConfig.gamma);
           const [r, g, b] = colorizeCoronagraphDelta(normalized);
           out.data[i] = r;
           out.data[i + 1] = g;
@@ -2349,7 +2355,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta]);
+  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta, activeSuviDiffConfig]);
 
   useEffect(() => {
     const canvas = coronagraphCanvasRef.current;
