@@ -884,6 +884,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
+  const CORONAGRAPH_DIFF_GAIN = 8.5;
+  const CORONAGRAPH_DIFF_NOISE_FLOOR = 8;
+  const CORONAGRAPH_DIFF_GAMMA = 0.45;
+
+  const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
+    const t = Math.min(1, Math.max(0, normalized));
+    // Multi-stop heat map: black → navy → cyan → yellow → orange → red → white.
+    if (t < 0.16) {
+      const k = t / 0.16;
+      return [0, Math.round(20 * k), Math.round(90 * k)];
+    }
+    if (t < 0.36) {
+      const k = (t - 0.16) / 0.20;
+      return [0, Math.round(20 + 170 * k), Math.round(90 + 140 * k)];
+    }
+    if (t < 0.58) {
+      const k = (t - 0.36) / 0.22;
+      return [Math.round(255 * k), Math.round(190 + 65 * k), Math.round(230 - 200 * k)];
+    }
+    if (t < 0.80) {
+      const k = (t - 0.58) / 0.22;
+      return [255, Math.round(255 - 120 * k), Math.round(30 - 30 * k)];
+    }
+    const k = (t - 0.80) / 0.20;
+    return [255, Math.round(135 + 120 * k), Math.round(255 * k)];
+  }, []);
+
   useEffect(() => {
     onSuvi195ImageUrlChange?.(suvi195.url);
   }, [onSuvi195ImageUrlChange, suvi195.url]);
@@ -2105,10 +2132,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         for (let i = 0; i < dataA.data.length; i += 4) {
           const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
           const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
-          const delta = Math.min(255, Math.abs(bGray - aGray) * 3.0);
-          out.data[i] = delta;
-          out.data[i + 1] = delta;
-          out.data[i + 2] = delta;
+          const rawDelta = Math.abs(bGray - aGray);
+          const aboveNoise = Math.max(0, rawDelta - CORONAGRAPH_DIFF_NOISE_FLOOR);
+          const amplified = Math.min(255, aboveNoise * CORONAGRAPH_DIFF_GAIN);
+          const normalized = Math.pow(amplified / 255, CORONAGRAPH_DIFF_GAMMA);
+          const [r, g, b] = colorizeCoronagraphDelta(normalized);
+          out.data[i] = r;
+          out.data[i + 1] = g;
+          out.data[i + 2] = b;
           out.data[i + 3] = 255;
         }
         ctx.putImageData(out, 0, 0);
@@ -2118,7 +2149,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [coronagraphDifference, activeCoronagraphUrl, previousCoronagraphUrl]);
+  }, [coronagraphDifference, activeCoronagraphUrl, previousCoronagraphUrl, colorizeCoronagraphDelta]);
 
   // --- RENDER ---
   return (
