@@ -880,6 +880,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [coronagraphSource, setCoronagraphSource] = useState<CoronagraphSourceKey>('ccor1');
   const [coronagraphIndex, setCoronagraphIndex] = useState<number>(0);
   const [coronagraphDifference, setCoronagraphDifference] = useState<boolean>(true);
+  const [coronagraphPlaying, setCoronagraphPlaying] = useState<boolean>(false);
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
@@ -2085,10 +2086,50 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     if (coronagraphFrames.length === 0) {
       setCoronagraphIndex(0);
+      setCoronagraphPlaying(false);
       return;
     }
     setCoronagraphIndex(coronagraphFrames.length - 1);
+    setCoronagraphPlaying(false);
   }, [coronagraphSource, coronagraphFrames.length]);
+
+  useEffect(() => {
+    if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
+    const timer = window.setInterval(() => {
+      setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [coronagraphPlaying, coronagraphFrames.length]);
+
+  const canStepCoronagraphFrames = coronagraphFrames.length > 1;
+  const goToPreviousCoronagraphFrame = useCallback(() => {
+    if (!canStepCoronagraphFrames) return;
+    setCoronagraphPlaying(false);
+    setCoronagraphIndex((prev) => (prev - 1 + coronagraphFrames.length) % coronagraphFrames.length);
+  }, [canStepCoronagraphFrames, coronagraphFrames.length]);
+
+  const goToNextCoronagraphFrame = useCallback(() => {
+    if (!canStepCoronagraphFrames) return;
+    setCoronagraphPlaying(false);
+    setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
+  }, [canStepCoronagraphFrames, coronagraphFrames.length]);
+
+  const downloadCoronagraphFrame = useCallback(() => {
+    if (!activeCoronagraphUrl) return;
+    const sourceLabel = coronagraphSourceState?.label ?? coronagraphSource;
+    const timestampPart = activeCoronagraphFrame?.ts
+      ? activeCoronagraphFrame.ts.replace(/[:.]/g, '-')
+      : String(Date.now());
+    const fileName = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${timestampPart}.jpg`;
+    const link = document.createElement('a');
+    link.href = activeCoronagraphUrl;
+    link.download = fileName;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [activeCoronagraphFrame?.ts, activeCoronagraphUrl, coronagraphSource, coronagraphSourceState?.label]);
 
   useEffect(() => {
     const canvas = coronagraphCanvasRef.current;
@@ -2675,14 +2716,51 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 )}
               </div>
 
-              <div className="mt-3">
+              <div className="mt-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={goToPreviousCoronagraphFrame}
+                    disabled={!canStepCoronagraphFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Previous frame"
+                  >
+                    ◀ Prev
+                  </button>
+                  <button
+                    onClick={() => setCoronagraphPlaying((prev) => !prev)}
+                    disabled={!canStepCoronagraphFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                    title={coronagraphPlaying ? 'Pause' : 'Play'}
+                  >
+                    {coronagraphPlaying ? '⏸ Pause' : '▶ Play'}
+                  </button>
+                  <button
+                    onClick={goToNextCoronagraphFrame}
+                    disabled={!canStepCoronagraphFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Next frame"
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    onClick={downloadCoronagraphFrame}
+                    disabled={!activeCoronagraphUrl}
+                    className="px-3 py-1.5 text-xs rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                    title="Download current frame"
+                  >
+                    ⬇ Download frame
+                  </button>
+                </div>
                 <input
                   type="range"
                   min={0}
                   max={Math.max(0, coronagraphFrames.length - 1)}
                   value={clampedCoronagraphIndex}
-                  onChange={(e) => setCoronagraphIndex(Number(e.target.value))}
-                  className="w-full"
+                  onChange={(e) => {
+                    setCoronagraphPlaying(false);
+                    setCoronagraphIndex(Number(e.target.value));
+                  }}
+                  className="w-full accent-sky-500"
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
                   {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : '—'}` : 'No frame selected'}
