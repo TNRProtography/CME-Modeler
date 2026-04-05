@@ -1,6 +1,7 @@
 //--- START OF FILE src/components/VisibilityForecastPanel.tsx ---
 
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 
@@ -307,16 +308,19 @@ const TrendArrow: React.FC<{ trend?: string }> = ({ trend }) => {
 
 
 // ── Info tooltip modal ────────────────────────────────────────────────────────
-const WhatToExpectInfo: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <div
-    className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
-    style={{ background: 'rgba(0,0,0,0.7)' }}
-    onClick={onClose}
-  >
+const WhatToExpectInfo: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
-      className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto styled-scrollbar"
-      onClick={e => e.stopPropagation()}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
     >
+      <div
+        className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto styled-scrollbar"
+        onClick={e => e.stopPropagation()}
+      >
       <div className="flex items-start justify-between gap-4">
         <h3 className="text-lg font-semibold text-white">About "What to expect"</h3>
         <button onClick={onClose} className="text-neutral-400 hover:text-white flex-shrink-0 text-xl leading-none">✕</button>
@@ -371,9 +375,11 @@ const WhatToExpectInfo: React.FC<{ onClose: () => void }> = ({ onClose }) => (
           Data sources: NOAA RTSW solar wind · Substorm Risk Worker (Newell coupling + IGRF-13) · SpotTheAurora forecast composite · GeoNet Eyrewell magnetometer (bay onset)
         </div>
       </div>
-    </div>
-  </div>
-);
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = ({
   auroraScore,
