@@ -3,8 +3,24 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
-const NZ_OFFSET_H   = 13;   // NZDT = UTC+13 (April daylight saving)
 const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
+const NZ_TIME_ZONE  = 'Pacific/Auckland';
+
+const getNzOffsetHours = (atMs: number): number => {
+  const parts = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: NZ_TIME_ZONE,
+    timeZoneName: 'shortOffset',
+  }).formatToParts(new Date(atMs));
+  const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+  const match = tzPart.match(/([+-]\d{1,2})(?::(\d{2}))?/);
+  if (!match) return 12;
+  const hours = Number(match[1]);
+  const mins = Number(match[2] ?? 0);
+  return hours + mins / 60;
+};
+
+const getNzOffsetMs = (atMs: number): number => getNzOffsetHours(atMs) * 3600000;
+const getNzTimeLabel = (atMs: number): 'NZDT' | 'NZST' => (getNzOffsetHours(atMs) >= 13 ? 'NZDT' : 'NZST');
 
 interface KpSlot {
   utcMs:    number;
@@ -55,7 +71,7 @@ function skyTypeFromMs(
     const CIVIL_MS    = 60 * 60000;
     const NAUTICAL_MS = 90 * 60000;
     const DAY_MS      = 86400000;
-    const NZT_OFFSET  = NZ_OFFSET_H * 3600000;
+    const NZT_OFFSET  = getNzOffsetMs(slotUtcMs);
 
     // Key insight: sunriseMs/sunsetMs are today's UTC timestamps, but NZ is
     // UTC+13 so a 6:30am NZT sunrise is 5:30pm UTC the *previous* day.
@@ -94,7 +110,7 @@ function skyTypeFromMs(
   }
 
   // Fallback: NZ April heuristic
-  const nztH = new Date(slotUtcMs + NZ_OFFSET_H * 3600000).getUTCHours();
+  const nztH = new Date(slotUtcMs + getNzOffsetMs(slotUtcMs)).getUTCHours();
   if (nztH >= 8 && nztH < 18) return 'day';
   if (nztH === 7 || nztH === 18) return 'golden';
   if (nztH === 6 || nztH === 19) return 'civil';
@@ -382,7 +398,7 @@ function drawCanvas(
       // Arc: 0 at sunrise, peaks at solar noon, 0 at sunset.
       // Anchor using NZT time-of-day (same logic as skyTypeFromMs).
       const DAY_MS_A  = 86400000;
-      const NZT_OFF_A = NZ_OFFSET_H * 3600000;
+      const NZT_OFF_A = getNzOffsetMs(slot.utcMs);
       const slotNztA  = slot.utcMs + NZT_OFF_A;
       const slotNztMidA = slotNztA - (slotNztA % DAY_MS_A);
       const riseA = sunriseMs != null ? slotNztMidA + ((sunriseMs + NZT_OFF_A) % DAY_MS_A) - NZT_OFF_A : null;
@@ -409,7 +425,7 @@ function drawCanvas(
       ctx.fillStyle = bg; ctx.fillRect(x, LBEL_H, COL_W, SKY_H);
       // Sun just at/near the horizon for golden hour
       const gDAY    = 86400000;
-      const gNZTOff = NZ_OFFSET_H * 3600000;
+      const gNZTOff = getNzOffsetMs(slot.utcMs);
       const gSlotNzt = slot.utcMs + gNZTOff;
       const gSlotMid = gSlotNzt - (gSlotNzt % gDAY);
       const gRiseA = sunriseMs != null ? gSlotMid + ((sunriseMs + gNZTOff) % gDAY) - gNZTOff : null;
@@ -452,7 +468,7 @@ function drawCanvas(
 
     // Keep ARR_DAY/ARR_NZT/arSlotMid — used by moon arc below
     const ARR_DAY   = 86400000;
-    const ARR_NZT   = NZ_OFFSET_H * 3600000;
+    const ARR_NZT   = getNzOffsetMs(slot.utcMs);
     const arSlotNzt = slot.utcMs + ARR_NZT;
     const arSlotMid = arSlotNzt - (arSlotNzt % ARR_DAY);
 
@@ -643,7 +659,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
           // Slot type: observed/estimated/predicted — used for opacity later
           const observed: string = isObjects ? (row.observed ?? 'predicted') : 'predicted';
 
-          const nztMs   = utcMs + NZ_OFFSET_H * 3600000;
+          const nztMs   = utcMs + getNzOffsetMs(utcMs);
           const nztD    = new Date(nztMs);
           const nztH    = nztD.getUTCHours();
           const dayKey  = nztD.toISOString().slice(0, 10);
@@ -676,7 +692,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             const kpRaw = a.kp + (b.kp - a.kp) * ease;
             const kp = Math.round(kpRaw * 3) / 3;
             const observed = s === 0 ? a.observed : (t < 0.5 ? a.observed : b.observed);
-            const nztMs  = utcMs + NZ_OFFSET_H * 3600000;
+            const nztMs  = utcMs + getNzOffsetMs(utcMs);
             const nztD   = new Date(nztMs);
             const nztH   = nztD.getUTCHours();
             const dayKey = nztD.toISOString().slice(0, 10);
@@ -736,7 +752,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const selIsMoonUp = (() => {
     if (!sel || !moonRiseMs || !moonSetMs) return true; // assume up if no data
     const DAY_MS_M = 86400000;
-    const NZT_M    = NZ_OFFSET_H * 3600000;
+    const NZT_M    = getNzOffsetMs(sel.utcMs);
     const slotNztM = sel.utcMs + NZT_M;
     const slotMidM = slotNztM - (slotNztM % DAY_MS_M);
     const startNztM = (slots[0]?.utcMs ?? sel.utcMs) + NZT_M;
@@ -763,7 +779,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Day index: how many NZT calendar days from now to the selected slot
   const selDayIndex = (() => {
     if (!sel) return 0;
-    const NZT_D = NZ_OFFSET_H * 3600000;
+    const NZT_D = getNzOffsetMs(sel.utcMs);
     const nowMid  = Date.now() + NZT_D; const nowDay = nowMid - (nowMid % 86400000);
     const selMid  = sel.utcMs + NZT_D;  const selDay = selMid - (selMid % 86400000);
     return Math.max(0, Math.round((selDay - nowDay) / 86400000));
@@ -785,6 +801,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
   const fmtEnd = (h: number) => fmt((h+1)%24);
+  const nzTimeLabel = getNzTimeLabel(sel?.utcMs ?? Date.now());
 
   function gScale(kp: number) {
     if (kp>=9) return 'G5'; if (kp>=8) return 'G4'; if (kp>=7) return 'G3';
@@ -852,7 +869,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             <div style={{ flex:'1 1 auto', minWidth:0 }}>
               <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
                 <span style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)' }}>
-                  {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} NZT
+                  {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} {nzTimeLabel}
                 </span>
                 <span style={{
                   fontSize:10, padding:'1px 7px', borderRadius:10,

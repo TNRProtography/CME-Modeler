@@ -237,11 +237,13 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       const pDynRatio = pDyn1 > 0 ? pDyn2 / pDyn1 : NaN;
       if (![denRatio, tmpRatio, btRatio, pDynRatio].every(Number.isFinite)) continue;
 
-      const fSpd = spdDelta >= 25;
-      const fDen = denRatio >= 1.5;
-      const fTmp = tmpRatio >= 1.2;
-      const fBt = btDelta >= 3 || btRatio >= 1.3;
-      const fP = pDynRatio >= 1.8;
+      // Tuned to reduce false positives from small/noisy fluctuations:
+      // require a clearer compression signature before showing IPS.
+      const fSpd = spdDelta >= 35;
+      const fDen = denRatio >= 1.8;
+      const fTmp = tmpRatio >= 1.3;
+      const fBt = btDelta >= 4 || btRatio >= 1.4;
+      const fP = pDynRatio >= 2.2;
       const forwardCore = Number(fSpd) + Number(fDen) + Number(fP);
       const forwardSupport = Number(fTmp) + Number(fBt);
 
@@ -259,7 +261,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
 
       let label = '';
       let score = 0;
-      if (forwardCore >= 2 && (forwardCore + forwardSupport) >= 3) {
+      if (forwardCore >= 3 && (forwardCore + forwardSupport) >= 4) {
         label = 'Forward Interplanetary Shock (IPS)';
         score = forwardCore * 2 + forwardSupport;
       } else if (reverseHits >= 3) {
