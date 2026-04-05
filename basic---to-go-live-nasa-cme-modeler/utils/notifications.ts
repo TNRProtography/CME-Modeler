@@ -458,13 +458,29 @@ const DEFAULT_ON_CATEGORIES = new Set([
   'aurora-80percent',
   'substorm-forecast',
 ]);
+const LEGACY_PREF_FALLBACKS: Record<string, string[]> = {
+  'flare-M1': ['flare-event', 'flare-peak'],
+  'flare-M5': ['flare-event', 'flare-peak'],
+  'flare-X1': ['flare-event', 'flare-peak'],
+  'flare-X5': ['flare-event', 'flare-peak'],
+  'flare-X10': ['flare-event', 'flare-peak'],
+};
 
 export const getNotificationPreference = (categoryId: string): boolean => {
   try {
     const stored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + categoryId);
+    if (stored !== null) return JSON.parse(stored);
+
+    // Backward-compatibility: if this is a new split category and the user
+    // has an explicit legacy flare preference, inherit that setting.
+    const legacyIds = LEGACY_PREF_FALLBACKS[categoryId] ?? [];
+    for (const legacyId of legacyIds) {
+      const legacyStored = localStorage.getItem(NOTIFICATION_PREF_PREFIX + legacyId);
+      if (legacyStored !== null) return JSON.parse(legacyStored);
+    }
+
     // If never explicitly set, default to true for high-value categories
-    if (stored === null) return DEFAULT_ON_CATEGORIES.has(categoryId);
-    return JSON.parse(stored);
+    return DEFAULT_ON_CATEGORIES.has(categoryId);
   } catch (e) {
     console.error(`Error reading notification preference for ${categoryId}:`, e);
     return true;

@@ -49,10 +49,34 @@ const NOTIFICATION_GROUPS = [
     description: 'Space weather that could trigger aurora in the hours or days ahead.',
     items: [
       {
-        id: 'flare-event',
+        id: 'flare-M1',
         emoji: '☀️',
-        label: 'Solar flare',
-        plain: 'A solar flare has peaked. Flares can enhance aurora but effects usually arrive 1-3 days later. Think of this as an early heads-up to watch conditions over the coming days.',
+        label: 'Solar flare M1+',
+        plain: 'Broad flare alert. Sent from M1 and up so you get early notice when flare activity starts ramping.',
+      },
+      {
+        id: 'flare-M5',
+        emoji: '☀️',
+        label: 'Solar flare M5+',
+        plain: 'Only stronger M-class flares. Good if you want fewer alerts than M1 while still catching meaningful events.',
+      },
+      {
+        id: 'flare-X1',
+        emoji: '☀️',
+        label: 'Solar flare X1+',
+        plain: 'Major X-class flare alert. A higher threshold focused on large events.',
+      },
+      {
+        id: 'flare-X5',
+        emoji: '☀️',
+        label: 'Solar flare X5+',
+        plain: 'Very strong flare threshold. Rare and high-impact events only.',
+      },
+      {
+        id: 'flare-X10',
+        emoji: '☀️',
+        label: 'Solar flare X10+',
+        plain: 'Extreme flare alert for exceptional events only. Very rare.',
       },
       {
         id: 'shock-detection',
