@@ -348,6 +348,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'Substorms often cause sudden aurora brightening, expansion, and faster movement in the sky.',
             'Substorm onset is tied to nightside current-sheet instability and unloading after magnetotail energy storage.'
         ),
+        'substorm-index': buildStatTooltip(
+            'Substorm Index',
+            'A live score from the substorm risk worker estimating magnetotail loading/unloading state and near-term onset potential.',
+            'Higher values and onset flags generally mean brighter, faster-moving aurora and better naked-eye odds if darkness and location are favorable.',
+            'This is an empirical now-cast index, not a direct satellite measurement; use with IMF Bz, pressure, and local sky conditions.'
+        ),
+        'newell-coupling': buildStatTooltip(
+            'Newell Coupling Function',
+            'A solar wind–magnetosphere coupling proxy derived from IMF orientation and flow speed, indicating energy transfer into Earth’s magnetosphere.',
+            'Stronger coupling usually supports more active aurora, especially when sustained and paired with southward IMF.',
+            'High Newell values can precede substorm activity but do not guarantee immediate visible aurora without release and darkness.'
+        ),
+        'dynamic-pressure': buildStatTooltip(
+            'Dynamic Pressure',
+            'Solar wind ram pressure at Earth, driven mainly by density and speed.',
+            'Pressure pulses can compress the magnetosphere and trigger sharp responses, often around shock/sheath arrivals that elevate aurora potential.',
+            'Pressure alone is insufficient for strong displays; IMF orientation (especially Bz) controls geoeffective coupling efficiency.'
+        ),
         'simple-view': buildStatTooltip(
             'Simple View',
             'A streamlined forecast layout focused on what to expect right now and in the next short window.',
@@ -707,7 +725,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 title="Substorm Index"
                                 currentValue={substormRiskData ? `${substormRiskData.current.score} <span class='text-base'>${substormRiskData.current.level}</span><span class='text-xs block text-neutral-400'>${substormRiskData.current.risk_trend}${substormRiskData.current.confidence != null ? ` · ${substormRiskData.current.confidence}% confidence` : ''}</span>` : '—'}
                                 emoji={substormRiskData?.current?.bay_onset_flag ? '⚡' : substormRiskData?.current && substormRiskData.current.score >= 50 ? '🌌' : '📊'}
-                                onOpenModal={() => openModal('unified-forecast')}
+                                onOpenModal={() => openModal('substorm-index')}
                             >
                                 <SubstormIndexChart history={substormRiskData?.history_24h ?? []} />
                             </ForecastChartPanel>
@@ -716,7 +734,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 title="Newell Coupling Function"
                                 currentValue={substormRiskData ? `${substormRiskData.metrics.solar_wind.newell_coupling_now.toFixed(0)} <span class='text-base'>Wb/s</span><span class='text-xs block text-neutral-400'>30m avg: ${substormRiskData.metrics.solar_wind.newell_avg_30m.toFixed(0)} · 60m avg: ${substormRiskData.metrics.solar_wind.newell_avg_60m.toFixed(0)}</span>` : '—'}
                                 emoji="🔗"
-                                onOpenModal={() => openModal('bz')}
+                                onOpenModal={() => openModal('newell-coupling')}
                             >
                                 <NewellCouplingChart history={substormRiskData?.history_24h ?? []} />
                             </ForecastChartPanel>
@@ -725,7 +743,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 title="Dynamic Pressure"
                                 currentValue={substormRiskData ? `${substormRiskData.metrics.solar_wind.dynamic_pressure_nPa.toFixed(2)} <span class='text-base'>nPa</span><span class='text-xs block text-neutral-400'>30m avg: ${substormRiskData.metrics.solar_wind.avg_30m_pressure_nPa.toFixed(2)} nPa · density ${substormRiskData.metrics.solar_wind.density.toFixed(1)} p/cm³</span>` : '—'}
                                 emoji="💨"
-                                onOpenModal={() => openModal('speed')}
+                                onOpenModal={() => openModal('dynamic-pressure')}
                             >
                                 <DynamicPressureChart history={substormRiskData?.history_24h ?? []} />
                             </ForecastChartPanel>
