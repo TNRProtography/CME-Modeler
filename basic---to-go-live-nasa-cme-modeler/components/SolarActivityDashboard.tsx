@@ -55,6 +55,7 @@ interface ActiveSunspotRegion {
 }
 
 type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1';
+type SuviWorkerSourceKey = 'suvi_195_primary' | 'suvi_304_secondary' | 'suvi_131_secondary';
 interface CoronagraphFrame {
   key: string;
   ts: string;
@@ -70,6 +71,21 @@ interface CoronagraphStateResponse {
   ok: boolean;
   updated_utc?: string;
   sources?: Partial<Record<CoronagraphSourceKey, CoronagraphSourceState>>;
+}
+interface SuviWorkerFrame {
+  key: string;
+  ts: string;
+  fetched_at?: string | null;
+  url: string;
+}
+interface SuviWorkerSourceState {
+  label: string;
+  frames: SuviWorkerFrame[];
+}
+interface SuviWorkerStateResponse {
+  ok: boolean;
+  updated_utc?: string;
+  sources?: Partial<Record<SuviWorkerSourceKey, SuviWorkerSourceState>>;
 }
 
 const isValidSunspotRegion = (value: any): value is Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number } => {
@@ -155,6 +171,7 @@ const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
+const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
 const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
 const CORONAGRAPH_SOURCES: { key: CoronagraphSourceKey; label: string }[] = [
   { key: 'ccor1', label: 'GOES-19 CCOR-1' },
@@ -875,14 +892,51 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [sdoHmiB4096, setSdoHmiB4096] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiIf4096, setSdoHmiIf4096] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [suvi195, setSuvi195] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [suviWorkerState, setSuviWorkerState] = useState<SuviWorkerStateResponse | null>(null);
+  const [suviWorkerLoading, setSuviWorkerLoading] = useState<string | null>('Loading SUVI timeline...');
+  const [suviFrameIndex, setSuviFrameIndex] = useState<number>(0);
+  const [suviDifference, setSuviDifference] = useState<boolean>(false);
+  const [suviPlaying, setSuviPlaying] = useState<boolean>(false);
+  const suviCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [coronagraphState, setCoronagraphState] = useState<CoronagraphStateResponse | null>(null);
   const [coronagraphLoading, setCoronagraphLoading] = useState<string | null>('Loading coronagraph data...');
   const [coronagraphSource, setCoronagraphSource] = useState<CoronagraphSourceKey>('ccor1');
   const [coronagraphIndex, setCoronagraphIndex] = useState<number>(0);
   const [coronagraphDifference, setCoronagraphDifference] = useState<boolean>(true);
+  const [coronagraphPlaying, setCoronagraphPlaying] = useState<boolean>(false);
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
+
+  const CORONAGRAPH_DIFF_GAIN = 8.5;
+  const CORONAGRAPH_DIFF_NOISE_FLOOR = 8;
+  const CORONAGRAPH_DIFF_GAMMA = 0.45;
+  const SUVI_DIFF_GAIN = 10.0;
+  const SUVI_DIFF_NOISE_FLOOR = 6;
+  const SUVI_DIFF_GAMMA = 0.42;
+
+  const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
+    const t = Math.min(1, Math.max(0, normalized));
+    // Multi-stop heat map: black → navy → cyan → yellow → orange → red → white.
+    if (t < 0.16) {
+      const k = t / 0.16;
+      return [0, Math.round(20 * k), Math.round(90 * k)];
+    }
+    if (t < 0.36) {
+      const k = (t - 0.16) / 0.20;
+      return [0, Math.round(20 + 170 * k), Math.round(90 + 140 * k)];
+    }
+    if (t < 0.58) {
+      const k = (t - 0.36) / 0.22;
+      return [Math.round(255 * k), Math.round(190 + 65 * k), Math.round(230 - 200 * k)];
+    }
+    if (t < 0.80) {
+      const k = (t - 0.58) / 0.22;
+      return [255, Math.round(255 - 120 * k), Math.round(30 - 30 * k)];
+    }
+    const k = (t - 0.80) / 0.20;
+    return [255, Math.round(135 + 120 * k), Math.round(255 * k)];
+  }, []);
 
   useEffect(() => {
     onSuvi195ImageUrlChange?.(suvi195.url);
@@ -1616,6 +1670,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
   }, []);
 
+  const fetchSuviWorkerState = useCallback(async () => {
+    try {
+      setSuviWorkerLoading((prev) => prev ?? 'Refreshing SUVI timeline...');
+      const data = await fetchWithTimeoutAndRetry(`${SUVI_DIFF_WORKER_BASE}/api/state`, 'json') as SuviWorkerStateResponse;
+      if (!data?.ok) throw new Error('SUVI worker state returned not-ok response');
+      setSuviWorkerState(data);
+      setSuviWorkerLoading(null);
+    } catch (error) {
+      console.error('Error fetching SUVI worker state:', error);
+      setSuviWorkerLoading(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, []);
+
   const fetchStereoEarthSeparation = useCallback(async () => {
     try {
       const data = await fetchWithTimeoutAndRetry(`${SOLO_BASE}/solo/position`, 'json') as any;
@@ -1629,13 +1696,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     runAllUpdates();
     fetchCoronagraphState();
+    fetchSuviWorkerState();
     fetchStereoEarthSeparation();
     return registerDatasetTicker('solar-activity-data', () => {
       runAllUpdates();
       fetchCoronagraphState();
+      fetchSuviWorkerState();
       fetchStereoEarthSeparation();
     }, REFRESH_INTERVAL_MS);
-  }, [runAllUpdates, fetchCoronagraphState, fetchStereoEarthSeparation]);
+  }, [runAllUpdates, fetchCoronagraphState, fetchSuviWorkerState, fetchStereoEarthSeparation]);
 
 
   useEffect(() => {
@@ -1651,8 +1720,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     runAllUpdates();
     fetchCoronagraphState();
+    fetchSuviWorkerState();
     fetchStereoEarthSeparation();
-  }, [refreshSignal, runAllUpdates, fetchCoronagraphState, fetchStereoEarthSeparation]);
+  }, [refreshSignal, runAllUpdates, fetchCoronagraphState, fetchSuviWorkerState, fetchStereoEarthSeparation]);
 
 
   useEffect(() => {
@@ -2035,6 +2105,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const coronagraphSourceState = coronagraphState?.sources?.[coronagraphSource] ?? null;
   const coronagraphFrames = coronagraphSourceState?.frames ?? [];
+  const latestCoronagraphFrame = useMemo(() => {
+    if (coronagraphFrames.length === 0) return null;
+    return coronagraphFrames.reduce((latest, frame) => {
+      const latestTs = latest?.ts ? new Date(latest.ts).getTime() : -Infinity;
+      const frameTs = frame?.ts ? new Date(frame.ts).getTime() : -Infinity;
+      return frameTs > latestTs ? frame : latest;
+    }, coronagraphFrames[0] ?? null);
+  }, [coronagraphFrames]);
   const clampedCoronagraphIndex = Math.min(coronagraphIndex, Math.max(0, coronagraphFrames.length - 1));
   const activeCoronagraphFrame = coronagraphFrames[clampedCoronagraphIndex] ?? null;
   const previousCoronagraphFrame = coronagraphFrames[Math.max(0, clampedCoronagraphIndex - 1)] ?? null;
@@ -2048,6 +2126,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const activeCoronagraphUrl = resolveCoronagraphUrl(activeCoronagraphFrame?.url);
   const previousCoronagraphUrl = resolveCoronagraphUrl(previousCoronagraphFrame?.url);
 
+  const suviSourceKeyByMode: Record<'SUVI_131' | 'SUVI_195' | 'SUVI_304', SuviWorkerSourceKey> = {
+    SUVI_131: 'suvi_131_secondary',
+    SUVI_195: 'suvi_195_primary',
+    SUVI_304: 'suvi_304_secondary',
+  };
+  const activeSuviSourceKey: SuviWorkerSourceKey = activeSunImage === 'SUVI_195'
+    ? suviSourceKeyByMode.SUVI_195
+    : activeSunImage === 'SUVI_304'
+      ? suviSourceKeyByMode.SUVI_304
+      : suviSourceKeyByMode.SUVI_131;
+  const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
+  const suviFrames = activeSuviSourceState?.frames ?? [];
+  const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
+  const activeSuviFrame = suviFrames[clampedSuviFrameIndex] ?? null;
+  const previousSuviFrame = suviFrames[Math.max(0, clampedSuviFrameIndex - 1)] ?? null;
+  const resolveSuviWorkerUrl = useCallback((url: string | null | undefined): string | null => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `${SUVI_DIFF_WORKER_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
+  }, []);
+  const activeSuviFrameUrl = resolveSuviWorkerUrl(activeSuviFrame?.url);
+  const previousSuviFrameUrl = resolveSuviWorkerUrl(previousSuviFrame?.url);
+  const latestCoronagraphAgeMs = useMemo(() => {
+    if (!latestCoronagraphFrame?.ts) return null;
+    const ts = new Date(latestCoronagraphFrame.ts).getTime();
+    if (Number.isNaN(ts)) return null;
+    return Math.max(0, Date.now() - ts);
+  }, [latestCoronagraphFrame?.ts]);
+  const coronagraphStalenessNotice = useMemo(() => {
+    if (latestCoronagraphAgeMs == null || latestCoronagraphAgeMs < 60 * 60 * 1000) return null;
+    const totalMinutes = Math.floor(latestCoronagraphAgeMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const ageLabel = hours > 0
+      ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
+      : `${minutes}m`;
+    return `Latest available frame is ${ageLabel} old. Coronagraph feeds commonly have outages or delays for a few hours, and occasionally up to about a day.`;
+  }, [latestCoronagraphAgeMs]);
+
   const stereoAlignmentLabel = useMemo(() => {
     if (stereoEarthSeparationDeg == null) return 'STEREO-A alignment unknown right now.';
     if (stereoEarthSeparationDeg <= 25) return `STEREO-A is near Earth line (${stereoEarthSeparationDeg.toFixed(1)}°) — halo interpretation is more reliable.`;
@@ -2058,10 +2175,159 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     if (coronagraphFrames.length === 0) {
       setCoronagraphIndex(0);
+      setCoronagraphPlaying(false);
       return;
     }
     setCoronagraphIndex(coronagraphFrames.length - 1);
+    setCoronagraphPlaying(false);
   }, [coronagraphSource, coronagraphFrames.length]);
+
+  useEffect(() => {
+    if (suviFrames.length === 0) {
+      setSuviFrameIndex(0);
+      setSuviPlaying(false);
+      return;
+    }
+    setSuviFrameIndex(suviFrames.length - 1);
+    setSuviPlaying(false);
+  }, [activeSuviSourceKey, suviFrames.length]);
+
+  useEffect(() => {
+    if (!suviPlaying || suviFrames.length < 2) return;
+    const timer = window.setInterval(() => {
+      setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [suviPlaying, suviFrames.length]);
+
+  const canStepSuviFrames = suviFrames.length > 1;
+  const goToPreviousSuviFrame = useCallback(() => {
+    if (!canStepSuviFrames) return;
+    setSuviPlaying(false);
+    setSuviFrameIndex((prev) => (prev - 1 + suviFrames.length) % suviFrames.length);
+  }, [canStepSuviFrames, suviFrames.length]);
+
+  const goToNextSuviFrame = useCallback(() => {
+    if (!canStepSuviFrames) return;
+    setSuviPlaying(false);
+    setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
+  }, [canStepSuviFrames, suviFrames.length]);
+
+  const downloadSuviFrame = useCallback(() => {
+    if (!activeSuviFrameUrl) return;
+    const sourceLabel = activeSuviSourceState?.label ?? activeSuviSourceKey;
+    const timestampPart = activeSuviFrame?.ts
+      ? activeSuviFrame.ts.replace(/[:.]/g, '-')
+      : String(Date.now());
+    const fileName = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${timestampPart}.png`;
+    const link = document.createElement('a');
+    link.href = activeSuviFrameUrl;
+    link.download = fileName;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [activeSuviFrame?.ts, activeSuviFrameUrl, activeSuviSourceKey, activeSuviSourceState?.label]);
+
+  useEffect(() => {
+    if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
+    const timer = window.setInterval(() => {
+      setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [coronagraphPlaying, coronagraphFrames.length]);
+
+  const canStepCoronagraphFrames = coronagraphFrames.length > 1;
+  const goToPreviousCoronagraphFrame = useCallback(() => {
+    if (!canStepCoronagraphFrames) return;
+    setCoronagraphPlaying(false);
+    setCoronagraphIndex((prev) => (prev - 1 + coronagraphFrames.length) % coronagraphFrames.length);
+  }, [canStepCoronagraphFrames, coronagraphFrames.length]);
+
+  const goToNextCoronagraphFrame = useCallback(() => {
+    if (!canStepCoronagraphFrames) return;
+    setCoronagraphPlaying(false);
+    setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
+  }, [canStepCoronagraphFrames, coronagraphFrames.length]);
+
+  const downloadCoronagraphFrame = useCallback(() => {
+    if (!activeCoronagraphUrl) return;
+    const sourceLabel = coronagraphSourceState?.label ?? coronagraphSource;
+    const timestampPart = activeCoronagraphFrame?.ts
+      ? activeCoronagraphFrame.ts.replace(/[:.]/g, '-')
+      : String(Date.now());
+    const fileName = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${timestampPart}.jpg`;
+    const link = document.createElement('a');
+    link.href = activeCoronagraphUrl;
+    link.download = fileName;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [activeCoronagraphFrame?.ts, activeCoronagraphUrl, coronagraphSource, coronagraphSourceState?.label]);
+
+  useEffect(() => {
+    const canvas = suviCanvasRef.current;
+    if (!canvas || !suviDifference || !activeSuviFrameUrl || !previousSuviFrameUrl || activeSuviFrameUrl === previousSuviFrameUrl) return;
+    let cancelled = false;
+
+    const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+
+    (async () => {
+      try {
+        const [prevImg, currImg] = await Promise.all([loadImage(previousSuviFrameUrl), loadImage(activeSuviFrameUrl)]);
+        if (cancelled) return;
+        const width = Math.min(prevImg.naturalWidth || prevImg.width, currImg.naturalWidth || currImg.width);
+        const height = Math.min(prevImg.naturalHeight || prevImg.height, currImg.naturalHeight || currImg.height);
+        if (!width || !height) return;
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+
+        const tempA = document.createElement('canvas');
+        const tempB = document.createElement('canvas');
+        tempA.width = tempB.width = width;
+        tempA.height = tempB.height = height;
+        const aCtx = tempA.getContext('2d', { willReadFrequently: true });
+        const bCtx = tempB.getContext('2d', { willReadFrequently: true });
+        if (!aCtx || !bCtx) return;
+        aCtx.drawImage(prevImg, 0, 0, width, height);
+        bCtx.drawImage(currImg, 0, 0, width, height);
+
+        const dataA = aCtx.getImageData(0, 0, width, height);
+        const dataB = bCtx.getImageData(0, 0, width, height);
+        const out = ctx.createImageData(width, height);
+        for (let i = 0; i < dataA.data.length; i += 4) {
+          const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
+          const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
+          const rawDelta = Math.abs(bGray - aGray);
+          const aboveNoise = Math.max(0, rawDelta - SUVI_DIFF_NOISE_FLOOR);
+          const amplified = Math.min(255, aboveNoise * SUVI_DIFF_GAIN);
+          const normalized = Math.pow(amplified / 255, SUVI_DIFF_GAMMA);
+          const [r, g, b] = colorizeCoronagraphDelta(normalized);
+          out.data[i] = r;
+          out.data[i + 1] = g;
+          out.data[i + 2] = b;
+          out.data[i + 3] = 255;
+        }
+        ctx.putImageData(out, 0, 0);
+      } catch {
+        // Silent fallback: UI remains on raw frame if diff generation fails.
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta]);
 
   useEffect(() => {
     const canvas = coronagraphCanvasRef.current;
@@ -2105,10 +2371,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         for (let i = 0; i < dataA.data.length; i += 4) {
           const aGray = (dataA.data[i] + dataA.data[i + 1] + dataA.data[i + 2]) / 3;
           const bGray = (dataB.data[i] + dataB.data[i + 1] + dataB.data[i + 2]) / 3;
-          const delta = Math.min(255, Math.abs(bGray - aGray) * 3.0);
-          out.data[i] = delta;
-          out.data[i + 1] = delta;
-          out.data[i + 2] = delta;
+          const rawDelta = Math.abs(bGray - aGray);
+          const aboveNoise = Math.max(0, rawDelta - CORONAGRAPH_DIFF_NOISE_FLOOR);
+          const amplified = Math.min(255, aboveNoise * CORONAGRAPH_DIFF_GAIN);
+          const normalized = Math.pow(amplified / 255, CORONAGRAPH_DIFF_GAMMA);
+          const [r, g, b] = colorizeCoronagraphDelta(normalized);
+          out.data[i] = r;
+          out.data[i + 1] = g;
+          out.data[i + 2] = b;
           out.data[i + 3] = 255;
         }
         ctx.putImageData(out, 0, 0);
@@ -2118,7 +2388,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [coronagraphDifference, activeCoronagraphUrl, previousCoronagraphUrl]);
+  }, [coronagraphDifference, activeCoronagraphUrl, previousCoronagraphUrl, colorizeCoronagraphDelta]);
 
   // --- RENDER ---
   return (
@@ -2160,7 +2430,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             <SolarActivitySummaryDisplay summary={activitySummary} onOpenModal={openModal} />
 
             {/* --- SOLAR IMAGERY (Full Width) --- */}
-            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[700px] flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
               <div className="flex justify-center items-center gap-2">
                 <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
                 <button
@@ -2178,57 +2448,92 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setActiveSunImage('SUVI_195')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_195' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 195Å</button>
               </div>
 
-              <div className="flex justify-center mb-3">
-                <button
-                  onClick={() => openSolarImageryAnimation(activeSunImage)}
-                  className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-semibold transition-colors"
-                  title="Play a generated 6-hour animation for the selected solar imagery mode"
-                >
-                  Animate last 6 hours ({imageryModeLabels[activeSunImage]})
-                </button>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <label className="flex items-center gap-2 text-xs text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={suviDifference}
+                    onChange={(e) => setSuviDifference(e.target.checked)}
+                    className="accent-sky-500"
+                  />
+                  Difference imagery
+                </label>
+                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s) in last 6h</span>
               </div>
 
-              <div className="flex-grow flex justify-center items-center relative w-full h-full min-h-[500px]">
-                {activeSunImage === 'SUVI_131' && (
-                  <div onClick={() => suvi131.url && setViewerMedia({ url: suvi131.url, type: 'image' })}
-                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
-                       title={tooltipContent['suvi-131']}>
-                    {suvi131.url && <img src={suvi131.url} alt="SUVI 131Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
-                    {suvi131.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{suvi131.loading}</p></div>}
+              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
+                {suviWorkerLoading && !activeSuviFrameUrl && <LoadingSpinner message={suviWorkerLoading} />}
+                {!suviWorkerLoading && !activeSuviFrameUrl && (
+                  <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No SUVI imagery available for this source.</div>
+                )}
+                {activeSuviFrameUrl && (
+                  <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
+                    {!suviDifference ? (
+                      <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
+                    ) : (
+                      <>
+                        <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
+                        {!previousSuviFrameUrl && (
+                          <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400 bg-black/40">Need at least 2 frames for difference view.</div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
-                {activeSunImage === 'SUVI_304' && (
-                  <div onClick={() => suvi304.url && setViewerMedia({ url: suvi304.url, type: 'image' })}
-                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
-                       title={tooltipContent['suvi-304']}>
-                    {suvi304.url && <img src={suvi304.url} alt="SUVI 304Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
-                    {suvi304.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{suvi304.loading}</p></div>}
-                  </div>
-                )}
-                {activeSunImage === 'SUVI_195' && (
-                  <div onClick={() => suvi195.url && setViewerMedia({ url: suvi195.url, type: 'image' })}
-                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
-                       title={tooltipContent['suvi-195']}>
-                    {suvi195.url && <img src={suvi195.url} alt="SUVI 195Å" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
-                    {suvi195.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{suvi195.loading}</p></div>}
-                  </div>
-                )}
-                {activeSunImage === 'SDO_HMIBC_1024' && (
-                  <div onClick={() => sdoHmiBc4096.url && setViewerMedia({ url: sdoHmiBc4096.url, type: 'image' })}
-                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
-                       title={tooltipContent['sdo-hmibc-1024']}>
-                    {sdoHmiBc1024.url && <img src={sdoHmiBc1024.url} alt="SDO HMI Continuum" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
-                    {sdoHmiBc1024.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{sdoHmiBc1024.loading}</p></div>}
-                  </div>
-                )}
-                {activeSunImage === 'SDO_HMIIF_1024' && (
-                  <div onClick={() => sdoHmiIf4096.url && setViewerMedia({ url: sdoHmiIf4096.url, type: 'image' })}
-                       className="relative w-full h-full flex justify-center items-center cursor-pointer"
-                       title={tooltipContent['sdo-hmiif-1024']}>
-                    {sdoHmiIf1024.url && <img src={sdoHmiIf1024.url} alt="SDO HMI Intensitygram" className="w-full h-full object-contain rounded-lg" width="1024" height="1024" />}
-                    {sdoHmiIf1024.loading && <div className="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-black/80"><svg className="animate-spin h-8 w-8 text-neutral-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="mt-2 text-sm text-neutral-300 italic">{sdoHmiIf1024.loading}</p></div>}
-                  </div>
-                )}
+              </div>
+
+              <div className="mt-3 space-y-2 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={goToPreviousSuviFrame}
+                    disabled={!canStepSuviFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Previous frame"
+                  >
+                    ◀ Prev
+                  </button>
+                  <button
+                    onClick={() => setSuviPlaying((prev) => !prev)}
+                    disabled={!canStepSuviFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                    title={suviPlaying ? 'Pause' : 'Play'}
+                  >
+                    {suviPlaying ? '⏸ Pause' : '▶ Play'}
+                  </button>
+                  <button
+                    onClick={goToNextSuviFrame}
+                    disabled={!canStepSuviFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Next frame"
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    onClick={downloadSuviFrame}
+                    disabled={!activeSuviFrameUrl}
+                    className="px-3 py-1.5 text-xs rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                    title="Download current frame"
+                  >
+                    ⬇ Download frame
+                  </button>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, suviFrames.length - 1)}
+                  value={clampedSuviFrameIndex}
+                  onChange={(e) => {
+                    setSuviPlaying(false);
+                    setSuviFrameIndex(Number(e.target.value));
+                  }}
+                  className="w-full accent-sky-500"
+                />
+                <div className="mt-1 text-xs text-neutral-500 text-right">
+                  {activeSuviFrame ? `Frame: ${formatNZTimestamp(activeSuviFrame.ts)} · fetched ${activeSuviFrame.fetched_at ? formatNZTimestamp(activeSuviFrame.fetched_at) : '—'}` : 'No frame selected'}
+                </div>
+                <div className="text-[11px] text-neutral-500 leading-relaxed">
+                  Imagery source: NOAA SWPC SUVI via suvi-difference-imagery.thenamesrock.workers.dev. Difference imagery processing and visualization by TNR Protography.
+                </div>
               </div>
 
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastImagesUpdate || 'N/A'}</div>
@@ -2585,7 +2890,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastFlaresUpdate || 'N/A'}</div>
             </div>
 
-            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[620px] flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>
@@ -2622,8 +2927,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </label>
                 <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last 6h</span>
               </div>
+              {coronagraphStalenessNotice && (
+                <div className="mb-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-200">
+                  {coronagraphStalenessNotice}
+                </div>
+              )}
 
-              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[360px]">
+              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
                 {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
                 {!coronagraphLoading && !activeCoronagraphUrl && (
                   <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No coronagraph imagery available for this source.</div>
@@ -2644,17 +2954,57 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 )}
               </div>
 
-              <div className="mt-3">
+              <div className="mt-3 space-y-2 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={goToPreviousCoronagraphFrame}
+                    disabled={!canStepCoronagraphFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Previous frame"
+                  >
+                    ◀ Prev
+                  </button>
+                  <button
+                    onClick={() => setCoronagraphPlaying((prev) => !prev)}
+                    disabled={!canStepCoronagraphFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                    title={coronagraphPlaying ? 'Pause' : 'Play'}
+                  >
+                    {coronagraphPlaying ? '⏸ Pause' : '▶ Play'}
+                  </button>
+                  <button
+                    onClick={goToNextCoronagraphFrame}
+                    disabled={!canStepCoronagraphFrames}
+                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Next frame"
+                  >
+                    Next ▶
+                  </button>
+                  <button
+                    onClick={downloadCoronagraphFrame}
+                    disabled={!activeCoronagraphUrl}
+                    className="px-3 py-1.5 text-xs rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                    title="Download current frame"
+                  >
+                    ⬇ Download frame
+                  </button>
+                </div>
                 <input
                   type="range"
                   min={0}
                   max={Math.max(0, coronagraphFrames.length - 1)}
                   value={clampedCoronagraphIndex}
-                  onChange={(e) => setCoronagraphIndex(Number(e.target.value))}
-                  className="w-full"
+                  onChange={(e) => {
+                    setCoronagraphPlaying(false);
+                    setCoronagraphIndex(Number(e.target.value));
+                  }}
+                  className="w-full accent-sky-500"
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
                   {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : '—'}` : 'No frame selected'}
+                </div>
+                <div className="text-[11px] text-neutral-500 leading-relaxed">
+                  Imagery credits: NOAA SWPC (GOES-19 CCOR-1), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
                 </div>
               </div>
             </div>
