@@ -2075,6 +2075,22 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const activeCoronagraphUrl = resolveCoronagraphUrl(activeCoronagraphFrame?.url);
   const previousCoronagraphUrl = resolveCoronagraphUrl(previousCoronagraphFrame?.url);
+  const activeCoronagraphAgeMs = useMemo(() => {
+    if (!activeCoronagraphFrame?.ts) return null;
+    const ts = new Date(activeCoronagraphFrame.ts).getTime();
+    if (Number.isNaN(ts)) return null;
+    return Math.max(0, Date.now() - ts);
+  }, [activeCoronagraphFrame?.ts]);
+  const coronagraphStalenessNotice = useMemo(() => {
+    if (activeCoronagraphAgeMs == null || activeCoronagraphAgeMs < 60 * 60 * 1000) return null;
+    const totalMinutes = Math.floor(activeCoronagraphAgeMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const ageLabel = hours > 0
+      ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
+      : `${minutes}m`;
+    return `Latest frame is ${ageLabel} old. Coronagraph feeds commonly have outages or delays for a few hours, and occasionally up to about a day.`;
+  }, [activeCoronagraphAgeMs]);
 
   const stereoAlignmentLabel = useMemo(() => {
     if (stereoEarthSeparationDeg == null) return 'STEREO-A alignment unknown right now.';
@@ -2694,6 +2710,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </label>
                 <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last 6h</span>
               </div>
+              {coronagraphStalenessNotice && (
+                <div className="mb-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-200">
+                  {coronagraphStalenessNotice}
+                </div>
+              )}
 
               <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[360px]">
                 {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
@@ -2764,6 +2785,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
                   {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : '—'}` : 'No frame selected'}
+                </div>
+                <div className="text-[11px] text-neutral-500 leading-relaxed">
+                  Imagery credits: NOAA SWPC (GOES-19 CCOR-1), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
                 </div>
               </div>
             </div>
