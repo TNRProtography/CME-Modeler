@@ -180,8 +180,10 @@ const SolarWindQuickViewInfoModal: React.FC<{ onClose: () => void }> = ({ onClos
           <div className="border-t border-neutral-700/60 pt-3">
             <p className="text-white font-medium mb-1">How to read shocks</p>
             <ul className="space-y-1">
-              <li><span className="text-neutral-200 font-medium">Forward Interplanetary Shock (IPS)</span> — a compression front (speed↑, density↑, pressure↑; often Bt↑/Temp↑).</li>
-              <li><span className="text-neutral-200 font-medium">Reverse Interplanetary Shock</span> — trailing/rarefaction-style drop (speed↓, density↓, pressure↓).</li>
+              <li><span className="text-neutral-200 font-medium">Fast Forward (FF)</span> — N↑ T↑ B↑ V↑ across the shock.</li>
+              <li><span className="text-neutral-200 font-medium">Slow Forward (SF)</span> — N↑ T↑ B↓ V↑ across the shock.</li>
+              <li><span className="text-neutral-200 font-medium">Fast Reverse (FR)</span> — N↓ T↓ B↓ V↑ across the shock.</li>
+              <li><span className="text-neutral-200 font-medium">Slow Reverse (SR)</span> — N↓ T↓ B↑ V↑ across the shock.</li>
               <li><span className="text-neutral-200 font-medium">IMF Enhancement / Discontinuity</span> — magnetic step/rotation with weaker plasma jump.</li>
             </ul>
           </div>
@@ -305,36 +307,43 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       const pDynRatio = pDyn1 > 0 ? pDyn2 / pDyn1 : NaN;
       if (![denRatio, tmpRatio, btRatio, pDynRatio].every(Number.isFinite)) continue;
 
-      // Tuned to reduce false positives from small/noisy fluctuations:
-      // require a clearer compression signature before showing IPS.
-      const fSpd = spdDelta >= 35;
-      const fDen = denRatio >= 1.8;
-      const fTmp = tmpRatio >= 1.3;
-      const fBt = btDelta >= 4 || btRatio >= 1.4;
-      const fP = pDynRatio >= 2.2;
-      const forwardCore = Number(fSpd) + Number(fDen) + Number(fP);
-      const forwardSupport = Number(fTmp) + Number(fBt);
+      // Four IPS signatures in spacecraft frame (FF / SF / FR / SR):
+      // - N,T step direction defines forward(+,+) vs reverse(-,-)
+      // - B step sign separates fast vs slow branch
+      // - V increases across all four classes at the shock crossing.
+      const vUp = spdDelta >= 20;
+      const nUp = denRatio >= 1.35;
+      const nDown = denRatio <= 0.75;
+      const tUp = tmpRatio >= 1.2;
+      const tDown = tmpRatio <= 0.85;
+      const bUp = btRatio >= 1.15 || btDelta >= 1.5;
+      const bDown = btRatio <= 0.88 || btDelta <= -1.5;
 
-      const rSpd = spdDelta <= -25;
-      const rDen = denRatio <= 0.75;
-      const rTmp = tmpRatio <= 0.85;
-      const rP = pDynRatio <= 0.65;
-      const reverseHits = Number(rSpd) + Number(rDen) + Number(rTmp) + Number(rP);
+      const ff = vUp && nUp && tUp && bUp;     // Fast Forward
+      const sf = vUp && nUp && tUp && bDown;   // Slow Forward
+      const fr = vUp && nDown && tDown && bDown; // Fast Reverse
+      const sr = vUp && nDown && tDown && bUp; // Slow Reverse
 
       const imfEnhancement =
-        (btDelta >= 4 || btRatio >= 1.4 || Math.abs(bzDelta) >= 8) &&
-        Math.abs(spdDelta) < 20 &&
+        (Math.abs(btDelta) >= 4 || btRatio >= 1.4 || Math.abs(bzDelta) >= 8) &&
+        Math.abs(spdDelta) < 25 &&
         denRatio > 0.75 && denRatio < 1.35 &&
-        pDynRatio > 0.7 && pDynRatio < 1.5;
+        pDynRatio > 0.7 && pDynRatio < 1.6;
 
       let label = '';
       let score = 0;
-      if (forwardCore >= 3 && (forwardCore + forwardSupport) >= 4) {
-        label = 'Forward Interplanetary Shock (IPS)';
-        score = forwardCore * 2 + forwardSupport;
-      } else if (reverseHits >= 3) {
-        label = 'Reverse Interplanetary Shock';
-        score = reverseHits * 2;
+      if (ff) {
+        label = 'Fast Forward Shock (FF)';
+        score = 8 + Number(pDynRatio >= 1.8) + Number(btRatio >= 1.3);
+      } else if (sf) {
+        label = 'Slow Forward Shock (SF)';
+        score = 7 + Number(pDynRatio >= 1.6);
+      } else if (fr) {
+        label = 'Fast Reverse Shock (FR)';
+        score = 7 + Number(pDynRatio <= 0.75);
+      } else if (sr) {
+        label = 'Slow Reverse Shock (SR)';
+        score = 6 + Number(pDynRatio <= 0.8);
       } else if (imfEnhancement) {
         label = 'IMF Enhancement / Discontinuity';
         score = 3 + Number(Math.abs(bzDelta) >= 8);
