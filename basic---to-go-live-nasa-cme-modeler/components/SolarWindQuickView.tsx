@@ -135,11 +135,11 @@ function zeroLine(minT: number, maxT: number) {
   };
 }
 
-function shockLine(t: number, yMin: number, yMax: number) {
+function shockLine(t: number, yMin: number, yMax: number, color = 'rgba(250, 204, 21, 0.95)') {
   return {
     label: 'Shock marker',
     data: [{ x: t, y: yMin }, { x: t, y: yMax }],
-    borderColor: 'rgba(250, 204, 21, 0.95)',
+    borderColor: color,
     borderWidth: 1.4,
     borderDash: [5, 4],
     pointRadius: 0,
@@ -157,6 +157,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   magneticData, clockData, speedData, densityData, tempData,
 }) => {
   const [rangeMs, setRangeMs] = useState(6 * 3600000);
+  const [showInfo, setShowInfo] = useState(false);
 
   const cutoff = Date.now() - rangeMs;
   const maxT   = Date.now();
@@ -190,7 +191,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   // - Forward IP shock (CME/SIR front): V↑, N↑, Pdyn↑, usually |B|↑ and Tp↑.
   // - Reverse IP shock / trailing rarefaction edge: V↓, N↓, Pdyn↓.
   // - IMF enhancement/discontinuity: strong magnetic step/rotation with little plasma jump.
-  const shockDetection = useMemo(() => {
+  const shockEvents = useMemo(() => {
     const LOOK_BACK = 6 * 3600000; // UI alerts should represent very recent structure only
     const CANDIDATE_STEP = 3 * 60000;
     const PRE_WIN = 18 * 60000;
@@ -216,10 +217,11 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       bz: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bz).filter(n => Number.isFinite(n)),
     });
 
-    let bestEvent: {
+    const events: Array<{
       t: number; score: number; label: string;
       spdJ: number; denR: number; tmpR: number; btJ: number; bzJ: number;
-    } | null = null;
+      ageMin: number; ageStr: string;
+    }> = [];
 
     const tStart = Math.max(now - LOOK_BACK, spdSorted[0].x + PRE_WIN);
     for (let t = tStart; t <= now - POST_WIN; t += CANDIDATE_STEP) {
@@ -288,30 +290,42 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
         continue;
       }
 
-      if (!bestEvent || score > bestEvent.score || (score === bestEvent.score && t > bestEvent.t)) {
-        bestEvent = {
-          t,
-          score,
-          label,
-          spdJ: Math.round(spdDelta),
-          denR: +denRatio.toFixed(2),
-          tmpR: +tmpRatio.toFixed(2),
-          btJ: +btDelta.toFixed(1),
-          bzJ: +bzDelta.toFixed(1),
-        };
-      }
+      const ageMin = Math.round((now - t) / 60000);
+      if (ageMin > 360) continue;
+      const ageStr = ageMin < 2   ? 'just now'
+        : ageMin < 60 ? `~${ageMin} min ago`
+        : `~${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? ` ${ageMin % 60}min` : ''} ago`;
+
+      events.push({
+        t,
+        score,
+        label,
+        spdJ: Math.round(spdDelta),
+        denR: +denRatio.toFixed(2),
+        tmpR: +tmpRatio.toFixed(2),
+        btJ: +btDelta.toFixed(1),
+        bzJ: +bzDelta.toFixed(1),
+        ageMin,
+        ageStr,
+      });
     }
 
-    if (!bestEvent) return null;
+    if (!events.length) return [];
+    // Keep strongest non-overlapping events, then order chronologically.
+    const dedupeWindowMs = 20 * 60000;
+    const selected = events
+      .sort((a, b) => b.score - a.score || b.t - a.t)
+      .reduce<typeof events>((acc, ev) => {
+        const overlaps = acc.some((s) => Math.abs(s.t - ev.t) < dedupeWindowMs);
+        if (!overlaps) acc.push(ev);
+        return acc;
+      }, [])
+      .slice(0, 4)
+      .sort((a, b) => a.t - b.t);
 
-    const ageMin = Math.round((now - bestEvent.t) / 60000);
-    if (ageMin > 360) return null;
-    const ageStr = ageMin < 2   ? 'just now'
-      : ageMin < 60 ? `~${ageMin} min ago`
-      : `~${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? ` ${ageMin % 60}min` : ''} ago`;
-
-    return { ...bestEvent, ageStr };
+    return selected;
   }, [speedData, densityData, tempData, magneticData]);
+  const latestShock = shockEvents.length ? shockEvents[shockEvents.length - 1] : null;
 
   // Options depend on rangeMs so they update when range changes
   const bzbtOpts = useMemo(() => makeOptions('Bz / Bt (nT)', rangeMs, undefined, undefined, 'linear', false), [rangeMs]);
@@ -319,7 +333,10 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   const denOpts  = useMemo(() => makeOptions('n (/cm³)',     rangeMs, undefined, undefined, 'logarithmic', false), [rangeMs]);
   const spdOpts  = useMemo(() => makeOptions('km/s',         rangeMs, undefined, undefined, 'linear',       false), [rangeMs]);
   const tmpOpts  = useMemo(() => makeOptions('Temp (K)',     rangeMs, undefined, undefined, 'logarithmic', true),  [rangeMs]);
-  const shockT = shockDetection?.t && shockDetection.t >= cutoff && shockDetection.t <= maxT ? shockDetection.t : null;
+  const visibleShockEvents = useMemo(
+    () => shockEvents.filter((e) => e.t >= cutoff && e.t <= maxT),
+    [shockEvents, cutoff, maxT]
+  );
   const bzBtRange = useMemo(() => {
     const vals = [...bzPts.map((p) => p.y), ...btPts.map((p) => p.y)].filter((v) => Number.isFinite(v));
     if (!vals.length) return { min: -20, max: 20 };
@@ -360,12 +377,27 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold text-white">Solar Wind Quick View</h2>
             <button
+              type="button"
+              onClick={() => setShowInfo((v) => !v)}
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              title={`Solar Wind Quick View:\nLive L1 magnetic + plasma context from ACE (Bz/Bt, Phi, density, speed, temperature).\n\nHow to read shocks:\n• Forward Interplanetary Shock (IPS): compression front (speed↑, density↑, pressure↑; often Bt↑/Temp↑).\n• Reverse Interplanetary Shock: trailing/rarefaction-style drop (speed↓, density↓, pressure↓).\n• IMF Enhancement / Discontinuity: magnetic step/rotation with weaker plasma jump.\n\nWhen a shock is detected, a yellow dashed marker is drawn through all subplots at the detected time.`}
+              aria-label="About this panel"
             >
               ?
             </button>
           </div>
+          {showInfo && (
+            <div className="mt-2 text-xs text-neutral-300 bg-neutral-900/95 border border-neutral-700 rounded-lg p-3 max-w-2xl leading-relaxed">
+              <p className="font-medium text-neutral-100 mb-1">About Solar Wind Quick View</p>
+              <p className="mb-2">Live L1 magnetic + plasma context from ACE (Bz/Bt, Phi, density, speed, temperature).</p>
+              <p className="font-medium text-neutral-100 mb-1">Shock types</p>
+              <ul className="list-disc ml-4 space-y-1 text-neutral-300">
+                <li><span className="text-neutral-100">Forward Interplanetary Shock (IPS):</span> compression front (speed↑, density↑, pressure↑; often Bt↑/Temp↑).</li>
+                <li><span className="text-neutral-100">Reverse Interplanetary Shock:</span> trailing/rarefaction-style drop (speed↓, density↓, pressure↓).</li>
+                <li><span className="text-neutral-100">IMF Enhancement / Discontinuity:</span> magnetic step/rotation with weaker plasma jump.</li>
+              </ul>
+              <p className="mt-2 text-neutral-400">Detected shocks are shown as yellow dashed markers across all subplots.</p>
+            </div>
+          )}
           <p className="text-xs text-neutral-500 mt-0.5">
             ACE MAG &amp; SWEPAM · Each dot = one reading
           </p>
@@ -373,23 +405,26 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       </div>
 
       {/* Interplanetary shock alert — matches notification label */}
-      {shockDetection && (
+      {latestShock && (
         <div className="mt-2 mb-1 flex items-start gap-3 px-3 py-2.5 rounded-lg border"
           style={{ background: 'rgba(220,38,38,0.12)', borderColor: 'rgba(220,38,38,0.45)' }}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-semibold text-red-400">{shockDetection.label}</span>
+              <span className="text-sm font-semibold text-red-400">{latestShock.label}</span>
               <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ background: 'rgba(220,38,38,0.28)', color: '#f87171' }}>
-                {shockDetection.ageStr}
+                {latestShock.ageStr}
               </span>
+              {shockEvents.length > 1 && (
+                <span className="text-[11px] text-red-300/80">+{shockEvents.length - 1} more detected in window</span>
+              )}
             </div>
             <p className="text-xs text-red-300/80 leading-relaxed">
-              {shockDetection.spdJ !== 0 && `Speed ${shockDetection.spdJ > 0 ? '+' : ''}${shockDetection.spdJ} km/s. `}
-              {shockDetection.denR !== 0 && `Density ×${shockDetection.denR}. `}
-              {shockDetection.tmpR !== 0 && `Temp ×${shockDetection.tmpR}. `}
-              {shockDetection.btJ  !== 0 && `Bt ${shockDetection.btJ > 0 ? '+' : ''}${shockDetection.btJ} nT. `}
-              {shockDetection.bzJ  !== 0 && `Bz ${shockDetection.bzJ > 0 ? '+' : ''}${shockDetection.bzJ} nT swing. `}
+              {latestShock.spdJ !== 0 && `Speed ${latestShock.spdJ > 0 ? '+' : ''}${latestShock.spdJ} km/s. `}
+              {latestShock.denR !== 0 && `Density ×${latestShock.denR}. `}
+              {latestShock.tmpR !== 0 && `Temp ×${latestShock.tmpR}. `}
+              {latestShock.btJ  !== 0 && `Bt ${latestShock.btJ > 0 ? '+' : ''}${latestShock.btJ} nT. `}
+              {latestShock.bzJ  !== 0 && `Bz ${latestShock.bzJ > 0 ? '+' : ''}${latestShock.bzJ} nT swing. `}
               Watch Bz — if it turns south, aurora activity will follow.
             </p>
           </div>
@@ -424,7 +459,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
               data={{
                 datasets: [
                   zeroLine(cutoff, maxT),
-                  ...(shockT != null ? [shockLine(shockT, bzBtRange.min, bzBtRange.max)] : []),
+                  ...visibleShockEvents.map((e) => shockLine(e.t, bzBtRange.min, bzBtRange.max)),
                   {
                     label: 'Bt (nT)',
                     data: btPts,
@@ -467,7 +502,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBorderColor: 'transparent',
                   showLine: false,
                 },
-                ...(shockT != null ? [shockLine(shockT, 0, 360)] : []),
+                ...visibleShockEvents.map((e) => shockLine(e.t, 0, 360)),
                 ],
               }}
               options={phiOpts}
@@ -488,7 +523,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBorderColor: 'transparent',
                   showLine: false,
                 },
-                ...(shockT != null ? [shockLine(shockT, denRange.min, denRange.max)] : []),
+                ...visibleShockEvents.map((e) => shockLine(e.t, denRange.min, denRange.max)),
                 ],
               }}
               options={denOpts}
@@ -509,7 +544,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBorderColor: 'transparent',
                   showLine: false,
                 },
-                ...(shockT != null ? [shockLine(shockT, spdRange.min, spdRange.max)] : []),
+                ...visibleShockEvents.map((e) => shockLine(e.t, spdRange.min, spdRange.max)),
                 ],
               }}
               options={spdOpts}
@@ -530,7 +565,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
                   pointBorderColor: 'transparent',
                   showLine: false,
                 },
-                ...(shockT != null ? [shockLine(shockT, tmpRange.min, tmpRange.max)] : []),
+                ...visibleShockEvents.map((e) => shockLine(e.t, tmpRange.min, tmpRange.max)),
                 ],
               }}
               options={tmpOpts}
