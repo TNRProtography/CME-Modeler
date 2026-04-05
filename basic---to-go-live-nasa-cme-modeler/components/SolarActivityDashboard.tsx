@@ -217,6 +217,7 @@ const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
 
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_FETCH_RETRIES = 2;
+const SUVI_WORKER_FETCH_TIMEOUT_MS = 30000;
 const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
@@ -236,13 +237,26 @@ class ProxyUnavailableError extends Error {
   }
 }
 
-const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 'blob' = 'json') => {
+type FetchRetryOptions = {
+  timeoutMs?: number;
+  retries?: number;
+  cache?: RequestCache;
+};
+
+const fetchWithTimeoutAndRetry = async (
+  url: string,
+  parseAs: 'json' | 'text' | 'blob' = 'json',
+  options: FetchRetryOptions = {}
+) => {
+  const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const maxRetries = options.retries ?? MAX_FETCH_RETRIES;
+  const cacheMode = options.cache ?? 'default';
   let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { signal: controller.signal, cache: 'default' });
+      const response = await fetch(url, { signal: controller.signal, cache: cacheMode });
       if (!response.ok) {
         // 404 on a proxy URL means the Worker isn't deployed on this domain — skip retries.
         if (response.status === 404 && url.includes('/api/proxy/')) {
@@ -254,10 +268,14 @@ const fetchWithTimeoutAndRetry = async (url: string, parseAs: 'json' | 'text' | 
       if (parseAs === 'blob') return await response.blob();
       return await response.text();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      if (controller.signal.aborted) {
+        lastError = new Error(`Request timed out after ${timeoutMs}ms for ${url}`);
+      } else {
+        lastError = error instanceof Error ? error : new Error('Unknown fetch error');
+      }
       // Don't retry proxy 404s — fall through immediately to the direct-URL fallback.
       if (lastError instanceof ProxyUnavailableError) break;
-      if (attempt < MAX_FETCH_RETRIES) await wait(350 * (attempt + 1));
+      if (attempt < maxRetries) await wait(350 * (attempt + 1));
     } finally {
       window.clearTimeout(timeout);
     }
@@ -1673,7 +1691,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const fetchSuviWorkerState = useCallback(async () => {
     try {
       setSuviWorkerLoading((prev) => prev ?? 'Refreshing SUVI timeline...');
-      const data = await fetchWithTimeoutAndRetry(`${SUVI_DIFF_WORKER_BASE}/api/state`, 'json') as SuviWorkerStateResponse;
+      const data = await fetchWithTimeoutAndRetry(
+        `${SUVI_DIFF_WORKER_BASE}/api/state`,
+        'json',
+        { timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS, retries: 1, cache: 'no-store' }
+      ) as SuviWorkerStateResponse;
       if (!data?.ok) throw new Error('SUVI worker state returned not-ok response');
       setSuviWorkerState(data);
       setSuviWorkerLoading(null);
