@@ -147,6 +147,7 @@ const normalizeSolarLongitude = (value: number | null): number | null => {
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
 type PlaybackSpeedOption = 0.5 | 1 | 2 | 5 | 10;
+type ImageryWindowHours = 6 | 12 | 24;
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URLS = [
@@ -226,6 +227,11 @@ const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
 const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
+const IMAGERY_WINDOW_OPTIONS: Array<{ hours: ImageryWindowHours; label: string; beta?: boolean }> = [
+  { hours: 6, label: '6h' },
+  { hours: 12, label: '12h', beta: true },
+  { hours: 24, label: '24h', beta: true },
+];
 const DIFF_LEGEND_GRADIENT = 'linear-gradient(90deg, #000000 0%, #22d3ee 22%, #fde047 48%, #f97316 68%, #ef4444 84%, #ffffff 100%)';
 
 const devLog = (...args: unknown[]) => {
@@ -923,6 +929,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviPlaying, setSuviPlaying] = useState<boolean>(false);
   const [suviPlaybackSpeed, setSuviPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
   const [suviFrameLoading, setSuviFrameLoading] = useState<boolean>(false);
+  const [imageryWindowHours, setImageryWindowHours] = useState<ImageryWindowHours>(6);
   const suviCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const diffWatermarkRef = useRef<HTMLImageElement | null>(null);
   const [coronagraphState, setCoronagraphState] = useState<CoronagraphStateResponse | null>(null);
@@ -937,6 +944,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedFrameUrlsRef = useRef<Set<string>>(new Set());
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
+  const parseFrameTime = useCallback((ts: string | null | undefined): number => {
+    if (!ts) return Number.NEGATIVE_INFINITY;
+    const parsed = new Date(ts).getTime();
+    return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+  }, []);
 
   // Difference-imagery defaults tuned to match provided reference settings.
   // GOES-19 CCOR-1
@@ -1729,7 +1741,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const fetchCoronagraphState = useCallback(async () => {
     try {
       setCoronagraphLoading((prev) => prev ?? 'Refreshing coronagraph data...');
-      const data = await fetchWithTimeoutAndRetry(`${CORONAGRAPHY_WORKER_BASE}/api/state`, 'json') as CoronagraphStateResponse;
+      const data = await fetchWithTimeoutAndRetry(
+        `${CORONAGRAPHY_WORKER_BASE}/api/state?hours=${imageryWindowHours}`,
+        'json'
+      ) as CoronagraphStateResponse;
       if (!data?.ok) throw new Error('Worker state returned not-ok response');
       setCoronagraphState(data);
       setCoronagraphLoading(null);
@@ -1737,13 +1752,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       console.error('Error fetching coronagraph worker state:', error);
       setCoronagraphLoading(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [imageryWindowHours]);
 
   const fetchSuviWorkerState = useCallback(async () => {
     try {
       setSuviWorkerLoading((prev) => prev ?? 'Refreshing SUVI timeline...');
       const data = await fetchWithTimeoutAndRetry(
-        `${SUVI_DIFF_WORKER_BASE}/api/state`,
+        `${SUVI_DIFF_WORKER_BASE}/api/state?hours=${imageryWindowHours}`,
         'json',
         { timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS, retries: 1, cache: 'no-store' }
       ) as SuviWorkerStateResponse;
@@ -1754,7 +1769,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       console.error('Error fetching SUVI worker state:', error);
       setSuviWorkerLoading(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [imageryWindowHours]);
 
   const fetchStereoEarthSeparation = useCallback(async () => {
     try {
@@ -2181,11 +2196,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const latestCoronagraphFrame = useMemo(() => {
     if (coronagraphFrames.length === 0) return null;
     return coronagraphFrames.reduce((latest, frame) => {
-      const latestTs = latest?.ts ? new Date(latest.ts).getTime() : -Infinity;
-      const frameTs = frame?.ts ? new Date(frame.ts).getTime() : -Infinity;
+      const latestTs = parseFrameTime(latest?.ts);
+      const frameTs = parseFrameTime(frame?.ts);
       return frameTs > latestTs ? frame : latest;
     }, coronagraphFrames[0] ?? null);
-  }, [coronagraphFrames]);
+  }, [coronagraphFrames, parseFrameTime]);
   const clampedCoronagraphIndex = Math.min(coronagraphIndex, Math.max(0, coronagraphFrames.length - 1));
   const activeCoronagraphFrame = coronagraphFrames[clampedCoronagraphIndex] ?? null;
   const previousCoronagraphFrame = coronagraphFrames[Math.max(0, clampedCoronagraphIndex - 1)] ?? null;
@@ -2212,6 +2227,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const activeSuviDiffConfig = SUVI_DIFF_CONFIG_BY_SOURCE[activeSuviSourceKey] ?? SUVI_DIFF_CONFIG_BY_SOURCE.suvi_131_secondary;
   const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
   const suviFrames = activeSuviSourceState?.frames ?? [];
+  const latestSuviFrame = useMemo(() => {
+    if (suviFrames.length === 0) return null;
+    return suviFrames.reduce((latest, frame) => {
+      const latestTs = parseFrameTime(latest?.ts);
+      const frameTs = parseFrameTime(frame?.ts);
+      return frameTs > latestTs ? frame : latest;
+    }, suviFrames[0] ?? null);
+  }, [parseFrameTime, suviFrames]);
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
   const activeSuviFrame = suviFrames[clampedSuviFrameIndex] ?? null;
   const previousSuviFrame = suviFrames[Math.max(0, clampedSuviFrameIndex - 1)] ?? null;
@@ -2252,9 +2275,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       setCoronagraphPlaying(false);
       return;
     }
-    setCoronagraphIndex(coronagraphFrames.length - 1);
+    const latestIndex = coronagraphFrames.findIndex((frame) => frame.key === latestCoronagraphFrame?.key);
+    setCoronagraphIndex(latestIndex >= 0 ? latestIndex : coronagraphFrames.length - 1);
     setCoronagraphPlaying(false);
-  }, [coronagraphSource, coronagraphFrames.length]);
+  }, [coronagraphSource, coronagraphFrames, latestCoronagraphFrame?.key]);
 
   useEffect(() => {
     if (suviFrames.length === 0) {
@@ -2262,9 +2286,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       setSuviPlaying(false);
       return;
     }
-    setSuviFrameIndex(suviFrames.length - 1);
+    const latestIndex = suviFrames.findIndex((frame) => frame.key === latestSuviFrame?.key);
+    setSuviFrameIndex(latestIndex >= 0 ? latestIndex : suviFrames.length - 1);
     setSuviPlaying(false);
-  }, [activeSuviSourceKey, suviFrames.length]);
+  }, [activeSuviSourceKey, latestSuviFrame?.key, suviFrames]);
 
   useEffect(() => {
     if (!suviPlaying || suviFrames.length < 2) return;
@@ -2417,7 +2442,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const controller = new AbortController();
 
     const preload = async () => {
-      for (const frame of suviFrames) {
+      const prioritizedFrames = [...suviFrames].sort((a, b) => parseFrameTime(b.ts) - parseFrameTime(a.ts));
+      for (const frame of prioritizedFrames) {
         if (controller.signal.aborted) return;
         const url = resolveSuviWorkerUrl(frame?.url);
         if (!url || loadedFrameUrlsRef.current.has(url)) continue;
@@ -2440,14 +2466,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     void preload();
     return () => controller.abort();
-  }, [suviFrames, resolveSuviWorkerUrl]);
+  }, [parseFrameTime, suviFrames, resolveSuviWorkerUrl]);
 
   useEffect(() => {
     if (coronagraphFrames.length === 0) return;
     const controller = new AbortController();
 
     const preload = async () => {
-      for (const frame of coronagraphFrames) {
+      const prioritizedFrames = [...coronagraphFrames].sort((a, b) => parseFrameTime(b.ts) - parseFrameTime(a.ts));
+      for (const frame of prioritizedFrames) {
         if (controller.signal.aborted) return;
         const url = resolveCoronagraphUrl(frame?.url);
         if (!url || loadedFrameUrlsRef.current.has(url)) continue;
@@ -2470,7 +2497,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     void preload();
     return () => controller.abort();
-  }, [coronagraphFrames, resolveCoronagraphUrl]);
+  }, [coronagraphFrames, parseFrameTime, resolveCoronagraphUrl]);
 
   const canStepCoronagraphFrames = coronagraphFrames.length > 1;
   const goToPreviousCoronagraphFrame = useCallback(() => {
@@ -2760,7 +2787,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   />
                   Difference imagery
                 </label>
-                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s) in last 6h</span>
+                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s) in last {imageryWindowHours}h</span>
+              </div>
+              <div className="mb-2 flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] uppercase tracking-wide text-neutral-400">Range</span>
+                {IMAGERY_WINDOW_OPTIONS.map((option) => (
+                  <button
+                    key={`suvi-window-${option.hours}`}
+                    onClick={() => setImageryWindowHours(option.hours)}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                      imageryWindowHours === option.hours
+                        ? 'border-sky-500 bg-sky-600 text-white'
+                        : 'border-neutral-700 bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
+                    }`}
+                    title={option.beta ? `Load last ${option.hours} hours (beta; slower)` : `Load last ${option.hours} hours`}
+                  >
+                    {option.label}
+                    {option.beta ? ' β' : ''}
+                  </button>
+                ))}
+                <span className="text-[11px] text-amber-300/90">12h / 24h are beta due to longer wait times.</span>
               </div>
 
               <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
@@ -3260,7 +3306,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   />
                   Difference imagery
                 </label>
-                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last 6h</span>
+                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last {imageryWindowHours}h</span>
+              </div>
+              <div className="mb-2 flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] uppercase tracking-wide text-neutral-400">Range</span>
+                {IMAGERY_WINDOW_OPTIONS.map((option) => (
+                  <button
+                    key={`coronagraph-window-${option.hours}`}
+                    onClick={() => setImageryWindowHours(option.hours)}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                      imageryWindowHours === option.hours
+                        ? 'border-sky-500 bg-sky-600 text-white'
+                        : 'border-neutral-700 bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
+                    }`}
+                    title={option.beta ? `Load last ${option.hours} hours (beta; slower)` : `Load last ${option.hours} hours`}
+                  >
+                    {option.label}
+                    {option.beta ? ' β' : ''}
+                  </button>
+                ))}
+                <span className="text-[11px] text-amber-300/90">12h / 24h are beta due to longer wait times.</span>
               </div>
               {coronagraphStalenessNotice && (
                 <div className="mb-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-200">
