@@ -146,6 +146,7 @@ const normalizeSolarLongitude = (value: number | null): number | null => {
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
+type PlaybackSpeedOption = 0.5 | 1 | 2 | 5 | 10;
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URLS = [
@@ -224,6 +225,8 @@ const DIFF_WATERMARK_URL = '/icons/icon-default.png';
 const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
+const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
+const DIFF_LEGEND_GRADIENT = 'linear-gradient(90deg, #000000 0%, #22d3ee 22%, #fde047 48%, #f97316 68%, #ef4444 84%, #ffffff 100%)';
 
 const devLog = (...args: unknown[]) => {
   if (!import.meta.env.DEV) return;
@@ -918,6 +921,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviFrameIndex, setSuviFrameIndex] = useState<number>(0);
   const [suviDifference, setSuviDifference] = useState<boolean>(false);
   const [suviPlaying, setSuviPlaying] = useState<boolean>(false);
+  const [suviPlaybackSpeed, setSuviPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
+  const [suviFrameLoading, setSuviFrameLoading] = useState<boolean>(false);
   const suviCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const diffWatermarkRef = useRef<HTMLImageElement | null>(null);
   const [coronagraphState, setCoronagraphState] = useState<CoronagraphStateResponse | null>(null);
@@ -926,8 +931,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [coronagraphIndex, setCoronagraphIndex] = useState<number>(0);
   const [coronagraphDifference, setCoronagraphDifference] = useState<boolean>(true);
   const [coronagraphPlaying, setCoronagraphPlaying] = useState<boolean>(false);
+  const [coronagraphPlaybackSpeed, setCoronagraphPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
+  const [coronagraphFrameLoading, setCoronagraphFrameLoading] = useState<boolean>(false);
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const loadedFrameUrlsRef = useRef<Set<string>>(new Set());
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   // Difference-imagery defaults tuned to match provided reference settings.
@@ -2260,11 +2268,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!suviPlaying || suviFrames.length < 2) return;
+    const frameIntervalMs = Math.max(80, Math.round(700 / suviPlaybackSpeed));
     const timer = window.setInterval(() => {
       setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
-    }, 700);
+    }, frameIntervalMs);
     return () => window.clearInterval(timer);
-  }, [suviPlaying, suviFrames.length]);
+  }, [suviPlaying, suviFrames.length, suviPlaybackSpeed]);
 
   const canStepSuviFrames = suviFrames.length > 1;
   const goToPreviousSuviFrame = useCallback(() => {
@@ -2314,11 +2323,154 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
+    const frameIntervalMs = Math.max(80, Math.round(700 / coronagraphPlaybackSpeed));
     const timer = window.setInterval(() => {
       setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
-    }, 700);
+    }, frameIntervalMs);
     return () => window.clearInterval(timer);
-  }, [coronagraphPlaying, coronagraphFrames.length]);
+  }, [coronagraphPlaying, coronagraphFrames.length, coronagraphPlaybackSpeed]);
+
+  useEffect(() => {
+    if (!activeSuviFrameUrl) {
+      setSuviFrameLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const urlsToLoad: string[] = [activeSuviFrameUrl];
+    if (suviDifference && previousSuviFrameUrl && previousSuviFrameUrl !== activeSuviFrameUrl) {
+      urlsToLoad.push(previousSuviFrameUrl);
+    }
+    const pendingUrls = urlsToLoad.filter((url) => !loadedFrameUrlsRef.current.has(url));
+    if (pendingUrls.length === 0) {
+      setSuviFrameLoading(false);
+      return;
+    }
+    setSuviFrameLoading(true);
+
+    const loadImage = (src: string) => new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        loadedFrameUrlsRef.current.add(src);
+        resolve();
+      };
+      img.onerror = reject;
+      img.src = src;
+    });
+
+    (async () => {
+      try {
+        await Promise.all(pendingUrls.map((url) => loadImage(url)));
+      } catch {
+        // Non-blocking: image element/canvas will still attempt rendering.
+      } finally {
+        if (!cancelled) setSuviFrameLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeSuviFrameUrl, previousSuviFrameUrl, suviDifference]);
+
+  useEffect(() => {
+    if (!activeCoronagraphUrl) {
+      setCoronagraphFrameLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const urlsToLoad: string[] = [activeCoronagraphUrl];
+    if (coronagraphDifference && previousCoronagraphUrl && previousCoronagraphUrl !== activeCoronagraphUrl) {
+      urlsToLoad.push(previousCoronagraphUrl);
+    }
+    const pendingUrls = urlsToLoad.filter((url) => !loadedFrameUrlsRef.current.has(url));
+    if (pendingUrls.length === 0) {
+      setCoronagraphFrameLoading(false);
+      return;
+    }
+    setCoronagraphFrameLoading(true);
+
+    const loadImage = (src: string) => new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        loadedFrameUrlsRef.current.add(src);
+        resolve();
+      };
+      img.onerror = reject;
+      img.src = src;
+    });
+
+    (async () => {
+      try {
+        await Promise.all(pendingUrls.map((url) => loadImage(url)));
+      } catch {
+        // Non-blocking: image element/canvas will still attempt rendering.
+      } finally {
+        if (!cancelled) setCoronagraphFrameLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeCoronagraphUrl, previousCoronagraphUrl, coronagraphDifference]);
+
+  useEffect(() => {
+    if (suviFrames.length === 0) return;
+    const controller = new AbortController();
+
+    const preload = async () => {
+      for (const frame of suviFrames) {
+        if (controller.signal.aborted) return;
+        const url = resolveSuviWorkerUrl(frame?.url);
+        if (!url || loadedFrameUrlsRef.current.has(url)) continue;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              loadedFrameUrlsRef.current.add(url);
+              resolve();
+            };
+            img.onerror = reject;
+            img.src = url;
+          });
+        } catch {
+          // Keep preloading resilient — skip failed frame.
+        }
+      }
+    };
+
+    void preload();
+    return () => controller.abort();
+  }, [suviFrames, resolveSuviWorkerUrl]);
+
+  useEffect(() => {
+    if (coronagraphFrames.length === 0) return;
+    const controller = new AbortController();
+
+    const preload = async () => {
+      for (const frame of coronagraphFrames) {
+        if (controller.signal.aborted) return;
+        const url = resolveCoronagraphUrl(frame?.url);
+        if (!url || loadedFrameUrlsRef.current.has(url)) continue;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              loadedFrameUrlsRef.current.add(url);
+              resolve();
+            };
+            img.onerror = reject;
+            img.src = url;
+          });
+        } catch {
+          // Keep preloading resilient — skip failed frame.
+        }
+      }
+    };
+
+    void preload();
+    return () => controller.abort();
+  }, [coronagraphFrames, resolveCoronagraphUrl]);
 
   const canStepCoronagraphFrames = coronagraphFrames.length > 1;
   const goToPreviousCoronagraphFrame = useCallback(() => {
@@ -2630,7 +2782,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     )}
                   </div>
                 )}
+                {suviFrameLoading && activeSuviFrameUrl && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-neutral-200 bg-black/45">
+                    Loading selected frame…
+                  </div>
+                )}
               </div>
+              {suviDifference && (
+                <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
+                  <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
+                  <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
+                  <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+                    <span>None / very low</span>
+                    <span>Low</span>
+                    <span>Moderate</span>
+                    <span>High</span>
+                    <span>Extreme</span>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-3 space-y-2 flex-shrink-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2666,6 +2836,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   >
                     ⬇ Download frame
                   </button>
+                  <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
+                    Speed
+                    <select
+                      value={suviPlaybackSpeed}
+                      onChange={(e) => setSuviPlaybackSpeed(Number(e.target.value) as PlaybackSpeedOption)}
+                      className="rounded bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs text-neutral-200"
+                      title="Playback speed"
+                    >
+                      {PLAYBACK_SPEED_OPTIONS.map((speed) => (
+                        <option key={`suvi-speed-${speed}`} value={speed}>
+                          {speed}x
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <input
                   type="range"
@@ -3102,7 +3287,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     )}
                   </div>
                 )}
+                {coronagraphFrameLoading && activeCoronagraphUrl && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-neutral-200 bg-black/45">
+                    Loading selected frame…
+                  </div>
+                )}
               </div>
+              {coronagraphDifference && (
+                <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
+                  <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
+                  <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
+                  <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+                    <span>None / very low</span>
+                    <span>Low</span>
+                    <span>Moderate</span>
+                    <span>High</span>
+                    <span>Extreme</span>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-3 space-y-2 flex-shrink-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -3138,6 +3341,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   >
                     ⬇ Download frame
                   </button>
+                  <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
+                    Speed
+                    <select
+                      value={coronagraphPlaybackSpeed}
+                      onChange={(e) => setCoronagraphPlaybackSpeed(Number(e.target.value) as PlaybackSpeedOption)}
+                      className="rounded bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs text-neutral-200"
+                      title="Playback speed"
+                    >
+                      {PLAYBACK_SPEED_OPTIONS.map((speed) => (
+                        <option key={`coronagraph-speed-${speed}`} value={speed}>
+                          {speed}x
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <input
                   type="range"
