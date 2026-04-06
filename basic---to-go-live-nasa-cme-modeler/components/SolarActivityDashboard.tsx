@@ -2735,8 +2735,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
             <SolarActivitySummaryDisplay summary={activitySummary} onOpenModal={openModal} />
 
+            <div id="goes-xray-flux-section" className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
+              <div className="flex justify-center items-center gap-2">
+                <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
+              </div>
+              <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
+              <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
+                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <LoadingSpinner message={loadingXray} />}
+              </div>
+              <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastXrayUpdate || 'N/A'}</div>
+            </div>
+
             {/* --- SOLAR IMAGERY (Full Width) --- */}
-            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
               <div className="flex justify-center items-center gap-2">
                 <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
                 <button
@@ -2754,57 +2766,73 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setActiveSunImage('SUVI_195')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_195' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 195Å</button>
               </div>
 
+              {/* Source label + mobile-only toggle (desktop shows both panels always) */}
               <div className="flex items-center justify-between gap-3 mb-2">
-                <label className="flex items-center gap-2 text-xs text-neutral-300">
-                  <input
-                    type="checkbox"
-                    checked={suviDifference}
-                    onChange={(e) => setSuviDifference(e.target.checked)}
-                    className="accent-sky-500"
-                  />
-                  Difference imagery
+                {/* Slider toggle — hidden on desktop where both panels are always visible */}
+                <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
+                  <div className="relative">
+                    <input type="checkbox" className="sr-only" checked={suviDifference} onChange={(e) => setSuviDifference(e.target.checked)} />
+                    <div className={`block w-10 h-6 rounded-full transition-colors ${suviDifference ? 'bg-indigo-600' : 'bg-neutral-600'}`} />
+                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${suviDifference ? 'translate-x-full' : ''}`} />
+                  </div>
+                  <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
                 </label>
                 <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s) in last 6h</span>
               </div>
 
-              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
-                {suviWorkerLoading && !activeSuviFrameUrl && <LoadingSpinner message={suviWorkerLoading} />}
-                {!suviWorkerLoading && !activeSuviFrameUrl && (
-                  <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No SUVI imagery available for this source.</div>
-                )}
-                {activeSuviFrameUrl && (
-                  <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
-                    {!suviDifference ? (
-                      <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
-                    ) : (
-                      <>
+              {/* Viewer — flex-row on desktop (side by side), stacked on mobile */}
+              <div className="flex flex-col lg:flex-row gap-3 flex-grow">
+                {/* Raw panel: always visible on desktop; hidden on mobile when diff is active */}
+                <div className={`flex-1 flex flex-col min-h-[220px] sm:min-h-[260px] ${suviDifference ? 'hidden lg:flex' : 'flex'}`}>
+                  <div className="hidden lg:block text-xs text-center text-neutral-500 mb-1 font-medium tracking-wide uppercase">Raw</div>
+                  <div className="flex-1 rounded-lg border border-neutral-800 bg-black overflow-hidden relative">
+                    {suviWorkerLoading && !activeSuviFrameUrl && <LoadingSpinner message={suviWorkerLoading} />}
+                    {!suviWorkerLoading && !activeSuviFrameUrl && (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No SUVI imagery available.</div>
+                    )}
+                    {activeSuviFrameUrl && (
+                      <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
+                        <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Diff panel: always visible on desktop; shown on mobile only when diff toggle is on */}
+                <div className={`flex-1 flex flex-col min-h-[220px] sm:min-h-[260px] ${suviDifference ? 'flex' : 'hidden lg:flex'}`}>
+                  <div className="hidden lg:block text-xs text-center text-neutral-500 mb-1 font-medium tracking-wide uppercase">Difference</div>
+                  <div className="flex-1 rounded-lg border border-neutral-800 bg-black overflow-hidden relative">
+                    {suviWorkerLoading && !activeSuviFrameUrl && <LoadingSpinner message={suviWorkerLoading} />}
+                    {!suviWorkerLoading && !activeSuviFrameUrl && (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No SUVI imagery available.</div>
+                    )}
+                    {activeSuviFrameUrl && (
+                      <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
                         <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
                         {!previousSuviFrameUrl && (
                           <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400 bg-black/40">Need at least 2 frames for difference view.</div>
                         )}
-                      </>
+                      </div>
+                    )}
+                    {suviFrameLoading && activeSuviFrameUrl && (
+                      <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-neutral-200 bg-black/45">Loading selected frame…</div>
                     )}
                   </div>
-                )}
-                {suviFrameLoading && activeSuviFrameUrl && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-neutral-200 bg-black/45">
-                    Loading selected frame…
-                  </div>
-                )}
-              </div>
-              {suviDifference && (
-                <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
-                  <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
-                  <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
-                  <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
-                    <span>None / very low</span>
-                    <span>Low</span>
-                    <span>Moderate</span>
-                    <span>High</span>
-                    <span>Extreme</span>
-                  </div>
                 </div>
-              )}
+              </div>
+
+              {/* Diff legend — always shown on desktop, mobile only when toggle is on */}
+              <div className={`mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2 ${suviDifference ? 'block' : 'hidden lg:block'}`}>
+                <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
+                <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
+                <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+                  <span>None / very low</span>
+                  <span>Low</span>
+                  <span>Moderate</span>
+                  <span>High</span>
+                  <span>Extreme</span>
+                </div>
+              </div>
 
               <div className="mt-3 space-y-2 flex-shrink-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -3182,17 +3210,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
             {/* IPS section removed entirely */}
 
-            <div id="goes-xray-flux-section" className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
-              <div className="flex justify-center items-center gap-2">
-                <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
-                <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
-              </div>
-              <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
-              <div className="flex-grow relative mt-2" title={tooltipContent['xray-flux']}>
-                {xrayChartData.datasets[0]?.data.length > 0 ? <Line data={xrayChartData} options={xrayChartOptions} /> : <LoadingSpinner message={loadingXray} />}
-              </div>
-              <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastXrayUpdate || 'N/A'}</div>
-            </div>
 
             <div id="solar-flares-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
               <div className="flex justify-center items-center gap-2">
@@ -3254,15 +3271,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </div>
               )}
 
+              {/* Source label + mobile-only toggle */}
               <div className="flex items-center justify-between gap-3 mb-2">
-                <label className="flex items-center gap-2 text-xs text-neutral-300">
-                  <input
-                    type="checkbox"
-                    checked={coronagraphDifference}
-                    onChange={(e) => setCoronagraphDifference(e.target.checked)}
-                    className="accent-sky-500"
-                  />
-                  Difference imagery
+                <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
+                  <div className="relative">
+                    <input type="checkbox" className="sr-only" checked={coronagraphDifference} onChange={(e) => setCoronagraphDifference(e.target.checked)} />
+                    <div className={`block w-10 h-6 rounded-full transition-colors ${coronagraphDifference ? 'bg-indigo-600' : 'bg-neutral-600'}`} />
+                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${coronagraphDifference ? 'translate-x-full' : ''}`} />
+                  </div>
+                  <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
                 </label>
                 <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last 6h</span>
               </div>
@@ -3272,44 +3289,58 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </div>
               )}
 
-              <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
-                {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
-                {!coronagraphLoading && !activeCoronagraphUrl && (
-                  <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No coronagraph imagery available for this source.</div>
-                )}
-                {activeCoronagraphUrl && (
-                  <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeCoronagraphUrl, type: 'image' })}>
-                    {!coronagraphDifference ? (
-                      <img src={activeCoronagraphUrl} alt="Coronagraph frame" className="w-full h-full object-contain" />
-                    ) : (
-                      <>
+              <div className="flex flex-col lg:flex-row gap-3 flex-grow">
+                {/* Raw panel */}
+                <div className={`flex-1 flex flex-col min-h-[220px] sm:min-h-[260px] ${coronagraphDifference ? 'hidden lg:flex' : 'flex'}`}>
+                  <div className="hidden lg:block text-xs text-center text-neutral-500 mb-1 font-medium tracking-wide uppercase">Raw</div>
+                  <div className="flex-1 rounded-lg border border-neutral-800 bg-black overflow-hidden relative">
+                    {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
+                    {!coronagraphLoading && !activeCoronagraphUrl && (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No coronagraph imagery available.</div>
+                    )}
+                    {activeCoronagraphUrl && (
+                      <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeCoronagraphUrl, type: 'image' })}>
+                        <img src={activeCoronagraphUrl} alt="Coronagraph frame" className="w-full h-full object-contain" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Diff panel */}
+                <div className={`flex-1 flex flex-col min-h-[220px] sm:min-h-[260px] ${coronagraphDifference ? 'flex' : 'hidden lg:flex'}`}>
+                  <div className="hidden lg:block text-xs text-center text-neutral-500 mb-1 font-medium tracking-wide uppercase">Difference</div>
+                  <div className="flex-1 rounded-lg border border-neutral-800 bg-black overflow-hidden relative">
+                    {coronagraphLoading && !activeCoronagraphUrl && <LoadingSpinner message={coronagraphLoading} />}
+                    {!coronagraphLoading && !activeCoronagraphUrl && (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No coronagraph imagery available.</div>
+                    )}
+                    {activeCoronagraphUrl && (
+                      <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeCoronagraphUrl, type: 'image' })}>
                         <canvas ref={coronagraphCanvasRef} className="w-full h-full object-contain" />
                         {!previousCoronagraphUrl && (
                           <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400 bg-black/40">Need at least 2 frames for difference view.</div>
                         )}
-                      </>
+                      </div>
+                    )}
+                    {coronagraphFrameLoading && activeCoronagraphUrl && (
+                      <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-neutral-200 bg-black/45">Loading selected frame…</div>
                     )}
                   </div>
-                )}
-                {coronagraphFrameLoading && activeCoronagraphUrl && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center text-xs text-neutral-200 bg-black/45">
-                    Loading selected frame…
-                  </div>
-                )}
-              </div>
-              {coronagraphDifference && (
-                <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
-                  <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
-                  <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
-                  <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
-                    <span>None / very low</span>
-                    <span>Low</span>
-                    <span>Moderate</span>
-                    <span>High</span>
-                    <span>Extreme</span>
-                  </div>
                 </div>
-              )}
+              </div>
+
+              {/* Diff legend */}
+              <div className={`mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2 ${coronagraphDifference ? 'block' : 'hidden lg:block'}`}>
+                <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
+                <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
+                <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+                  <span>None / very low</span>
+                  <span>Low</span>
+                  <span>Moderate</span>
+                  <span>High</span>
+                  <span>Extreme</span>
+                </div>
+              </div>
 
               <div className="mt-3 space-y-2 flex-shrink-0">
                 <div className="flex flex-wrap items-center gap-2">
