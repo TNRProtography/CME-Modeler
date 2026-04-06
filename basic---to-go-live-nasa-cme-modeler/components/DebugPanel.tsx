@@ -16,8 +16,9 @@ const PUSH_WORKER_URL = 'https://push-notification-worker.thenamesrock.workers.d
 
 const ALL_TOPICS = [
   'visibility-dslr', 'visibility-phone', 'visibility-naked',
-  'overnight-watch', 'flare-event', 'shock-detection', 'cme-sheath',
-  'ips-shock', 'aurora-40percent', 'aurora-50percent', 'aurora-60percent',
+  'overnight-watch', 'flare-event', 'shock-ff', 'shock-sf',
+  'shock-fr', 'shock-sr', 'shock-imf',
+  'aurora-40percent', 'aurora-50percent', 'aurora-60percent',
   'aurora-80percent', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5',
   'flare-X10', 'flare-peak', 'substorm-forecast', 'admin-broadcast',
 ];

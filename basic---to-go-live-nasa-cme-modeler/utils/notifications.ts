@@ -23,8 +23,11 @@ const TOPIC_ICONS: Record<string, string> = {
   'flare-X1':          '/icons/icon-flare-event.png',
   'flare-X5':          '/icons/icon-flare-event.png',
   'flare-X10':         '/icons/icon-flare-event.png',
-  'shock-detection':   '/icons/icon-shock-detection.png',
-  'ips-shock':         '/icons/icon-ips-shock.png',
+  'shock-ff':          '/icons/icon-shock-detection.png',
+  'shock-sf':          '/icons/icon-shock-detection.png',
+  'shock-fr':          '/icons/icon-shock-detection.png',
+  'shock-sr':          '/icons/icon-shock-detection.png',
+  'shock-imf':         '/icons/icon-shock-detection.png',
   'aurora-40percent':  '/icons/icon-aurora.png',
   'aurora-50percent':  '/icons/icon-aurora.png',
   'aurora-60percent':  '/icons/icon-aurora.png',
@@ -56,10 +59,12 @@ const NOTIFICATION_CATEGORIES = [
   'overnight-watch',
   // Solar flare event (replaces flare-peak in UI — old topic still runs on worker)
   'flare-event',
-  // Shock detection
-  'shock-detection',
-// IPS shock (interplanetary shock from DONKI) — was missing, causing it to never be sent
-  'ips-shock',
+  // Shock detection — five IPS shock types
+  'shock-ff',
+  'shock-sf',
+  'shock-fr',
+  'shock-sr',
+  'shock-imf',
   // Legacy topics — kept for backwards compat, hidden from UI but still respected
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',

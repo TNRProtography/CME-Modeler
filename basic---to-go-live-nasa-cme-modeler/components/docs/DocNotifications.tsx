@@ -18,8 +18,11 @@ const DocNotifications: React.FC = () => (
         ['visibility-naked', 'Oval equatorward boundary within ~5° geomagnetic lat of subscriber. Threshold tightens with moon: base 5°; >40% → 8°; >60% → 10°; >80% → 12°.', 'Yes — per GPS', 'On'],
         ['overnight-watch',  'Nightly summary between 18:00–21:00 NZST. Send condition based on user mode: every-night (score ≥0), camera (≥25), phone (≥40), eye (≥55). Once per NZ calendar day per subscriber.', 'NZ timezone', 'On'],
         ['flare-event',      'Solar flare confirmed at peak ≥M1.0. "Confirmed" = flux still ≥M1 after 5 min of declining trend (avoids false peaks).', 'No', 'On'],
-        ['shock-detection',  '≥3 of 4 criteria met vs 30-min rolling baseline: speed +50 km/s, density ×2.5, pressure ×2.0, Bt +5 nT — simultaneously. 4-hour cooldown.', 'No', 'On'],
-        ['cme-sheath',       'CME sheath flag raised in Substorm Risk Worker. 6-hour cooldown.', 'No', 'On'],
+        ['shock-ff',         'Fast Forward Shock — speed↑, density↑, temp↑, Bt↑ across median pre/post windows (18/12 min). Classic CME arrival signature. 4-hour cooldown.', 'No', 'On'],
+        ['shock-sf',         'Slow Forward Shock — speed↑, density↑, temp↑, Bt↓. Weaker compression, often SIR or CME flank. 4-hour cooldown.', 'No', 'On'],
+        ['shock-fr',         'Fast Reverse Shock — speed↑, density↓, temp↓, Bt↓. CME trailing edge or HSS rear. 4-hour cooldown.', 'No', 'On'],
+        ['shock-sr',         'Slow Reverse Shock — speed↑, density↓, temp↓, Bt↑. Uncommon trailing rarefaction. 4-hour cooldown.', 'No', 'On'],
+        ['shock-imf',        'IMF Enhancement — |Bt| ≥4 nT or |Bz| ≥8 nT jump with minimal plasma change. Sector boundary or embedded structure. 4-hour cooldown.', 'No', 'On'],
         ['admin-broadcast',  'Manual — sent by admin via push worker broadcast endpoint. Bypasses Banner API (Cloudflare worker-to-worker restriction, error 1042).', 'No', 'On'],
       ]}
     />
