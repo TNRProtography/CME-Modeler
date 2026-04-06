@@ -226,12 +226,13 @@ const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
 const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
-const DIFF_LEGEND_PILLS: { colorClass: string; label: string; textClass?: string }[] = [
-  { colorClass: 'bg-black border border-neutral-500', label: 'None change', textClass: 'text-neutral-200' },
-  { colorClass: 'bg-blue-500', label: 'Minimum change' },
-  { colorClass: 'bg-green-400', label: 'Moderate change', textClass: 'text-neutral-900' },
-  { colorClass: 'bg-red-500', label: 'High change' },
-  { colorClass: 'bg-white border border-neutral-400', label: 'Most change', textClass: 'text-neutral-900' },
+const DIFF_LEGEND_PILLS: { colorClass: string; label: string }[] = [
+  { colorClass: 'bg-black border border-neutral-500', label: 'None / very low change' },
+  { colorClass: 'bg-cyan-400', label: 'Low change' },
+  { colorClass: 'bg-yellow-300', label: 'Moderate change' },
+  { colorClass: 'bg-orange-500', label: 'High change' },
+  { colorClass: 'bg-red-500', label: 'Very high change' },
+  { colorClass: 'bg-white border border-neutral-400', label: 'Extreme change' },
 ];
 
 const devLog = (...args: unknown[]) => {
@@ -2796,10 +2797,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
               {suviDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
-                  <div className="flex items-center justify-between text-[11px] text-neutral-300 mb-1">
-                    <span>Difference intensity (colour guide)</span>
-                    <span>Pill legend</span>
-                  </div>
+                  <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {DIFF_LEGEND_PILLS.map((pill) => (
                       <div
@@ -2807,7 +2805,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/90 px-2.5 py-1"
                       >
                         <span className={`h-2.5 w-2.5 rounded-full ${pill.colorClass}`} />
-                        <span className={`text-[10px] ${pill.textClass ?? 'text-neutral-200'}`}>{pill.label}</span>
+                        <span className="text-[10px] text-neutral-200">{pill.label}</span>
                       </div>
                     ))}
                   </div>
@@ -3307,10 +3305,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
               {coronagraphDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
-                  <div className="flex items-center justify-between text-[11px] text-neutral-300 mb-1">
-                    <span>Difference intensity (colour guide)</span>
-                    <span>Pill legend</span>
-                  </div>
+                  <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {DIFF_LEGEND_PILLS.map((pill) => (
                       <div
@@ -3318,7 +3313,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/90 px-2.5 py-1"
                       >
                         <span className={`h-2.5 w-2.5 rounded-full ${pill.colorClass}`} />
-                        <span className={`text-[10px] ${pill.textClass ?? 'text-neutral-200'}`}>{pill.label}</span>
+                        <span className="text-[10px] text-neutral-200">{pill.label}</span>
                       </div>
                     ))}
                   </div>
