@@ -937,6 +937,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedFrameUrlsRef = useRef<Set<string>>(new Set());
+  // Refs so playback interval closures always see the latest loading state
+  const suviFrameLoadingRef = useRef<boolean>(false);
+  const coronagraphFrameLoadingRef = useRef<boolean>(false);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   // Difference-imagery defaults tuned to match provided reference settings.
@@ -2274,10 +2277,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     setSuviPlaying(false);
   }, [activeSuviSourceKey, suviFrames.length]);
 
+  // Keep loading refs in sync so interval closures see current values
+  useEffect(() => { suviFrameLoadingRef.current = suviFrameLoading; }, [suviFrameLoading]);
+  useEffect(() => { coronagraphFrameLoadingRef.current = coronagraphFrameLoading; }, [coronagraphFrameLoading]);
+
   useEffect(() => {
     if (!suviPlaying || suviFrames.length < 2) return;
     const frameIntervalMs = Math.max(40, Math.round(200 / suviPlaybackSpeed));
     const timer = window.setInterval(() => {
+      // Don't advance until the current frame has finished loading — keeps
+      // the scrubber and the displayed frame in sync at all playback speeds.
+      if (suviFrameLoadingRef.current) return;
       setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
     }, frameIntervalMs);
     return () => window.clearInterval(timer);
@@ -2333,6 +2343,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
     const frameIntervalMs = Math.max(40, Math.round(200 / coronagraphPlaybackSpeed));
     const timer = window.setInterval(() => {
+      if (coronagraphFrameLoadingRef.current) return;
       setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
     }, frameIntervalMs);
     return () => window.clearInterval(timer);
