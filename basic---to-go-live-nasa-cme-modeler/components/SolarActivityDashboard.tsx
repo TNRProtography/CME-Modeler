@@ -2276,7 +2276,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!suviPlaying || suviFrames.length < 2) return;
-    const frameIntervalMs = Math.max(80, Math.round(700 / suviPlaybackSpeed));
+    const frameIntervalMs = Math.max(40, Math.round(200 / suviPlaybackSpeed));
     const timer = window.setInterval(() => {
       setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
     }, frameIntervalMs);
@@ -2331,7 +2331,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
-    const frameIntervalMs = Math.max(80, Math.round(700 / coronagraphPlaybackSpeed));
+    const frameIntervalMs = Math.max(40, Math.round(200 / coronagraphPlaybackSpeed));
     const timer = window.setInterval(() => {
       setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
     }, frameIntervalMs);
