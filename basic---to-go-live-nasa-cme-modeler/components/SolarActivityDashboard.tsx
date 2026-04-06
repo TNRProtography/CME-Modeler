@@ -950,25 +950,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
     const t = Math.min(1, Math.max(0, normalized));
-    // Multi-stop heat map: black → navy → cyan → yellow → orange → red → white.
-    if (t < 0.16) {
-      const k = t / 0.16;
-      return [0, Math.round(20 * k), Math.round(90 * k)];
+    // Multi-stop heat map:
+    // black→blue (none/min), blue→green (low/moderate), green→red (moderate/high), red→white (highest).
+    if (t < 0.2) {
+      const k = t / 0.2;
+      return [0, 0, Math.round(140 * k)];
     }
-    if (t < 0.36) {
-      const k = (t - 0.16) / 0.20;
-      return [0, Math.round(20 + 170 * k), Math.round(90 + 140 * k)];
+    if (t < 0.5) {
+      const k = (t - 0.2) / 0.3;
+      return [0, Math.round(255 * k), Math.round(140 * (1 - k))];
     }
-    if (t < 0.58) {
-      const k = (t - 0.36) / 0.22;
-      return [Math.round(255 * k), Math.round(190 + 65 * k), Math.round(230 - 200 * k)];
+    if (t < 0.8) {
+      const k = (t - 0.5) / 0.3;
+      return [Math.round(255 * k), Math.round(255 * (1 - k)), 0];
     }
-    if (t < 0.80) {
-      const k = (t - 0.58) / 0.22;
-      return [255, Math.round(255 - 120 * k), Math.round(30 - 30 * k)];
-    }
-    const k = (t - 0.80) / 0.20;
-    return [255, Math.round(135 + 120 * k), Math.round(255 * k)];
+    const k = (t - 0.8) / 0.2;
+    const w = Math.round(255 * k);
+    return [255, w, w];
   }, []);
 
   useEffect(() => {
@@ -2713,13 +2711,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               {suviDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="flex items-center justify-between text-[11px] text-neutral-300 mb-1">
-                    <span>Difference intensity</span>
+                    <span>Difference intensity (colour guide)</span>
                     <span>Higher change</span>
                   </div>
-                  <div className="h-2 w-full rounded bg-gradient-to-r from-black via-cyan-400 via-yellow-300 via-orange-500 to-white" />
+                  <div className="h-2 w-full rounded bg-gradient-to-r from-black via-blue-500 via-green-400 via-red-500 to-white" />
                   <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-                    <span>Lower change</span>
-                    <span>Relative colour scale</span>
+                    <span>Black→Blue: none to minimum change</span>
+                    <span>White: most change</span>
+                  </div>
+                  <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
+                    <span>Blue→Green: low to moderate</span>
+                    <span>Green→Red: moderate to high</span>
                   </div>
                 </div>
               )}
@@ -3218,13 +3220,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               {coronagraphDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="flex items-center justify-between text-[11px] text-neutral-300 mb-1">
-                    <span>Difference intensity</span>
+                    <span>Difference intensity (colour guide)</span>
                     <span>Higher change</span>
                   </div>
-                  <div className="h-2 w-full rounded bg-gradient-to-r from-black via-cyan-400 via-yellow-300 via-orange-500 to-white" />
+                  <div className="h-2 w-full rounded bg-gradient-to-r from-black via-blue-500 via-green-400 via-red-500 to-white" />
                   <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-                    <span>Lower change</span>
-                    <span>Relative colour scale</span>
+                    <span>Black→Blue: none to minimum change</span>
+                    <span>White: most change</span>
+                  </div>
+                  <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
+                    <span>Blue→Green: low to moderate</span>
+                    <span>Green→Red: moderate to high</span>
                   </div>
                 </div>
               )}
