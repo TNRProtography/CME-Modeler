@@ -958,23 +958,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
     const t = Math.min(1, Math.max(0, normalized));
-    // Multi-stop heat map:
-    // black→blue (none/min), blue→green (low/moderate), green→red (moderate/high), red→white (highest).
-    if (t < 0.2) {
-      const k = t / 0.2;
-      return [0, 0, Math.round(140 * k)];
+    // Multi-stop heat map: black → navy → cyan → yellow → orange → red → white.
+    if (t < 0.16) {
+      const k = t / 0.16;
+      return [0, Math.round(20 * k), Math.round(90 * k)];
     }
-    if (t < 0.5) {
-      const k = (t - 0.2) / 0.3;
-      return [0, Math.round(255 * k), Math.round(140 * (1 - k))];
+    if (t < 0.36) {
+      const k = (t - 0.16) / 0.20;
+      return [0, Math.round(20 + 170 * k), Math.round(90 + 140 * k)];
     }
-    if (t < 0.8) {
-      const k = (t - 0.5) / 0.3;
-      return [Math.round(255 * k), Math.round(255 * (1 - k)), 0];
+    if (t < 0.58) {
+      const k = (t - 0.36) / 0.22;
+      return [Math.round(255 * k), Math.round(190 + 65 * k), Math.round(230 - 200 * k)];
     }
-    const k = (t - 0.8) / 0.2;
-    const w = Math.round(255 * k);
-    return [255, w, w];
+    if (t < 0.80) {
+      const k = (t - 0.58) / 0.22;
+      return [255, Math.round(255 - 120 * k), Math.round(30 - 30 * k)];
+    }
+    const k = (t - 0.80) / 0.20;
+    return [255, Math.round(135 + 120 * k), Math.round(255 * k)];
   }, []);
 
   useEffect(() => {
