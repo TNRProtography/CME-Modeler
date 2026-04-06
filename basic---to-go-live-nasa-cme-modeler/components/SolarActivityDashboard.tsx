@@ -934,6 +934,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [coronagraphFrameLoading, setCoronagraphFrameLoading] = useState<boolean>(false);
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const loadedFrameUrlsRef = useRef<Set<string>>(new Set());
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   // Difference-imagery defaults tuned to match provided reference settings.
@@ -2332,23 +2333,31 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return;
     }
     let cancelled = false;
+    const urlsToLoad: string[] = [activeSuviFrameUrl];
+    if (suviDifference && previousSuviFrameUrl && previousSuviFrameUrl !== activeSuviFrameUrl) {
+      urlsToLoad.push(previousSuviFrameUrl);
+    }
+    const pendingUrls = urlsToLoad.filter((url) => !loadedFrameUrlsRef.current.has(url));
+    if (pendingUrls.length === 0) {
+      setSuviFrameLoading(false);
+      return;
+    }
     setSuviFrameLoading(true);
 
     const loadImage = (src: string) => new Promise<void>((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => resolve();
+      img.onload = () => {
+        loadedFrameUrlsRef.current.add(src);
+        resolve();
+      };
       img.onerror = reject;
       img.src = src;
     });
 
     (async () => {
       try {
-        const urls: string[] = [activeSuviFrameUrl];
-        if (suviDifference && previousSuviFrameUrl && previousSuviFrameUrl !== activeSuviFrameUrl) {
-          urls.push(previousSuviFrameUrl);
-        }
-        await Promise.all(urls.map((url) => loadImage(url)));
+        await Promise.all(pendingUrls.map((url) => loadImage(url)));
       } catch {
         // Non-blocking: image element/canvas will still attempt rendering.
       } finally {
@@ -2365,23 +2374,31 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return;
     }
     let cancelled = false;
+    const urlsToLoad: string[] = [activeCoronagraphUrl];
+    if (coronagraphDifference && previousCoronagraphUrl && previousCoronagraphUrl !== activeCoronagraphUrl) {
+      urlsToLoad.push(previousCoronagraphUrl);
+    }
+    const pendingUrls = urlsToLoad.filter((url) => !loadedFrameUrlsRef.current.has(url));
+    if (pendingUrls.length === 0) {
+      setCoronagraphFrameLoading(false);
+      return;
+    }
     setCoronagraphFrameLoading(true);
 
     const loadImage = (src: string) => new Promise<void>((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => resolve();
+      img.onload = () => {
+        loadedFrameUrlsRef.current.add(src);
+        resolve();
+      };
       img.onerror = reject;
       img.src = src;
     });
 
     (async () => {
       try {
-        const urls: string[] = [activeCoronagraphUrl];
-        if (coronagraphDifference && previousCoronagraphUrl && previousCoronagraphUrl !== activeCoronagraphUrl) {
-          urls.push(previousCoronagraphUrl);
-        }
-        await Promise.all(urls.map((url) => loadImage(url)));
+        await Promise.all(pendingUrls.map((url) => loadImage(url)));
       } catch {
         // Non-blocking: image element/canvas will still attempt rendering.
       } finally {
@@ -2391,6 +2408,66 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     return () => { cancelled = true; };
   }, [activeCoronagraphUrl, previousCoronagraphUrl, coronagraphDifference]);
+
+  useEffect(() => {
+    if (suviFrames.length === 0) return;
+    const controller = new AbortController();
+
+    const preload = async () => {
+      for (const frame of suviFrames) {
+        if (controller.signal.aborted) return;
+        const url = resolveSuviWorkerUrl(frame?.url);
+        if (!url || loadedFrameUrlsRef.current.has(url)) continue;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              loadedFrameUrlsRef.current.add(url);
+              resolve();
+            };
+            img.onerror = reject;
+            img.src = url;
+          });
+        } catch {
+          // Keep preloading resilient — skip failed frame.
+        }
+      }
+    };
+
+    void preload();
+    return () => controller.abort();
+  }, [suviFrames, resolveSuviWorkerUrl]);
+
+  useEffect(() => {
+    if (coronagraphFrames.length === 0) return;
+    const controller = new AbortController();
+
+    const preload = async () => {
+      for (const frame of coronagraphFrames) {
+        if (controller.signal.aborted) return;
+        const url = resolveCoronagraphUrl(frame?.url);
+        if (!url || loadedFrameUrlsRef.current.has(url)) continue;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              loadedFrameUrlsRef.current.add(url);
+              resolve();
+            };
+            img.onerror = reject;
+            img.src = url;
+          });
+        } catch {
+          // Keep preloading resilient — skip failed frame.
+        }
+      }
+    };
+
+    void preload();
+    return () => controller.abort();
+  }, [coronagraphFrames, resolveCoronagraphUrl]);
 
   const canStepCoronagraphFrames = coronagraphFrames.length > 1;
   const goToPreviousCoronagraphFrame = useCallback(() => {
