@@ -13,6 +13,7 @@ import {
 } from '../services/nasaService';
 import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { workerStatePreload } from '../utils/appPreloader';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
@@ -1729,7 +1730,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const fetchCoronagraphState = useCallback(async () => {
     try {
       setCoronagraphLoading((prev) => prev ?? 'Refreshing coronagraph data...');
-      const data = await fetchWithTimeoutAndRetry(`${CORONAGRAPHY_WORKER_BASE}/api/state`, 'json') as CoronagraphStateResponse;
+      // Use the preloaded promise if available (started during loading screen) to
+      // avoid a cold duplicate fetch. Consume it once, then null it out.
+      const preload = workerStatePreload.coronagraph;
+      workerStatePreload.coronagraph = null;
+      const data = (preload ? await preload : await fetchWithTimeoutAndRetry(`${CORONAGRAPHY_WORKER_BASE}/api/state`, 'json')) as CoronagraphStateResponse;
       if (!data?.ok) throw new Error('Worker state returned not-ok response');
       setCoronagraphState(data);
       setCoronagraphLoading(null);
@@ -1742,11 +1747,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const fetchSuviWorkerState = useCallback(async () => {
     try {
       setSuviWorkerLoading((prev) => prev ?? 'Refreshing SUVI timeline...');
-      const data = await fetchWithTimeoutAndRetry(
+      // Use the preloaded promise if available (started during loading screen).
+      const preload = workerStatePreload.suvi;
+      workerStatePreload.suvi = null;
+      const data = (preload ? await preload : await fetchWithTimeoutAndRetry(
         `${SUVI_DIFF_WORKER_BASE}/api/state`,
         'json',
         { timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS, retries: 1, cache: 'no-store' }
-      ) as SuviWorkerStateResponse;
+      )) as SuviWorkerStateResponse;
       if (!data?.ok) throw new Error('SUVI worker state returned not-ok response');
       setSuviWorkerState(data);
       setSuviWorkerLoading(null);
@@ -2416,25 +2424,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (suviFrames.length === 0) return;
     const controller = new AbortController();
 
+    const loadOne = (url: string) => new Promise<void>((resolve) => {
+      if (loadedFrameUrlsRef.current.has(url)) { resolve(); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { loadedFrameUrlsRef.current.add(url); resolve(); };
+      img.onerror = () => resolve(); // resilient — skip failures
+      img.src = url;
+    });
+
     const preload = async () => {
-      for (const frame of suviFrames) {
+      const BATCH = 8;
+      const urls = suviFrames
+        .map((f) => resolveSuviWorkerUrl(f?.url))
+        .filter((u): u is string => !!u);
+      for (let i = 0; i < urls.length; i += BATCH) {
         if (controller.signal.aborted) return;
-        const url = resolveSuviWorkerUrl(frame?.url);
-        if (!url || loadedFrameUrlsRef.current.has(url)) continue;
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              loadedFrameUrlsRef.current.add(url);
-              resolve();
-            };
-            img.onerror = reject;
-            img.src = url;
-          });
-        } catch {
-          // Keep preloading resilient — skip failed frame.
-        }
+        await Promise.all(urls.slice(i, i + BATCH).map(loadOne));
       }
     };
 
@@ -2446,25 +2452,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (coronagraphFrames.length === 0) return;
     const controller = new AbortController();
 
+    const loadOne = (url: string) => new Promise<void>((resolve) => {
+      if (loadedFrameUrlsRef.current.has(url)) { resolve(); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { loadedFrameUrlsRef.current.add(url); resolve(); };
+      img.onerror = () => resolve(); // resilient — skip failures
+      img.src = url;
+    });
+
     const preload = async () => {
-      for (const frame of coronagraphFrames) {
+      const BATCH = 8;
+      const urls = coronagraphFrames
+        .map((f) => resolveCoronagraphUrl(f?.url))
+        .filter((u): u is string => !!u);
+      for (let i = 0; i < urls.length; i += BATCH) {
         if (controller.signal.aborted) return;
-        const url = resolveCoronagraphUrl(frame?.url);
-        if (!url || loadedFrameUrlsRef.current.has(url)) continue;
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              loadedFrameUrlsRef.current.add(url);
-              resolve();
-            };
-            img.onerror = reject;
-            img.src = url;
-          });
-        } catch {
-          // Keep preloading resilient — skip failed frame.
-        }
+        await Promise.all(urls.slice(i, i + BATCH).map(loadOne));
       }
     };
 
