@@ -787,6 +787,44 @@ const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>)
 };
 
 // --- REUSABLE COMPONENTS ---
+
+// Time-window selector for imagery sections (SUVI + Coronagraph)
+// 12h and 24h are flagged BETA — they load many more frames and
+// diff computation is slower on lower-end devices.
+const ImageryTimeRangeButtons: React.FC<{
+  selected: number;
+  onSelect: (hours: number) => void;
+}> = ({ selected, onSelect }) => {
+  const options = [
+    { label: '3h',  hours: 3 },
+    { label: '6h',  hours: 6 },
+    { label: '12h', hours: 12, beta: true },
+    { label: '24h', hours: 24, beta: true },
+  ] as const;
+  return (
+    <div className="flex gap-2 flex-wrap items-center">
+      {options.map(({ label, hours, beta }) => (
+        <button
+          key={hours}
+          onClick={() => onSelect(hours)}
+          className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded transition-colors ${
+            selected === hours
+              ? 'bg-sky-600 text-white'
+              : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-200'
+          }`}
+        >
+          {label}
+          {beta && (
+            <span className="inline-flex items-center px-1 py-px rounded text-[9px] font-bold bg-amber-400 text-neutral-900 leading-none tracking-wide">
+              BETA
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+};
+
 const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selected: number }> = ({ onSelect, selected }) => {
   const timeRanges = [
     { label: '1 Hr', hours: 1 },
@@ -923,6 +961,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviDifference, setSuviDifference] = useState<boolean>(false);
   const [suviPlaying, setSuviPlaying] = useState<boolean>(false);
   const [suviPlaybackSpeed, setSuviPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
+  const [suviFrameWindowHours, setSuviFrameWindowHours] = useState<number>(6);
   const [suviFrameLoading, setSuviFrameLoading] = useState<boolean>(false);
   const suviCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const diffWatermarkRef = useRef<HTMLImageElement | null>(null);
@@ -933,6 +972,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [coronagraphDifference, setCoronagraphDifference] = useState<boolean>(true);
   const [coronagraphPlaying, setCoronagraphPlaying] = useState<boolean>(false);
   const [coronagraphPlaybackSpeed, setCoronagraphPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
+  const [coronagraphFrameWindowHours, setCoronagraphFrameWindowHours] = useState<number>(6);
   const [coronagraphFrameLoading, setCoronagraphFrameLoading] = useState<boolean>(false);
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2188,7 +2228,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [currentXraySummary.flux, displayedSunspotRegions, noaaOverallFlareProbabilities]);
 
   const coronagraphSourceState = coronagraphState?.sources?.[coronagraphSource] ?? null;
-  const coronagraphFrames = coronagraphSourceState?.frames ?? [];
+  const coronagraphFrames = useMemo(() => {
+    const all = coronagraphSourceState?.frames ?? [];
+    if (coronagraphFrameWindowHours >= 24) return all;
+    const cutoff = Date.now() - coronagraphFrameWindowHours * 3600 * 1000;
+    return all.filter((f) => f.ts && new Date(f.ts).getTime() >= cutoff);
+  }, [coronagraphSourceState?.frames, coronagraphFrameWindowHours]);
   const latestCoronagraphFrame = useMemo(() => {
     if (coronagraphFrames.length === 0) return null;
     return coronagraphFrames.reduce((latest, frame) => {
@@ -2222,7 +2267,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       : suviSourceKeyByMode.SUVI_131;
   const activeSuviDiffConfig = SUVI_DIFF_CONFIG_BY_SOURCE[activeSuviSourceKey] ?? SUVI_DIFF_CONFIG_BY_SOURCE.suvi_131_secondary;
   const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
-  const suviFrames = activeSuviSourceState?.frames ?? [];
+  const suviFrames = useMemo(() => {
+    const all = activeSuviSourceState?.frames ?? [];
+    if (suviFrameWindowHours >= 24) return all;
+    const cutoff = Date.now() - suviFrameWindowHours * 3600 * 1000;
+    return all.filter((f) => f.ts && new Date(f.ts).getTime() >= cutoff);
+  }, [activeSuviSourceState?.frames, suviFrameWindowHours]);
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
   const activeSuviFrame = suviFrames[clampedSuviFrameIndex] ?? null;
   const previousSuviFrame = suviFrames[Math.max(0, clampedSuviFrameIndex - 1)] ?? null;
@@ -2276,6 +2326,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     setSuviFrameIndex(suviFrames.length - 1);
     setSuviPlaying(false);
   }, [activeSuviSourceKey, suviFrames.length]);
+
+  // Reset to latest frame when time window changes
+  useEffect(() => {
+    setSuviFrameIndex(Math.max(0, suviFrames.length - 1));
+    setSuviPlaying(false);
+  }, [suviFrameWindowHours, suviFrames.length]);
+
+  useEffect(() => {
+    setCoronagraphIndex(Math.max(0, coronagraphFrames.length - 1));
+    setCoronagraphPlaying(false);
+  }, [coronagraphFrameWindowHours, coronagraphFrames.length]);
 
   // Keep loading refs in sync so interval closures see current values
   useEffect(() => { suviFrameLoadingRef.current = suviFrameLoading; }, [suviFrameLoading]);
@@ -2777,18 +2838,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setActiveSunImage('SUVI_195')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_195' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 195Å</button>
               </div>
 
-              {/* Source label + mobile-only toggle (desktop shows both panels always) */}
-              <div className="flex items-center justify-between gap-3 mb-2">
-                {/* Slider toggle — hidden on desktop where both panels are always visible */}
-                <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
-                  <div className="relative">
-                    <input type="checkbox" className="sr-only" checked={suviDifference} onChange={(e) => setSuviDifference(e.target.checked)} />
-                    <div className={`block w-10 h-6 rounded-full transition-colors ${suviDifference ? 'bg-indigo-600' : 'bg-neutral-600'}`} />
-                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${suviDifference ? 'translate-x-full' : ''}`} />
-                  </div>
-                  <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
-                </label>
-                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s) in last 6h</span>
+              {/* Controls row: time window + mobile diff toggle + source label */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <ImageryTimeRangeButtons selected={suviFrameWindowHours} onSelect={setSuviFrameWindowHours} />
+                  {/* Slider toggle — hidden on desktop where both panels are always visible */}
+                  <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
+                    <div className="relative">
+                      <input type="checkbox" className="sr-only" checked={suviDifference} onChange={(e) => setSuviDifference(e.target.checked)} />
+                      <div className={`block w-10 h-6 rounded-full transition-colors ${suviDifference ? 'bg-indigo-600' : 'bg-neutral-600'}`} />
+                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${suviDifference ? 'translate-x-full' : ''}`} />
+                    </div>
+                    <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
+                  </label>
+                </div>
+                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s)</span>
               </div>
 
               {/* Viewer — flex-row on desktop (side by side), stacked on mobile */}
@@ -3282,17 +3346,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </div>
               )}
 
-              {/* Source label + mobile-only toggle */}
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
-                  <div className="relative">
-                    <input type="checkbox" className="sr-only" checked={coronagraphDifference} onChange={(e) => setCoronagraphDifference(e.target.checked)} />
-                    <div className={`block w-10 h-6 rounded-full transition-colors ${coronagraphDifference ? 'bg-indigo-600' : 'bg-neutral-600'}`} />
-                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${coronagraphDifference ? 'translate-x-full' : ''}`} />
-                  </div>
-                  <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
-                </label>
-                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s) in last 6h</span>
+              {/* Controls row: time window + mobile diff toggle + source label */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <ImageryTimeRangeButtons selected={coronagraphFrameWindowHours} onSelect={setCoronagraphFrameWindowHours} />
+                  <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
+                    <div className="relative">
+                      <input type="checkbox" className="sr-only" checked={coronagraphDifference} onChange={(e) => setCoronagraphDifference(e.target.checked)} />
+                      <div className={`block w-10 h-6 rounded-full transition-colors ${coronagraphDifference ? 'bg-indigo-600' : 'bg-neutral-600'}`} />
+                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${coronagraphDifference ? 'translate-x-full' : ''}`} />
+                    </div>
+                    <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
+                  </label>
+                </div>
+                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s)</span>
               </div>
               {coronagraphStalenessNotice && (
                 <div className="mb-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-200">
