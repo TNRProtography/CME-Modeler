@@ -226,14 +226,6 @@ const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
 const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
-const DIFF_LEGEND_PILLS: { colorClass: string; label: string }[] = [
-  { colorClass: 'bg-black border border-neutral-500', label: 'None / very low change' },
-  { colorClass: 'bg-cyan-400', label: 'Low change' },
-  { colorClass: 'bg-yellow-300', label: 'Moderate change' },
-  { colorClass: 'bg-orange-500', label: 'High change' },
-  { colorClass: 'bg-red-500', label: 'Very high change' },
-  { colorClass: 'bg-white border border-neutral-400', label: 'Extreme change' },
-];
 
 const devLog = (...args: unknown[]) => {
   if (!import.meta.env.DEV) return;
@@ -2798,16 +2790,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               {suviDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {DIFF_LEGEND_PILLS.map((pill) => (
-                      <div
-                        key={`suvi-pill-${pill.label}`}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/90 px-2.5 py-1"
-                      >
-                        <span className={`h-2.5 w-2.5 rounded-full ${pill.colorClass}`} />
-                        <span className="text-[10px] text-neutral-200">{pill.label}</span>
-                      </div>
-                    ))}
+                  <div className="mt-2 h-3 w-full rounded bg-gradient-to-r from-black via-cyan-400 via-yellow-300 via-orange-500 via-red-500 to-white" />
+                  <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+                    <span>None / very low</span>
+                    <span>Low</span>
+                    <span>Moderate</span>
+                    <span>High</span>
+                    <span>Extreme</span>
                   </div>
                 </div>
               )}
@@ -3306,16 +3295,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               {coronagraphDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {DIFF_LEGEND_PILLS.map((pill) => (
-                      <div
-                        key={`coronagraph-pill-${pill.label}`}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/90 px-2.5 py-1"
-                      >
-                        <span className={`h-2.5 w-2.5 rounded-full ${pill.colorClass}`} />
-                        <span className="text-[10px] text-neutral-200">{pill.label}</span>
-                      </div>
-                    ))}
+                  <div className="mt-2 h-3 w-full rounded bg-gradient-to-r from-black via-cyan-400 via-yellow-300 via-orange-500 via-red-500 to-white" />
+                  <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+                    <span>None / very low</span>
+                    <span>Low</span>
+                    <span>Moderate</span>
+                    <span>High</span>
+                    <span>Extreme</span>
                   </div>
                 </div>
               )}
