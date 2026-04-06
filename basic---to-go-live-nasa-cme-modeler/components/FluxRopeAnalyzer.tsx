@@ -11,22 +11,28 @@ interface FluxRopeAnalyzerProps {
 }
 
 interface RopeResult {
-  shockTime:     number;
-  ropeEntry:     number;
-  minutesInRope: number;
-  thetaNow:      number;
-  omega:         number;
-  btMean:        number;
-  r2:            number;
-  confidence:    number;
-  leading:       string;
-  axial:         string;
-  trailing:      string;
-  orientCode:    string;
-  bzForecast:    number[];
-  thetaArr:      number[];
-  thetaFit0:     number;
-  estDurMin:     number;
+  shockTime:        number;
+  ropeEntry:        number;
+  minutesInRope:    number;
+  thetaNow:         number;
+  omega:            number;
+  btMean:           number;   // in-plane sqrt(By²+Bz²) amplitude
+  r2:               number;
+  confidence:       number;
+  leading:          string;
+  axial:            string;
+  trailing:         string;
+  orientCode:       string;
+  chirality:        'right-handed' | 'left-handed' | 'indeterminate';
+  chiralityCode:    'R' | 'L' | '?';
+  bzForecast:       number[];
+  bzUncertainty:    number[];  // ±nT band per slot
+  thetaArr:         number[];
+  thetaFit0:        number;
+  estDurMin:        number;
+  remainingMin:     number;
+  coldFraction:     number;   // temperature-based rope confidence (0–1)
+  inPlaneRatio:     number;   // sqrt(By²+Bz²) / Bt — rope field planarity
 }
 
 interface SlinkySeg {
@@ -96,7 +102,40 @@ function segColor(cosTheta: number, alpha: number): string {
   return `rgba(135,138,158,${alpha})`;
 }
 
-function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[]) {
+// Weighted linear regression — weights decay exponentially so recent data dominates.
+// This handles the non-stationary ω that characterises real flux rope rotation.
+function weightedLinReg(xs: number[], ys: number[], halfLifeMin = 45) {
+  const n = xs.length;
+  if (n < 4) return { slope: 0, intercept: ys[0] ?? 0, r2: 0 };
+  const xMax = xs[n - 1];
+  const weights = xs.map(x => Math.exp(-(xMax - x) * Math.LN2 / halfLifeMin));
+  let sw = 0, swx = 0, swy = 0, swxy = 0, swxx = 0;
+  for (let i = 0; i < n; i++) {
+    sw   += weights[i];
+    swx  += weights[i] * xs[i];
+    swy  += weights[i] * ys[i];
+    swxy += weights[i] * xs[i] * ys[i];
+    swxx += weights[i] * xs[i] * xs[i];
+  }
+  const den = sw * swxx - swx * swx;
+  if (Math.abs(den) < 1e-10) return { slope: 0, intercept: swy / sw, r2: 0 };
+  const slope     = (sw * swxy - swx * swy) / den;
+  const intercept = (swy - slope * swx) / sw;
+  const yMean = swy / sw;
+  let ssTot = 0, ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    ssTot += weights[i] * (ys[i] - yMean) ** 2;
+    ssRes += weights[i] * (ys[i] - (slope * xs[i] + intercept)) ** 2;
+  }
+  return { slope, intercept, r2: ssTot > 0 ? Math.max(0, 1 - ssRes / ssTot) : 0 };
+}
+
+// Expected proton temperature from solar wind speed (rough empirical relation, Lopez 1987).
+function expectedTemp(speedKms: number): number {
+  return Math.max(1e3, 0.5e-4 * speedKms * speedKms * 1e6);   // in K
+}
+
+function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[], tmp: XYPt[]) {
   const now   = Date.now();
   const BKT   = 3 * 60000;
   const bkt   = (t: number) => Math.round(t / BKT) * BKT;
@@ -104,6 +143,7 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[]) {
   const magS = [...mag].sort((a, b) => a.time - b.time);
   const spdS = [...spd].sort((a, b) => a.x - b.x);
   const denS = [...den].sort((a, b) => a.x - b.x);
+  const tmpS = [...tmp].sort((a, b) => a.x - b.x);
 
   if (magS.length < 20 || spdS.length < 8) return null;
 
@@ -133,7 +173,7 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[]) {
     ...Object.keys(btJ).map(Number),  ...Object.keys(bzJ).map(Number),
   ]);
   for (const t of allBkts) {
-    if (t < now - 24*3600000 || t > now) continue;
+    if (t < now - 36*3600000 || t > now) continue;   // extended to 36 h
     const hits = [t in spdJ, t in denJ, t in btJ, t in bzJ].filter(Boolean).length;
     if (hits >= 2 && t > shockTime) shockTime = t;
   }
@@ -161,37 +201,109 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[]) {
   const minutesInRope = timeMin[timeMin.length - 1];
   if (minutesInRope < 15) return null;
 
-  const reg = linReg(timeMin, thetaArr);
+  // ── FIX 1: Weighted regression (recent data weighted more) ──────────────
+  const reg = weightedLinReg(timeMin, thetaArr, 45);
   const { slope: omega, intercept: thetaFit0, r2 } = reg;
   const thetaNow = thetaFit0 + omega * minutesInRope;
-  const btMean   = medArr(ropeMag.map(p => p.bt));
 
-  const confidence = r2 * Math.min(1, minutesInRope / 90);
+  // ── FIX 2: In-plane amplitude sqrt(By²+Bz²) instead of total |B| ───────
+  // When Bx is significant the total Bt over-estimates Bz magnitude.
+  const inPlaneArr = ropeMag.map(p => Math.sqrt(p.by ** 2 + p.bz ** 2));
+  const btMean     = medArr(inPlaneArr);
+  // Planarity ratio — how much of |B| lives in the By-Bz plane (1 = perfect rope)
+  const totalBtMean = medArr(ropeMag.map(p => p.bt));
+  const inPlaneRatio = totalBtMean > 0 ? btMean / totalBtMean : 1;
+
   if (r2 < 0.38 || minutesInRope < 15) return null;
 
-  // Estimate actual rope duration from rotation rate.
-  // A full rotation of π radians (180°) spans roughly the leading→trailing arc.
-  // If omega is near 0, fall back to 15-hour default.
+  // ── FIX 3: Chirality from sign of ω (right-handed = ω > 0 in GSE-like frame)
+  const chirality: RopeResult['chirality'] =
+    Math.abs(omega) < 0.002 ? 'indeterminate' :
+    omega > 0 ? 'right-handed' : 'left-handed';
+  const chiralityCode: RopeResult['chiralityCode'] =
+    chirality === 'right-handed' ? 'R' : chirality === 'left-handed' ? 'L' : '?';
+
+  // ── FIX 4: Temperature cold-fraction — genuine flux ropes are cold plasma ─
+  // Cross-match rope interval with proton temperature data.
+  let coldFraction = 0.5;  // neutral prior when no data
+  if (tmpS.length > 4 && spdS.length > 4) {
+    const ropeTemp = tmpS.filter(p => p.x >= ropeEntry && p.x <= now);
+    if (ropeTemp.length >= 4) {
+      // Interpolate a rough mean speed over the same window for expected Tp
+      const meanSpd = spdS
+        .filter(p => p.x >= ropeEntry && p.x <= now)
+        .reduce((s, p, _, a) => s + p.y / a.length, 0) || 450;
+      const expTp = expectedTemp(meanSpd);
+      const coldPts = ropeTemp.filter(p => p.y < expTp * 0.5).length;
+      coldFraction = coldPts / ropeTemp.length;
+    }
+  }
+
+  // ── FIX 5: Data-driven duration estimate ────────────────────────────────
+  // π / |ω| is correct for a centre-crossing; scale down slightly for
+  // typical average impact parameter (~0.5 rope radius → chord ≈ 0.87 π/|ω|).
+  const IMPACT_FACTOR = 0.87;
   const estDurMin = Math.abs(omega) > 0.002
-    ? Math.min(1800, Math.max(360, Math.PI / Math.abs(omega)))
+    ? Math.min(1800, Math.max(360, (Math.PI * IMPACT_FACTOR) / Math.abs(omega)))
     : ROPE_DUR_MIN;
+
+  const remainingMin = Math.max(0, estDurMin - minutesInRope);
 
   const leading  = dirFromTheta(thetaFit0);
   const axial    = dirFromTheta(thetaFit0 + omega * estDurMin * 0.40);
   const trailing = dirFromTheta(thetaFit0 + omega * estDurMin * 0.80);
 
-  // Confidence-weighted forecast — confidence decays faster for further-out slots
-  const bzForecast = FORECAST_DT.map(dt => {
-    const confDecay = Math.pow(r2, 1 + dt / 120);
-    if (confDecay < 0.15) return 0;
-    return +(btMean * Math.cos(thetaNow + omega * dt)).toFixed(1);
+  // ── FIX 6: Confidence incorporates R², time in rope, planarity, and cold-fraction ─
+  const baseConf    = r2 * Math.min(1, minutesInRope / 90);
+  const planeBonus  = 0.7 + 0.3 * inPlaneRatio;   // penalise tilted ropes
+  const coldBonus   = 0.7 + 0.3 * coldFraction;    // reward cold-plasma confirmation
+  const confidence  = Math.min(1, baseConf * planeBonus * coldBonus);
+
+  // ── FIX 7: Forecast capped at rope exit; damped ω beyond current time ───
+  // Damped angular velocity: ω(dt) = ω · exp(–λ·dt), λ = ln2 / 60 min half-life.
+  // This reflects that rotation slows near the rope axis.
+  const OMEGA_HALFLIFE = 60; // minutes — rotation rate halves every 60 min
+  const bzForecast: number[] = [];
+  const bzUncertainty: number[] = [];
+
+  FORECAST_DT.forEach(dt => {
+    // If this forecast slot is past the estimated rope exit, Bz returns to ~ambient
+    if (dt > remainingMin) {
+      bzForecast.push(0);
+      bzUncertainty.push(0);
+      return;
+    }
+    const confDecay = Math.pow(confidence, 1 + dt / 120);
+    if (confDecay < 0.12) { bzForecast.push(0); bzUncertainty.push(0); return; }
+
+    // Integrate damped rotation: ∫₀^dt ω·e^(–λt) dt = (ω/λ)(1 – e^(–λ·dt))
+    const lambda = Math.LN2 / OMEGA_HALFLIFE;
+    const deltaTheta = lambda > 0
+      ? (omega / lambda) * (1 - Math.exp(-lambda * dt))
+      : omega * dt;
+    const thetaForecast = thetaNow + deltaTheta;
+
+    const bzVal = btMean * Math.cos(thetaForecast);
+    bzForecast.push(+bzVal.toFixed(1));
+
+    // Uncertainty grows as sqrt(dt) scaled by residual scatter
+    const residualStd = Math.sqrt(
+      thetaArr.reduce((s, th, i) =>
+        s + (th - (thetaFit0 + omega * timeMin[i])) ** 2, 0) / thetaArr.length
+    );
+    const thetaUncert = residualStd * Math.sqrt(1 + dt / 30);
+    bzUncertainty.push(+(btMean * Math.abs(Math.sin(thetaForecast)) * thetaUncert).toFixed(1));
   });
 
   return {
     shockTime, ropeEntry, minutesInRope,
     thetaNow, omega, btMean, r2, confidence,
-    leading, axial, trailing, orientCode: leading + axial + trailing,
-    bzForecast, thetaArr, thetaFit0, estDurMin,
+    leading, axial, trailing,
+    orientCode: leading + axial + trailing,
+    chirality, chiralityCode,
+    bzForecast, bzUncertainty,
+    thetaArr, thetaFit0, estDurMin, remainingMin,
+    coldFraction, inPlaneRatio,
   };
 }
 
@@ -305,17 +417,28 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
 
   const FDTS  = [15,30,60,180,360];
   const FLBLS = ['15m','30m','1h','3h','6h'];
+  const OMEGA_HALFLIFE_DRAW = 60;
+  const lambdaDraw = Math.LN2 / OMEGA_HALFLIFE_DRAW;
   FDTS.forEach((dt, i) => {
     const conf = Math.pow(result.confidence, 1 + i * 0.55);
     if (conf < 0.12) return;
-    const th = result.thetaNow + result.omega * dt;
+    // Greyed out if this slot is past the rope's estimated exit
+    const isPastExit = dt > result.remainingMin;
+    const deltaTheta = lambdaDraw > 0
+      ? (result.omega / lambdaDraw) * (1 - Math.exp(-lambdaDraw * dt))
+      : result.omega * dt;
+    const th = result.thetaNow + deltaTheta;
     const px = HX + Math.sin(th)*HR;
     const py = CY - Math.cos(th)*HR;
     const bz = Math.cos(th);
     ctx.beginPath(); ctx.arc(px,py,3.5,0,Math.PI*2);
-    ctx.fillStyle = bz<0 ? `rgba(55,200,85,${conf*0.82})` : `rgba(200,65,65,${conf*0.82})`;
+    if (isPastExit) {
+      ctx.fillStyle = `rgba(100,100,120,${conf*0.5})`;
+    } else {
+      ctx.fillStyle = bz<0 ? `rgba(55,200,85,${conf*0.82})` : `rgba(200,65,65,${conf*0.82})`;
+    }
     ctx.fill();
-    ctx.fillStyle=`rgba(175,200,222,${conf*0.88})`; ctx.font='8px system-ui'; ctx.textAlign='center';
+    ctx.fillStyle=`rgba(175,200,222,${conf*(isPastExit?0.4:0.88)})`; ctx.font='8px system-ui'; ctx.textAlign='center';
     ctx.fillText(FLBLS[i], px, py-7);
   });
 
@@ -337,7 +460,7 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
 }
 
 const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
-  magneticData, speedData, densityData,
+  magneticData, speedData, densityData, tempData,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
@@ -347,8 +470,8 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
   const [canvasW, setCanvasW] = useState(700);
 
   const result = useMemo(() =>
-    analyzeRope(magneticData, speedData, densityData),
-    [magneticData, speedData, densityData]
+    analyzeRope(magneticData, speedData, densityData, tempData),
+    [magneticData, speedData, densityData, tempData]
   );
 
   useEffect(() => {
@@ -383,7 +506,13 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
     : confPct < 68 ? 'Reasonable forecast'
     : 'Reliable forecast';
   const confCls = confPct < 40 ? 'text-amber-400' : confPct < 68 ? 'text-sky-400' : 'text-emerald-400';
-  const hrsIn     = (result.minutesInRope / 60).toFixed(1);
+  const hrsIn      = (result.minutesInRope / 60).toFixed(1);
+  const progressPct = Math.min(100, Math.round((result.minutesInRope / result.estDurMin) * 100));
+  const remHrs      = result.remainingMin > 0
+    ? result.remainingMin >= 60
+      ? `${Math.floor(result.remainingMin / 60)}h ${Math.round(result.remainingMin % 60)}m`
+      : `${Math.round(result.remainingMin)}m`
+    : 'exiting';
 
   const rotDesc = Math.abs(result.omega) < 0.004
     ? 'stable orientation — minimal rotation detected'
@@ -391,28 +520,49 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
     ? 'rotating counterclockwise (eastward)'
     : 'rotating clockwise (westward)';
 
+  const chiralityColor = result.chirality === 'right-handed'
+    ? 'text-violet-400' : result.chirality === 'left-handed'
+    ? 'text-orange-400' : 'text-neutral-500';
+
+  const coldLabel = result.coldFraction > 0.65
+    ? '❄ Cold plasma confirmed' : result.coldFraction > 0.35
+    ? '~ Mixed temperature' : '⚠ Warm plasma — check for sheath';
+  const coldColor = result.coldFraction > 0.65
+    ? 'text-cyan-400' : result.coldFraction > 0.35
+    ? 'text-amber-400' : 'text-rose-400';
+
+  const planeLabel = result.inPlaneRatio > 0.85
+    ? 'High planarity' : result.inPlaneRatio > 0.65
+    ? 'Moderate planarity' : 'Low planarity — Bx significant';
+  const planeColor = result.inPlaneRatio > 0.85
+    ? 'text-emerald-400' : result.inPlaneRatio > 0.65
+    ? 'text-amber-400' : 'text-rose-400';
+
   const orientPlain = (() => {
+    const chiralNote = result.chirality !== 'indeterminate'
+      ? ` This is a ${result.chirality} rope (${result.chiralityCode}).` : '';
     if (result.leading === 'S') {
-      return `The southward-pointing (Bz−) field arrived first. Aurora conditions may be strongest right now. As the rope continues sweeping past Earth, the field will rotate and Bz is expected to turn northward — storm intensity will fade over the coming hours.`;
+      return `The southward-pointing (Bz−) field arrived first. Aurora conditions may be strongest right now. As the rope continues sweeping past Earth, the field will rotate and Bz is expected to turn northward — storm intensity will fade over the coming hours.${chiralNote}`;
     }
     if (result.trailing === 'S') {
-      return `Northward field (Bz+) arrived first, meaning the best aurora conditions are still coming. The southward-pointing portion of the rope is in its trailing half and has not yet reached Earth.`;
+      return `Northward field (Bz+) arrived first, meaning the best aurora conditions are still coming. The southward-pointing portion of the rope is in its trailing half and has not yet reached Earth.${chiralNote}`;
     }
     if (result.leading === 'E' || result.leading === 'W') {
-      return `The rope arrived with the field pointing ${result.leading === 'E' ? 'eastward' : 'westward'}. Southward Bz may develop through the middle of the passage — watch Bz closely for a sudden aurora opportunity.`;
+      return `The rope arrived with the field pointing ${result.leading === 'E' ? 'eastward' : 'westward'}. Southward Bz may develop through the middle of the passage — watch Bz closely for a sudden aurora opportunity.${chiralNote}`;
     }
-    return `The field is mainly northward throughout this rope passage. Significant aurora is unlikely unless the rope is distorted from its forecast orientation.`;
+    return `The field is mainly northward throughout this rope passage. Significant aurora is unlikely unless the rope is distorted from its forecast orientation.${chiralNote}`;
   })();
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-4">
+      {/* ── Header ── */}
       <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold text-white">CME flux rope structure</h2>
             <button
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              title="CME flux rope structure: in-situ magnetic-field rotation pattern used to infer rope orientation and estimate when southward Bz windows may occur (key for aurora intensity)."
+              title="CME flux rope structure: in-situ magnetic-field rotation pattern used to infer rope orientation and estimate when southward Bz windows may occur (key for aurora intensity). Uses weighted linear regression on unwrapped θ = atan2(By,Bz), corrected for in-plane field amplitude and proton temperature cold-fraction."
             >
               ?
             </button>
@@ -425,12 +575,38 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
           <span className={`text-xs font-medium px-2 py-1 rounded-full bg-neutral-800 ${confCls}`}>
             {confLabel}
           </span>
-          <span className="text-xs font-mono font-semibold px-3 py-1 rounded-full bg-neutral-800 text-neutral-200 tracking-widest">
-            {result.orientCode}
+          {/* Orient code + chirality */}
+          <span
+            className="text-xs font-mono font-semibold px-3 py-1 rounded-full bg-neutral-800 text-neutral-200 tracking-widest"
+            title="Leading–Axial–Trailing field direction code"
+          >
+            {result.orientCode}-{result.chiralityCode}
           </span>
         </div>
       </div>
 
+      {/* ── Progress through rope ── */}
+      <div className="mb-3 px-0.5">
+        <div className="flex justify-between text-xs text-neutral-500 mb-1">
+          <span>Rope passage: {progressPct}% complete</span>
+          <span className={progressPct >= 95 ? 'text-amber-400' : 'text-neutral-500'}>
+            {progressPct >= 95 ? '⚠ Rope exit imminent' : `~${remHrs} remaining`}
+          </span>
+        </div>
+        <div className="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{
+              width: `${progressPct}%`,
+              background: progressPct > 80
+                ? 'linear-gradient(90deg,#f59e0b,#ef4444)'
+                : 'linear-gradient(90deg,#3b82f6,#22c55e)',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* ── Canvas ── */}
       <div ref={wrapRef} className="mb-3">
         <canvas
           ref={canvasRef}
@@ -438,49 +614,91 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
         />
       </div>
 
+      {/* ── Quality indicators ── */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-neutral-900/60 rounded-lg px-3 py-2">
+          <div className="text-xs text-neutral-500 mb-0.5">Chirality</div>
+          <div className={`text-xs font-medium ${chiralityColor}`}>
+            {result.chirality === 'right-handed' ? '↻ Right-handed'
+             : result.chirality === 'left-handed' ? '↺ Left-handed'
+             : '~ Indeterminate'}
+          </div>
+        </div>
+        <div className="bg-neutral-900/60 rounded-lg px-3 py-2">
+          <div className="text-xs text-neutral-500 mb-0.5">Plasma temp</div>
+          <div className={`text-xs font-medium ${coldColor}`}>{coldLabel}</div>
+        </div>
+        <div className="bg-neutral-900/60 rounded-lg px-3 py-2">
+          <div className="text-xs text-neutral-500 mb-0.5">Field planarity</div>
+          <div className={`text-xs font-medium ${planeColor}`}>
+            {planeLabel} ({Math.round(result.inPlaneRatio * 100)}%)
+          </div>
+        </div>
+      </div>
+
+      {/* ── Orientation narrative ── */}
       <div className="mb-3 text-xs text-neutral-400 leading-relaxed bg-neutral-900/50 rounded-lg px-3 py-2.5">
-        <span className="font-semibold text-neutral-200 mr-1">{result.orientCode}:</span>
+        <span className="font-semibold text-neutral-200 mr-1">{result.orientCode}-{result.chiralityCode}:</span>
         {orientPlain}
         {confPct < 55 && (
           <span className="ml-1 text-amber-400/80"> Forecast confidence is still building — treat +3h and +6h as directional only.</span>
         )}
+        {result.inPlaneRatio < 0.70 && (
+          <span className="ml-1 text-rose-400/80"> Bx component is significant ({Math.round((1 - result.inPlaneRatio) * 100)}% out-of-plane) — Bz amplitude may be lower than shown.</span>
+        )}
       </div>
 
+      {/* ── Bz forecast tiles ── */}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 mb-3">
         {FORECAST_LABELS.map((label, i) => {
-          const bz   = result.bzForecast[i];
-          const conf = i === 0 ? 1 : Math.pow(result.confidence, 1 + i * 0.55);
-          const isAurora = bz < -2;
+          const bz    = result.bzForecast[i];
+          const unc   = result.bzUncertainty[i];
+          const conf  = i === 0 ? 1 : Math.pow(result.confidence, 1 + i * 0.55);
+          const isPastExit = FORECAST_DT[i] > result.remainingMin;
+          const isAurora   = bz < -2 && !isPastExit;
           return (
             <div
               key={label}
               className="bg-neutral-900/70 rounded-lg p-2 text-center"
-              style={{ opacity: conf }}
+              style={{ opacity: isPastExit ? 0.35 : conf }}
             >
               <div className="text-xs text-neutral-500 mb-1">{label}</div>
-              <div
-                className="text-sm font-semibold"
-                style={{ color: bz < -6 ? '#22c55e' : bz < -1 ? '#86efac' : bz < 2 ? '#f59e0b' : '#ef4444' }}
-              >
-                {bz > 0 ? '+' : ''}{bz.toFixed(1)} nT
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: isAurora ? '#4ade80' : '#6b7280' }}>
-                {isAurora ? '★ aurora' : 'quiet'}
-              </div>
+              {isPastExit ? (
+                <>
+                  <div className="text-sm font-semibold text-neutral-600">—</div>
+                  <div className="text-xs mt-0.5 text-neutral-700">post-rope</div>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="text-sm font-semibold"
+                    style={{ color: bz < -6 ? '#22c55e' : bz < -1 ? '#86efac' : bz < 2 ? '#f59e0b' : '#ef4444' }}
+                  >
+                    {bz > 0 ? '+' : ''}{bz.toFixed(1)} nT
+                  </div>
+                  {unc > 0 && (
+                    <div className="text-xs text-neutral-600 leading-none">±{unc.toFixed(1)}</div>
+                  )}
+                  <div className="text-xs mt-0.5" style={{ color: isAurora ? '#4ade80' : '#6b7280' }}>
+                    {isAurora ? '★ aurora' : 'quiet'}
+                  </div>
+                </>
+              )}
             </div>
           );
         })}
       </div>
 
+      {/* ── Footer metadata ── */}
       <div className="pt-2 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1 items-center">
         <span className="text-xs text-neutral-600">
           Left: slinky cross-section as rope sweeps past Earth · green coils = Bz southward · red = northward
         </span>
         <span className="text-xs text-neutral-600">
-          Right: IMF direction rotating in By–Bz plane · blue trail = measured data · coloured dots = forecast
+          Right: IMF direction rotating in By–Bz plane · blue trail = measured data · coloured dots = forecast (grey = post-rope)
         </span>
         <span className="text-xs text-neutral-700 ml-auto">
-          Bt {result.btMean.toFixed(1)} nT · R² {result.r2.toFixed(2)} · {result.orientCode}
+          B⊥ {result.btMean.toFixed(1)} nT · R² {result.r2.toFixed(2)} · planarity {Math.round(result.inPlaneRatio*100)}% · cold {Math.round(result.coldFraction*100)}%
         </span>
       </div>
     </div>
