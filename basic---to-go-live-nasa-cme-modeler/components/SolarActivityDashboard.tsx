@@ -2524,7 +2524,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     const canvas = suviCanvasRef.current;
-    if (!canvas || !suviDifference || !activeSuviFrameUrl || !previousSuviFrameUrl || activeSuviFrameUrl === previousSuviFrameUrl) return;
+    if (!canvas || !activeSuviFrameUrl || !previousSuviFrameUrl || activeSuviFrameUrl === previousSuviFrameUrl) return;
     let cancelled = false;
 
     const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
@@ -2607,11 +2607,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta, activeSuviDiffConfig]);
+  }, [activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta, activeSuviDiffConfig]);
 
   useEffect(() => {
     const canvas = coronagraphCanvasRef.current;
-    if (!canvas || !coronagraphDifference || !activeCoronagraphUrl || !previousCoronagraphUrl || activeCoronagraphUrl === previousCoronagraphUrl) return;
+    if (!canvas || !activeCoronagraphUrl || !previousCoronagraphUrl || activeCoronagraphUrl === previousCoronagraphUrl) return;
     let cancelled = false;
 
     const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
@@ -2694,7 +2694,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [coronagraphDifference, activeCoronagraphUrl, previousCoronagraphUrl, colorizeCoronagraphDelta]);
+  }, [activeCoronagraphUrl, previousCoronagraphUrl, colorizeCoronagraphDelta]);
 
   // --- RENDER ---
   return (
