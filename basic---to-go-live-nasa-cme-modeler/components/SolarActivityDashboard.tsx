@@ -226,6 +226,7 @@ const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
 const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
+const DIFF_LEGEND_GRADIENT = 'linear-gradient(90deg, #000000 0%, #22d3ee 22%, #fde047 48%, #f97316 68%, #ef4444 84%, #ffffff 100%)';
 
 const devLog = (...args: unknown[]) => {
   if (!import.meta.env.DEV) return;
@@ -2790,7 +2791,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               {suviDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
-                  <div className="mt-2 h-3 w-full rounded bg-gradient-to-r from-black via-cyan-400 via-yellow-300 via-orange-500 via-red-500 to-white" />
+                  <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
                   <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
                     <span>None / very low</span>
                     <span>Low</span>
@@ -3295,7 +3296,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               {coronagraphDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
-                  <div className="mt-2 h-3 w-full rounded bg-gradient-to-r from-black via-cyan-400 via-yellow-300 via-orange-500 via-red-500 to-white" />
+                  <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
                   <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
                     <span>None / very low</span>
                     <span>Low</span>
