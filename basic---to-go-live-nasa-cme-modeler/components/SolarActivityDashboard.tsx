@@ -166,11 +166,11 @@ const NOAA_ACTIVE_REGIONS_URLS = [
   'https://services.swpc.noaa.gov/json/solar_regions.json',
   'https://services.swpc.noaa.gov/products/solar-region-summary.json',
 ];
-const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
-const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
+const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/131/latest.png';
+const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/304/latest.png';
 const SUVI_195_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
-const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
-const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
+const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/131/';
+const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/304/';
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
