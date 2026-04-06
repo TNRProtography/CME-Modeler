@@ -226,6 +226,13 @@ const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
 const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
+const DIFF_LEGEND_PILLS: { colorClass: string; label: string; textClass?: string }[] = [
+  { colorClass: 'bg-black border border-neutral-500', label: 'None change', textClass: 'text-neutral-200' },
+  { colorClass: 'bg-blue-500', label: 'Minimum change' },
+  { colorClass: 'bg-green-400', label: 'Moderate change', textClass: 'text-neutral-900' },
+  { colorClass: 'bg-red-500', label: 'High change' },
+  { colorClass: 'bg-white border border-neutral-400', label: 'Most change', textClass: 'text-neutral-900' },
+];
 
 const devLog = (...args: unknown[]) => {
   if (!import.meta.env.DEV) return;
@@ -2789,16 +2796,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="flex items-center justify-between text-[11px] text-neutral-300 mb-1">
                     <span>Difference intensity (colour guide)</span>
-                    <span>Higher change</span>
+                    <span>Pill legend</span>
                   </div>
-                  <div className="h-2 w-full rounded bg-gradient-to-r from-black via-blue-500 via-green-400 via-red-500 to-white" />
-                  <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-                    <span>Black→Blue: none to minimum change</span>
-                    <span>White: most change</span>
-                  </div>
-                  <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-                    <span>Blue→Green: low to moderate</span>
-                    <span>Green→Red: moderate to high</span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {DIFF_LEGEND_PILLS.map((pill) => (
+                      <div
+                        key={`suvi-pill-${pill.label}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/90 px-2.5 py-1"
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full ${pill.colorClass}`} />
+                        <span className={`text-[10px] ${pill.textClass ?? 'text-neutral-200'}`}>{pill.label}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -3298,16 +3307,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="flex items-center justify-between text-[11px] text-neutral-300 mb-1">
                     <span>Difference intensity (colour guide)</span>
-                    <span>Higher change</span>
+                    <span>Pill legend</span>
                   </div>
-                  <div className="h-2 w-full rounded bg-gradient-to-r from-black via-blue-500 via-green-400 via-red-500 to-white" />
-                  <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-                    <span>Black→Blue: none to minimum change</span>
-                    <span>White: most change</span>
-                  </div>
-                  <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
-                    <span>Blue→Green: low to moderate</span>
-                    <span>Green→Red: moderate to high</span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {DIFF_LEGEND_PILLS.map((pill) => (
+                      <div
+                        key={`coronagraph-pill-${pill.label}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/90 px-2.5 py-1"
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full ${pill.colorClass}`} />
+                        <span className={`text-[10px] ${pill.textClass ?? 'text-neutral-200'}`}>{pill.label}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
