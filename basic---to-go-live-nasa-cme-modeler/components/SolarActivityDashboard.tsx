@@ -166,11 +166,11 @@ const NOAA_ACTIVE_REGIONS_URLS = [
   'https://services.swpc.noaa.gov/json/solar_regions.json',
   'https://services.swpc.noaa.gov/products/solar-region-summary.json',
 ];
-const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
-const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
+const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/131/latest.png';
+const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/304/latest.png';
 const SUVI_195_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
-const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
-const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
+const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/131/';
+const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/secondary/304/';
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
@@ -2215,13 +2215,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
   const activeSuviFrame = suviFrames[clampedSuviFrameIndex] ?? null;
   const previousSuviFrame = suviFrames[Math.max(0, clampedSuviFrameIndex - 1)] ?? null;
+  const fallbackSuviUrlByMode: Record<'SUVI_131' | 'SUVI_195' | 'SUVI_304', string | null> = {
+    SUVI_131: suvi131.url,
+    SUVI_195: suvi195.url,
+    SUVI_304: suvi304.url,
+  };
+  const fallbackSuviFrameUrl = activeSunImage === 'SUVI_195'
+    ? fallbackSuviUrlByMode.SUVI_195
+    : activeSunImage === 'SUVI_304'
+      ? fallbackSuviUrlByMode.SUVI_304
+      : fallbackSuviUrlByMode.SUVI_131;
   const resolveSuviWorkerUrl = useCallback((url: string | null | undefined): string | null => {
     if (!url) return null;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     return `${SUVI_DIFF_WORKER_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
   }, []);
-  const activeSuviFrameUrl = resolveSuviWorkerUrl(activeSuviFrame?.url);
+  const activeSuviFrameUrl = resolveSuviWorkerUrl(activeSuviFrame?.url) ?? fallbackSuviFrameUrl;
   const previousSuviFrameUrl = resolveSuviWorkerUrl(previousSuviFrame?.url);
+  const canRenderSuviDifference = Boolean(
+    suviDifference
+    && activeSuviFrameUrl
+    && previousSuviFrameUrl
+    && previousSuviFrameUrl !== activeSuviFrameUrl
+  );
   const latestCoronagraphAgeMs = useMemo(() => {
     if (!latestCoronagraphFrame?.ts) return null;
     const ts = new Date(latestCoronagraphFrame.ts).getTime();
@@ -2289,7 +2305,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [canStepSuviFrames, suviFrames.length]);
 
   const downloadSuviFrame = useCallback(() => {
-    if (suviDifference && suviCanvasRef.current) {
+    if (canRenderSuviDifference && suviCanvasRef.current) {
       const sourceLabel = activeSuviSourceState?.label ?? activeSuviSourceKey;
       const timestampPart = activeSuviFrame?.ts
         ? activeSuviFrame.ts.replace(/[:.]/g, '-')
@@ -2319,7 +2335,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [activeSuviFrame?.ts, activeSuviFrameUrl, activeSuviSourceKey, activeSuviSourceState?.label, suviDifference]);
+  }, [activeSuviFrame?.ts, activeSuviFrameUrl, activeSuviSourceKey, activeSuviSourceState?.label, canRenderSuviDifference]);
 
   useEffect(() => {
     if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
@@ -2337,7 +2353,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
     let cancelled = false;
     const urlsToLoad: string[] = [activeSuviFrameUrl];
-    if (suviDifference && previousSuviFrameUrl && previousSuviFrameUrl !== activeSuviFrameUrl) {
+    if (canRenderSuviDifference && previousSuviFrameUrl) {
       urlsToLoad.push(previousSuviFrameUrl);
     }
     const pendingUrls = urlsToLoad.filter((url) => !loadedFrameUrlsRef.current.has(url));
@@ -2369,7 +2385,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [activeSuviFrameUrl, previousSuviFrameUrl, suviDifference]);
+  }, [activeSuviFrameUrl, previousSuviFrameUrl, canRenderSuviDifference]);
 
   useEffect(() => {
     if (!activeCoronagraphUrl) {
@@ -2520,7 +2536,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     const canvas = suviCanvasRef.current;
-    if (!canvas || !suviDifference || !activeSuviFrameUrl || !previousSuviFrameUrl || activeSuviFrameUrl === previousSuviFrameUrl) return;
+    if (!canvas || !canRenderSuviDifference || !activeSuviFrameUrl || !previousSuviFrameUrl) return;
     let cancelled = false;
 
     const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
@@ -2603,7 +2619,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })();
 
     return () => { cancelled = true; };
-  }, [suviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta, activeSuviDiffConfig]);
+  }, [canRenderSuviDifference, activeSuviFrameUrl, previousSuviFrameUrl, colorizeCoronagraphDelta, activeSuviDiffConfig]);
 
   useEffect(() => {
     const canvas = coronagraphCanvasRef.current;
@@ -2760,7 +2776,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   />
                   Difference imagery
                 </label>
-                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s) in last 6h</span>
+                <span className="text-xs text-neutral-500">
+                  {activeSuviSourceState?.label ?? imageryModeLabels[activeSunImage]} · {suviFrames.length > 0 ? `${suviFrames.length} frame(s) from worker` : 'latest frame fallback'}
+                </span>
               </div>
 
               <div className="flex-grow rounded-lg border border-neutral-800 bg-black overflow-hidden relative min-h-[220px] sm:min-h-[260px]">
@@ -2770,15 +2788,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 )}
                 {activeSuviFrameUrl && (
                   <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
-                    {!suviDifference ? (
+                    {!canRenderSuviDifference ? (
                       <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
                     ) : (
-                      <>
-                        <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
-                        {!previousSuviFrameUrl && (
-                          <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400 bg-black/40">Need at least 2 frames for difference view.</div>
-                        )}
-                      </>
+                      <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
                     )}
                   </div>
                 )}
@@ -2788,7 +2801,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   </div>
                 )}
               </div>
-              {suviDifference && (
+              {canRenderSuviDifference && (
                 <div className="mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2">
                   <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
                   <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
