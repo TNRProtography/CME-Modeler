@@ -1,7 +1,25 @@
 //--- START OF FILE src/components/VisibilityForecastPanel.tsx ---
 
-import React, { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useMemo, useState, useCallback } from 'react';
+import CloseIcon from './icons/CloseIcon';
+
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
+        </div>
+      </div>
+    </div>
+  );
+};
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 
@@ -307,80 +325,6 @@ const TrendArrow: React.FC<{ trend?: string }> = ({ trend }) => {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 
-// ── Info tooltip modal ────────────────────────────────────────────────────────
-const WhatToExpectInfo: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={onClose}
-    >
-      <div
-        className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto styled-scrollbar"
-        onClick={e => e.stopPropagation()}
-      >
-      <div className="flex items-start justify-between gap-4">
-        <h3 className="text-lg font-semibold text-white">About "What to expect"</h3>
-        <button onClick={onClose} className="text-neutral-400 hover:text-white flex-shrink-0 text-xl leading-none">✕</button>
-      </div>
-
-      <div className="space-y-3 text-sm text-neutral-300 leading-relaxed">
-        <p>
-          This panel answers one question: <strong className="text-white">will aurora actually be visible from where you are right now?</strong> It combines several data sources to give a location-aware answer, not just a global score.
-        </p>
-
-        <div className="border-t border-neutral-700/60 pt-3">
-          <p className="text-white font-medium mb-1">How it works</p>
-          <p>
-            The forecast starts with the <strong className="text-neutral-200">Substorm Risk Index</strong> — a physics-based score (0–100+) calculated from real-time solar wind data at the L1 point, roughly 1.5 million km from Earth. It uses the Newell coupling function to measure how much energy the solar wind is pumping into Earth's magnetosphere right now.
-          </p>
-        </div>
-
-        <div className="border-t border-neutral-700/60 pt-3">
-          <p className="text-white font-medium mb-1">Your location matters</p>
-          <p>
-            The aurora oval — the ring around the magnetic pole where aurora occurs — expands equatorward as activity increases. Your GPS coordinates are converted to geomagnetic latitude using the IGRF-13 dipole model, and compared against the computed oval boundary. If the visibility horizon hasn't reached you yet, the forecast adjusts downward accordingly. This is the same calculation shown on the sightings map.
-          </p>
-        </div>
-
-        <div className="border-t border-neutral-700/60 pt-3">
-          <p className="text-white font-medium mb-1">Reading the time slots</p>
-          <ul className="space-y-1 mt-1">
-            <li><span className="text-emerald-400 font-medium">Now</span> — the current substorm index, location-adjusted. High confidence.</li>
-            <li><span className="text-neutral-200 font-medium">15 / 30 min</span> — projected from current trend, Newell coupling acceleration, and substorm probability. Medium confidence.</li>
-            <li><span className="text-neutral-200 font-medium">1 hour</span> — substorm probability model projection. Lower confidence — treat as a guide.</li>
-            <li><span className="text-neutral-200 font-medium">2 hours</span> — uses the Spot The Aurora composite score which incorporates longer-range solar wind models. Rough guide only.</li>
-          </ul>
-        </div>
-
-        <div className="border-t border-neutral-700/60 pt-3">
-          <p className="text-white font-medium mb-1">Confidence levels</p>
-          <ul className="space-y-1 mt-1">
-            <li><span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1.5 align-middle"></span><span className="text-emerald-400">High</span> — strong signal, conditions are clear</li>
-            <li><span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 align-middle"></span><span className="text-amber-400">Moderate</span> — building or uncertain conditions</li>
-            <li><span className="inline-block w-2 h-2 rounded-full bg-neutral-500 mr-1.5 align-middle"></span><span className="text-neutral-400">Low</span> — longer-range projection, treat as a rough guide</li>
-          </ul>
-        </div>
-
-        <div className="border-t border-neutral-700/60 pt-3">
-          <p className="text-white font-medium mb-1">Why enable GPS?</p>
-          <p>
-            Without your location, the forecast assumes you're at Greymouth (the Spot The Aurora reference point). With GPS, the oval visibility calculation is specific to your exact position — someone in Invercargill will see aurora at much lower activity levels than someone in Auckland. The Spot The Aurora % score is a solid backup, but this panel is more accurate when location is available.
-          </p>
-        </div>
-
-        <div className="border-t border-neutral-700/60 pt-3 text-xs text-neutral-500">
-          Data sources: NOAA RTSW solar wind · Substorm Risk Worker (Newell coupling + IGRF-13) · SpotTheAurora forecast composite · GeoNet Eyrewell magnetometer (bay onset)
-        </div>
-      </div>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
 export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = ({
   auroraScore,
   substormForecast,
@@ -393,8 +337,28 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   userLatitude,
   userLongitude,
 }) => {
-  // All scores derive from the substorm worker — the physics-based measurement
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
+
+  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+    <div class='space-y-3 text-left'>
+      <p><strong>${title}</strong></p>
+      <p><strong>What this is:</strong> ${whatItIs}</p>
+      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+    </div>
+  `;
+
+  const openModal = useCallback(() => {
+    setModalState({
+      title: 'About What to Expect',
+      content: buildStatTooltip(
+        'What to Expect Forecast',
+        'A location-aware aurora visibility forecast combining real-time solar wind data, the physics-based Substorm Risk Index (Newell coupling function), and the aurora oval position relative to your GPS coordinates.',
+        'Directly answers whether aurora will be visible from your specific location right now and in the next 2 hours. More accurate than a global percentage score — someone in Invercargill needs far lower activity to see aurora than someone in Auckland.',
+        'Your coordinates are converted to geomagnetic latitude using the IGRF-13 dipole model and compared against the computed oval boundary. Time slots: Now (high confidence), 15/30 min (substorm trend projection), 1 hr (substorm probability model), 2 hr (Spot The Aurora composite score — rough guide only).'
+      ),
+    });
+  }, []);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
   const workerScore    = rawWorkerScore != null
     ? locationAdjustedScore(
@@ -521,18 +485,16 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-5 h-full flex flex-col">
       {/* Header */}
-      {infoOpen && <WhatToExpectInfo onClose={() => setInfoOpen(false)} />}
+      <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold text-white">What to expect</h3>
           <button
-            onClick={() => setInfoOpen(true)}
-            className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
-            title="How this forecast works"
+            onClick={openModal}
+            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+            title="About this forecast"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            ?
           </button>
         </div>
         <span className="text-xs text-neutral-500">Based on current conditions</span>

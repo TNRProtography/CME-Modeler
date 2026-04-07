@@ -15,20 +15,26 @@ const NOTIFICATION_GROUPS = [
       {
         id: 'visibility-dslr',
         emoji: '📷',
-        label: 'DSLR camera visible',
-        plain: 'The earliest warning -- aurora is just becoming detectable. Perfect if you want time to grab your camera and drive somewhere dark.',
+        label: 'DSLR Camera Visible',
+        plain: 'The earliest warning — aurora is just becoming detectable using a DSLR camera on a tripod with a long exposure.',
+        auroraEffect: 'Perfect for maximum lead time — gives you time to grab your camera and drive somewhere dark before it peaks.',
+        advanced: 'Triggered when the aurora oval reaches your geomagnetic latitude at the lowest detectable threshold. Aurora may not yet be visible to the naked eye.',
       },
       {
         id: 'visibility-phone',
         emoji: '📱',
-        label: 'Phone camera visible',
-        plain: 'Aurora is bright enough for your smartphone\'s night mode. You may not see it with your eyes yet, but point your phone south and you\'ll catch it.',
+        label: 'Phone Camera Visible',
+        plain: 'Aurora is bright enough for your smartphone\'s night mode. Point your phone south and you\'ll catch it.',
+        auroraEffect: 'A practical middle-ground alert — conditions are real enough to capture, even if you can\'t see it directly yet.',
+        advanced: 'Corresponds to moderate oval expansion. The aurora oval boundary has moved close enough to your latitude that activity exceeds the phone camera threshold.',
       },
       {
         id: 'visibility-naked',
         emoji: '👁️',
-        label: 'Naked eye visible',
-        plain: 'The big one -- aurora should be visible to the naked eye from your location. Just go outside and look south.',
+        label: 'Naked Eye Visible',
+        plain: 'The big one — aurora should be visible to the naked eye from your location. Just go outside and look south.',
+        auroraEffect: 'This is the strongest visibility threshold and the most exciting alert. Conditions are genuinely significant for your location.',
+        advanced: 'Requires substantial oval expansion equatorward. Combined with sufficient activity index, this is a high-confidence aurora event for your latitude.',
       },
     ],
   },
@@ -39,8 +45,10 @@ const NOTIFICATION_GROUPS = [
       {
         id: 'overnight-watch',
         emoji: '🌌',
-        label: 'Worth watching tonight',
-        plain: 'Sent around sunset when conditions look elevated. Includes whether the moon will interfere. Not sent on quiet nights -- only when it\'s actually worth staying up.',
+        label: 'Worth Watching Tonight',
+        plain: 'Sent around sunset when conditions look elevated. Includes whether the moon will interfere.',
+        auroraEffect: 'Not sent on quiet nights — only when solar wind conditions are genuinely elevated enough to be worth staying up for.',
+        advanced: 'Uses a composite of live Bz, solar wind speed, Newell coupling, and short-range forecast confidence. Sent once per evening window (6–9 PM NZST).',
       },
     ],
   },
@@ -51,62 +59,82 @@ const NOTIFICATION_GROUPS = [
       {
         id: 'flare-M1',
         emoji: '☀️',
-        label: 'Solar flare M1+',
-        plain: 'Broad flare alert. Sent from M1 and up so you get early notice when flare activity starts ramping.',
+        label: 'Solar Flare M1+',
+        plain: 'Broad flare alert sent from M1 and up — earliest notice when flare activity starts ramping.',
+        auroraEffect: 'M1+ flares signal increasing solar activity. While not all produce Earth-directed CMEs, frequent M-class activity raises aurora probability over the following 1–4 days.',
+        advanced: 'Flare class scales logarithmically — M1 is 10× a C1. Geoeffectiveness depends on CME association, source longitude, and CME speed.',
       },
       {
         id: 'flare-M5',
         emoji: '☀️',
-        label: 'Solar flare M5+',
-        plain: 'Only stronger M-class flares. Good if you want fewer alerts than M1 while still catching meaningful events.',
+        label: 'Solar Flare M5+',
+        plain: 'Stronger M-class flares only — fewer alerts, still catches meaningful events.',
+        auroraEffect: 'M5+ flares have a stronger association with major CME launches. Fewer false alarms than M1+ while still providing useful lead time.',
+        advanced: 'M5 is approximately 5× an M1 in X-ray flux. Often associated with type II/IV radio bursts and proton events that help confirm CME launches.',
       },
       {
         id: 'flare-X1',
         emoji: '☀️',
-        label: 'Solar flare X1+',
-        plain: 'Major X-class flare alert. A higher threshold focused on large events.',
+        label: 'Solar Flare X1+',
+        plain: 'Major X-class flare alert — high threshold, focused on large events.',
+        auroraEffect: 'X-class flares are major solar events with a high association with fast, geoeffective CMEs that drive significant aurora 1–4 days later.',
+        advanced: 'X-class flares are 10× stronger than M-class. Source longitude on the solar disk strongly influences whether the associated CME is Earth-directed.',
       },
       {
         id: 'flare-X5',
         emoji: '☀️',
-        label: 'Solar flare X5+',
-        plain: 'Very strong flare threshold. Rare and high-impact events only.',
+        label: 'Solar Flare X5+',
+        plain: 'Very strong flare threshold — rare and high-impact events only.',
+        auroraEffect: 'X5+ flares represent extreme solar output and are often followed by the most significant geomagnetic storms and wide-latitude aurora events.',
+        advanced: 'These events frequently trigger NOAA G3–G5 geomagnetic storm watches. CME speeds commonly exceed 1500 km/s with strong compressed IMF fields on arrival.',
       },
       {
         id: 'flare-X10',
         emoji: '☀️',
-        label: 'Solar flare X10+',
-        plain: 'Extreme flare alert for exceptional events only. Very rare.',
+        label: 'Solar Flare X10+',
+        plain: 'Extreme flare alert for exceptional events only — very rare.',
+        auroraEffect: 'Historically associated with the strongest geomagnetic storms on record. If Earth-directed, these events can produce aurora visible from the tropics.',
+        advanced: 'X10+ events are rare — typically a few per solar cycle. The X28 event in 2003 saturated monitoring instruments. These produce the most extreme space weather conditions.',
       },
       {
         id: 'shock-ff',
         emoji: '💥',
-        label: 'CME hit the satellites',
-        plain: 'A fast forward shock — the classic CME arrival. Speed, density, and magnetic field all jumped at the L1 satellites upstream of Earth. Aurora conditions can change within 45–60 minutes. One of the most actionable alerts.',
+        label: 'CME Hit the Satellites',
+        plain: 'A fast forward shock — the classic CME arrival signature at L1. Speed, density, temperature, and magnetic field all jumped simultaneously.',
+        auroraEffect: 'One of the most actionable aurora alerts. Earth conditions can shift from quiet to active within 30–60 minutes. Watch for southward Bz in the Solar Wind panel.',
+        advanced: 'Fast Forward shocks compress the entire solar wind structure ahead of them. Aurora strength depends on the sheath and magnetic cloud Bz that follows the shock front.',
       },
       {
         id: 'shock-sf',
         emoji: '💥',
-        label: 'Compression wave',
-        plain: 'A slow forward shock — a gentler compression wave has arrived, often from a solar wind stream or weak CME edge. Can still enhance aurora conditions.',
+        label: 'Compression Wave Arriving',
+        plain: 'A slow forward shock — a gentler compression wave, often from a solar wind stream or weak CME edge.',
+        auroraEffect: 'Can enhance aurora conditions but typically less dramatically than a fast forward shock. Watch for Bz turning southward in the following hours.',
+        advanced: 'Often marks the leading edge of a stream interaction region (SIR). Lacks the strong magnetic cloud of a CME but can still drive moderate geomagnetic activity.',
       },
       {
         id: 'shock-fr',
         emoji: '💥',
-        label: 'CME trailing edge',
-        plain: 'A fast reverse shock — the back end of a CME or high-speed stream is passing. The strongest part may be over, but aurora can continue for hours.',
+        label: 'CME Trailing Edge Passing',
+        plain: 'A fast reverse shock — the back end of a CME or high-speed stream is sweeping past.',
+        auroraEffect: 'The strongest part of the disturbance has typically already passed. Residual aurora may continue for hours, but activity is usually declining.',
+        advanced: 'Fast reverse shocks occur when fast solar wind outruns the slower wind behind it, creating a rarefaction at the trailing boundary.',
       },
       {
         id: 'shock-sr',
         emoji: '💥',
-        label: 'Trailing rarefaction',
-        plain: 'A slow reverse shock — density and temperature are falling as the tail end of a solar wind event sweeps past. Aurora is usually winding down.',
+        label: 'Trailing Rarefaction',
+        plain: 'A slow reverse shock — density and temperature falling as the tail end of a solar wind event sweeps past.',
+        auroraEffect: 'Aurora is usually winding down at this point. Confirms the full passage of a solar wind structure and that conditions are returning toward baseline.',
+        advanced: 'Slow reverse shocks are relatively uncommon. Density and temperature decrease while the magnetic field slightly increases across the boundary.',
       },
       {
         id: 'shock-imf',
         emoji: '🧲',
-        label: 'IMF shift',
-        plain: 'A sudden magnetic field change without a plasma shock. If the field swings southward, aurora can ramp up quickly even without a speed increase.',
+        label: 'IMF Field Shift',
+        plain: 'A sudden magnetic field change at L1 — no plasma shock, just the field direction changing rapidly.',
+        auroraEffect: 'If the field swings southward (Bz negative), aurora can ramp up very quickly — even without a speed or density increase. Fast-acting and easy to miss without real-time monitoring.',
+        advanced: 'IMF discontinuities often signal heliospheric current sheet crossings or magnetic flux ropes in the solar wind. Aurora response depends almost entirely on the Bz direction and duration that follows.',
       },
     ],
   },
@@ -117,33 +145,30 @@ const NOTIFICATION_GROUPS = [
       {
         id: 'admin-broadcast',
         emoji: '📣',
-        label: 'Announcements',
-        plain: 'Sent manually by the Spot The Aurora team only when something genuinely matters -- a major aurora event happening right now, important app news, or a useful tip. Sent sparingly.',
+        label: 'Spot The Aurora Announcements',
+        plain: 'Sent manually by the team only when something genuinely matters — a major aurora event, important app news, or a useful tip.',
+        auroraEffect: 'If you receive one of these during the night, it is worth checking conditions immediately — they are only sent when there is something real happening.',
+        advanced: 'These are not automated — a human sends them. Frequency is very low by design. If you are sensitive to notifications, this is the safest group to keep enabled.',
       },
     ],
   },
 ];
 
-// --- Tooltip ---
-const Tooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
-  const [visible, setVisible] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
+// --- InfoModal ---
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
   return (
-    <div className="relative inline-block" ref={ref}>
-      <div
-        onMouseEnter={() => setVisible(true)}
-        onMouseLeave={() => setVisible(false)}
-        onTouchStart={() => setVisible(v => !v)}
-      >
-        {children}
-      </div>
-      {visible && (
-        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-neutral-800 border border-neutral-600 rounded-lg p-3 text-xs text-neutral-200 leading-relaxed shadow-2xl pointer-events-none">
-          {text}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-800" />
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2200] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
         </div>
-      )}
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
+        </div>
+      </div>
     </div>
   );
 };
@@ -163,6 +188,16 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   );
   const [error, setError] = useState<string | null>(null);
   const [overnightMode, setOvernightModeState] = useState<OvernightMode>(() => getOvernightMode());
+  const [infoModalData, setInfoModalData] = useState<{ title: string; content: string } | null>(null);
+
+  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+    <div class='space-y-3 text-left'>
+      <p><strong>${title}</strong></p>
+      <p><strong>What this is:</strong> ${whatItIs}</p>
+      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+    </div>
+  `;
 
   const togglePref = useCallback((id: string) => {
     setPrefs(prev => ({ ...prev, [id]: !prev[id] }));
@@ -215,6 +250,8 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   const alreadyGranted = permissionStatus === 'granted';
 
   return (
+    <>
+    <InfoModal isOpen={!!infoModalData} onClose={() => setInfoModalData(null)} title={infoModalData?.title ?? ''} content={infoModalData?.content ?? ''} />
     <div className="fixed inset-0 z-[3000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
         className="w-full sm:max-w-lg bg-neutral-950 border border-neutral-800 rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92vh]"
@@ -261,9 +298,11 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm">{item.emoji}</span>
                         <span className="text-sm font-medium text-neutral-200">{item.label}</span>
-                        <Tooltip text={item.plain}>
-                          <span className="text-neutral-500 hover:text-neutral-300 cursor-help transition-colors text-xs border border-neutral-700 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
-                        </Tooltip>
+                        <button
+                          onClick={() => setInfoModalData({ title: `About: ${item.label}`, content: buildStatTooltip(item.label, item.plain, item.auroraEffect ?? item.plain, item.advanced ?? '') })}
+                          className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+                          title={`About ${item.label}`}
+                        >?</button>
                       </div>
                       <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.plain.split('.')[0]}.</p>
                     </div>
@@ -339,6 +378,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
         </div>
       </div>
     </div>
+    </>
   );
 };
 

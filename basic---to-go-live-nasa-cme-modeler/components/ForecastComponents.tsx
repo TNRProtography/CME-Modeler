@@ -58,7 +58,7 @@ export const ForecastScore: React.FC<ForecastScoreProps> = ({
       <div>
         <div className="flex justify-center items-center mb-4">
           <h2 className="text-lg font-semibold text-white">Spot The Aurora Forecast</h2>
-          <button onClick={onOpenModal} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+          <button onClick={onOpenModal} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="About this forecast">?</button>
         </div>
         <div className="text-6xl font-extrabold text-white">
           {score !== null ? `${score.toFixed(1)}%` : '...'} <span className="text-5xl">{getAuroraEmoji(score)}</span>

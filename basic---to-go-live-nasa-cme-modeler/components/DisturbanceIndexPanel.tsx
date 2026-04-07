@@ -1,5 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import GuideIcon from './icons/GuideIcon';
+import CloseIcon from './icons/CloseIcon';
+
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
+        </div>
+      </div>
+    </div>
+  );
+};
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -59,6 +77,28 @@ const DisturbanceIndexPanel: React.FC = () => {
   const [dstRows, setDstRows] = useState<DstRow[]>([]);
   const [isLoadingDst, setIsLoadingDst] = useState(false);
   const [dstError, setDstError] = useState<string | null>(null);
+  const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
+
+  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+    <div class='space-y-3 text-left'>
+      <p><strong>${title}</strong></p>
+      <p><strong>What this is:</strong> ${whatItIs}</p>
+      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+    </div>
+  `;
+
+  const openModal = useCallback(() => {
+    setModalState({
+      title: 'About Kyoto Dst Index',
+      content: buildStatTooltip(
+        'Kyoto Dst Index',
+        'The Dst (Disturbance Storm Time) index measures the average depression of the horizontal component of Earth\'s magnetic field at low-latitude stations, updated hourly from the Kyoto World Data Centre.',
+        'More negative Dst values indicate stronger geomagnetic storms. When Dst drops below −30 nT activity is building; below −100 nT a major storm is underway and aurora can be visible across New Zealand.',
+        'Dst captures the ring current injection strength around Earth. Sustained strongly-negative values combined with southward IMF (Bz < 0) and high solar wind speed typically produce the best aurora conditions.'
+      ),
+    });
+  }, []);
 
   const fetchDst = useCallback(async () => {
     setIsLoadingDst(true);
@@ -153,14 +193,16 @@ const DisturbanceIndexPanel: React.FC = () => {
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-4">
+      <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <h3 className="text-xl font-semibold text-white">Kyoto Dst Index (NZ Time)</h3>
           <button
-            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
-            title="Live Kyoto Dst in New Zealand time. More negative values indicate stronger geomagnetic disturbance."
+            onClick={openModal}
+            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+            title="About Kyoto Dst Index"
           >
-            <GuideIcon className="w-5 h-5" />
+            ?
           </button>
         </div>
       </div>

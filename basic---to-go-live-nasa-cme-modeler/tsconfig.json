@@ -20,7 +20,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* New properties for robust pathing */
+    /* Path aliases — ignoreDeprecations suppresses the TS 7.0 baseUrl warning */
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]

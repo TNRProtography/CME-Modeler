@@ -72,12 +72,12 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>
-          <button 
-            onClick={() => onOpenModal('unified-forecast')} 
-            className="p-1 text-neutral-400 hover:text-neutral-100" 
+          <button
+            onClick={() => onOpenModal('unified-forecast')}
+            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
             title="About this forecast"
           >
-            <GuideIcon className="w-6 h-6" />
+            ?
           </button>
         </div>
         <div className={`text-lg font-semibold ${getStatusColor()}`}>

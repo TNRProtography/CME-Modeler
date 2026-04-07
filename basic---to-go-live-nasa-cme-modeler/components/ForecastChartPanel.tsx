@@ -46,9 +46,9 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
               IMAP
             </span>
           )}
-          <button 
-            onClick={onOpenModal} 
-            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" 
+          <button
+            onClick={onOpenModal}
+            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
             title={`About ${title}`}
           >
             ?

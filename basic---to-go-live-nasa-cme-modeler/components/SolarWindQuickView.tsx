@@ -9,10 +9,28 @@
  *   5. Temp (K)  — green, log scale
  */
 
-import React, { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
 import type { ChartOptions } from 'chart.js';
+import CloseIcon from './icons/CloseIcon';
+
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface SolarWindQuickViewProps {
   magneticData: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null }[];
@@ -153,72 +171,33 @@ function shockLine(t: number, yMin: number, yMax: number, color = 'rgba(250, 204
 const DOT   = 1.5;
 const HOVER = 4;
 
-const SolarWindQuickViewInfoModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={onClose}
-    >
-      <div
-        className="relative bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto styled-scrollbar"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <h3 className="text-lg font-semibold text-white">About “Solar Wind Quick View”</h3>
-          <button onClick={onClose} className="text-neutral-400 hover:text-white flex-shrink-0 text-xl leading-none">✕</button>
-        </div>
-
-        <div className="space-y-3 text-sm text-neutral-300 leading-relaxed">
-          <p>
-            This panel shows live upstream <strong className="text-white">L1 solar wind context</strong> from ACE: Bz/Bt, clock angle (Phi),
-            density, speed, and temperature. It helps explain why aurora conditions are changing.
-          </p>
-
-          <div className="border-t border-neutral-700/60 pt-3">
-            <p className="text-white font-medium mb-1">How to read shocks</p>
-            <p className="text-neutral-400 mb-2">
-              In the signatures below we use app-style wording:
-              <span className="text-neutral-200"> Solar Wind Density</span>,
-              <span className="text-neutral-200"> Solar Wind Temp</span>,
-              <span className="text-neutral-200"> IMF (Bt/Bz)</span>, and
-              <span className="text-neutral-200"> Solar Wind Speed</span>.
-            </p>
-            <ul className="space-y-1">
-              <li><span className="text-neutral-200 font-medium">Fast Forward (FF)</span> — Density↑, Temp↑, IMF/Bt↑, Speed↑ across the shock.</li>
-              <li><span className="text-neutral-200 font-medium">Slow Forward (SF)</span> — Density↑, Temp↑, IMF/Bt↓, Speed↑ across the shock.</li>
-              <li><span className="text-neutral-200 font-medium">Fast Reverse (FR)</span> — Density↓, Temp↓, IMF/Bt↓, Speed↑ across the shock.</li>
-              <li><span className="text-neutral-200 font-medium">Slow Reverse (SR)</span> — Density↓, Temp↓, IMF/Bt↑, Speed↑ across the shock.</li>
-              <li><span className="text-neutral-200 font-medium">IMF Enhancement / Discontinuity</span> — strong Bt/Bz step or rotation with weaker Speed/Density/Temp jump.</li>
-            </ul>
-          </div>
-
-          <div className="border-t border-neutral-700/60 pt-3">
-            <p className="text-white font-medium mb-1">Chart markers</p>
-            <p>
-              Detected shocks are drawn as <span className="text-yellow-300">yellow dashed vertical markers</span> across all subplots.
-              If multiple shocks are detected in the selected window, multiple markers are shown.
-            </p>
-          </div>
-
-          <div className="border-t border-neutral-700/60 pt-3 text-xs text-neutral-500">
-            Data source: NOAA/ACE MAG + SWEPAM near-real-time streams.
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
 // ── Main component ────────────────────────────────────────────────────────────
 const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   magneticData, clockData, speedData, densityData, tempData,
 }) => {
   const [rangeMs, setRangeMs] = useState(6 * 3600000);
-  const [showInfo, setShowInfo] = useState(false);
+  const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
+
+  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+    <div class='space-y-3 text-left'>
+      <p><strong>${title}</strong></p>
+      <p><strong>What this is:</strong> ${whatItIs}</p>
+      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+    </div>
+  `;
+
+  const openModal = useCallback(() => {
+    setModalState({
+      title: 'About Solar Wind Quick View',
+      content: buildStatTooltip(
+        'Solar Wind Quick View',
+        'Live upstream L1 solar wind data from ACE: IMF Bz/Bt, clock angle (Phi), density, speed, and temperature. Each dot is one instrument reading from the ACE MAG and SWEPAM sensors roughly 1.5 million km from Earth.',
+        'These parameters directly control aurora activity. Southward Bz (negative) opens the magnetosphere to energy input; high speed and density amplify that effect. Watching all five subplots together reveals whether conditions are building, stable, or declining — typically 30–60 minutes before they hit Earth.',
+        'Shock events are flagged automatically as yellow dashed vertical markers. Shock types: Fast Forward (FF) — density↑ temp↑ IMF↑ speed↑; Slow Forward (SF) — same but IMF↓; Fast Reverse (FR) — density↓ temp↓ IMF↓ speed↑; Slow Reverse (SR) — density↓ temp↓ IMF↑ speed↑; IMF Discontinuity — strong field step without a matching plasma jump.'
+      ),
+    });
+  }, []);
 
   const cutoff = Date.now() - rangeMs;
   const maxT   = Date.now();
@@ -446,9 +425,9 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             <h2 className="text-base font-semibold text-white">Solar Wind Quick View</h2>
             <button
               type="button"
-              onClick={() => setShowInfo((v) => !v)}
+              onClick={openModal}
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              aria-label="About this panel"
+              title="About Solar Wind Quick View"
             >
               ?
             </button>
@@ -651,7 +630,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
         ))}
       </div>
 
-      {showInfo && <SolarWindQuickViewInfoModal onClose={() => setShowInfo(false)} />}
+      <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
 
     </div>
   );

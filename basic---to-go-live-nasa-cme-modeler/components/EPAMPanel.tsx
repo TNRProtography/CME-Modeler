@@ -2,6 +2,25 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import type { ChartOptions, ChartData } from 'chart.js';
+import CloseIcon from './icons/CloseIcon';
+
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
+          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EpamPoint { time_tag: string; p1: number|null; p3: number|null; p5: number|null; p7: number|null; p8: number|null; e1: number|null; e2: number|null; anisotropy_index: number|null; }
@@ -350,6 +369,28 @@ const EPAMPanel: React.FC = () => {
   const [tempRaw,    setTempRaw]    = useState<SolarWindPoint[]>([]);
   const [magRaw,     setMagRaw]     = useState<SolarMagPoint[]>([]);
   const mountedRef = useRef(true);
+  const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
+
+  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
+    <div class='space-y-3 text-left'>
+      <p><strong>${title}</strong></p>
+      <p><strong>What this is:</strong> ${whatItIs}</p>
+      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
+    </div>
+  `;
+
+  const openModal = useCallback(() => {
+    setModalState({
+      title: 'About Energetic Particle Monitor',
+      content: buildStatTooltip(
+        'Energetic Particle Monitor',
+        'Tracks upstream high-energy particle fluxes from ACE, GOES, and STEREO-A satellites. These channels measure electrons and protons accelerated by solar eruptions before they reach Earth.',
+        'Elevated particle counts are an early warning that a solar disturbance is approaching. A fast-rising spike across multiple channels often precedes a CME shock arrival and subsequent aurora enhancement by 30–90 minutes.',
+        'This is context data, not a direct aurora brightness forecast. Velocity dispersion signatures (higher-energy particles arriving first) and channel compression patterns help distinguish CME shocks from stream interaction regions.'
+      ),
+    });
+  }, []);
 
   const fetchAll = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -508,14 +549,16 @@ const EPAMPanel: React.FC = () => {
 
   return (
     <div>
+      <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold text-white">Energetic Particle Monitor</h2>
             <button
+              onClick={openModal}
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              title="Energetic Particle Monitor: upstream particle channels (ACE/GOES/STEREO) used as early context for incoming solar disturbances. Elevated particles support storm-watch context but are not a direct aurora-brightness forecast."
+              title="About Energetic Particle Monitor"
             >
               ?
             </button>

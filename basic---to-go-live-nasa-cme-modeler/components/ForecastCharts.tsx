@@ -1158,7 +1158,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         <div className="col-span-12 card bg-neutral-950/80 p-4 h-[400px] flex flex-col">
             <div className="flex justify-center items-center gap-2 mb-2">
                 <h2 className="text-xl font-semibold text-white text-center">Forecast Trend (Last {timeLabel})</h2>
-                <button onClick={onOpenModal} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button>
+                <button onClick={onOpenModal} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="About this chart">?</button>
                 {(userLatitude == null) && (
                   <span className="text-xs text-neutral-500 ml-2">(visibility based on Greymouth — enable GPS for your location)</span>
                 )}
