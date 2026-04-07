@@ -311,7 +311,7 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[], tmp: XYPt[]) {
 
 function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAngle: number) {
   const DPR = window.devicePixelRatio || 1;
-  const H   = 220;
+  const H   = 280;
   const ctx = cvs.getContext('2d');
   if (!ctx) return;
 
@@ -326,87 +326,182 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.fillStyle = '#030810';
   ctx.fillRect(0, 0, W, H);
 
-  // Full-width slinky — Earth sits at the passage-progress point
-  const PAD  = 24;
-  const X0   = PAD, X1 = W - PAD, RLEN = X1 - X0;
-  const R    = 82, N_FL = 5, N_COILS = 2.2, N_SEG = 280, TILT = 0.18;
-  const CY   = H / 2 + 4;
+  // ── Layout: slinky left 68 %, compass right 32 % ──────────────────────────
+  const SW  = Math.floor(W * 0.68);
+  const HX  = SW + Math.floor((W - SW) / 2);
+  const HR  = Math.min(Math.floor((W - SW) / 2) - 18, 98);
+  const CY  = H / 2;
 
+  // ── Physical orientation ────────────────────────────────────────────────────
+  // Map the rope's axial direction to an angle in the By-Bz plane.
+  // N→0, E→π/2, S→π, W→3π/2  (measured from Bz+ going through By+)
+  const axialThetaMap: {[k:string]: number} = { N:0, E:Math.PI/2, S:Math.PI, W:3*Math.PI/2 };
+  const axialTheta = axialThetaMap[result.axial] ?? Math.PI/2;
+  // How much the rope axis leans northward/southward in the canvas (Bz component of axial)
+  const axialBzFrac = Math.cos(axialTheta);                // +1=N, 0=E/W, -1=S
+  const AXIS_LEAN   = axialBzFrac * 0.60 * 74;            // max lean ≈ 60 % of coil radius
+
+  // ── Slinky ─────────────────────────────────────────────────────────────────
+  const X0 = 14, X1 = SW - 14, RLEN = X1 - X0;
+  const R = 74, N_FL = 4, N_COILS = 2.0, N_SEG = 260, TILT = 0.22;
   const u_earth = Math.min(0.82, result.minutesInRope / result.estDurMin);
   const earthX  = X0 + u_earth * RLEN;
 
-  // Draw faint axis line
-  ctx.strokeStyle = 'rgba(40,70,120,0.25)'; ctx.lineWidth = 0.5; ctx.setLineDash([4, 6]);
+  // Faint axis line
+  ctx.strokeStyle = 'rgba(40,70,120,0.2)'; ctx.lineWidth = 0.5; ctx.setLineDash([4,6]);
   ctx.beginPath(); ctx.moveTo(X0, CY); ctx.lineTo(X1, CY); ctx.stroke();
   ctx.setLineDash([]);
 
-  // Solar wind arrow on the right
-  ctx.strokeStyle = 'rgba(255,190,55,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
-  ctx.beginPath(); ctx.moveTo(X1 - 10, CY); ctx.lineTo(X1 - 48, CY); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = 'rgba(255,190,55,0.38)'; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText('solar wind →', X1 - 28, CY - 9);
-
-  // Build all slinky segments
   const segs: any[] = [];
   for (let fl = 0; fl < N_FL; fl++) {
-    const phase0 = (fl / N_FL) * Math.PI * 2;
+    // Each field line is equally spaced around the cross-section.
+    const flPhaseOffset = (fl / N_FL) * Math.PI * 2;
     for (let s = 0; s < N_SEG; s++) {
       const u0 = s / N_SEG, u1 = (s + 1) / N_SEG;
+
+      // Physical field angle at this position along the rope.
       const th0 = result.thetaFit0 + result.omega * u0 * ROPE_DUR_MIN;
-      const ph0 = phase0 + N_COILS * 2 * Math.PI * u0 + animAngle;
-      const ph1 = phase0 + N_COILS * 2 * Math.PI * u1 + animAngle;
+      const th1 = result.thetaFit0 + result.omega * u1 * ROPE_DUR_MIN;
+
+      // PHYSICAL PHASE: ph = π/2 − theta gives:
+      //   theta=0  (Bz+, north)  → ph=π/2  → sin(ph)=+1  → coil at TOP  (north)  ✓
+      //   theta=π  (Bz-, south)  → ph=−π/2 → sin(ph)=−1  → coil at BOTTOM (south) ✓
+      //   theta=π/2 (By+, east)  → ph=0    → sin(ph)=0   → coil at mid-right ✓
+      // Then we add the coil winding (N_COILS turns) + field-line offset + animation.
+      const ph0 = (Math.PI/2 - th0) + N_COILS * Math.PI*2 * u0 + flPhaseOffset + animAngle;
+      const ph1 = (Math.PI/2 - th1) + N_COILS * Math.PI*2 * u1 + flPhaseOffset + animAngle;
+
       const x0 = X0 + u0 * RLEN, x1 = X0 + u1 * RLEN;
       const y0 = R * Math.sin(ph0), z0 = R * Math.cos(ph0);
       const y1 = R * Math.sin(ph1), z1 = R * Math.cos(ph1);
-      const sx0 = x0 + z0 * TILT, sy0 = CY - y0;
-      const sx1 = x1 + z1 * TILT, sy1 = CY - y1;
-      if (sx1 < -5 || sx0 > W + 5) continue;
-      segs.push({ sx0, sy0, sx1, sy1, zm: (z0 + z1) / 2, theta: th0, isPast: u0 < u_earth });
+
+      // Axial lean: tilt the rope centre line based on the axial direction.
+      // u=0 (leading) → lean down if rope leans northward (trailing end is higher).
+      const lean0 = AXIS_LEAN * (0.5 - u0);   // +lean at leading, −lean at trailing
+      const lean1 = AXIS_LEAN * (0.5 - u1);
+
+      const sx0 = x0 + z0 * TILT, sy0 = (CY + lean0) - y0;
+      const sx1 = x1 + z1 * TILT, sy1 = (CY + lean1) - y1;
+
+      if (sx1 < -5 || sx0 > SW + 5) continue;
+      segs.push({ sx0, sy0, sx1, sy1, zm:(z0+z1)/2, theta:th0, isPast:u0 < u_earth });
     }
   }
   segs.sort((a, b) => a.zm - b.zm);
   segs.forEach(({ sx0, sy0, sx1, sy1, zm, theta, isPast }) => {
-    const depth = (zm + R) / (2 * R);
-    const alpha = (isPast ? 0.20 : 0.88) * (0.18 + depth * 0.82);
+    const depth = (zm + R) / (2*R);
+    const alpha = (isPast ? 0.22 : 0.88) * (0.18 + depth * 0.82);
     ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1);
     ctx.strokeStyle = segColor(Math.cos(theta), alpha);
     ctx.lineWidth   = 0.6 + depth * 2.2;
     ctx.stroke();
   });
 
-  // Earth position dashed vertical
-  ctx.strokeStyle = 'rgba(60,100,180,0.28)'; ctx.lineWidth = 0.6; ctx.setLineDash([3, 4]);
-  ctx.beginPath(); ctx.moveTo(earthX, CY - R - 18); ctx.lineTo(earthX, CY + R + 18); ctx.stroke();
+  // ── Earth ──────────────────────────────────────────────────────────────────
+  ctx.strokeStyle='rgba(60,100,180,0.25)'; ctx.lineWidth=0.6; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(earthX, CY-R-16); ctx.lineTo(earthX, CY+R+16); ctx.stroke();
   ctx.setLineDash([]);
-
-  // Earth
-  const eR = 17;
-  ctx.fillStyle = '#0d2244'; ctx.beginPath(); ctx.arc(earthX, CY, eR, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.5; ctx.stroke();
-  for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = `rgba(100,170,255,${0.35 - i * 0.11})`; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.arc(earthX, CY, eR + 5 + i * 10, -Math.PI * 0.72, Math.PI * 0.72); ctx.stroke();
-    ctx.beginPath(); ctx.arc(earthX, CY, eR + 5 + i * 10, Math.PI + Math.PI * 0.28, Math.PI * 2 - Math.PI * 0.28); ctx.stroke();
+  const eR = 15;
+  ctx.fillStyle='#0d2244'; ctx.beginPath(); ctx.arc(earthX,CY,eR,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#2563eb'; ctx.lineWidth=2.5; ctx.stroke();
+  for (let i=0; i<2; i++) {
+    ctx.strokeStyle=`rgba(100,170,255,${0.38-i*0.18})`; ctx.lineWidth=0.7;
+    ctx.beginPath(); ctx.arc(earthX,CY,eR+5+i*10,-Math.PI*0.78,Math.PI*0.78); ctx.stroke();
+    ctx.beginPath(); ctx.arc(earthX,CY,eR+5+i*10,Math.PI+Math.PI*0.22,Math.PI*2-Math.PI*0.22); ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(160,210,255,0.88)'; ctx.font = '500 10px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText('Earth', earthX, CY + eR + 18);
+  ctx.fillStyle='rgba(160,210,255,0.85)'; ctx.font='9px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Earth', earthX, CY+eR+14);
+
+  // Live Bz indicator above Earth
+  const bzAtEarth = Math.cos(result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN);
+  const bzCol = bzAtEarth < -0.15 ? '#22c55e' : bzAtEarth > 0.15 ? '#ef4444' : '#f59e0b';
+  const bzTxt = bzAtEarth < -0.15 ? 'Bz− now' : bzAtEarth > 0.15 ? 'Bz+ now' : 'Bz≈0 now';
+  ctx.fillStyle = bzCol; ctx.font='500 9px system-ui'; ctx.textAlign='center';
+  ctx.fillText(bzTxt, earthX, CY-eR-16);
 
   // Passage labels
-  ctx.fillStyle = 'rgba(75,105,148,0.45)'; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
-  if (u_earth > 0.1) ctx.fillText('← passed Earth', X0 + u_earth * RLEN * 0.48, CY + R + 22);
-  if (u_earth < 0.9) ctx.fillText('incoming →', X0 + (u_earth + (1 - u_earth) * 0.5) * RLEN, CY + R + 22);
+  ctx.fillStyle='rgba(75,105,148,0.4)'; ctx.font='8px system-ui'; ctx.textAlign='center';
+  if (u_earth > 0.1) ctx.fillText('← passed Earth', X0+u_earth*RLEN*0.48, CY+R+26);
+  if (u_earth < 0.9) ctx.fillText('incoming →', X0+(u_earth+(1-u_earth)*0.5)*RLEN, CY+R+26);
 
-  // Current Bz indicator (colour chip + value) near Earth
-  const bzNow  = Math.cos(result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN);
-  const bzCol  = bzNow < -0.15 ? '#22c55e' : bzNow > 0.15 ? '#ef4444' : '#f59e0b';
-  const bzTxt  = bzNow < -0.15 ? 'Bz− now' : bzNow > 0.15 ? 'Bz+ now' : 'Bz≈0';
-  ctx.fillStyle = bzCol; ctx.font = '500 9px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(bzTxt, earthX, CY - eR - 18);
+  // Solar wind arrow
+  ctx.strokeStyle='rgba(255,190,55,0.35)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(SW-10,CY); ctx.lineTo(SW-44,CY); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,190,55,0.38)'; ctx.font='8px system-ui'; ctx.textAlign='center';
+  ctx.fillText('solar wind', SW-28, CY-8);
 
-  // Legend bottom-left
-  ctx.fillStyle = 'rgba(75,105,148,0.35)'; ctx.textAlign = 'left'; ctx.font = '8px system-ui';
-  ctx.fillText('green coils = Bz south (aurora)  ·  red coils = Bz north  ·  faded = already passed Earth', PAD, CY + R + 36);
+  // Legend
+  ctx.fillStyle='rgba(75,105,148,0.32)'; ctx.textAlign='left'; ctx.font='8px system-ui';
+  ctx.fillText('green = Bz south · red = Bz north', X0, CY+R+38);
+
+  // ── Divider ────────────────────────────────────────────────────────────────
+  ctx.strokeStyle='rgba(55,85,135,0.18)'; ctx.lineWidth=0.5; ctx.setLineDash([2,5]);
+  ctx.beginPath(); ctx.moveTo(SW,8); ctx.lineTo(SW,H-8); ctx.stroke(); ctx.setLineDash([]);
+
+  // ── Compass dial ───────────────────────────────────────────────────────────
+  ctx.fillStyle='#050d1c';
+  ctx.beginPath(); ctx.arc(HX,CY,HR,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(80,110,160,0.28)'; ctx.lineWidth=0.5; ctx.stroke();
+  [0.34,0.67].forEach(f => {
+    ctx.beginPath(); ctx.arc(HX,CY,HR*f,0,Math.PI*2);
+    ctx.strokeStyle='rgba(80,110,160,0.15)'; ctx.stroke();
+  });
+  ctx.strokeStyle='rgba(80,110,160,0.2)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(HX-HR,CY); ctx.lineTo(HX+HR,CY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(HX,CY-HR); ctx.lineTo(HX,CY+HR); ctx.stroke();
+  ctx.fillStyle='rgba(180,80,80,0.85)'; ctx.font='500 10px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Bz+ (no aurora)', HX, CY-HR-5);
+  ctx.fillStyle='rgba(60,200,90,0.95)'; ctx.fillText('Bz− (aurora!)', HX, CY+HR+14);
+  ctx.fillStyle='rgba(120,155,195,0.48)'; ctx.font='8px system-ui';
+  ctx.textAlign='left';  ctx.fillText('By+', HX+HR+3, CY+3);
+  ctx.textAlign='right'; ctx.fillText('By−', HX-HR-3, CY+3);
+
+  // Measured trail
+  const TRAIL = Math.min(result.thetaArr.length, 90);
+  for (let i = 0; i < TRAIL; i++) {
+    const th = result.thetaArr[result.thetaArr.length - TRAIL + i];
+    const px = HX + Math.sin(th)*HR, py = CY - Math.cos(th)*HR;
+    ctx.beginPath(); ctx.arc(px,py,1.5,0,Math.PI*2);
+    ctx.fillStyle=`rgba(100,180,255,${(i/TRAIL)*0.72})`; ctx.fill();
+  }
+
+  // Forecast dots
+  const FDTS=[15,30,60,180,360], FLBLS=['15m','30m','1h','3h','6h'];
+  const lambdaDraw = Math.LN2 / 60;
+  FDTS.forEach((dt, i) => {
+    const conf = Math.pow(result.confidence, 1+i*0.55);
+    if (conf < 0.12) return;
+    const isPastExit = dt > result.remainingMin;
+    const dth = lambdaDraw > 0
+      ? (result.omega/lambdaDraw)*(1-Math.exp(-lambdaDraw*dt))
+      : result.omega*dt;
+    const th = result.thetaNow + dth;
+    const px = HX+Math.sin(th)*HR, py = CY-Math.cos(th)*HR;
+    const bz = Math.cos(th);
+    ctx.beginPath(); ctx.arc(px,py,3.5,0,Math.PI*2);
+    ctx.fillStyle = isPastExit
+      ? `rgba(100,100,120,${conf*0.5})`
+      : bz<0 ? `rgba(55,200,85,${conf*0.82})` : `rgba(200,65,65,${conf*0.82})`;
+    ctx.fill();
+    ctx.fillStyle=`rgba(175,200,222,${conf*(isPastExit?0.4:0.88)})`; ctx.font='8px system-ui'; ctx.textAlign='center';
+    ctx.fillText(FLBLS[i], px, py-7);
+  });
+
+  // Current IMF arrow
+  const ax = HX+Math.sin(result.thetaNow)*HR, ay = CY-Math.cos(result.thetaNow)*HR;
+  const bzN = Math.cos(result.thetaNow);
+  const arCol = bzN<-0.1 ? '#22c55e' : bzN>0.1 ? '#ef4444' : '#f59e0b';
+  ctx.strokeStyle=arCol; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(HX,CY); ctx.lineTo(ax,ay); ctx.stroke();
+  const dx=ax-HX, dy=ay-CY, L=Math.sqrt(dx*dx+dy*dy)||1;
+  ctx.beginPath();
+  ctx.moveTo(ax+dx/L*9,ay+dy/L*9);
+  ctx.lineTo(ax+(-dy/L)*5,ay+(dx/L)*5);
+  ctx.lineTo(ax+(dy/L)*5,ay+(-dx/L)*5);
+  ctx.closePath(); ctx.fillStyle=arCol; ctx.fill();
+  ctx.fillStyle='rgba(82,115,158,0.5)'; ctx.font='8px system-ui'; ctx.textAlign='center';
+  ctx.fillText('IMF direction', HX, CY+HR+26);
+  ctx.fillText('By–Bz plane · dots = forecast', HX, CY+HR+36);
 }
 
 // ── InfoModal ────────────────────────────────────────────────────────────────
@@ -889,7 +984,10 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
       {/* ── Footer metadata ── */}
       <div className="pt-2 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1 items-center">
         <span className="text-xs text-neutral-600">
-          Slinky cross-section as rope sweeps past Earth · green coils = Bz southward (aurora) · red = northward · faded = already passed · tap ? for orientation diagram
+          Left: slinky physically oriented to rope orientation — coil position in canvas matches real By–Bz direction · green = Bz south · red = north · tap ? for detail
+        </span>
+        <span className="text-xs text-neutral-600">
+          Right: IMF rotating in By–Bz plane · blue trail = measured · coloured dots = forecast (grey = post-rope)
         </span>
         <span className="text-xs text-neutral-700 ml-auto">
           B⊥ {result.btMean.toFixed(1)} nT · R² {result.r2.toFixed(2)} · planarity {Math.round(result.inPlaneRatio*100)}% · cold {Math.round(result.coldFraction*100)}%
