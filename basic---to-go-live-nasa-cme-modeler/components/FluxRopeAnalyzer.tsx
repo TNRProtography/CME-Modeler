@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import CloseIcon from './icons/CloseIcon';
 
 interface MagPt { time: number; bt: number; bz: number; by: number; bx: number; }
 interface XYPt  { x: number; y: number; }
@@ -459,6 +461,175 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.fillText('By–Bz plane · dots = forecast', HX, CY+HR+38);
 }
 
+// ── InfoModal ────────────────────────────────────────────────────────────────
+interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: React.ReactNode; }
+const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
+  if (!isOpen) return null;
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4" onClick={onClose}>
+      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80 shrink-0">
+          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 text-sm leading-relaxed">{content}</div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+// ── Flux-rope orientation SVG diagram ────────────────────────────────────────
+const OrientationDiagram: React.FC<{ result: RopeResult }> = ({ result }) => {
+  const cx = 110, cy = 110, R = 82;
+
+  // Build 72 arc sectors around the cross-section, coloured by the Bz direction
+  // that would be measured at that angular position around the rope.
+  // theta=0 → Bz+ (north, red); theta=π → Bz- (south, green)
+  const sectors: React.ReactElement[] = [];
+  const N = 72;
+  for (let i = 0; i < N; i++) {
+    const a1  = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const a2  = ((i + 1) / N) * Math.PI * 2 - Math.PI / 2;
+    const th  = result.thetaFit0 + (i / N) * Math.PI * 2;   // field angle at this position
+    const bz  = Math.cos(th);
+    const aurora = Math.max(0, -bz);
+    const north  = Math.max(0, bz);
+    const fillR = Math.round(north * 220);
+    const fillG = Math.round(aurora * 190);
+    const x1 = cx + R * Math.cos(a1), y1 = cy + R * Math.sin(a1);
+    const x2 = cx + R * Math.cos(a2), y2 = cy + R * Math.sin(a2);
+    sectors.push(
+      <path key={i}
+        d={`M${cx},${cy} L${x1},${y1} A${R},${R} 0 0 1 ${x2},${y2} Z`}
+        fill={`rgba(${fillR},${fillG},35,0.45)`} />
+    );
+  }
+
+  // Current field direction (arrow from centre)
+  const byNow = Math.sin(result.thetaNow);
+  const bzNow = Math.cos(result.thetaNow);
+  const arrowX = cx + byNow * (R * 0.72);
+  const arrowY = cy - bzNow * (R * 0.72);
+  const arrowCol = bzNow < -0.1 ? '#22c55e' : bzNow > 0.1 ? '#ef4444' : '#f59e0b';
+
+  // Forecast dots
+  const FDTS  = [15, 30, 60, 180, 360];
+  const FLBLS = ['15m','30m','1h','3h','6h'];
+  const OMEGA_HALFLIFE = 60;
+  const lambda = Math.LN2 / OMEGA_HALFLIFE;
+  const forecastDots = FDTS.map((dt, i) => {
+    const conf = Math.pow(result.confidence, 1 + i * 0.55);
+    if (conf < 0.12) return null;
+    const isPast = dt > result.remainingMin;
+    const dth = lambda > 0 ? (result.omega / lambda) * (1 - Math.exp(-lambda * dt)) : result.omega * dt;
+    const th = result.thetaNow + dth;
+    const by = Math.sin(th), bz = Math.cos(th);
+    const px = cx + by * (R * 0.78), py = cy - bz * (R * 0.78);
+    const col = isPast ? `rgba(100,100,120,${conf * 0.5})`
+      : bz < 0 ? `rgba(55,200,85,${conf * 0.85})` : `rgba(200,65,65,${conf * 0.85})`;
+    return (
+      <g key={dt}>
+        <circle cx={px} cy={py} r={4} fill={col} />
+        <text x={px} y={py - 7} textAnchor="middle" fill={`rgba(175,200,222,${conf * 0.85})`} fontSize="8">{FLBLS[i]}</text>
+      </g>
+    );
+  });
+
+  // Trail of measured theta history
+  const TRAIL = Math.min(result.thetaArr.length, 80);
+  const trailDots = Array.from({ length: TRAIL }, (_, i) => {
+    const th = result.thetaArr[result.thetaArr.length - TRAIL + i];
+    const px = cx + Math.sin(th) * (R * 0.78);
+    const py = cy - Math.cos(th) * (R * 0.78);
+    const alpha = (i / TRAIL) * 0.7;
+    return <circle key={i} cx={px} cy={py} r={1.5} fill={`rgba(100,180,255,${alpha})`} />;
+  });
+
+  // Earth dot (fixed in centre — rope is passing OVER Earth)
+  // The position indicator on the rope edge showing where field now points
+  const edgeX = cx + byNow * R, edgeY = cy - bzNow * R;
+
+  // Chirality arc
+  const chiralDir = result.chirality === 'right-handed' ? 1 : -1;
+  const chiralR = R + 14;
+  const arcStart = -Math.PI / 2;
+  const arcEnd   = arcStart + chiralDir * Math.PI * 1.5;
+  const arcSx = cx + chiralR * Math.cos(arcStart), arcSy = cy + chiralR * Math.sin(arcStart);
+  const arcEx = cx + chiralR * Math.cos(arcEnd),   arcEy = cy + chiralR * Math.sin(arcEnd);
+  const largeArc = Math.abs(arcEnd - arcStart) > Math.PI ? 1 : 0;
+  const sweep    = chiralDir > 0 ? 1 : 0;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <svg width="220" height="220" viewBox="0 0 220 220" className="mx-auto">
+        {/* Dark background circle */}
+        <circle cx={cx} cy={cy} r={R + 20} fill="#030810" />
+        {/* Coloured sector rings */}
+        {sectors}
+        {/* Ring border */}
+        <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(80,110,160,0.35)" strokeWidth="1.2" />
+        {/* Inner guide rings */}
+        {[0.45, 0.72].map(f => (
+          <circle key={f} cx={cx} cy={cy} r={R * f} fill="none" stroke="rgba(80,110,160,0.12)" strokeWidth="0.5" />
+        ))}
+        {/* Crosshair */}
+        <line x1={cx - R - 4} y1={cy} x2={cx + R + 4} y2={cy} stroke="rgba(80,110,160,0.22)" strokeWidth="0.5" />
+        <line x1={cx} y1={cy - R - 4} x2={cx} y2={cy + R + 4} stroke="rgba(80,110,160,0.22)" strokeWidth="0.5" />
+
+        {/* Chirality arc */}
+        {result.chirality !== 'indeterminate' && (
+          <path
+            d={`M ${arcSx} ${arcSy} A ${chiralR} ${chiralR} 0 ${largeArc} ${sweep} ${arcEx} ${arcEy}`}
+            fill="none" stroke="rgba(150,100,255,0.4)" strokeWidth="1.5" strokeDasharray="4 3"
+          />
+        )}
+
+        {/* Measured trail */}
+        {trailDots}
+
+        {/* Forecast dots */}
+        {forecastDots}
+
+        {/* Current field arrow */}
+        <line x1={cx} y1={cy} x2={arrowX} y2={arrowY} stroke={arrowCol} strokeWidth="2.5" strokeLinecap="round" />
+        {/* Arrowhead */}
+        {(() => {
+          const dx = arrowX - cx, dy = arrowY - cy, L = Math.sqrt(dx*dx+dy*dy)||1;
+          const ux = dx/L, uy = dy/L;
+          return (
+            <polygon
+              points={`${arrowX+ux*8},${arrowY+uy*8} ${arrowX-uy*5},${arrowY+ux*5} ${arrowX+uy*5},${arrowY-ux*5}`}
+              fill={arrowCol}
+            />
+          );
+        })()}
+        {/* Field dot on rope edge */}
+        <circle cx={edgeX} cy={edgeY} r={5} fill={arrowCol} opacity={0.7} />
+
+        {/* Earth at centre */}
+        <circle cx={cx} cy={cy} r={11} fill="#0d2244" stroke="#2563eb" strokeWidth="2" />
+        <text x={cx} y={cy + 3} textAnchor="middle" fill="rgba(160,210,255,0.9)" fontSize="8" fontWeight="600">🌍</text>
+
+        {/* Compass labels */}
+        <text x={cx} y={cy - R - 10} textAnchor="middle" fill="rgba(180,70,70,0.9)" fontSize="9" fontWeight="500">Bz+ ↑ (no aurora)</text>
+        <text x={cx} y={cy + R + 18} textAnchor="middle" fill="rgba(50,210,90,0.95)" fontSize="9" fontWeight="500">↓ Bz− (aurora!)</text>
+        <text x={cx + R + 8} y={cy + 3} textAnchor="start" fill="rgba(120,155,195,0.55)" fontSize="8">By+</text>
+        <text x={cx - R - 8} y={cy + 3} textAnchor="end" fill="rgba(120,155,195,0.55)" fontSize="8">By−</text>
+        {/* Direction of travel label */}
+        <text x={cx} y={207} textAnchor="middle" fill="rgba(100,140,190,0.5)" fontSize="8">Cross-section · Earth at centre · arrow = current IMF</text>
+      </svg>
+      <div className="flex gap-3 text-xs flex-wrap justify-center">
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-green-500/70"></span> Bz south = aurora</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-red-500/70"></span> Bz north = quiet</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-blue-400/70"></span> measured trail</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full border border-violet-400/60"></span> forecast</span>
+      </div>
+    </div>
+  );
+};
+
 const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
   magneticData, speedData, densityData, tempData,
 }) => {
@@ -468,6 +639,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
   const angleRef  = useRef<number>(0);
   const lastTRef  = useRef<number | null>(null);
   const [canvasW, setCanvasW] = useState(700);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const result = useMemo(() =>
     analyzeRope(magneticData, speedData, densityData, tempData),
@@ -561,12 +733,86 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold text-white">CME flux rope structure</h2>
             <button
+              onClick={() => setInfoOpen(true)}
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              title="CME flux rope structure: in-situ magnetic-field rotation pattern used to infer rope orientation and estimate when southward Bz windows may occur (key for aurora intensity). Uses weighted linear regression on unwrapped θ = atan2(By,Bz), corrected for in-plane field amplitude and proton temperature cold-fraction."
             >
               ?
             </button>
           </div>
+
+      <InfoModal
+        isOpen={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        title="CME Flux Rope Structure"
+        content={result ? (
+          <div className="space-y-5">
+            {/* What is a flux rope */}
+            <section>
+              <h4 className="font-semibold text-neutral-100 mb-1.5">What is a CME flux rope?</h4>
+              <p className="text-neutral-400">A coronal mass ejection arrives as a magnetised plasma cloud with its magnetic field wound into a helical coil — a <em>flux rope</em>. As it sweeps past Earth, each part of the coil passes in sequence, causing the measured magnetic field direction to rotate smoothly. The key aurora driver is <strong className="text-white">Bz</strong>: when it points southward (negative), it reconnects with Earth's northward magnetosphere and injects energy into the magnetotail — triggering geomagnetic storms and aurora.</p>
+            </section>
+
+            {/* Orientation diagram */}
+            <section>
+              <h4 className="font-semibold text-neutral-100 mb-2">Current rope orientation relative to Earth</h4>
+              <p className="text-neutral-500 text-xs mb-3">The cross-section below shows the flux rope looking down its axis (from the Sun toward Earth). Earth sits at the centre. The arrow shows the current IMF direction in the By–Bz plane. Green sectors = Bz southward (aurora-driving); red = northward (suppressed).</p>
+              <OrientationDiagram result={result} />
+            </section>
+
+            {/* Current situation */}
+            <section className="bg-neutral-900/60 rounded-lg p-3">
+              <h4 className="font-semibold text-neutral-100 mb-1">Current orientation: <span className="font-mono text-sky-300">{result.orientCode}-{result.chiralityCode}</span></h4>
+              <p className="text-neutral-400">{orientPlain}</p>
+            </section>
+
+            {/* Orientation code explained */}
+            <section>
+              <h4 className="font-semibold text-neutral-100 mb-1.5">Orientation code explained</h4>
+              <p className="text-neutral-400 mb-2">The three-letter code describes the field direction at the <em>leading edge</em> (first to arrive) → <em>axial direction</em> (rope axis) → <em>trailing edge</em> (last to arrive). Each letter is one of:</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {[
+                  ['S', 'text-emerald-400', 'Southward Bz (aurora-driving)'],
+                  ['N', 'text-red-400',     'Northward Bz (aurora-suppressing)'],
+                  ['E', 'text-amber-400',   'Eastward By'],
+                  ['W', 'text-amber-400',   'Westward By'],
+                ].map(([code, cls, desc]) => (
+                  <div key={code as string} className="bg-neutral-800/60 rounded px-2 py-1.5 flex gap-2 items-start">
+                    <span className={`font-mono font-bold text-sm ${cls}`}>{code}</span>
+                    <span className="text-neutral-400">{desc}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-neutral-500 text-xs mt-2">The chirality suffix — <span className="font-mono text-violet-400">R</span> (right-handed) or <span className="font-mono text-orange-400">L</span> (left-handed) — describes which way the field twists around the rope axis. Right-handed ropes (from the northern solar hemisphere) tend to produce eastward By; left-handed (southern hemisphere) tend westward.</p>
+            </section>
+
+            {/* Confidence */}
+            <section>
+              <h4 className="font-semibold text-neutral-100 mb-1.5">Forecast confidence: <span className={confCls}>{confLabel} ({confPct}%)</span></h4>
+              <div className="space-y-1.5 text-neutral-400">
+                <p>Confidence is built from four independent signals:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs pl-2">
+                  <li><strong className="text-neutral-200">Rotation quality (R²)</strong> — how cleanly the field rotates versus noise. Current: <span className="text-sky-300">{result.r2.toFixed(2)}</span></li>
+                  <li><strong className="text-neutral-200">Field planarity</strong> — what fraction of the field lies in the By–Bz plane (a perfect rope is 100% planar). Current: <span className={planeColor}>{Math.round(result.inPlaneRatio * 100)}%</span></li>
+                  <li><strong className="text-neutral-200">Cold plasma fraction</strong> — real flux rope cores contain cold, dense plasma. Higher cold fraction → more confident we're inside a rope. Current: <span className={coldColor}>{Math.round(result.coldFraction * 100)}%</span></li>
+                  <li><strong className="text-neutral-200">Data history</strong> — confidence builds over the first ~3 hours as more rotation is observed.</li>
+                </ul>
+                <p className="text-xs text-neutral-500 mt-1.5">Forecast uncertainty grows rapidly with time. The ±nT bands shown on Bz tiles widen with each step. Treat +3h and +6h as directional only until confidence exceeds ~65%.</p>
+              </div>
+            </section>
+
+            {/* Chirality */}
+            <section className="bg-neutral-900/60 rounded-lg p-3">
+              <h4 className="font-semibold text-neutral-100 mb-1">Chirality: <span className={chiralityColor}>{result.chirality === 'right-handed' ? '↻ Right-handed' : result.chirality === 'left-handed' ? '↺ Left-handed' : '~ Indeterminate'}</span></h4>
+              <p className="text-neutral-400 text-sm">The twist direction of the magnetic field around the rope axis. Determined from whether the axial field (Bx) is aligned or anti-aligned with the rotation direction. {result.chirality !== 'indeterminate' ? 'A confirmed chirality improves the reliability of the field-rotation forecast.' : 'Chirality is still unclear — this typically resolves after more rotation is observed.'}</p>
+            </section>
+
+            {/* Technical footer */}
+            <section className="text-xs text-neutral-600 border-t border-neutral-800 pt-3">
+              <p>Method: weighted linear regression on the unwrapped field angle θ = atan2(By, Bz), corrected for in-plane amplitude and proton temperature cold-fraction. Field amplitude: <span className="text-neutral-500">{result.btMean.toFixed(1)} nT</span> · R²: <span className="text-neutral-500">{result.r2.toFixed(2)}</span> · Data: {Math.round(result.minutesInRope)} min in rope.</p>
+            </section>
+          </div>
+        ) : <p className="text-neutral-400">No flux rope data available yet.</p>}
+      />
           <p className="text-xs text-neutral-500 mt-0.5">
             Inside magnetic flux rope · {hrsIn}h of rope data · {rotDesc}
           </p>
