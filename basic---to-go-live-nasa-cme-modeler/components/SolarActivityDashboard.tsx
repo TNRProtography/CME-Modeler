@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
@@ -855,8 +856,9 @@ const TimeRangeButtons: React.FC<{ onSelect: (duration: number) => void; selecte
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4" onClick={onClose}>
       <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
@@ -866,7 +868,8 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
           {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

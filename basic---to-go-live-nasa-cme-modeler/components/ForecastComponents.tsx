@@ -1,6 +1,7 @@
 //--- START OF FILE src/components/ForecastComponents.tsx ---
 
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
 import CaretIcon from './icons/CaretIcon';
 import GuideIcon from './icons/GuideIcon';
@@ -180,8 +181,9 @@ export const CameraSettingsSection: React.FC<CameraSettingsSectionProps> = ({ se
 
 export const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
   if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[2100] flex justify-center items-center p-4" onClick={onClose}>
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4" onClick={onClose}>
       <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
@@ -191,7 +193,8 @@ export const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, co
           {typeof content === 'string' ? <div dangerouslySetInnerHTML={{ __html: content }} /> : content}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
