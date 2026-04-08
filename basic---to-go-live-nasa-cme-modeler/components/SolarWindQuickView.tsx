@@ -245,7 +245,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
     const denSorted = [...densityData].sort((a, b) => a.x - b.x);
     const tmpSorted = [...tempData].sort((a, b) => a.x - b.x);
     const magSorted = [...magneticData].sort((a, b) => a.time - b.time);
-    if (spdSorted.length < 10 || denSorted.length < 10 || magSorted.length < 10) return null;
+    if (spdSorted.length < 10 || denSorted.length < 10 || magSorted.length < 10) return [];
 
     const median = (vals: number[]): number => {
       if (!vals.length) return NaN;
