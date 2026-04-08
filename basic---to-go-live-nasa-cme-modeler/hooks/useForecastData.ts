@@ -237,6 +237,56 @@ const getSourceLabel = (source?: string | null) => {
   return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
 };
 
+const toFiniteNumber = (value: unknown): number | null => {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const pickSolarWindValue = (entry: any, key: string): { value: number | null; source: string } => {
+  const read = (...candidates: unknown[]): number | null => {
+    for (const candidate of candidates) {
+      const parsed = toFiniteNumber(candidate);
+      if (parsed !== null) return parsed;
+    }
+    return null;
+  };
+
+  const rtswValue = read(
+    entry?.rtsw?.[key],
+    entry?.noaa?.[key],
+    entry?.[`${key}_rtsw`],
+    entry?.[`rtsw_${key}`],
+    entry?.[`noaa_${key}`]
+  );
+  if (rtswValue !== null) return { value: rtswValue, source: 'NOAA RTSW' };
+
+  const imapValue = read(
+    entry?.imap?.[key],
+    entry?.[`${key}_imap`],
+    entry?.[`imap_${key}`]
+  );
+  if (imapValue !== null) return { value: imapValue, source: 'IMAP' };
+
+  const mergedValue = read(entry?.[key]);
+  if (mergedValue !== null) {
+    return { value: mergedValue, source: getSourceLabel(entry?.src?.[key] ?? entry?.src) };
+  }
+
+  return { value: null, source: '—' };
+};
+
+const combineSources = (...sources: Array<string | null | undefined>): string => {
+  const normalized = Array.from(new Set(
+    sources
+      .map((source) => source?.trim())
+      .filter((source): source is string => !!source && source !== '—')
+  ));
+  if (!normalized.length) return '—';
+  if (normalized.length === 1) return normalized[0];
+  if (normalized.includes('NOAA RTSW') && normalized.includes('IMAP')) return 'NOAA RTSW + IMAP';
+  return normalized.join(' + ');
+};
+
 const splitTopLevelArrayEntries = (raw: string): string[] => {
   const entries: string[] = [];
   let current = '';
@@ -771,28 +821,46 @@ export const useForecastData = (
         const t = timeValue ? new Date(timeValue).getTime() : NaN;
         if (!Number.isFinite(t)) continue;
 
-        if (Number.isFinite(entry.speed ?? NaN) && (entry.speed ?? 0) >= 0) {
-          speedPoints.push({ time: t, value: entry.speed as number, source: getSourceLabel(entry.src?.speed) });
+        const speedReading = pickSolarWindValue(entry, 'speed');
+        if (speedReading.value !== null && speedReading.value >= 0) {
+          speedPoints.push({ time: t, value: speedReading.value, source: speedReading.source });
         }
-        if (Number.isFinite(entry.density ?? NaN) && (entry.density ?? 0) >= 0) {
-          densityPoints.push({ time: t, value: entry.density as number, source: getSourceLabel(entry.src?.density) });
+        const densityReading = pickSolarWindValue(entry, 'density');
+        if (densityReading.value !== null && densityReading.value >= 0) {
+          densityPoints.push({ time: t, value: densityReading.value, source: densityReading.source });
         }
-        if (Number.isFinite(entry.temp ?? NaN) && (entry.temp ?? 0) >= 0) {
-          tempPoints.push({ time: t, value: entry.temp as number, source: getSourceLabel(entry.src?.temp) });
+        const tempReading = pickSolarWindValue(entry, 'temp');
+        if (tempReading.value !== null && tempReading.value >= 0) {
+          tempPoints.push({ time: t, value: tempReading.value, source: tempReading.source });
         }
 
-        const by = Number.isFinite(entry.by ?? NaN) ? (entry.by as number) : null;
-        const bz = Number.isFinite(entry.bz ?? NaN) ? (entry.bz as number) : null;
-        const bx = Number.isFinite(entry.bx ?? NaN) ? (entry.bx as number) : null;
-        const clock = Number.isFinite(entry.clock ?? NaN)
-          ? (entry.clock as number)
+        const byReading = pickSolarWindValue(entry, 'by');
+        const bzReading = pickSolarWindValue(entry, 'bz');
+        const bxReading = pickSolarWindValue(entry, 'bx');
+        const clockReading = pickSolarWindValue(entry, 'clock');
+        const btReading = pickSolarWindValue(entry, 'bt');
+
+        const by = byReading.value;
+        const bz = bzReading.value;
+        const bx = bxReading.value;
+        const clock = clockReading.value != null
+          ? clockReading.value
           : (by != null && bz != null ? (Math.atan2(by, bz) * 180 / Math.PI + 360) % 360 : null);
-        const computedBt = Number.isFinite(entry.bt ?? NaN)
-          ? (entry.bt as number)
+        const computedBt = btReading.value != null
+          ? btReading.value
           : (by != null && bz != null ? Math.sqrt(by ** 2 + bz ** 2) : null);
 
         if (clock != null) {
-          clockPoints.push({ time: t, value: clock, source: getSourceLabel(entry.src?.clock ?? entry.src?.by ?? entry.src?.bz) });
+          clockPoints.push({
+            time: t,
+            value: clock,
+            source: combineSources(
+              clockReading.source,
+              byReading.source,
+              bzReading.source,
+              getSourceLabel(entry.src?.clock ?? entry.src?.by ?? entry.src?.bz)
+            ),
+          });
         }
 
         if (computedBt != null && by != null && bz != null && computedBt >= 0) {
@@ -816,8 +884,14 @@ export const useForecastData = (
       const latestDensity = densityPoints.at(-1);
       const latestTemp = tempPoints.at(-1);
       const latestMagneticPoint = magneticPoints.at(-1);
-      const latestMagEntry = [...solarWindRows].reverse().find((entry: any) => entry && (entry.bt != null || entry.bz != null || entry.by != null));
-      const latestMagSource = latestMagEntry?.src;
+      const latestMagEntry = [...solarWindRows].reverse().find((entry: any) => {
+        const bt = pickSolarWindValue(entry, 'bt').value;
+        const by = pickSolarWindValue(entry, 'by').value;
+        const bz = pickSolarWindValue(entry, 'bz').value;
+        return bt != null || by != null || bz != null;
+      });
+      const latestBtSource = latestMagEntry ? pickSolarWindValue(latestMagEntry, 'bt').source : '—';
+      const latestBzSource = latestMagEntry ? pickSolarWindValue(latestMagEntry, 'bz').source : '—';
 
       setGaugeData(prev => ({
         ...prev,
@@ -831,10 +905,10 @@ export const useForecastData = (
           ? { ...prev.temp, value: latestTemp.value.toFixed(0), emoji: latestTemp.value > 600000 ? '🔥' : latestTemp.value > 250000 ? '🌡️' : '🧊', percentage: 0, color: '#38bdf8', lastUpdated: `Updated: ${formatNZTimestamp(latestTemp.time)}`, source: latestTemp.source }
           : { ...prev.temp, value: 'N/A', emoji: '❓', lastUpdated: 'Updated: N/A', source: '—' },
         bt: latestMagneticPoint
-          ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bt) }
+          ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestBtSource }
           : { ...prev.bt, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
         bz: latestMagneticPoint
-          ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: getSourceLabel(latestMagSource?.bz) }
+          ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestBzSource }
           : { ...prev.bz, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' }
       }));
       }

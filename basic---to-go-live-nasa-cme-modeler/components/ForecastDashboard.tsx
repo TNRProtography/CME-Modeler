@@ -178,7 +178,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 
-const isImapSource = (source?: string) => source === 'IMAP';
+const isImapSource = (source?: string) => Boolean(source && source.includes('IMAP'));
 
 const formatTimeHHMM = (timestamp: number | null | undefined): string => {
     if (!timestamp || !Number.isFinite(timestamp)) return '—';
