@@ -868,7 +868,9 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      if (err instanceof Error && err.message.includes('429')) {
+      if (err instanceof Error && err.message.includes('503')) {
+        setFetchError('NASA DONKI API is currently unavailable (503). This is due to NASA API downtime. The app will continue to open with limited model data.');
+      } else if (err instanceof Error && err.message.includes('429')) {
         setFetchError('NASA API rate limit exceeded. Please wait a moment and try again.');
       } else {
         setFetchError((err as Error).message || "Unknown error fetching data.");
@@ -893,10 +895,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (initialLoadTasks.modelerCmeData) return;
+    let didTimeout = false;
+    const timeoutId = window.setTimeout(() => {
+      didTimeout = true;
+      markInitialTaskDone('modelerCmeData');
+      logDev('modeler preload timed out after 3s; opening app without blocking on DONKI');
+    }, 3000);
+
     loadCMEData(activeTimeRange, { silent: true })
       .finally(() => {
+        window.clearTimeout(timeoutId);
         markInitialTaskDone('modelerCmeData');
-        logDev('modeler preload complete');
+        logDev(didTimeout ? 'modeler preload eventually completed after timeout' : 'modeler preload complete');
       });
   }, [activeTimeRange, initialLoadTasks.modelerCmeData, loadCMEData, markInitialTaskDone]);
 

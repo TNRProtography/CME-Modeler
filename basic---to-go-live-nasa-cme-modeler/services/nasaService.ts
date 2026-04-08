@@ -57,6 +57,9 @@ export const fetchCMEData = async (days: number, apiKey: string): Promise<Proces
     if (!response.ok) {
       const errorData = await response.text();
       console.error("Proxy Worker API Error Response (CME):", errorData);
+      if (response.status === 503) {
+        throw new Error('NASA DONKI API is currently unavailable (503 Service Unavailable). This is due to NASA API downtime.');
+      }
       throw new Error(`Proxy Worker API Error: ${response.status} ${response.statusText}`);
     }
     const data: CMEData[] = await response.json();
@@ -78,7 +81,12 @@ export const fetchFlareData = async (): Promise<SolarFlare[]> => {
   const url = `${PROXY_BASE_URL}/FLR`;
   try {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Proxy Worker API Error (FLR): ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 503) {
+        throw new Error('NASA DONKI API is currently unavailable (503 Service Unavailable). This is due to NASA API downtime.');
+      }
+      throw new Error(`Proxy Worker API Error (FLR): ${response.status}`);
+    }
     const data: SolarFlare[] = await response.json();
     // Sort by peak time, newest first
     return data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
@@ -93,7 +101,12 @@ export const fetchIPSData = async (): Promise<InterplanetaryShock[]> => {
   const url = `${PROXY_BASE_URL}/GST`;
   try {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Proxy Worker API Error (GST/IPS): ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 503) {
+        throw new Error('NASA DONKI API is currently unavailable (503 Service Unavailable). This is due to NASA API downtime.');
+      }
+      throw new Error(`Proxy Worker API Error (GST/IPS): ${response.status}`);
+    }
     const data: InterplanetaryShock[] = await response.json();
      // Sort by event time, newest first
     return data.sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime());
@@ -107,7 +120,12 @@ export const fetchWSAEnlilSimulations = async (): Promise<WSAEnlilSimulation[]> 
   const url = `${PROXY_BASE_URL}/WSAEnlilSimulations`;
   try {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Proxy Worker API Error (WSAEnlilSimulations): ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 503) {
+        throw new Error('NASA DONKI API is currently unavailable (503 Service Unavailable). This is due to NASA API downtime.');
+      }
+      throw new Error(`Proxy Worker API Error (WSAEnlilSimulations): ${response.status}`);
+    }
     const data: WSAEnlilSimulation[] = await response.json();
      // Sort by completion time, newest first
     return data.sort((a, b) => new Date(b.modelCompletionTime).getTime() - new Date(a.modelCompletionTime).getTime());
