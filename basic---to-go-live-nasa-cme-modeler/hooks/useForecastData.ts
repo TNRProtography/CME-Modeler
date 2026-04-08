@@ -232,8 +232,8 @@ const parseNOAATime = (s: string): number => {
   return Number.isFinite(t) ? t : NaN;
 };
 
-const getSourceLabel = (source?: string | null) => {
-  if (!source) return '—';
+const getSourceLabel = (source?: unknown) => {
+  if (typeof source !== 'string') return '—';
   return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
 };
 
@@ -275,10 +275,10 @@ const pickSolarWindValue = (entry: any, key: string): { value: number | null; so
   return { value: null, source: '—' };
 };
 
-const combineSources = (...sources: Array<string | null | undefined>): string => {
+const combineSources = (...sources: Array<unknown>): string => {
   const normalized = Array.from(new Set(
     sources
-      .map((source) => source?.trim())
+      .map((source) => (typeof source === 'string' ? source.trim() : ''))
       .filter((source): source is string => !!source && source !== '—')
   ));
   if (!normalized.length) return '—';
@@ -672,7 +672,7 @@ export const useForecastData = (
   const fetchAllData = useCallback(async (isInitialLoad = false, getGaugeStyle: Function) => {
     if (isInitialLoad) setIsLoading(true);
     const nzMagUrl = `${GEONET_API_URL}/geomag/EY2M/magnetic-field-rate-of-change/50/60s/dH/latest/1d?aggregationPeriod=1m&aggregationFunction=mean`;
-    
+    try {
     const withInitialProgress = async <T,>(promise: Promise<T>, task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => {
       try {
         return await promise;
@@ -944,8 +944,11 @@ export const useForecastData = (
 
     if (!anyGoesDataFound) setLoadingMagnetometer('No valid GOES Magnetometer data available.'); else setLoadingMagnetometer(null);
     if (ipsResult.status === 'fulfilled' && Array.isArray(ipsResult.value)) setInterplanetaryShockData(ipsResult.value); else setInterplanetaryShockData([]);
-
-    if (isInitialLoad) setIsLoading(false);
+    } catch (error) {
+      console.error('[forecast] fetchAllData failed unexpectedly:', error);
+    } finally {
+      if (isInitialLoad) setIsLoading(false);
+    }
   }, [locationAdjustment, getMoonData, reportInitialProgress, setCurrentAuroraScore, setSubstormActivityStatus]);
 
   const activitySummary: ActivitySummary | null = useMemo(() => {
