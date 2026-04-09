@@ -147,6 +147,8 @@ interface SettingsModalProps {
   defaultForecastView: 'simple' | 'advanced';
   onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
+  internationalModeEnabled: boolean;
+  onInternationalModeChange: (enabled: boolean) => void;
   pageViewStats: PageViewStats;
   pageViewStorageMode: 'server' | 'local';
 }
@@ -407,6 +409,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   defaultForecastView,
   onDefaultMainPageChange,
   onDefaultForecastViewChange,
+  internationalModeEnabled,
+  onInternationalModeChange,
   pageViewStats,
   pageViewStorageMode,
 }) => {
@@ -767,6 +771,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="text-neutral-400">App installation is not currently available.</p>
               </div>
             )}
+          </section>
+
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Regional Mode</h3>
+            <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+              <ToggleSwitch
+                label="International Mode (UTC)"
+                checked={internationalModeEnabled}
+                onChange={onInternationalModeChange}
+              />
+              <p className="text-xs text-neutral-500 mt-2">
+                When enabled, the app uses the international experience and forces UTC timestamps across pages.
+              </p>
+            </div>
           </section>
 
           <section>

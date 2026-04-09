@@ -189,6 +189,7 @@ const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 const INTERNATIONAL_DISMISS_KEY = 'sta_international_redirect_dismissed_v1';
+const INTERNATIONAL_MODE_KEY = 'sta_international_mode_enabled_v1';
 const INTERNATIONAL_PATHS = {
   forecast: '/international-advanced-forecast',
   'solar-activity': '/international-solar-dashboard',
@@ -250,7 +251,7 @@ const App: React.FC = () => {
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
   );
   const [isInternationalMode, setIsInternationalMode] = useState<boolean>(() =>
-    window.location.pathname.startsWith('/international-')
+    localStorage.getItem(INTERNATIONAL_MODE_KEY) === 'true' || window.location.pathname.startsWith('/international-')
   );
   const [showInternationalRedirectModal, setShowInternationalRedirectModal] = useState(false);
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -549,15 +550,42 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleInternationalRedirect = useCallback(() => {
-    setShowInternationalRedirectModal(false);
-    navigateToPath(INTERNATIONAL_PATHS.forecast, true);
-  }, [navigateToPath]);
-
   const handleDismissInternationalRedirect = useCallback(() => {
     localStorage.setItem(INTERNATIONAL_DISMISS_KEY, '1');
     setShowInternationalRedirectModal(false);
   }, []);
+
+  const handleInternationalModeToggle = useCallback((enabled: boolean) => {
+    setIsInternationalMode(enabled);
+    localStorage.setItem(INTERNATIONAL_MODE_KEY, enabled ? 'true' : 'false');
+    localStorage.setItem(INTERNATIONAL_DISMISS_KEY, '1');
+    const targetPath = enabled
+      ? INTERNATIONAL_PATHS[activePage]
+      : (activePage === 'forecast'
+        ? getForecastPath(forecastViewMode, forecastModalSlug)
+        : PAGE_PATHS[activePage]);
+    navigateToPath(targetPath, true);
+  }, [activePage, forecastModalSlug, forecastViewMode, navigateToPath]);
+
+  useEffect(() => {
+    const originalToLocaleString = Date.prototype.toLocaleString;
+    const originalToLocaleTimeString = Date.prototype.toLocaleTimeString;
+    if (!isInternationalMode) return;
+
+    Date.prototype.toLocaleString = function (locales?: any, options?: Intl.DateTimeFormatOptions): string {
+      const value = originalToLocaleString.call(this, locales, { ...(options || {}), timeZone: 'UTC' });
+      return typeof value === 'string' && !value.includes('UTC') ? `${value} UTC` : value;
+    };
+    Date.prototype.toLocaleTimeString = function (locales?: any, options?: Intl.DateTimeFormatOptions): string {
+      const value = originalToLocaleTimeString.call(this, locales, { ...(options || {}), timeZone: 'UTC' });
+      return typeof value === 'string' && !value.includes('UTC') ? `${value} UTC` : value;
+    };
+
+    return () => {
+      Date.prototype.toLocaleString = originalToLocaleString;
+      Date.prototype.toLocaleTimeString = originalToLocaleTimeString;
+    };
+  }, [isInternationalMode]);
 
   useEffect(() => {
     syncStateWithPath(window.location.href, true);
@@ -1667,6 +1695,8 @@ const App: React.FC = () => {
               defaultForecastView={defaultForecastView}
               onDefaultMainPageChange={handleDefaultMainPageChange}
               onDefaultForecastViewChange={handleDefaultForecastViewChange}
+              internationalModeEnabled={isInternationalMode}
+              onInternationalModeChange={handleInternationalModeToggle}
               pageViewStats={pageViewStats}
               pageViewStorageMode={pageViewStorageMode}
             />
@@ -1774,10 +1804,10 @@ const App: React.FC = () => {
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
                   <button
-                    onClick={handleInternationalRedirect}
+                    onClick={() => handleInternationalModeToggle(true)}
                     className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold"
                   >
-                    Go to international forecast
+                    Enable International Mode
                   </button>
                   <button
                     onClick={handleDismissInternationalRedirect}

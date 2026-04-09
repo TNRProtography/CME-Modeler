@@ -207,7 +207,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         owmDailyForecast, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
         userLatitude, userLongitude, locationFailed, isOutsideNZ
-    } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
+    } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress, isInternationalMode);
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
