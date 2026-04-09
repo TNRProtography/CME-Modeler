@@ -300,13 +300,16 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       // - N,T step direction defines forward(+,+) vs reverse(-,-)
       // - B step sign separates fast vs slow branch
       // - V increases across all four classes at the shock crossing.
-      const vUp = spdDelta >= 20;
-      const nUp = denRatio >= 1.35;
-      const nDown = denRatio <= 0.75;
-      const tUp = tmpRatio >= 1.2;
-      const tDown = tmpRatio <= 0.85;
-      const bUp = btRatio >= 1.15 || btDelta >= 1.5;
-      const bDown = btRatio <= 0.88 || btDelta <= -1.5;
+      // Sensitivity-tuned thresholds:
+      // keep the same FF/SF/FR/SR physics signatures, but lower cutoffs so
+      // moderate shocks/step-changes are not missed in noisier real-time data.
+      const vUp = spdDelta >= 12;
+      const nUp = denRatio >= 1.2;
+      const nDown = denRatio <= 0.82;
+      const tUp = tmpRatio >= 1.1;
+      const tDown = tmpRatio <= 0.9;
+      const bUp = btRatio >= 1.1 || btDelta >= 1.0;
+      const bDown = btRatio <= 0.92 || btDelta <= -1.0;
 
       const ff = vUp && nUp && tUp && bUp;     // Fast Forward
       const sf = vUp && nUp && tUp && bDown;   // Slow Forward
@@ -314,10 +317,10 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       const sr = vUp && nDown && tDown && bUp; // Slow Reverse
 
       const imfEnhancement =
-        (Math.abs(btDelta) >= 4 || btRatio >= 1.4 || Math.abs(bzDelta) >= 8) &&
-        Math.abs(spdDelta) < 25 &&
-        denRatio > 0.75 && denRatio < 1.35 &&
-        pDynRatio > 0.7 && pDynRatio < 1.6;
+        (Math.abs(btDelta) >= 3 || btRatio >= 1.3 || Math.abs(bzDelta) >= 6) &&
+        Math.abs(spdDelta) < 30 &&
+        denRatio > 0.7 && denRatio < 1.45 &&
+        pDynRatio > 0.65 && pDynRatio < 1.8;
 
       let label = '';
       let score = 0;
