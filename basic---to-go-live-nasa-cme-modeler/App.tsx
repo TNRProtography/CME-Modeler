@@ -1636,6 +1636,8 @@ const App: React.FC = () => {
                         refreshSignal={manualRefreshKey}
                         isInternationalMode={isInternationalMode}
                         onRedirectToInternational={() => navigateToPath(INTERNATIONAL_PATHS.forecast)}
+                        onChooseInternationalMode={() => handleInternationalModeToggle(true)}
+                        onChooseNzMode={() => handleInternationalModeToggle(false)}
                     />
                   </Suspense>
                 </div>
