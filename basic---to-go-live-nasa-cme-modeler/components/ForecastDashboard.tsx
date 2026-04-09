@@ -286,9 +286,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ),
         'forecast': buildStatTooltip(
             'Forecast Trend',
-            'A timeline of forecast scores over recent hours.',
-            'A rising trend means aurora potential is building; a falling trend means activity is easing.',
-            'Trend direction reflects short-term changes in modeled geomagnetic forcing and local visibility weighting.'
+            'A timeline with two lines: “Aurora potential” (dashed) is the raw space-weather potential, and “Visible aurora” (solid) is that potential after local visibility adjustments (darkness, moonlight, and geometry).',
+            'The gap between the two lines is important: a small gap means conditions are converting efficiently into visible aurora; a larger gap means energy may be loading but not fully translating to visible sky glow yet (patchy/fainter outcomes).',
+            'If both lines rise together, odds are improving quickly. If potential rises but visible lags, watch for delayed release/substorm timing. If both fall, activity is easing.'
         ),
         'bz': buildStatTooltip(
             'Interplanetary Magnetic Field (Bt/Bz and optional Bx/By)',
