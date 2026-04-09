@@ -1050,6 +1050,8 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
   userLatitude, userLongitude, moonIllumination, substormBz, substormScore, ovalBoundaryGmag,
   substormHistory,
 }) => {
+    const BASE_LINE_LABEL = 'Base Aurora Score (space-weather potential)';
+    const VISIBLE_LINE_LABEL = 'Visible Aurora (local + substorm-adjusted)';
     const [timeRange, setTimeRange] = useState(6 * 3600000);
     const [showAnnotations, setShowAnnotations] = useState(true);
     const timeLabel = timeRange >= 24 * 3600000 ? '24 Hr' : timeRange >= 12 * 3600000 ? '12 Hr' : timeRange >= 6 * 3600000 ? '6 Hr' : timeRange >= 3 * 3600000 ? '3 Hr' : timeRange >= 2 * 3600000 ? '2 Hr' : '1 Hr';
@@ -1100,13 +1102,13 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
             label: (ctx) => {
               const label = ctx.dataset.label || '';
               const val = ctx.parsed.y.toFixed(1);
-              if (label.includes('potential')) return `  Aurora potential:  ${val}%`;
-              if (label.includes('substorm-adjusted')) return `  Visible aurora:    ${val}%`;
+              if (label.includes(BASE_LINE_LABEL)) return `  Base aurora score: ${val}%`;
+              if (label.includes(VISIBLE_LINE_LABEL)) return `  Visible aurora:    ${val}%`;
               return `  ${label}: ${val}%`;
             },
             afterBody: (ctx) => {
-              const potentialItem = ctx.find(c => (c.dataset.label || '').includes('potential'));
-              const visibleItem   = ctx.find(c => (c.dataset.label || '').includes('substorm-adjusted'));
+              const potentialItem = ctx.find(c => (c.dataset.label || '').includes(BASE_LINE_LABEL));
+              const visibleItem   = ctx.find(c => (c.dataset.label || '').includes(VISIBLE_LINE_LABEL));
               if (!potentialItem || !visibleItem) return [];
               const gap = potentialItem.parsed.y - visibleItem.parsed.y;
               if (gap < 5)  return ['', '  Energy is being released — substorm active.'];
@@ -1146,11 +1148,11 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         });
 
         return { datasets: [
-            // Aurora score potential ceiling — thin, neutral, shows what conditions allow
-            { label: 'Aurora Score (potential)', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'rgba(148, 163, 184, 0.45)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [2, 3], spanGaps: true, order: 3 },
+            // Base score from the worker (space-weather potential before local visibility constraints)
+            { label: BASE_LINE_LABEL, data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.baseScore })), borderColor: 'rgba(148, 163, 184, 0.45)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [2, 3], spanGaps: true, order: 3 },
             // Substorm-released visibility — the score after accounting for whether a substorm
             // is actually releasing the loaded energy. Gap between this and the score above = energy loading but not released.
-            { label: 'Visibility (substorm-adjusted)', data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 1 },
+            { label: VISIBLE_LINE_LABEL, data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 1 },
         ] };
     }, [auroraScoreHistory, substormHistory, moonIllumination]);
 
