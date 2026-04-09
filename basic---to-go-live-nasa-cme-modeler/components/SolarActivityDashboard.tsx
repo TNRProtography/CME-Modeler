@@ -27,6 +27,7 @@ interface SolarActivityDashboardProps {
   onInitialLoadProgress?: (task: 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions') => void;
   modalSlug?: string | null;
   onModalSlugChange?: (slug: string | null) => void;
+  useUtc?: boolean;
 }
 
 interface SolarActivitySummary {
@@ -367,11 +368,15 @@ const getColorForFlareClass = (classType: string): { background: string, text: s
   return { background: `rgba(${getCssVar('--solar-flare-ab-rgb') || '34, 197, 94'}, 1)`, text: 'text-white' };
 };
 
-const formatNZTimestamp = (isoString: string | null | number) => {
+const formatTimestamp = (isoString: string | null | number, useUtc = false) => {
   if (!isoString) return 'N/A';
   try { 
     const d = new Date(isoString); 
-    return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' }); 
+    if (isNaN(d.getTime())) return "Invalid Date";
+    const value = d.toLocaleString('en-NZ', useUtc
+      ? { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }
+      : { timeZone: 'Pacific/Auckland', dateStyle: 'short', timeStyle: 'short' });
+    return useUtc ? `${value} UTC` : value;
   } catch { 
     return "Invalid Date"; 
   }
@@ -939,7 +944,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange, useUtc = false }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
 
@@ -1615,7 +1620,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       setLoadingFlares(null);
       stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
       const firstStrong = processedData.find(f => f.classType?.startsWith('M') || f.classType?.startsWith('X'));
-      if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatNZTimestamp(firstStrong.peakTime)}`);
+      if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatTimestamp(firstStrong.peakTime, useUtc)}`);
     } catch (error) {
       console.error('Error fetching flares:', error);
       setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -2974,7 +2979,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   className="w-full accent-sky-500"
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
-                  {activeSuviFrame ? `Frame: ${formatNZTimestamp(activeSuviFrame.ts)} · fetched ${activeSuviFrame.fetched_at ? formatNZTimestamp(activeSuviFrame.fetched_at) : '—'}` : 'No frame selected'}
+                  {activeSuviFrame ? `Frame: ${formatTimestamp(activeSuviFrame.ts, useUtc)} · fetched ${activeSuviFrame.fetched_at ? formatTimestamp(activeSuviFrame.fetched_at, useUtc) : '—'}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
                   Imagery source: NOAA SWPC SUVI via suvi-difference-imagery.thenamesrock.workers.dev. Difference imagery processing and visualization by TNR Protography.
@@ -3307,7 +3312,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           <div className="flex justify-between items-center">
                             <span>
                               <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong>
-                              <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span>
+                              <span className="ml-2">at {formatTimestamp(flare.peakTime, useUtc)}</span>
                             </span>
                             {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
                           </div>
@@ -3485,7 +3490,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   className="w-full accent-sky-500"
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
-                  {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : '—'}` : 'No frame selected'}
+                  {activeCoronagraphFrame ? `Frame: ${formatTimestamp(activeCoronagraphFrame.ts, useUtc)} · fetched ${activeCoronagraphFrame.fetched_at ? formatTimestamp(activeCoronagraphFrame.fetched_at, useUtc) : '—'}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
                   Imagery credits: NOAA SWPC (GOES-19 CCOR-1), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
@@ -3528,9 +3533,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           selectedFlare && (
             <div className="space-y-2">
               <p><strong>Class:</strong> {selectedFlare.classType}</p>
-              <p><strong>Begin Time (NZT):</strong> {formatNZTimestamp(selectedFlare.startTime)}</p>
-              <p><strong>Peak Time (NZT):</strong> {formatNZTimestamp(selectedFlare.peakTime)}</p>
-              <p><strong>End Time (NZT):</strong> {formatNZTimestamp(selectedFlare.endTime)}</p>
+              <p><strong>Begin Time ({useUtc ? 'UTC' : 'NZT'}):</strong> {formatTimestamp(selectedFlare.startTime, useUtc)}</p>
+              <p><strong>Peak Time ({useUtc ? 'UTC' : 'NZT'}):</strong> {formatTimestamp(selectedFlare.peakTime, useUtc)}</p>
+              <p><strong>End Time ({useUtc ? 'UTC' : 'NZT'}):</strong> {formatTimestamp(selectedFlare.endTime, useUtc)}</p>
               <p><strong>Source Location:</strong> {selectedFlare.sourceLocation}</p>
               <p><strong>Active Region:</strong> {(() => {
                 if (!selectedFlare.activeRegionNum) return 'N/A';

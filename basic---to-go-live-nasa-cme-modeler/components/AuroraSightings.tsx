@@ -67,6 +67,7 @@ interface AuroraSightingsProps {
   refreshSignal?: number;
   onSightingsLoaded?: (sightings: SightingReport[]) => void;
   substormRiskData?: SubstormRiskData | null;
+  isInternationalMode?: boolean;
 }
 
 interface SightingMapControllerProps {
@@ -252,7 +253,9 @@ interface OvalOverlayProps {
   substormRiskData: SubstormRiskData | null | undefined;
 }
 
-const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => {
+const mirrorRingToNorth = (ring: [number, number][]): [number, number][] => ring.map(([lat, lon]) => [-lat, lon]);
+
+const AuroraOvalOverlay: React.FC<OvalOverlayProps & { isInternationalMode?: boolean }> = ({ substormRiskData, isInternationalMode = false }) => {
   const score    = substormRiskData?.current?.score     ?? 0;
   const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
   const metrics  = substormRiskData?.metrics;
@@ -371,11 +374,18 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
         pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }}
         smoothFactor={2}
       />
+      {isInternationalMode && (
+        <>
+          <Polyline positions={mirrorRingToNorth(pwRing)} pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }} smoothFactor={2} />
+          <Polyline positions={mirrorRingToNorth(eqRing)} pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }} smoothFactor={2} />
+          <Polyline positions={mirrorRingToNorth(visRing)} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+        </>
+      )}
     </>
   );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, isInternationalMode = false }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -578,7 +588,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         <GuideIcon className="w-6 h-6" />
                      </button>
                 </div>
-                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
+                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">{isInternationalMode ? 'Help the community by reporting what you see (or don’t see) from anywhere in the world.' : 'Help the community by reporting what you see (or don\'t see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.'}</p>
                 <div className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/40 rounded-full text-amber-200 text-sm font-semibold">
                     <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
                     GPS location is required to submit a report.
@@ -687,13 +697,13 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     </div>
                     <div className="flex-1 min-h-0">
                     <MapContainer
-                        center={[-41, 172]}
-                        zoom={MAP_ZOOM}
+                        center={isInternationalMode ? [0, 0] : [-41, 172]}
+                        zoom={isInternationalMode ? 2 : MAP_ZOOM}
                         scrollWheelZoom={false}
                         dragging={!L.Browser.mobile}
                         touchZoom={true}
-                        minZoom={4}
-                        maxBounds={NZ_BOUNDS}
+                        minZoom={isInternationalMode ? 2 : 4}
+                        maxBounds={isInternationalMode ? undefined : NZ_BOUNDS}
                         className="h-full w-full bg-neutral-800"
                         style={{height: '100%'}}
                     >
@@ -704,7 +714,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
-        <AuroraOvalOverlay substormRiskData={substormRiskData} />
+        <AuroraOvalOverlay substormRiskData={substormRiskData} isInternationalMode={isInternationalMode} />
                         <LocationFinder onLocationSelect={() => {}} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>Your GPS location.</Popup></Marker>}
                         <>
@@ -725,7 +735,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         }}
                                     >
                                         <Popup>
-                                            <strong>{sighting.name}</strong> (nearest town) reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
+                                            <strong>{sighting.name}</strong> {isInternationalMode ? '(nearest location)' : '(nearest town)'} reported: {getEmojiForStatus(sighting.status)} <br/> at {isInternationalMode ? `${new Date(sighting.timestamp).toLocaleTimeString('en-NZ', { timeZone: 'UTC' })} UTC` : new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
                                         </Popup>
                                     </Marker>
                                 );
@@ -748,7 +758,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         className="bg-neutral-900 border-b border-neutral-800 cursor-pointer hover:bg-neutral-800"
                                         onClick={() => handleTableRowClick(s.timestamp + s.name)}
                                     >
-                                        <td className="px-4 py-2">{new Date(s.timestamp).toLocaleTimeString('en-NZ')}</td>
+                                        <td className="px-4 py-2">{isInternationalMode ? `${new Date(s.timestamp).toLocaleTimeString('en-NZ', { timeZone: 'UTC' })} UTC` : new Date(s.timestamp).toLocaleTimeString('en-NZ')}</td>
                                         <td className="px-4 py-2 font-medium text-neutral-200">{s.name}</td>
                                         <td className="px-4 py-2 text-2xl" title={s.status}>{getEmojiForStatus(s.status)}</td>
                                     </tr>

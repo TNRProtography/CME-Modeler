@@ -85,6 +85,8 @@ interface ForecastDashboardProps {
   modalSlug?: string | null;
   onModalSlugChange?: (slug: string | null) => void;
   refreshSignal: number;
+  isInternationalMode?: boolean;
+  onRedirectToInternational?: () => void;
 }
 
 interface Camera {
@@ -198,7 +200,7 @@ const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp
 
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal, isInternationalMode = false, onRedirectToInternational }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -537,7 +539,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
 
             {/* Outside NZ warning modal */}
-            {isOutsideNZ && !outsideNZDismissed && (
+            {isOutsideNZ && !outsideNZDismissed && !isInternationalMode && (
               <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-neutral-900 border border-amber-500/40 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center">
                   <div className="text-4xl mb-4">🌏</div>
@@ -548,7 +550,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                   <p className="text-sm text-neutral-400 leading-relaxed mb-6">
                     If you are aurora chasing from another location in the southern hemisphere, the solar wind and space weather data is still accurate and useful — but the visibility score, location adjustment, and notification thresholds will not reflect your actual viewing conditions.
                   </p>
-                  <div className="flex gap-3 justify-center">
+                  <div className="flex gap-3 justify-center flex-wrap">
+                    <button
+                      onClick={() => onRedirectToInternational?.()}
+                      className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-sm text-white font-semibold transition-colors"
+                    >
+                      Go to international forecast
+                    </button>
                     <button
                       onClick={() => window.history.back()}
                       className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-300 border border-neutral-700 transition-colors"
@@ -569,8 +577,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
                     <header className="text-center mb-4">
-                        <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora</h1>
-                        <p className="text-sm text-neutral-400 mt-1">New Zealand Aurora &amp; Space Weather App</p>
+                        <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora{isInternationalMode ? ' · International' : ''}</h1>
+                        <p className="text-sm text-neutral-400 mt-1">{isInternationalMode ? 'Global Aurora & Space Weather App · UTC mode' : 'New Zealand Aurora & Space Weather App'}</p>
                     </header>
                      <div className="flex justify-center items-center gap-2 mb-6">
                         <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 shadow-inner p-1 backdrop-blur-md">
@@ -615,7 +623,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 />
                             </div>
                             </div>
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} isInternationalMode={isInternationalMode} />
                             <KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
