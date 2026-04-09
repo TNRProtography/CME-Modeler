@@ -644,18 +644,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             {/* What to expect — full width */}
                             <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
-                                <VisibilityForecastPanel
-                                    auroraScore={auroraScore}
-                                    substormForecast={substormForecast}
-                                    substormRiskData={substormRiskData}
-                                    recentSightings={recentSightings}
-                                    isDaylight={isDaylight}
-                                    moonIllumination={celestialTimes?.moon?.illumination ?? null}
-                                    moonRiseMs={celestialTimes?.moon?.rise ?? null}
-                                    moonSetMs={celestialTimes?.moon?.set ?? null}
-                                    userLatitude={userLatitude}
-                                    userLongitude={userLongitude}
-                                />
+                                {!(isInternationalMode && locationFailed) ? (
+                                  <VisibilityForecastPanel
+                                      auroraScore={auroraScore}
+                                      substormForecast={substormForecast}
+                                      substormRiskData={substormRiskData}
+                                      recentSightings={recentSightings}
+                                      isDaylight={isDaylight}
+                                      moonIllumination={celestialTimes?.moon?.illumination ?? null}
+                                      moonRiseMs={celestialTimes?.moon?.rise ?? null}
+                                      moonSetMs={celestialTimes?.moon?.set ?? null}
+                                      userLatitude={userLatitude}
+                                      userLongitude={userLongitude}
+                                  />
+                                ) : (
+                                  <div className="card bg-neutral-950/80 p-4 text-center text-neutral-300 text-sm">
+                                    Visibility guidance is hidden until location is available in International mode.
+                                  </div>
+                                )}
                             </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} isInternationalMode={isInternationalMode} />
@@ -689,18 +695,24 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             {/* What to expect — full width */}
                             <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
-                                <VisibilityForecastPanel
-                                    auroraScore={auroraScore}
-                                    substormForecast={substormForecast}
-                                    substormRiskData={substormRiskData}
-                                    recentSightings={recentSightings}
-                                    isDaylight={isDaylight}
-                                    moonIllumination={celestialTimes?.moon?.illumination ?? null}
-                                    moonRiseMs={celestialTimes?.moon?.rise ?? null}
-                                    moonSetMs={celestialTimes?.moon?.set ?? null}
-                                    userLatitude={userLatitude}
-                                    userLongitude={userLongitude}
-                                />
+                                {!(isInternationalMode && locationFailed) ? (
+                                  <VisibilityForecastPanel
+                                      auroraScore={auroraScore}
+                                      substormForecast={substormForecast}
+                                      substormRiskData={substormRiskData}
+                                      recentSightings={recentSightings}
+                                      isDaylight={isDaylight}
+                                      moonIllumination={celestialTimes?.moon?.illumination ?? null}
+                                      moonRiseMs={celestialTimes?.moon?.rise ?? null}
+                                      moonSetMs={celestialTimes?.moon?.set ?? null}
+                                      userLatitude={userLatitude}
+                                      userLongitude={userLongitude}
+                                  />
+                                ) : (
+                                  <div className="card bg-neutral-950/80 p-4 text-center text-neutral-300 text-sm">
+                                    Visibility guidance is hidden until location is available in International mode.
+                                  </div>
+                                )}
                             </div>
                             </div>
                             {!isInternationalMode && <KpForecastTimeline

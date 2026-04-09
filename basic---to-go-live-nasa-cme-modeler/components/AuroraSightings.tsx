@@ -253,7 +253,9 @@ interface OvalOverlayProps {
   substormRiskData: SubstormRiskData | null | undefined;
 }
 
-const mirrorRingToNorth = (ring: [number, number][]): [number, number][] => ring.map(([lat, lon]) => [-lat, lon]);
+const repeatRingAroundWorld = (ring: [number, number][]): [number, number][][] => (
+  [-360, 0, 360].map((shift) => ring.map(([lat, lon]) => [lat, lon + shift] as [number, number]))
+);
 
 const AuroraOvalOverlay: React.FC<OvalOverlayProps & { isInternationalMode?: boolean }> = ({ substormRiskData, isInternationalMode = false }) => {
   const score    = substormRiskData?.current?.score     ?? 0;
@@ -265,6 +267,8 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps & { isInternationalMode?: boo
   const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
+  const northEquatorward = Math.abs(equatorward);
+  const northPoleward = Math.abs(poleward);
 
   // Boundary line colour scales with activity
   const { line } = ovalColour(score);
@@ -276,6 +280,7 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps & { isInternationalMode?: boo
   // Visibility horizon — linearly boosted by activity (higher emission altitude during storms)
   const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(score, 100)) / 100) * 16.0;
   const visRing    = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
+  const northVisRing = buildOvalRing(Math.max(25, northEquatorward - VISIBILITY_DEG), 1.5);
   const visOpacity = 0.3 + (score / 100) * 0.45;
   const visWeight  = 1.0 + (score / 100) * 1.0;
 
@@ -376,9 +381,33 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps & { isInternationalMode?: boo
       />
       {isInternationalMode && (
         <>
-          <Polyline positions={mirrorRingToNorth(pwRing)} pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }} smoothFactor={2} />
-          <Polyline positions={mirrorRingToNorth(eqRing)} pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }} smoothFactor={2} />
-          <Polyline positions={mirrorRingToNorth(visRing)} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+          {Array.from({ length: bandLayers }, (_, i) => {
+            const t0 = i / bandLayers;
+            const t1 = (i + 1) / bandLayers;
+            const g0 = northPoleward + t0 * (northEquatorward - northPoleward);
+            const g1 = northPoleward + t1 * (northEquatorward - northPoleward);
+            const northPoly = buildBandPolygon(g0, g1, 3);
+            const mid = bandPolygons[i];
+            return <Polygon key={`north-band-${i}`} positions={northPoly} pathOptions={{ color: 'transparent', fillColor: mid.colour, fillOpacity: mid.alpha, weight: 0 }} smoothFactor={2} />;
+          })}
+          {repeatRingAroundWorld(buildOvalRing(northPoleward, 1.5)).map((ring, i) => (
+            <Polyline key={`north-pw-${i}`} positions={ring} pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(buildOvalRing(northEquatorward, 1.5)).map((ring, i) => (
+            <Polyline key={`north-eq-${i}`} positions={ring} pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(northVisRing).map((ring, i) => (
+            <Polyline key={`north-vis-${i}`} positions={ring} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(pwRing).map((ring, i) => (
+            <Polyline key={`south-pw-repeat-${i}`} positions={ring} pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(eqRing).map((ring, i) => (
+            <Polyline key={`south-eq-repeat-${i}`} positions={ring} pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(visRing).map((ring, i) => (
+            <Polyline key={`south-vis-repeat-${i}`} positions={ring} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+          ))}
         </>
       )}
     </>
