@@ -230,6 +230,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         }
     }, [isLoading, onInitialLoad]);
 
+    useEffect(() => {
+      if (isInternationalMode && viewMode !== 'advanced') {
+        onViewModeChange('advanced');
+      }
+    }, [isInternationalMode, viewMode, onViewModeChange]);
+
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
@@ -617,7 +623,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     </header>
                      <div className="flex justify-center items-center gap-2 mb-6">
                         <div className="inline-flex items-center rounded-full bg-white/5 border border-white/10 shadow-inner p-1 backdrop-blur-md">
-                          <button onClick={() => onViewModeChange('simple')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Simple View</button>
+                          {!isInternationalMode && <button onClick={() => onViewModeChange('simple')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'simple' ? 'bg-gradient-to-r from-sky-500/80 to-cyan-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Simple View</button>}
                           <button onClick={() => onViewModeChange('advanced')} className={`px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 ${viewMode === 'advanced' ? 'bg-gradient-to-r from-purple-500/80 to-fuchsia-500/80 text-white shadow-lg' : 'text-neutral-200 hover:text-white'}`}>Advanced View</button>
                         </div>
                         <button
@@ -665,7 +671,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                             </div>
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} isInternationalMode={isInternationalMode} />
-                            {!isInternationalMode && <KpForecastTimeline
+                            <KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
                                 sunriseMs={celestialTimes?.sun?.rise ?? null}
@@ -673,7 +679,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 moonRiseMs={celestialTimes?.moon?.rise ?? null}
                                 moonSetMs={celestialTimes?.moon?.set ?? null}
                                 moonWaxing={celestialTimes?.moon?.waxing ?? null}
-                            />}
+                                isInternationalMode={isInternationalMode}
+                            />
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
                             {!isInternationalMode && <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>}
@@ -715,7 +722,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 )}
                             </div>
                             </div>
-                            {!isInternationalMode && <KpForecastTimeline
+                            <KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
                                 sunriseMs={celestialTimes?.sun?.rise ?? null}
@@ -723,7 +730,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 moonRiseMs={celestialTimes?.moon?.rise ?? null}
                                 moonSetMs={celestialTimes?.moon?.set ?? null}
                                 moonWaxing={celestialTimes?.moon?.waxing ?? null}
-                            />}
+                                isInternationalMode={isInternationalMode}
+                            />
 {(() => {
                                 // Compute oval boundary for chart visibility probability
                                 const _newell60 = substormRiskData?.metrics?.solar_wind?.newell_avg_60m ?? 0;

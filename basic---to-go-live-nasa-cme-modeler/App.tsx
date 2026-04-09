@@ -189,7 +189,6 @@ const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 const INTERNATIONAL_DISMISS_KEY = 'sta_international_redirect_dismissed_v1';
-const INTERNATIONAL_MODE_KEY = 'sta_international_mode_enabled_v1';
 const INTERNATIONAL_PATHS = {
   forecast: '/international-advanced-forecast',
   'solar-activity': '/international-solar-dashboard',
@@ -251,7 +250,7 @@ const App: React.FC = () => {
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
   );
   const [isInternationalMode, setIsInternationalMode] = useState<boolean>(() =>
-    localStorage.getItem(INTERNATIONAL_MODE_KEY) === 'true' || window.location.pathname.startsWith('/international-')
+    window.location.pathname.startsWith('/international-')
   );
   const [showInternationalRedirectModal, setShowInternationalRedirectModal] = useState(false);
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -557,7 +556,6 @@ const App: React.FC = () => {
 
   const handleInternationalModeToggle = useCallback((enabled: boolean) => {
     setIsInternationalMode(enabled);
-    localStorage.setItem(INTERNATIONAL_MODE_KEY, enabled ? 'true' : 'false');
     localStorage.setItem(INTERNATIONAL_DISMISS_KEY, '1');
     const targetPath = enabled
       ? INTERNATIONAL_PATHS[activePage]
