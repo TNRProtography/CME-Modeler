@@ -64,6 +64,7 @@ function makeOptions(
   yType: 'linear' | 'logarithmic' = 'linear',
   showXAxis = false,
 ): ChartOptions<'line'> {
+  const useUtc = typeof window !== 'undefined' && localStorage.getItem('sta_international_mode_enabled_v1') === 'true';
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -84,10 +85,10 @@ function makeOptions(
             const ts = items[0]?.parsed?.x;
             if (!ts) return '';
             return new Date(ts).toLocaleTimeString('en-NZ', {
-              timeZone: 'Pacific/Auckland',
+              timeZone: useUtc ? 'UTC' : 'Pacific/Auckland',
               hour: '2-digit', minute: '2-digit',
               month: 'short', day: '2-digit',
-            });
+            }) + (useUtc ? ' UTC' : '');
           },
         },
       },
@@ -111,7 +112,7 @@ function makeOptions(
         grid:   { color: GRID },
         border: { color: BORDER },
         title:  showXAxis
-          ? { display: true, text: 'NZT', color: '#444', font: { size: 8 } }
+          ? { display: true, text: useUtc ? 'UTC' : 'NZT', color: '#444', font: { size: 8 } }
           : { display: false },
       },
       y: {

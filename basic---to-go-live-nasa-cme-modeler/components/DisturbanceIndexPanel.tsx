@@ -53,16 +53,18 @@ const getDstBadgeClass = (dst: number) => {
   return 'bg-emerald-700 text-white';
 };
 
-const formatNzLabel = (timestamp: string | number) => {
+const formatLabel = (timestamp: string | number, useUtc = false) => {
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return String(timestamp);
-  return date.toLocaleString('en-NZ', {
+  const value = date.toLocaleString('en-NZ', {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    timeZone: useUtc ? 'UTC' : undefined,
   });
+  return useUtc ? `${value} UTC` : value;
 };
 
 const parseDstPayload = (raw: any): DstRow[] =>
@@ -77,6 +79,7 @@ const parseDstPayload = (raw: any): DstRow[] =>
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
 const DisturbanceIndexPanel: React.FC = () => {
+  const useUtc = typeof window !== 'undefined' && localStorage.getItem('sta_international_mode_enabled_v1') === 'true';
   const [dstRows, setDstRows] = useState<DstRow[]>([]);
   const [isLoadingDst, setIsLoadingDst] = useState(false);
   const [dstError, setDstError] = useState<string | null>(null);
@@ -155,7 +158,7 @@ const DisturbanceIndexPanel: React.FC = () => {
 
   const dstChartData = useMemo(
     () => ({
-      labels: dstRows.map((row) => formatNzLabel(row.timestamp)),
+      labels: dstRows.map((row) => formatLabel(row.timestamp, useUtc)),
       datasets: [
         {
           label: 'Kyoto Dst (nT)',
@@ -169,7 +172,7 @@ const DisturbanceIndexPanel: React.FC = () => {
         },
       ],
     }),
-    [dstRows]
+    [dstRows, useUtc]
   );
 
   const chartOptions = useMemo(
@@ -199,7 +202,7 @@ const DisturbanceIndexPanel: React.FC = () => {
       <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-xl font-semibold text-white">Kyoto Dst Index (NZ Time)</h3>
+          <h3 className="text-xl font-semibold text-white">Kyoto Dst Index ({useUtc ? 'UTC' : 'NZ Time'})</h3>
           <button
             onClick={openModal}
             className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
@@ -222,7 +225,7 @@ const DisturbanceIndexPanel: React.FC = () => {
               <span className="text-sm text-neutral-300">No Dst data</span>
             )}
           </div>
-          <div className="text-xs text-neutral-400">Updated: {latestDst ? formatNzLabel(latestDst.timestamp) : '—'}</div>
+          <div className="text-xs text-neutral-400">Updated: {latestDst ? formatLabel(latestDst.timestamp, useUtc) : '—'}</div>
         </div>
       </div>
 
