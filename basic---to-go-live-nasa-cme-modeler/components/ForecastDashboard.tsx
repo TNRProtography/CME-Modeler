@@ -215,6 +215,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
     const [isFaqOpen, setIsFaqOpen] = useState(false);
     const [outsideNZDismissed, setOutsideNZDismissed] = useState(false);
+    const [modeChoiceResolved, setModeChoiceResolved] = useState<boolean>(() => localStorage.getItem('sta_mode_choice_resolved_v1') === '1');
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
@@ -575,7 +576,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                 </div>
               </div>
             )}
-            {locationFailed && (
+            {locationFailed && !modeChoiceResolved && (
               <div className="fixed inset-0 z-[1990] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-neutral-900 border border-sky-500/40 rounded-2xl shadow-2xl max-w-lg w-full p-6 text-center">
                   <h2 className="text-xl font-bold text-white mb-3">Choose your app mode</h2>
@@ -583,8 +584,26 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     We couldn’t access your location. Pick the standard NZ mode or International mode (UTC + global map).
                   </p>
                   <div className="flex gap-3 justify-center flex-wrap">
-                    <button onClick={() => onChooseNzMode?.()} className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-200 border border-neutral-700">NZ mode</button>
-                    <button onClick={() => onChooseInternationalMode?.()} className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-sm text-white font-semibold">International mode</button>
+                    <button
+                      onClick={() => {
+                        localStorage.setItem('sta_mode_choice_resolved_v1', '1');
+                        setModeChoiceResolved(true);
+                        onChooseNzMode?.();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-200 border border-neutral-700"
+                    >
+                      NZ mode
+                    </button>
+                    <button
+                      onClick={() => {
+                        localStorage.setItem('sta_mode_choice_resolved_v1', '1');
+                        setModeChoiceResolved(true);
+                        onChooseInternationalMode?.();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-sm text-white font-semibold"
+                    >
+                      International mode
+                    </button>
                   </div>
                 </div>
               </div>
