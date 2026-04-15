@@ -451,6 +451,10 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-sm font-semibold text-red-400">{latestShock.label}</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                BETA
+              </span>
               <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ background: 'rgba(220,38,38,0.28)', color: '#f87171' }}>
                 {latestShock.ageStr}

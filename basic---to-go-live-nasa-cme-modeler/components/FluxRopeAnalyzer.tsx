@@ -778,6 +778,10 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold text-white">CME flux rope structure</h2>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              BETA
+            </span>
             <button
               onClick={() => setInfoOpen(true)}
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
