@@ -188,6 +188,12 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
+const INTERNATIONAL_DISMISS_KEY = 'sta_international_redirect_dismissed_v1';
+const INTERNATIONAL_PATHS = {
+  forecast: '/international-advanced-forecast',
+  'solar-activity': '/international-solar-dashboard',
+  modeler: '/international-cme-visualization',
+} as const;
 
 const BANNER_XRAY_URLS = [
   'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
@@ -243,6 +249,10 @@ const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
   );
+  const [isInternationalMode, setIsInternationalMode] = useState<boolean>(() =>
+    window.location.pathname.startsWith('/international-')
+  );
+  const [showInternationalRedirectModal, setShowInternationalRedirectModal] = useState(false);
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -413,7 +423,18 @@ const App: React.FC = () => {
   const syncStateWithPath = useCallback(
     (path: string, replaceHistory = false) => {
       const url = new URL(path, window.location.origin);
-      const { page: mainPage, slug: pageSlug } = getPageAndSlugFromPathname(url.pathname);
+      const intlPage = url.pathname === INTERNATIONAL_PATHS.forecast
+        ? 'forecast'
+        : url.pathname === INTERNATIONAL_PATHS['solar-activity']
+          ? 'solar-activity'
+          : url.pathname === INTERNATIONAL_PATHS.modeler
+            ? 'modeler'
+            : null;
+      const isIntlPath = intlPage !== null;
+      const { page: normalPage, slug: normalSlug } = getPageAndSlugFromPathname(url.pathname);
+      const mainPage = intlPage ?? normalPage;
+      const pageSlug = isIntlPath ? null : normalSlug;
+      setIsInternationalMode(isIntlPath);
       const isSettingsPath = url.pathname === SETTINGS_PATH;
       const isTutorialPath = url.pathname === TUTORIAL_PATH;
       const isDebugPath = url.pathname === DEBUG_PATH;
@@ -422,7 +443,7 @@ const App: React.FC = () => {
         lastMainPageRef.current = mainPage;
         setActivePage(mainPage);
         if (mainPage === 'forecast') {
-          const viewFromPath = getForecastViewFromSlug(pageSlug);
+          const viewFromPath = isIntlPath ? 'advanced' : getForecastViewFromSlug(pageSlug);
           const viewFromSearch = getForecastViewFromSearch(url.search);
           const viewFromUrl = viewFromPath ?? viewFromSearch;
           const targetView = viewFromUrl ?? defaultForecastView;
@@ -430,7 +451,9 @@ const App: React.FC = () => {
           setForecastModalSlug(getForecastModalSlugFromSlug(pageSlug));
           setSolarModalSlug(null);
 
-          const canonicalPath = getForecastPath(targetView, getForecastModalSlugFromSlug(pageSlug));
+          const canonicalPath = isIntlPath
+            ? INTERNATIONAL_PATHS.forecast
+            : getForecastPath(targetView, getForecastModalSlugFromSlug(pageSlug));
           const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
           if (url.pathname !== canonicalPath || url.search) {
             window.history[method]({}, '', canonicalPath);
@@ -452,10 +475,12 @@ const App: React.FC = () => {
         // modeler so shared CME links always land in the right place.
         const hasCmeParam = url.searchParams.has('cme');
         const fallbackPath = hasCmeParam
-          ? PAGE_PATHS.modeler
+          ? (isInternationalMode ? INTERNATIONAL_PATHS.modeler : PAGE_PATHS.modeler)
           : lastMainPageRef.current === 'forecast'
-            ? getForecastPath(forecastViewMode)
-            : PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast;
+            ? (isInternationalMode ? INTERNATIONAL_PATHS.forecast : getForecastPath(forecastViewMode))
+            : (isInternationalMode
+              ? INTERNATIONAL_PATHS[lastMainPageRef.current]
+              : PAGE_PATHS[lastMainPageRef.current] ?? PAGE_PATHS.forecast);
         if (path !== fallbackPath) {
           const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
           window.history[method]({}, '', fallbackPath);
@@ -470,7 +495,7 @@ const App: React.FC = () => {
       setIsTutorialOpen(isTutorialPath);
       setIsDebugOpen(isDebugPath);
     },
-    [defaultForecastView, forecastViewMode]
+    [defaultForecastView, forecastViewMode, isInternationalMode]
   );
 
   const navigateToPath = useCallback(
@@ -488,25 +513,77 @@ const App: React.FC = () => {
   const navigateToPage = useCallback(
     (page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
       if (page === 'forecast') {
-        navigateToPath(getForecastPath(forecastViewMode, forecastModalSlug), replaceHistory);
+        navigateToPath(
+          isInternationalMode ? INTERNATIONAL_PATHS.forecast : getForecastPath(forecastViewMode, forecastModalSlug),
+          replaceHistory
+        );
         return;
       }
 
-      navigateToPath(PAGE_PATHS[page], replaceHistory);
+      navigateToPath(isInternationalMode ? INTERNATIONAL_PATHS[page] : PAGE_PATHS[page], replaceHistory);
     },
-    [forecastModalSlug, forecastViewMode, navigateToPath]
+    [forecastModalSlug, forecastViewMode, navigateToPath, isInternationalMode]
   );
 
   const navigateToModelerOverlay = useCallback((overlaySlug: string | null, replaceHistory = false) => {
     const suffix = overlaySlug ? `-${overlaySlug}` : '';
     const search = window.location.search;
-    navigateToPath(`${PAGE_PATHS.modeler}${suffix}${search}`, replaceHistory);
-  }, [navigateToPath]);
+    const base = isInternationalMode ? INTERNATIONAL_PATHS.modeler : PAGE_PATHS.modeler;
+    navigateToPath(`${base}${suffix}${search}`, replaceHistory);
+  }, [navigateToPath, isInternationalMode]);
 
   const navigateToSolarOverlay = useCallback((overlaySlug: string | null, replaceHistory = false) => {
     const suffix = overlaySlug ? `-${overlaySlug}` : '';
-    navigateToPath(`${PAGE_PATHS['solar-activity']}${suffix}`, replaceHistory);
-  }, [navigateToPath]);
+    const base = isInternationalMode ? INTERNATIONAL_PATHS['solar-activity'] : PAGE_PATHS['solar-activity'];
+    navigateToPath(`${base}${suffix}`, replaceHistory);
+  }, [navigateToPath, isInternationalMode]);
+
+  useEffect(() => {
+    const isNzTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone === 'Pacific/Auckland';
+    const region = new Intl.Locale(navigator.language).region;
+    const isNzLocale = region === 'NZ';
+    const dismissed = localStorage.getItem(INTERNATIONAL_DISMISS_KEY) === '1';
+    const alreadyInternational = window.location.pathname.startsWith('/international-');
+    if (!alreadyInternational && !dismissed && !(isNzTimezone || isNzLocale)) {
+      setShowInternationalRedirectModal(true);
+    }
+  }, []);
+
+  const handleDismissInternationalRedirect = useCallback(() => {
+    localStorage.setItem(INTERNATIONAL_DISMISS_KEY, '1');
+    setShowInternationalRedirectModal(false);
+  }, []);
+
+  const handleInternationalModeToggle = useCallback((enabled: boolean) => {
+    setIsInternationalMode(enabled);
+    localStorage.setItem(INTERNATIONAL_DISMISS_KEY, '1');
+    const targetPath = enabled
+      ? INTERNATIONAL_PATHS[activePage]
+      : (activePage === 'forecast'
+        ? getForecastPath(forecastViewMode, forecastModalSlug)
+        : PAGE_PATHS[activePage]);
+    navigateToPath(targetPath, true);
+  }, [activePage, forecastModalSlug, forecastViewMode, navigateToPath]);
+
+  useEffect(() => {
+    const originalToLocaleString = Date.prototype.toLocaleString;
+    const originalToLocaleTimeString = Date.prototype.toLocaleTimeString;
+    if (!isInternationalMode) return;
+
+    Date.prototype.toLocaleString = function (locales?: any, options?: Intl.DateTimeFormatOptions): string {
+      const value = originalToLocaleString.call(this, locales, { ...(options || {}), timeZone: 'UTC' });
+      return typeof value === 'string' && !value.includes('UTC') ? `${value} UTC` : value;
+    };
+    Date.prototype.toLocaleTimeString = function (locales?: any, options?: Intl.DateTimeFormatOptions): string {
+      const value = originalToLocaleTimeString.call(this, locales, { ...(options || {}), timeZone: 'UTC' });
+      return typeof value === 'string' && !value.includes('UTC') ? `${value} UTC` : value;
+    };
+
+    return () => {
+      Date.prototype.toLocaleString = originalToLocaleString;
+      Date.prototype.toLocaleTimeString = originalToLocaleTimeString;
+    };
+  }, [isInternationalMode]);
 
   useEffect(() => {
     syncStateWithPath(window.location.href, true);
@@ -1555,6 +1632,10 @@ const App: React.FC = () => {
                         modalSlug={forecastModalSlug}
                         onModalSlugChange={handleForecastModalSlugChange}
                         refreshSignal={manualRefreshKey}
+                        isInternationalMode={isInternationalMode}
+                        onRedirectToInternational={() => navigateToPath(INTERNATIONAL_PATHS.forecast)}
+                        onChooseInternationalMode={() => handleInternationalModeToggle(true)}
+                        onChooseNzMode={() => handleInternationalModeToggle(false)}
                     />
                   </Suspense>
                 </div>
@@ -1573,6 +1654,7 @@ const App: React.FC = () => {
                         refreshSignal={manualRefreshKey}
                         onInitialLoad={handleSolarInitialLoad}
                         onInitialLoadProgress={handleSolarLoadPoint}
+                        useUtc={isInternationalMode}
                     />
                   </Suspense>
                 </div>
@@ -1613,6 +1695,8 @@ const App: React.FC = () => {
               defaultForecastView={defaultForecastView}
               onDefaultMainPageChange={handleDefaultMainPageChange}
               onDefaultForecastViewChange={handleDefaultForecastViewChange}
+              internationalModeEnabled={isInternationalMode}
+              onInternationalModeChange={handleInternationalModeToggle}
               pageViewStats={pageViewStats}
               pageViewStorageMode={pageViewStorageMode}
             />
@@ -1643,6 +1727,7 @@ const App: React.FC = () => {
                 isOpen={isForecastModelsModalOpen}
                 onClose={() => navigateToModelerOverlay(null)}
                 setViewerMedia={setViewerMedia}
+                useUtc={isInternationalMode}
             />
           </Suspense>
 
@@ -1707,6 +1792,31 @@ const App: React.FC = () => {
                 >
                   Copy Link
                 </button>
+              </div>
+            </div>
+          )}
+          {showInternationalRedirectModal && (
+            <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <div className="max-w-lg w-full rounded-2xl border border-sky-400/40 bg-neutral-950 p-6 text-center shadow-2xl">
+                <div className="text-4xl mb-3">🌍</div>
+                <h2 className="text-xl font-bold text-white mb-2">International viewer detected</h2>
+                <p className="text-sm text-neutral-300 mb-6">
+                  It looks like you are outside New Zealand. We recommend the international app experience with global aurora mapping and UTC timestamps.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => handleInternationalModeToggle(true)}
+                    className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold"
+                  >
+                    Enable International Mode
+                  </button>
+                  <button
+                    onClick={handleDismissInternationalRedirect}
+                    className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200"
+                  >
+                    Stay on NZ version
+                  </button>
+                </div>
               </div>
             </div>
           )}

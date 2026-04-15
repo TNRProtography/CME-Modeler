@@ -67,6 +67,7 @@ interface AuroraSightingsProps {
   refreshSignal?: number;
   onSightingsLoaded?: (sightings: SightingReport[]) => void;
   substormRiskData?: SubstormRiskData | null;
+  isInternationalMode?: boolean;
 }
 
 interface SightingMapControllerProps {
@@ -252,7 +253,11 @@ interface OvalOverlayProps {
   substormRiskData: SubstormRiskData | null | undefined;
 }
 
-const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => {
+const repeatRingAroundWorld = (ring: [number, number][]): [number, number][][] => (
+  [-360, 0, 360].map((shift) => ring.map(([lat, lon]) => [lat, lon + shift] as [number, number]))
+);
+
+const AuroraOvalOverlay: React.FC<OvalOverlayProps & { isInternationalMode?: boolean }> = ({ substormRiskData, isInternationalMode = false }) => {
   const score    = substormRiskData?.current?.score     ?? 0;
   const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
   const metrics  = substormRiskData?.metrics;
@@ -262,6 +267,8 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
+  const northEquatorward = Math.abs(equatorward);
+  const northPoleward = Math.abs(poleward);
 
   // Boundary line colour scales with activity
   const { line } = ovalColour(score);
@@ -273,6 +280,7 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   // Visibility horizon — linearly boosted by activity (higher emission altitude during storms)
   const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(score, 100)) / 100) * 16.0;
   const visRing    = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
+  const northVisRing = buildOvalRing(Math.max(25, northEquatorward - VISIBILITY_DEG), 1.5);
   const visOpacity = 0.3 + (score / 100) * 0.45;
   const visWeight  = 1.0 + (score / 100) * 1.0;
 
@@ -371,11 +379,42 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
         pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }}
         smoothFactor={2}
       />
+      {isInternationalMode && (
+        <>
+          {Array.from({ length: bandLayers }, (_, i) => {
+            const t0 = i / bandLayers;
+            const t1 = (i + 1) / bandLayers;
+            const g0 = northPoleward + t0 * (northEquatorward - northPoleward);
+            const g1 = northPoleward + t1 * (northEquatorward - northPoleward);
+            const northPoly = buildBandPolygon(g0, g1, 3);
+            const mid = bandPolygons[i];
+            return <Polygon key={`north-band-${i}`} positions={northPoly} pathOptions={{ color: 'transparent', fillColor: mid.colour, fillOpacity: mid.alpha, weight: 0 }} smoothFactor={2} />;
+          })}
+          {repeatRingAroundWorld(buildOvalRing(northPoleward, 1.5)).map((ring, i) => (
+            <Polyline key={`north-pw-${i}`} positions={ring} pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(buildOvalRing(northEquatorward, 1.5)).map((ring, i) => (
+            <Polyline key={`north-eq-${i}`} positions={ring} pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(northVisRing).map((ring, i) => (
+            <Polyline key={`north-vis-${i}`} positions={ring} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(pwRing).map((ring, i) => (
+            <Polyline key={`south-pw-repeat-${i}`} positions={ring} pathOptions={{ color: line, weight: 1, opacity: 0.35, dashArray: '4 6' }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(eqRing).map((ring, i) => (
+            <Polyline key={`south-eq-repeat-${i}`} positions={ring} pathOptions={{ color: line, weight: 2.5, opacity: 0.9, dashArray: score < 25 ? '6 5' : undefined }} smoothFactor={2} />
+          ))}
+          {repeatRingAroundWorld(visRing).map((ring, i) => (
+            <Polyline key={`south-vis-repeat-${i}`} positions={ring} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+          ))}
+        </>
+      )}
     </>
   );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, isInternationalMode = false }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -578,7 +617,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         <GuideIcon className="w-6 h-6" />
                      </button>
                 </div>
-                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
+                <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">{isInternationalMode ? 'Help the community by reporting what you see (or don’t see) from anywhere in the world.' : 'Help the community by reporting what you see (or don\'t see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.'}</p>
                 <div className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/40 rounded-full text-amber-200 text-sm font-semibold">
                     <span className="inline-flex h-2 w-2 bg-amber-300 rounded-full animate-pulse" aria-hidden="true" />
                     GPS location is required to submit a report.
@@ -687,13 +726,13 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     </div>
                     <div className="flex-1 min-h-0">
                     <MapContainer
-                        center={[-41, 172]}
-                        zoom={MAP_ZOOM}
+                        center={isInternationalMode ? [0, 0] : [-41, 172]}
+                        zoom={isInternationalMode ? 2 : MAP_ZOOM}
                         scrollWheelZoom={false}
                         dragging={!L.Browser.mobile}
                         touchZoom={true}
-                        minZoom={4}
-                        maxBounds={NZ_BOUNDS}
+                        minZoom={isInternationalMode ? 1 : 4}
+                        maxBounds={isInternationalMode ? undefined : NZ_BOUNDS}
                         className="h-full w-full bg-neutral-800"
                         style={{height: '100%'}}
                     >
@@ -704,7 +743,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
-        <AuroraOvalOverlay substormRiskData={substormRiskData} />
+        <AuroraOvalOverlay substormRiskData={substormRiskData} isInternationalMode={isInternationalMode} />
                         <LocationFinder onLocationSelect={() => {}} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>Your GPS location.</Popup></Marker>}
                         <>
@@ -725,7 +764,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         }}
                                     >
                                         <Popup>
-                                            <strong>{sighting.name}</strong> (nearest town) reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
+                                            <strong>{sighting.name}</strong> {isInternationalMode ? '(nearest location)' : '(nearest town)'} reported: {getEmojiForStatus(sighting.status)} <br/> at {isInternationalMode ? `${new Date(sighting.timestamp).toLocaleTimeString('en-NZ', { timeZone: 'UTC' })} UTC` : new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
                                         </Popup>
                                     </Marker>
                                 );
@@ -748,7 +787,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         className="bg-neutral-900 border-b border-neutral-800 cursor-pointer hover:bg-neutral-800"
                                         onClick={() => handleTableRowClick(s.timestamp + s.name)}
                                     >
-                                        <td className="px-4 py-2">{new Date(s.timestamp).toLocaleTimeString('en-NZ')}</td>
+                                        <td className="px-4 py-2">{isInternationalMode ? `${new Date(s.timestamp).toLocaleTimeString('en-NZ', { timeZone: 'UTC' })} UTC` : new Date(s.timestamp).toLocaleTimeString('en-NZ')}</td>
                                         <td className="px-4 py-2 font-medium text-neutral-200">{s.name}</td>
                                         <td className="px-4 py-2 text-2xl" title={s.status}>{getEmojiForStatus(s.status)}</td>
                                     </tr>

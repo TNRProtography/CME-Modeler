@@ -427,7 +427,8 @@ const getVisibilityBlurb = (score: number | null): string => {
 export const useForecastData = (
   setCurrentAuroraScore: (score: number | null) => void,
   setSubstormActivityStatus: (status: SubstormActivity | null) => void,
-  onInitialLoadProgress?: (task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => void
+  onInitialLoadProgress?: (task: 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi') => void,
+  isInternationalMode: boolean = false
 ) => {
   const [isLoading, setIsLoading] = useState(true);
   const [auroraScore, setAuroraScore] = useState<number | null>(null);
@@ -481,6 +482,16 @@ export const useForecastData = (
   }, [onInitialLoadProgress]);
 
   const getMoonData = useCallback((illumination: number | null, rise: number | null, set: number | null, forecast: OwmDailyForecastEntry[]) => {
+    if (isInternationalMode) {
+      return {
+        value: 'N/A',
+        unit: '',
+        emoji: '—',
+        percentage: 0,
+        lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`,
+        color: '#808080',
+      };
+    }
     const moonIllumination = Math.max(0, (illumination ?? 0));
     let moonEmoji = '🌑'; if (moonIllumination > 95) moonEmoji = '🌕'; else if (moonIllumination > 55) moonEmoji = '🌖'; else if (moonIllumination > 45) moonEmoji = '🌗'; else if (moonIllumination > 5) moonEmoji = '🌒';
     const now = Date.now(); const today = new Date(); const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
@@ -497,7 +508,7 @@ export const useForecastData = (
     const value = `${moonIllumination.toFixed(0)}% <span class='text-xs block'>Rise: ${riseStr} | Set: ${setStr}</span>`;
 
     return { value, unit: '', emoji: moonEmoji, percentage: moonIllumination, lastUpdated: `Updated: ${formatNZTimestamp(Date.now())}`, color: '#A9A9A9' };
-  }, []);
+  }, [isInternationalMode]);
 
   const recentL1Data = useMemo(() => {
     if (!allMagneticData.length || !allSpeedData.length) return null;
@@ -722,12 +733,16 @@ export const useForecastData = (
         ? owmDailyForecast[0].moon_phase
         : null;
       const moonWaxing = todayMoonPhase != null ? todayMoonPhase < 0.5 : null;
-      setCelestialTimes({
-        sun: currentForecast?.sun,
-        moon: currentForecast?.moon
-          ? { ...currentForecast.moon, waxing: moonWaxing ?? undefined }
-          : undefined,
-      });
+      if (isInternationalMode) {
+        setCelestialTimes({});
+      } else {
+        setCelestialTimes({
+          sun: currentForecast?.sun,
+          moon: currentForecast?.moon
+            ? { ...currentForecast.moon, waxing: moonWaxing ?? undefined }
+            : undefined,
+        });
+      }
 
       const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
       setBaseAuroraScore(baseScore);
@@ -735,7 +750,7 @@ export const useForecastData = (
       const rawAdjusted = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
       // Compute daylight directly from the freshly received sun times rather than
       // relying on the isDaylight state, which may not have updated yet on first load.
-      const freshSun = currentForecast?.sun;
+      const freshSun = isInternationalMode ? null : currentForecast?.sun;
       const nowTs = Date.now();
       const freshIsDaylight = freshSun?.rise && freshSun?.set
         ? (nowTs > freshSun.rise && nowTs < freshSun.set)
@@ -745,7 +760,9 @@ export const useForecastData = (
       setCurrentAuroraScore(initialAdjustedScore);
 
       setLastUpdated(`Last Updated: ${formatNZTimestamp(currentForecast?.lastUpdated ?? 0)}`);
-      if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
+      if (isInternationalMode) {
+        setDailyCelestialHistory([]);
+      } else if (Array.isArray(dailyHistory)) setDailyCelestialHistory(dailyHistory); else setDailyCelestialHistory([]);
       if (Array.isArray(owmDailyForecast)) setOwmDailyForecast(owmDailyForecast); else setOwmDailyForecast([]);
       setGaugeData((prev) => ({
         ...prev,

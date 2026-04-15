@@ -15,6 +15,7 @@ interface ForecastModelsModalProps {
   isOpen: boolean;
   onClose: () => void;
   setViewerMedia: (media: MediaObject | null) => void;
+  useUtc?: boolean;
 }
 
 // --- CONSTANTS for the models ---
@@ -26,15 +27,17 @@ const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo
 const EUHFORIA_ANIMATION_URL = 'https://swe.ssa.esa.int/DOCS/portal_images/uk_ral_euhforia_earth.mp4';
 
 // --- HELPERS ---
-const formatNZTimestamp = (isoString: string | null | number) => {
+const formatTimestamp = (isoString: string | null | number, useUtc = false) => {
     if (!isoString) return 'N/A';
     try { 
         const d = new Date(isoString); 
-        return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString('en-NZ', { 
-            timeZone: 'Pacific/Auckland', 
+        if (isNaN(d.getTime())) return "Invalid Date";
+        const value = d.toLocaleString('en-NZ', { 
+            timeZone: useUtc ? 'UTC' : 'Pacific/Auckland', 
             dateStyle: 'medium', 
             timeStyle: 'short' 
-        }); 
+        });
+        return useUtc ? `${value} UTC` : value;
     } catch { return "Invalid Date"; }
 };
 
@@ -54,7 +57,7 @@ const ModelCard: React.FC<{ title: string; source: string; sourceUrl: string; ch
 );
 
 
-const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia }) => {
+const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia, useUtc = false }) => {
   const [noaaEnlilUrls, setNoaaEnlilUrls] = useState<string[]>([]);
   const [isLoadingNoaaEnlil, setIsLoadingNoaaEnlil] = useState(true);
   const [noaaEnlilError, setNoaaEnlilError] = useState<string | null>(null);
@@ -211,7 +214,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                              <div className="flex justify-between items-start mb-2">
                                <div>
                                  <p className="font-bold text-neutral-200">Model Time:</p>
-                                 <p>{formatNZTimestamp(sim.modelCompletionTime)}</p>
+                                 <p>{formatTimestamp(sim.modelCompletionTime, useUtc)}</p>
                                </div>
                                {sim.estimatedShockArrivalTime ? (
                                  <span className="px-2 py-1 rounded bg-green-500/20 text-green-300 font-bold text-xs border border-green-500/50">
@@ -228,7 +231,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                              </p>
                              {sim.estimatedShockArrivalTime && (
                                <p className="text-neutral-300">
-                                 <strong>Estimated Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
+                                 <strong>Estimated Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatTimestamp(sim.estimatedShockArrivalTime, useUtc)}</span>
                                </p>
                              )}
                            </a>

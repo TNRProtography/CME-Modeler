@@ -72,7 +72,7 @@ const baseOptions = (yType: 'logarithmic'|'linear', yLabel: string): ChartOption
     },
   },
   scales: {
-    x: { type: 'time', time: { tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { color: '#71717a', maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { color: '#27272a' }, title: { display: true, text: 'NZT', color: '#52525b', font: { size: 9 } } },
+    x: { type: 'time', time: { tooltipFormat: 'dd MMM HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { color: '#71717a', maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { color: '#27272a' }, title: { display: true, text: (typeof window !== 'undefined' && localStorage.getItem('sta_international_mode_enabled_v1') === 'true') ? 'UTC' : 'NZT', color: '#52525b', font: { size: 9 } } },
     y: { type: yType, ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 6, callback: (val: number | string) => {
           const n = Number(val);
           if (!isFinite(n) || n <= 0) return '';
@@ -353,6 +353,7 @@ const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const EPAMPanel: React.FC = () => {
+  const useUtc = typeof window !== 'undefined' && localStorage.getItem('sta_international_mode_enabled_v1') === 'true';
   const [view,       setView]       = useState<ViewKey>('ace-raw');
   const [timeRange,  setTimeRange]  = useState<TimeRange>(24);
   const [epamRaw,    setEpamRaw]    = useState<EpamPoint[]>([]);
@@ -569,7 +570,7 @@ const EPAMPanel: React.FC = () => {
           <p className="text-xs text-neutral-500 mt-0.5">Solar storm early warning · Upstream satellites · Aurora potential indicator</p>
         </div>
         <div className="flex items-center gap-2">
-          {lastUpdated && <span className="text-xs text-neutral-600">{lastUpdated.toLocaleTimeString('en-NZ',{timeZone:'Pacific/Auckland',hour:'2-digit',minute:'2-digit'})} NZT</span>}
+          {lastUpdated && <span className="text-xs text-neutral-600">{lastUpdated.toLocaleTimeString('en-NZ',{timeZone: useUtc ? 'UTC' : 'Pacific/Auckland',hour:'2-digit',minute:'2-digit'})} {useUtc ? 'UTC' : 'NZT'}</span>}
           <button onClick={fetchAll} className="p-1.5 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="Refresh">↻</button>
         </div>
       </div>

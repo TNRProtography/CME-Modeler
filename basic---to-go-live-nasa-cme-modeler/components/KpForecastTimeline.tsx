@@ -40,6 +40,7 @@ interface KpForecastTimelineProps {
   moonRiseMs?:       number | null; // Unix ms UTC from celestialTimes.moon.rise
   moonSetMs?:        number | null; // Unix ms UTC from celestialTimes.moon.set
   moonWaxing?:       boolean | null; // true=growing, false=shrinking, null=unknown
+  isInternationalMode?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -609,6 +610,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   moonRiseMs,
   moonSetMs,
   moonWaxing,
+  isInternationalMode = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
@@ -619,6 +621,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const [canvasW, setCanvasW] = useState(700);
 
   const moon = moonIllumination ?? 50;
+  const utcLabel = (ms: number) => new Date(ms).toLocaleString('en-NZ', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) + ' UTC';
 
   // Fetch KP data
   useEffect(() => {
@@ -747,6 +750,28 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
   const sel  = popup ? slots[popup.slotIdx] : null;
   const selSky = sel ? skyTypeFromMs(sel.utcMs, sunriseMs, sunsetMs) : 'night';
+
+  if (isInternationalMode) {
+    return (
+      <div className="col-span-12 card bg-neutral-950/80 p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div>
+            <h2 className="text-base font-semibold text-white">3-day aurora forecast</h2>
+            <p className="text-xs text-neutral-500 mt-0.5">Global Kp forecast windows in UTC.</p>
+          </div>
+          <span className="text-xs text-neutral-600">Kp data: NOAA SWPC</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {slots.slice(0, 24).map((slot) => (
+            <div key={`intl-${slot.utcMs}`} className="rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-xs flex items-center justify-between">
+              <span className="text-neutral-300">{utcLabel(slot.utcMs)}</span>
+              <span className="font-semibold text-emerald-300">Kp {slot.kp.toFixed(1)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // Compute whether the moon is above the horizon for the selected slot
   const selIsMoonUp = (() => {
