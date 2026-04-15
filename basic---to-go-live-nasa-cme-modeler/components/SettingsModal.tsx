@@ -151,6 +151,8 @@ interface SettingsModalProps {
   pageViewStorageMode: 'server' | 'local';
 }
 
+const SHOCK_NOTIFICATION_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr', 'shock-imf']);
+
 // Notification categories shown in the UI — grouped for clarity.
 // Legacy topic IDs (aurora-Xpercent, substorm-forecast etc) are intentionally
 // NOT shown here — they still run on the worker but users manage them by
@@ -875,6 +877,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                   checked={notificationSettings[item.id] ?? false}
                                   onChange={(checked) => handleNotificationToggle(item.id, checked)}
                                 />
+                                {SHOCK_NOTIFICATION_IDS.has(item.id) && (
+                                  <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                    BETA
+                                  </span>
+                                )}
                                 {'tooltip' in item && (
                                   <button
                                     onClick={() => openNotifModal(item.id)}
