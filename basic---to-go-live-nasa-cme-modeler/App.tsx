@@ -310,6 +310,14 @@ const App: React.FC = () => {
   const [currentAuroraScore, setCurrentAuroraScore] = useState<number | null>(null);
   const [substormActivityStatus, setSubstormActivityStatus] = useState<SubstormActivity | null>(null);
   const [ipsAlertData, setIpsAlertData] = useState<IpsAlertData | null>(null);
+  /** Full list of detected shocks from SolarWindQuickView (client-side IPS detector). */
+  const [detectedBetaShocks, setDetectedBetaShocks] = useState<Array<{
+    t: number; score: number; label: string;
+    spdJ: number; denR: number; tmpR: number; btJ: number; bzJ: number;
+    ageMin: number; ageStr: string;
+  }>>([]);
+  /** Ticks once a minute so beta-shock freshness can re-evaluate without new data. */
+  const [betaShockClock, setBetaShockClock] = useState(Date.now());
   /** Latest measured solar wind speed at L1 (km/s) — fed to the propagation engine */
   const [measuredWindSpeedKms, setMeasuredWindSpeedKms] = useState<number | undefined>(undefined);
 
@@ -1249,6 +1257,60 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // ── Beta shock detector plumbing ────────────────────────────────────────
+  // Shocks come from SolarWindQuickView's client-side detector (see DetectedShock).
+  // The banner only shows a shock for 1 hour after it was detected, so we:
+  //   1. Store the raw list whenever the detector reports new events.
+  //   2. Re-tick every minute so the 1-hour window naturally closes
+  //      even when no new data has arrived.
+  //   3. Derive the banner payload from (shocks + current time).
+  const handleBetaShocksDetected = useCallback((shocks: Array<{
+    t: number; score: number; label: string;
+    spdJ: number; denR: number; tmpR: number; btJ: number; bzJ: number;
+    ageMin: number; ageStr: string;
+  }>) => {
+    setDetectedBetaShocks(shocks);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setBetaShockClock(Date.now()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Pick the most recent shock within the 1-hour freshness window.
+  const betaShockAlertData = useMemo(() => {
+    if (!detectedBetaShocks.length) return null;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const now = betaShockClock;
+    // shocks are sorted chronologically; take the newest and check freshness.
+    const newest = detectedBetaShocks[detectedBetaShocks.length - 1];
+    if (!newest || now - newest.t > ONE_HOUR_MS) return null;
+
+    // Recompute age string relative to "now" so the banner always reads fresh,
+    // independent of whatever age string SolarWindQuickView stamped at render.
+    const ageMin = Math.max(0, Math.round((now - newest.t) / 60000));
+    const ageStr = ageMin < 2   ? 'just now'
+      : ageMin < 60 ? `~${ageMin} min ago`
+      : `~${Math.floor(ageMin / 60)}h ago`;
+
+    return {
+      label: newest.label,
+      t:     newest.t,
+      ageStr,
+      spdJ:  newest.spdJ,
+      denR:  newest.denR,
+      btJ:   newest.btJ,
+      bzJ:   newest.bzJ,
+    };
+  }, [detectedBetaShocks, betaShockClock]);
+
+  const handleBetaShockAlertClick = useCallback(() => {
+    setNavigationTarget({
+      page: 'forecast',
+      elementId: 'solar-wind-quick-view-section',
+    });
+  }, []);
+
   const handleInitialLoad = useCallback(() => {
       markInitialTaskDone('forecastData');
   }, [markInitialTaskDone]);
@@ -1286,6 +1348,9 @@ const App: React.FC = () => {
               substormActivity={substormActivityStatus ?? undefined}
               isIpsAlert={!!ipsAlertData}
               ipsAlertData={ipsAlertData}
+              isBetaShockAlert={!!betaShockAlertData}
+              betaShockAlertData={betaShockAlertData}
+              onBetaShockAlertClick={handleBetaShockAlertClick}
               onFlareAlertClick={handleFlareAlertClick}
               onAuroraAlertClick={handleAuroraAlertClick}
               onSubstormAlertClick={handleSubstormAlertClick}
@@ -1546,6 +1611,7 @@ const App: React.FC = () => {
                         setCurrentAuroraScore={setCurrentAuroraScore}
                         setSubstormActivityStatus={setSubstormActivityStatus}
                         setIpsAlertData={setIpsAlertData}
+                        onBetaShocksDetected={handleBetaShocksDetected}
                         setMeasuredWindSpeedKms={setMeasuredWindSpeedKms}
                         navigationTarget={navigationTarget}
                         onInitialLoad={handleInitialLoad}

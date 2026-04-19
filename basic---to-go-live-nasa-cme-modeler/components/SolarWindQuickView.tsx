@@ -9,11 +9,25 @@
  *   5. Temp (K)  — green, log scale
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import type { ChartOptions } from 'chart.js';
 import CloseIcon from './icons/CloseIcon';
+
+// ── Shape of a single detected shock, exposed to parent via onShocksDetected ──
+export interface DetectedShock {
+  t: number;       // ms timestamp
+  score: number;
+  label: string;
+  spdJ: number;    // speed delta (km/s)
+  denR: number;    // density ratio
+  tmpR: number;    // temp ratio
+  btJ:  number;    // Bt delta (nT)
+  bzJ:  number;    // Bz swing (nT)
+  ageMin: number;
+  ageStr: string;
+}
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -41,6 +55,9 @@ interface SolarWindQuickViewProps {
   speedData:    { x: number; y: number }[];
   densityData:  { x: number; y: number }[];
   tempData:     { x: number; y: number }[];
+  /** Optional callback invoked whenever the detected shock list changes.
+   *  Parent can use this to drive a global shock banner. */
+  onShocksDetected?: (shocks: DetectedShock[]) => void;
 }
 
 // ── Time range options — matches app convention ───────────────────────────────
@@ -176,10 +193,12 @@ const HOVER = 4;
 
 // ── Main component ────────────────────────────────────────────────────────────
 const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
-  magneticData, clockData, speedData, densityData, tempData,
+  magneticData, clockData, speedData, densityData, tempData, onShocksDetected,
 }) => {
   const [rangeMs, setRangeMs] = useState(6 * 3600000);
   const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
+  // Index into shockEvents for the carousel. Kept in sync with shockEvents length.
+  const [shockIndex, setShockIndex] = useState(0);
 
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
     <div class='space-y-3 text-left'>
@@ -378,7 +397,31 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
 
     return selected;
   }, [speedData, densityData, tempData, magneticData]);
-  const latestShock = shockEvents.length ? shockEvents[shockEvents.length - 1] : null;
+
+  // Latest shock (most recent by time); this is what the carousel defaults to.
+  // shockEvents is already sorted chronologically in the reducer above.
+  const latestShockIndex = shockEvents.length ? shockEvents.length - 1 : 0;
+
+  // Keep the carousel pointing at the newest shock whenever the list changes.
+  // If the user has scrolled back and a new shock appears, jump to the new one.
+  useEffect(() => {
+    setShockIndex(latestShockIndex);
+  }, [latestShockIndex, shockEvents.length]);
+
+  // Notify parent (e.g. App.tsx / GlobalBanner) whenever the detected set changes.
+  useEffect(() => {
+    onShocksDetected?.(shockEvents);
+  }, [shockEvents, onShocksDetected]);
+
+  // Clamp index defensively in case shockEvents shrinks.
+  const safeShockIndex = Math.min(shockIndex, Math.max(0, shockEvents.length - 1));
+  const currentShock = shockEvents.length ? shockEvents[safeShockIndex] : null;
+  const goPrevShock = useCallback(() => {
+    setShockIndex((i) => Math.max(0, i - 1));
+  }, []);
+  const goNextShock = useCallback(() => {
+    setShockIndex((i) => Math.min(shockEvents.length - 1, i + 1));
+  }, [shockEvents.length]);
 
   // Options depend on rangeMs so they update when range changes
   const bzbtOpts = useMemo(() => makeOptions('Bz / Bt (nT)', rangeMs, undefined, undefined, 'linear', false), [rangeMs]);
@@ -422,7 +465,8 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   }, [tmp]);
 
   return (
-    <div className="col-span-12 card bg-neutral-950/80 p-4">
+    <div id="solar-wind-quick-view-section" className="col-span-12 card bg-neutral-950/80 p-4">
+      {/* scroll-margin-top avoids the section title being hidden under the fixed header when deep-linked */}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
@@ -444,34 +488,67 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
         </div>
       </div>
 
-      {/* Interplanetary shock alert — matches notification label */}
-      {latestShock && (
-        <div className="mt-2 mb-1 flex items-start gap-3 px-3 py-2.5 rounded-lg border"
+      {/* Interplanetary shock alert — carousel through all detected shocks */}
+      {currentShock && (
+        <div className="mt-2 mb-1 flex items-start gap-2 px-3 py-2.5 rounded-lg border"
           style={{ background: 'rgba(220,38,38,0.12)', borderColor: 'rgba(220,38,38,0.45)' }}>
+
+          {/* Left arrow — previous (older) shock */}
+          {shockEvents.length > 1 && (
+            <button
+              type="button"
+              onClick={goPrevShock}
+              disabled={safeShockIndex === 0}
+              aria-label="Previous shock"
+              className="self-center flex-none w-7 h-7 rounded-full flex items-center justify-center text-red-300 hover:text-white hover:bg-red-500/25 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
+
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-semibold text-red-400">{latestShock.label}</span>
+              <span className="text-sm font-semibold text-red-400">{currentShock.label}</span>
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
                 <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                 BETA
               </span>
               <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ background: 'rgba(220,38,38,0.28)', color: '#f87171' }}>
-                {latestShock.ageStr}
+                {currentShock.ageStr}
               </span>
               {shockEvents.length > 1 && (
-                <span className="text-[11px] text-red-300/80">+{shockEvents.length - 1} more detected in window</span>
+                <span className="text-[11px] text-red-300/80 font-medium tabular-nums">
+                  {safeShockIndex + 1} of {shockEvents.length}
+                </span>
               )}
             </div>
             <p className="text-xs text-red-300/80 leading-relaxed">
-              {latestShock.spdJ !== 0 && `Speed ${latestShock.spdJ > 0 ? '+' : ''}${latestShock.spdJ} km/s. `}
-              {latestShock.denR !== 0 && `Density ×${latestShock.denR}. `}
-              {latestShock.tmpR !== 0 && `Temp ×${latestShock.tmpR}. `}
-              {latestShock.btJ  !== 0 && `Bt ${latestShock.btJ > 0 ? '+' : ''}${latestShock.btJ} nT. `}
-              {latestShock.bzJ  !== 0 && `Bz ${latestShock.bzJ > 0 ? '+' : ''}${latestShock.bzJ} nT swing. `}
-              Watch Bz — if it turns south, aurora activity will follow.
+              {currentShock.spdJ !== 0 && `Speed ${currentShock.spdJ > 0 ? '+' : ''}${currentShock.spdJ} km/s. `}
+              {currentShock.denR !== 0 && `Density ×${currentShock.denR}. `}
+              {currentShock.tmpR !== 0 && `Temp ×${currentShock.tmpR}. `}
+              {currentShock.btJ  !== 0 && `Bt ${currentShock.btJ > 0 ? '+' : ''}${currentShock.btJ} nT. `}
+              {currentShock.bzJ  !== 0 && `Bz ${currentShock.bzJ > 0 ? '+' : ''}${currentShock.bzJ} nT swing. `}
+              Watch Bz: if it turns south, aurora activity will follow.
             </p>
           </div>
+
+          {/* Right arrow — next (more recent) shock */}
+          {shockEvents.length > 1 && (
+            <button
+              type="button"
+              onClick={goNextShock}
+              disabled={safeShockIndex >= shockEvents.length - 1}
+              aria-label="Next shock"
+              className="self-center flex-none w-7 h-7 rounded-full flex items-center justify-center text-red-300 hover:text-white hover:bg-red-500/25 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
 

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import EPAMPanel from './EPAMPanel';
-import SolarWindQuickView from './SolarWindQuickView';
+import SolarWindQuickView, { type DetectedShock } from './SolarWindQuickView';
 import FluxRopeAnalyzer from './FluxRopeAnalyzer';
 import KpForecastTimeline from './KpForecastTimeline';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -75,6 +75,8 @@ interface ForecastDashboardProps {
   setCurrentAuroraScore: (score: number | null) => void;
   setSubstormActivityStatus: (status: SubstormActivity | null) => void;
   setIpsAlertData: (data: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null) => void;
+  /** Callback fired when SolarWindQuickView's client-side shock detector updates. */
+  onBetaShocksDetected?: (shocks: DetectedShock[]) => void;
   /** Callback to report latest L1 solar wind speed to the propagation engine */
   setMeasuredWindSpeedKms?: (speed: number | undefined) => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
@@ -198,7 +200,7 @@ const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp
 
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, onBetaShocksDetected, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal }) => {
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -800,6 +802,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 speedData={allSpeedData}
                                 densityData={allDensityData}
                                 tempData={allTempData}
+                                onShocksDetected={onBetaShocksDetected}
                             />
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4">

@@ -32,6 +32,19 @@ interface GlobalBannerProps {
   substormActivity?: SubstormActivity;
   isIpsAlert: boolean;
   ipsAlertData?: { shock: InterplanetaryShock; solarWind: { speed: string; bt: string; bz: string; } } | null;
+  // Beta shock detector (from SolarWindQuickView's client-side IPS detector).
+  // Distinct from isIpsAlert, which is driven by NOAA's IPS API.
+  isBetaShockAlert?: boolean;
+  betaShockAlertData?: {
+    label: string;   // e.g. "Fast Forward Shock (FF)"
+    t: number;       // ms timestamp of detection
+    ageStr: string;  // "~12 min ago"
+    spdJ: number;
+    denR: number;
+    btJ: number;
+    bzJ: number;
+  } | null;
+  onBetaShockAlertClick?: () => void;
   hideForTutorial?: boolean;
   onFlareAlertClick: () => void;
   onAuroraAlertClick: () => void;
@@ -104,6 +117,9 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   substormActivity,
   isIpsAlert,
   ipsAlertData,
+  isBetaShockAlert = false,
+  betaShockAlertData = null,
+  onBetaShockAlertClick,
   hideForTutorial = false,
   onFlareAlertClick,
   onAuroraAlertClick,
@@ -161,7 +177,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   useEffect(() => {
     setActiveAlertIndex(0);
     setIsDynamicDismissed(false);
-  }, [isFlareAlert, isAuroraAlert, isSubstormAlert, isIpsAlert, globalBanner?.id]);
+  }, [isFlareAlert, isAuroraAlert, isSubstormAlert, isIpsAlert, isBetaShockAlert, globalBanner?.id]);
 
   const alerts: AlertSlide[] = [];
 
@@ -221,6 +237,50 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
             <span>Bt: <strong>{ipsAlertData.solarWind.bt}</strong> nT</span>
             <span>Bz: <strong>{ipsAlertData.solarWind.bz}</strong> nT</span>
           </div>
+        </button>
+      ),
+    });
+  }
+
+  // Beta shock alert: driven by SolarWindQuickView's client-side IPS detector.
+  // Only shown within 1 hour of detection. Clicking scrolls to the Quick View.
+  if (isBetaShockAlert && betaShockAlertData) {
+    // Local const binding so TS narrows the union through the JSX callback below.
+    const data = betaShockAlertData;
+    const stats: string[] = [];
+    if (data.spdJ !== 0) stats.push(`Δv ${data.spdJ > 0 ? '+' : ''}${data.spdJ} km/s`);
+    if (data.denR !== 0) stats.push(`×${data.denR} density`);
+    if (data.btJ  !== 0) stats.push(`Bt ${data.btJ > 0 ? '+' : ''}${data.btJ} nT`);
+    if (data.bzJ  !== 0) stats.push(`Bz ${data.bzJ > 0 ? '+' : ''}${data.bzJ} nT`);
+
+    alerts.push({
+      id: 'beta-shock-alert',
+      backgroundClass: 'bg-gradient-to-r from-red-700 via-rose-600 to-red-700',
+      textClass: 'text-white',
+      content: (
+        <button
+          onClick={onBetaShockAlertClick}
+          className="w-full flex flex-col sm:flex-row items-center justify-center gap-x-3 gap-y-1 hover:bg-white/10 p-1 rounded-md transition-colors"
+        >
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            <span role="img" aria-label="Shock">💥</span>
+            <strong>{data.label}</strong>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-400/25 text-amber-100 border border-amber-300/40">
+              <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              BETA
+            </span>
+            <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full font-medium">
+              {data.ageStr}
+            </span>
+          </div>
+          {stats.length > 0 && (
+            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap justify-center text-sm">
+              {stats.map((s, i) => (
+                <span key={i}>{s}</span>
+              ))}
+            </div>
+          )}
+          <span className="text-[11px] opacity-80 hidden sm:inline">Tap for details</span>
         </button>
       ),
     });
